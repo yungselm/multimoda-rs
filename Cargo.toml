@@ -1,0 +1,22 @@
+[package]
+name = "aaoca"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "aaoca"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = "0.25.0"
+csv = "1.1"
+serde = { version = "1.0.219", features = ["derive"]}
+image = "0.25.5"
+rand = "0.9.1"
+nalgebra = "*"
+toml = "0.8.20"
+rayon = "1.7.1"
+crossbeam = "0.8.4"
+anyhow = "1.0.97"
+approx = "0.5"
+serde_json = "1.0"
