@@ -1,10 +1,10 @@
 [package]
-name = "aaoca"
+name = "multimodars"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "aaoca"
+name = "multimodars"
 crate-type = ["cdylib"]
 
 [dependencies]

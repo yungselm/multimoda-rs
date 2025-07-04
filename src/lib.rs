@@ -93,7 +93,7 @@ fn rest_stress_py(
 /// )
 /// ```
 #[pymodule]
-fn aaoca(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<()> {
+fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_function(wrap_pyfunction!(run_process_case_py, m.clone())?)?;
     m.add_function(wrap_pyfunction!(rest_stress_py, m.clone())?)?;

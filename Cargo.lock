@@ -3,24 +3,6 @@
 version = 4
 
 [[package]]
-name = "aaoca"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "approx",
- "crossbeam",
- "csv",
- "image",
- "nalgebra",
- "pyo3",
- "rand 0.9.1",
- "rayon",
- "serde",
- "serde_json",
- "toml",
-]
-
-[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -579,6 +561,24 @@ checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
 dependencies = [
  "adler2",
  "simd-adler32",
+]
+
+[[package]]
+name = "multimodars"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "approx",
+ "crossbeam",
+ "csv",
+ "image",
+ "nalgebra",
+ "pyo3",
+ "rand 0.9.1",
+ "rayon",
+ "serde",
+ "serde_json",
+ "toml",
 ]
 
 [[package]]
