@@ -60,12 +60,12 @@ pub fn run_process_case(
         });
 
         // Join threads & propagate any processing errors
-        let geometries_rest   = rest_handle.join().unwrap()?;
-        let geometries_stress = stress_handle.join().unwrap()?;
+        let rest_geom_pair   = rest_handle.join().unwrap()?;
+        let stress_geom_pair = stress_handle.join().unwrap()?;
 
         // Diastole / systole comparison
         let (dia_geom_pair, sys_geom_pair) =
-            prepare_geometries_comparison(geometries_rest, geometries_stress);
+            prepare_geometries_comparison(rest_geom_pair, stress_geom_pair);
 
         process_case(
             "diastolic",
@@ -148,8 +148,8 @@ pub fn run_rest_stress_only(
             Ok(processed_stress)
         });
         // Join threads & propagate any processing errors
-        let geometries_rest   = rest_handle.join().unwrap()?;
-        let geometries_stress = stress_handle.join().unwrap()?;
+        let rest_geom_pair   = rest_handle.join().unwrap()?;
+        let stress_geom_pair = stress_handle.join().unwrap()?;
         
         Ok(())
     })

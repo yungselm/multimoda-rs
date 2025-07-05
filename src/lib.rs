@@ -4,9 +4,13 @@ mod io;
 mod processing;
 mod texture;
 mod utils;
+mod mesh_to_centerline;
+mod python_bind;
 
 use pyo3::prelude::*;
 use entry::{run_process_case, run_rest_stress_only};
+use pyo3::wrap_pyfunction;
+use python_bind::{PyContour, PyContourPoint};
 
 /// Python wrapper around Rust pipeline.
 ///
@@ -97,5 +101,9 @@ fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<(
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_function(wrap_pyfunction!(run_process_case_py, m.clone())?)?;
     m.add_function(wrap_pyfunction!(rest_stress_py, m.clone())?)?;
+
+    // Updated class registration
+    m.add_class::<PyContourPoint>()?;
+    m.add_class::<PyContour>()?;
     Ok(())
 }

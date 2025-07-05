@@ -1,4 +1,5 @@
 use csv::ReaderBuilder;
+use nalgebra::Vector3;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::f64::consts::PI;
@@ -395,6 +396,80 @@ pub fn read_records<P: AsRef<Path>>(path: P) -> anyhow::Result<Vec<Record>> {
     Ok(records)
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct Centerline {
+    pub points: Vec<CenterlinePoint>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CenterlinePoint {
+    pub contour_point: ContourPoint,
+    pub normal: Vector3<f64>,
+}
+
+impl Centerline {
+    pub fn from_contour_points(contour_points: Vec<ContourPoint>) -> Self {
+        let mut points: Vec<CenterlinePoint> = Vec::with_capacity(contour_points.len());
+
+        // Calculate normals for all but the last point.
+        for i in 0..contour_points.len() {
+            let current = &contour_points[i];
+            let normal = if i < contour_points.len() - 1 {
+                let next = &contour_points[i + 1];
+                Vector3::new(next.x - current.x, next.y - current.y, next.z - current.z).normalize()
+            } else if !contour_points.is_empty() {
+                points[i - 1].normal
+            } else {
+                Vector3::zeros()
+            };
+
+            points.push(CenterlinePoint {
+                contour_point: current.clone(),
+                normal,
+            });
+        }
+
+        Centerline { points }
+    }
+
+    /// Retrieves a centerline point by matching frame index.
+    pub fn get_by_frame(&self, frame_index: u32) -> Option<&CenterlinePoint> {
+        self.points
+            .iter()
+            .find(|p| p.contour_point.frame_index == frame_index)
+    }
+}
+
+pub fn read_centerline_txt(path: &str) -> anyhow::Result<Vec<ContourPoint>> {
+    let file = File::open(path)?;
+    let mut rdr = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .delimiter(b' ')
+        .from_reader(file);
+
+    let mut points = Vec::new();
+    for (i, result) in rdr.records().enumerate() {
+        match result {
+            Ok(record) => {
+                let mut iter = record.iter();
+                let x = iter.next().unwrap().parse::<f64>()?;
+                let y = iter.next().unwrap().parse::<f64>()?;
+                let z = iter.next().unwrap().parse::<f64>()?;
+                points.push(ContourPoint {
+                    frame_index: i as u32,
+                    point_index: i as u32,
+                    x,
+                    y,
+                    z,
+                    aortic: false,
+                });
+            }
+            Err(e) => eprintln!("Skipping invalid row: {:?}", e),
+        }
+    }
+    Ok(points)
+}
+
 #[cfg(test)]
 mod input_tests {
     use super::*;
@@ -623,5 +698,18 @@ mod input_tests {
             let dist = (dx * dx + dy * dy).sqrt();
             assert!((dist - 0.5).abs() < 1e-6);
         }
+    }
+
+    #[test]
+    fn test_centerline_normals() {
+        let points = vec![
+            ContourPoint { frame_index: 1, point_index: 0, x: 0.0, y: 0.0, z: 0.0, aortic: false },
+            ContourPoint { frame_index: 2, point_index: 1, x: 1.0, y: 0.0, z: 0.0, aortic: false },
+            ContourPoint { frame_index: 3, point_index: 2, x: 2.0, y: 0.0, z: 0.0, aortic: false },
+        ];
+        let centerline = Centerline::from_contour_points(points);
+        assert_eq!(centerline.points[0].normal, Vector3::new(1.0, 0.0, 0.0));
+        assert_eq!(centerline.points[1].normal, Vector3::new(1.0, 0.0, 0.0));
+        assert_eq!(centerline.points[2].normal, Vector3::new(1.0, 0.0, 0.0));
     }
 }
