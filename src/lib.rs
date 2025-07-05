@@ -10,7 +10,7 @@ mod python_bind;
 use pyo3::prelude::*;
 use entry::{run_process_case, run_rest_stress_only};
 use pyo3::wrap_pyfunction;
-use python_bind::{PyContour, PyContourPoint};
+use python_bind::{PyContour, PyContourPoint, PyGeometry, PyGeometryPair};
 
 /// Python wrapper around Rust pipeline.
 ///
@@ -40,8 +40,8 @@ fn run_process_case_py(
     rest_output_path: &str,
     stress_output_path: &str,
     interpolation_steps: usize,
-) -> PyResult<()> {
-    run_process_case(
+) -> PyResult<(PyGeometryPair, PyGeometryPair, PyGeometryPair, PyGeometryPair)> {
+    let (rest_pair, stress_pair, dia_pair, sys_pair) = run_process_case(
         rest_input_path,
         steps_best_rotation,
         range_rotation_rad,
@@ -51,8 +51,14 @@ fn run_process_case_py(
         stress_output_path,
         diastole_comparison_path,
         systole_comparison_path,
-    )
-    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+    ).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+    let py_rest = rest_pair.into();
+    let py_stress = stress_pair.into();
+    let py_dia = dia_pair.into();
+    let py_sys = sys_pair.into();
+
+    Ok((py_rest, py_stress, py_dia, py_sys))
 }
 
 #[pyfunction]
@@ -74,8 +80,8 @@ fn rest_stress_py(
     rest_output_path: &str,
     stress_output_path: &str,
     interpolation_steps: usize,
-) -> PyResult<()> {
-    run_rest_stress_only(
+) -> PyResult<(PyGeometryPair, PyGeometryPair)> {
+    let (rest_pair, stress_pair) = run_rest_stress_only(
         rest_input_path,
         steps_best_rotation,
         range_rotation_rad,
@@ -84,14 +90,19 @@ fn rest_stress_py(
         stress_input_path,
         stress_output_path,
     )
-    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+    let py_rest = rest_pair.into();
+    let py_stress = stress_pair.into();
+
+    Ok((py_rest, py_stress))
 }
 
 /// This is the module importable from Python:
 ///
 /// ```python
-/// import aaoca_package
-/// aaoca_package.run_process_case_py(
+/// import multimodars as mm
+/// mm.run_process_case_py(
 ///     "input/rest.csv", "input/stress.csv",
 ///     "out/dia.csv", "out/sys.csv"
 /// )
@@ -105,5 +116,7 @@ fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<(
     // Updated class registration
     m.add_class::<PyContourPoint>()?;
     m.add_class::<PyContour>()?;
+    m.add_class::<PyGeometry>()?;
+    m.add_class::<PyGeometryPair>()?;
     Ok(())
 }

@@ -4,6 +4,8 @@ use crossbeam::thread;
 use crate::processing::comparison::prepare_geometries_comparison;
 use crate::processing::process_case::{create_geometry_pair, process_case};
 
+use crate::processing::geometries::GeometryPair;
+
 pub fn run_process_case(
     rest_input_path: &str, 
     steps_best_rotation: usize, 
@@ -14,11 +16,11 @@ pub fn run_process_case(
     stress_output_path: &str,
     diastole_comparison_path: &str,
     systole_comparison_path: &str,
-) -> Result<()> {
+) -> Result<(GeometryPair, GeometryPair, GeometryPair, GeometryPair)> {
     // Chain directly on thread::scope without a stray semicolon
-    let _result = thread::scope(|s| -> Result<()> {
+    let result = thread::scope(|s| -> Result<(GeometryPair, GeometryPair, GeometryPair, GeometryPair)> {
         // REST thread
-        let rest_handle = s.spawn(|_| -> Result<_> {
+        let rest_handle = s.spawn(|_| -> Result<GeometryPair> {
             let geom_rest = create_geometry_pair(
                 "rest".to_string(),
                 rest_input_path,
@@ -39,7 +41,7 @@ pub fn run_process_case(
         });
 
         // STRESS thread
-        let stress_handle = s.spawn(|_| -> Result<_> {
+        let stress_handle = s.spawn(|_| -> Result<GeometryPair> {
             let geom_stress = create_geometry_pair(
                 "stress".to_string(),
                 stress_input_path,
@@ -65,7 +67,10 @@ pub fn run_process_case(
 
         // Diastole / systole comparison
         let (dia_geom_pair, sys_geom_pair) =
-            prepare_geometries_comparison(rest_geom_pair, stress_geom_pair);
+            prepare_geometries_comparison(rest_geom_pair.clone(), stress_geom_pair.clone());
+
+        let dia_geom_clone = dia_geom_pair.clone();
+        let sys_geom_clone = sys_geom_pair.clone();
 
         process_case(
             "diastolic",
@@ -83,13 +88,15 @@ pub fn run_process_case(
         )
         .context("process_case(systolic) failed")?;
 
-        Ok(())
+        Ok((rest_geom_pair, stress_geom_pair, dia_geom_clone, sys_geom_clone))
     })
     .map_err(|panic_payload| {
         anyhow!("Parallel processing threads panicked: {:?}", panic_payload)
     })?;
 
-    Ok(())
+    let (rest_geom, stress_geom, dia_geom, sys_geom) = result?;
+
+    Ok((rest_geom, stress_geom, dia_geom, sys_geom))
 }
 
 
@@ -103,9 +110,9 @@ pub fn run_rest_stress_only(
     interpolation_steps: usize,
     stress_input_path: &str,
     stress_output_path: &str,
-) -> Result<()> {
+) -> Result<(GeometryPair, GeometryPair)> {
     // Chain directly on thread::scope without a stray semicolon
-    let _result = thread::scope(|s| -> Result<()> {
+    let result = thread::scope(|s| -> Result<(GeometryPair, GeometryPair)> {
         // REST thread
         let rest_handle = s.spawn(|_| -> Result<_> {
             let geom_rest = create_geometry_pair(
@@ -151,11 +158,12 @@ pub fn run_rest_stress_only(
         let rest_geom_pair   = rest_handle.join().unwrap()?;
         let stress_geom_pair = stress_handle.join().unwrap()?;
         
-        Ok(())
+        Ok((rest_geom_pair, stress_geom_pair))
     })
     .map_err(|panic_payload| {
         anyhow!("Parallel processing threads panicked: {:?}", panic_payload)
     })?;
 
-    Ok(())
+    let (rest_geom, stress_geom) = result?;
+    Ok((rest_geom, stress_geom))
 }
