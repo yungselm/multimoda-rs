@@ -161,13 +161,15 @@ impl From<&&ContourPoint> for PyContourPoint {
 pub struct PyGeometry {
     #[pyo3(get, set)]
     pub contours: Vec<PyContour>,
+    pub catheter: Vec<PyContour>,
+    pub reference_point: PyContourPoint,
 }
 
 #[pymethods]
 impl PyGeometry {
     #[new]
-    fn new(contours: Vec<PyContour>) -> Self {
-        Self { contours }
+    fn new(contours: Vec<PyContour>, catheter: Vec<PyContour>, reference_point: PyContourPoint) -> Self {
+        Self { contours, catheter, reference_point }
     }
 
     // Add a __repr__ method for better printing
@@ -252,7 +254,9 @@ impl PyGeometryPair {
 impl From<&Geometry> for PyGeometry {
     fn from(geom: &Geometry) -> Self {
         PyGeometry {
-            contours: geom.contours.iter().map(|c| c.into()).collect()
+            contours: geom.contours.iter().map(|c| c.into()).collect(),
+            catheter: geom.catheter.iter().map(|c| c.into()).collect(),
+            reference_point: PyContourPoint::from(&geom.reference_point),
         }
     }
 }
@@ -271,7 +275,9 @@ impl From<&Contour> for PyContour {
 impl From<Geometry> for PyGeometry {
     fn from(geom: Geometry) -> Self {
         PyGeometry {
-            contours: geom.contours.iter().map(|c| c.into()).collect()
+            contours: geom.contours.iter().map(|c| c.into()).collect(),
+            catheter: geom.catheter.iter().map(|c| c.into()).collect(),
+            reference_point: PyContourPoint::from(&geom.reference_point),
         }
     }
 }

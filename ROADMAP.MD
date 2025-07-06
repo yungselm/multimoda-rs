@@ -1,6 +1,6 @@
 # Python package that has one purpose: Combining any intravascular image modality with CCTA meshes.
 # Base module (aligning frames withing IVUS/OCT)
-- [] Bind all Rust structs to python objects
+- [x] Bind all Rust structs to python objects
 - [] Single mesh alignment (ignoring systole and diastole (for OCT))
 - [] Functions should return obj, as python objects
 
@@ -14,3 +14,8 @@
 - [] Assign regions based on Centerlines (RCA, LCA, Aorta)
 - [] Shrink/Expand CCTA to best match Aortic wall and shrink/expand coronary to match iv images
 - [] ensure works for IVUS and OCT
+
+
+# final functions list:
+- [] from_file(mode = {full, single}, "rest dir", "stress dir", "dia dir", "sys dir")
+- [] from_array(rest, stress, dia, sys)
