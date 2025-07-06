@@ -161,7 +161,9 @@ impl From<&&ContourPoint> for PyContourPoint {
 pub struct PyGeometry {
     #[pyo3(get, set)]
     pub contours: Vec<PyContour>,
+    #[pyo3(get, set)]
     pub catheter: Vec<PyContour>,
+    #[pyo3(get, set)]
     pub reference_point: PyContourPoint,
 }
 
@@ -174,7 +176,12 @@ impl PyGeometry {
 
     // Add a __repr__ method for better printing
     fn __repr__(&self) -> String {
-        format!("Geometry({} contours)", self.contours.len())
+        format!(
+            "Geometry({} contours), Catheter({} catheter), Reference Point: {}",
+            self.contours.len(),
+            self.catheter.len(),
+            self.reference_point.__repr__()
+        )
     }
     
     // Add a __str__ method for human-readable output
