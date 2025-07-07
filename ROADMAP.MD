@@ -17,5 +17,8 @@
 
 
 # final functions list:
-- [] from_file(mode = {full, single}, "rest dir", "stress dir", "dia dir", "sys dir")
-- [] from_array(rest, stress, dia, sys)
+- [] .from_file(mode = {full, single}, "rest dir", "stress dir", "dia dir", "sys dir")
+- [] .from_array(rest, stress, dia, sys)
+- [] .frame_align / .frame_reorder -> initial alignment, without breathing correction, reorder, checks for better order then reruns
+- [] .to_centerline(mode = {three_point, hausdorff, manual}) -> if three point provide three tuples, hausdorff nothing, manual provide centerline point and rotation
+- [] .get_array()

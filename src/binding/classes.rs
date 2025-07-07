@@ -246,8 +246,14 @@ impl PyGeometryPair {
     // Add a __repr__ method
     fn __repr__(&self) -> String {
         format!(
-            "GeometryPair(\n  Diastole: {:?}\n  Systole: {:?}\n)",
-            self.dia_geom, self.sys_geom
+            "Diastolic Geometry({} contours), ({} catheter), Reference Point: {} \n\
+            Systolic Geometry({} contours), ({} catheter), Reference Point: {}",
+            self.dia_geom.contours.len(),
+            self.dia_geom.catheter.len(),
+            self.dia_geom.reference_point.__repr__(),
+            self.sys_geom.contours.len(),
+            self.sys_geom.catheter.len(),
+            self.sys_geom.reference_point.__repr__()
         )
     }
     

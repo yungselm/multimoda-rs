@@ -1,16 +1,15 @@
-mod entry;
+mod binding;
 
 mod io;
 mod processing;
 mod texture;
 mod utils;
 mod mesh_to_centerline;
-mod python_bind;
 
 use pyo3::prelude::*;
-use entry::{run_process_case, run_rest_stress_only};
+use binding::entry::{run_process_case, run_rest_stress_only};
 use pyo3::wrap_pyfunction;
-use python_bind::{PyContour, PyContourPoint, PyGeometry, PyGeometryPair};
+use binding::classes::{PyContour, PyContourPoint, PyGeometry, PyGeometryPair};
 
 /// Python wrapper around Rust pipeline.
 ///
@@ -103,8 +102,8 @@ fn rest_stress_py(
 /// ```python
 /// import multimodars as mm
 /// mm.run_process_case_py(
-///     "input/rest.csv", "input/stress.csv",
-///     "out/dia.csv", "out/sys.csv"
+///     "test_data/rest_csv_files", "test_data/stress_csv_files",
+///     "output/dia.csv", "out/sys.csv"
 /// )
 /// ```
 #[pymodule]
