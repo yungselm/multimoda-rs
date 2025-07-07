@@ -3,10 +3,13 @@ use crossbeam::thread;
 
 use crate::processing::comparison::prepare_geometries_comparison;
 use crate::processing::process_case::{create_geometry_pair, process_case};
-
 use crate::processing::geometries::GeometryPair;
+use crate::processing::contours::align_frames_in_geometry;
 
-pub fn run_process_case(
+use crate::io::Geometry;
+use crate::io::output::write_obj_mesh_without_uv;
+
+pub fn from_file_full(
     rest_input_path: &str, 
     steps_best_rotation: usize, 
     range_rotation_rad: f64,
@@ -14,8 +17,8 @@ pub fn run_process_case(
     interpolation_steps: usize,
     stress_input_path: &str,
     stress_output_path: &str,
-    diastole_comparison_path: &str,
-    systole_comparison_path: &str,
+    diastole_output_path: &str,
+    systole_output_path: &str,
 ) -> Result<(GeometryPair, GeometryPair, GeometryPair, GeometryPair)> {
     // Chain directly on thread::scope without a stray semicolon
     let result = thread::scope(|s| -> Result<(GeometryPair, GeometryPair, GeometryPair, GeometryPair)> {
@@ -75,7 +78,7 @@ pub fn run_process_case(
         process_case(
             "diastolic",
             dia_geom_pair,
-            diastole_comparison_path,
+            diastole_output_path,
             interpolation_steps,
         )
         .context("process_case(diastolic) failed")?;
@@ -83,7 +86,7 @@ pub fn run_process_case(
         process_case(
             "systolic",
             sys_geom_pair,
-            systole_comparison_path,
+            systole_output_path,
             interpolation_steps,
         )
         .context("process_case(systolic) failed")?;
@@ -102,7 +105,7 @@ pub fn run_process_case(
 
 /// Only run the REST & STRESS threads and write their outputs.
 /// Does *not* perform any comparison between them.
-pub fn run_rest_stress_only(
+pub fn from_file_state(
     rest_input_path: &str,
     steps_best_rotation: usize,
     range_rotation_rad: f64,
@@ -111,7 +114,6 @@ pub fn run_rest_stress_only(
     stress_input_path: &str,
     stress_output_path: &str,
 ) -> Result<(GeometryPair, GeometryPair)> {
-    // Chain directly on thread::scope without a stray semicolon
     let result = thread::scope(|s| -> Result<(GeometryPair, GeometryPair)> {
         // REST thread
         let rest_handle = s.spawn(|_| -> Result<_> {
@@ -166,4 +168,40 @@ pub fn run_rest_stress_only(
 
     let (rest_geom, stress_geom) = result?;
     Ok((rest_geom, stress_geom))
+}
+
+// pub run_double(
+//     input_path_before: &str,
+//     input_path_after: &str,
+    
+// )
+
+pub fn from_file_single(
+    input_path: &str,
+    steps_best_rotation: usize,
+    range_rotation_rad: f64,
+    output_path: &str,
+    diastole: bool,
+) -> Result<Geometry> {
+    let mut geom = Geometry::new(
+        input_path,
+        "single".to_string(),
+        diastole,
+    )?;
+
+    geom = align_frames_in_geometry(
+        geom, 
+        steps_best_rotation, 
+        range_rotation_rad
+    );
+
+    let filename = format!("{}/mesh_000_single.obj", output_path);
+
+    write_obj_mesh_without_uv(
+        &geom.contours, 
+        &filename, 
+        "mesh_000_single.mtl"
+    )?;
+
+    Ok(geom)
 }

@@ -1,4 +1,4 @@
-use anyhow::{bail, anyhow};
+use anyhow::{bail, anyhow, Context};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
@@ -99,6 +99,22 @@ pub fn write_obj_mesh(
 
     println!("OBJ mesh with normals written to {}", filename);
     Ok(())
+}
+
+pub fn write_obj_mesh_without_uv(
+    contours: &Vec<Contour>,
+    filename: &str,
+    mtl_filename: &str,
+) -> anyhow::Result<()> {
+    if let Some(parent) = std::path::Path::new(filename).parent() {
+        std::fs::create_dir_all(parent)
+            .context(format!("Could not create output directory: {:?}", parent))?;
+    }
+    let empty_uv_coords = vec![(0.0, 0.0); contours.iter().map(|c| c.points.len()).sum()];
+    write_obj_mesh(contours, &empty_uv_coords, filename, mtl_filename)
+        .map_err(|e| {
+            anyhow!("Failed to write OBJ mesh without UV: {}", e)
+        })
 }
 
 #[derive(Copy, Clone)]
