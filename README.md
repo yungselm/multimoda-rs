@@ -8,10 +8,14 @@
 
 <figure class="epigraph" style="text-align: center; font-style: italic;">
   <blockquote>
-    “One ring to rule them all.”
+    “One package to fuse them all.”
   </blockquote>
-  <figcaption>— J.R.R. Tolkien, <cite>The Lord of the Rings</cite></figcaption>
+  <figcaption>— <cite>The Lord of the Rings (probably)</cite></figcaption>
 </figure>
+
+## Introduction
+
+## Set up
 
 
 
