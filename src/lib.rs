@@ -7,7 +7,7 @@ mod utils;
 mod mesh_to_centerline;
 
 use pyo3::prelude::*;
-use binding::{from_file_full_py, from_file_state_py, from_file_single_py};
+use binding::{from_file_full_py, from_file_state_both_py, from_file_singlepair_py, from_file_single_py};
 use pyo3::wrap_pyfunction;
 use binding::classes::{PyContour, PyContourPoint, PyGeometry, PyGeometryPair};
 
@@ -26,7 +26,8 @@ use binding::classes::{PyContour, PyContourPoint, PyGeometry, PyGeometryPair};
 fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_function(wrap_pyfunction!(from_file_full_py, m.clone())?)?;
-    m.add_function(wrap_pyfunction!(from_file_state_py, m.clone())?)?;
+    m.add_function(wrap_pyfunction!(from_file_state_both_py, m.clone())?)?;
+    m.add_function(wrap_pyfunction!(from_file_singlepair_py, m.clone())?)?;    
     m.add_function(wrap_pyfunction!(from_file_single_py, m.clone())?)?;
 
     // Updated class registration

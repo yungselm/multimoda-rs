@@ -1,7 +1,7 @@
-pub mod entry;
+pub mod entry_file;
 pub mod classes;
 
-use entry::{from_file_full, from_file_state, from_file_single};
+use entry_file::{from_file_full, from_file_state_both, from_file_singlepair, from_file_single};
 use pyo3::prelude::*;
 use classes::{PyContour, PyContourPoint, PyGeometry, PyGeometryPair};
 
@@ -65,7 +65,7 @@ pub fn from_file_full_py(
     stress_output_path = "output/stress",
     interpolation_steps = 28usize
 ))]
-pub fn from_file_state_py(
+pub fn from_file_state_both_py(
     rest_input_path: &str,
     stress_input_path: &str,
     steps_best_rotation: usize,
@@ -74,7 +74,7 @@ pub fn from_file_state_py(
     stress_output_path: &str,
     interpolation_steps: usize,
 ) -> PyResult<(PyGeometryPair, PyGeometryPair)> {
-    let (rest_pair, stress_pair) = from_file_state(
+    let (rest_pair, stress_pair) = from_file_state_both(
         rest_input_path,
         steps_best_rotation,
         range_rotation_rad,
@@ -94,23 +94,55 @@ pub fn from_file_state_py(
 #[pyfunction]
 #[pyo3(signature = (
     input_path,
+    output_path,
+    // defaults for the rest:
+    steps_best_rotation = 300usize,
+    range_rotation_rad = 1.57f64,
+    interpolation_steps = 28usize
+))]
+pub fn from_file_singlepair_py(
+    input_path: &str,
+    output_path: &str,
+    steps_best_rotation: usize,
+    range_rotation_rad: f64,
+    interpolation_steps: usize,
+) -> PyResult<PyGeometryPair> {
+    let geom_pair = from_file_singlepair(
+        input_path,
+        steps_best_rotation,
+        range_rotation_rad,
+        output_path,
+        interpolation_steps,
+    )
+    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+    let py_pair = geom_pair.into();
+
+    Ok(py_pair)
+}
+
+#[pyfunction]
+#[pyo3(signature = (
+    input_path,
     // defaults for the rest:
     steps_best_rotation = 300usize,
     range_rotation_rad = 1.57f64,
     output_path = "output/single",
+    diastole = true,
 ))]
 pub fn from_file_single_py(
     input_path: &str,
     steps_best_rotation: usize,
     range_rotation_rad: f64,
     output_path: &str,
-) -> PyResult<(PyGeometry)> {
+    diastole: bool,
+) -> PyResult<PyGeometry> {
     let geom = from_file_single(
         input_path,
         steps_best_rotation,
         range_rotation_rad,
         output_path,
-        true,
+        diastole,
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
