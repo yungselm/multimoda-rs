@@ -147,30 +147,24 @@ fn calculate_normal(points: &[ContourPoint], centroid: &(f64, f64, f64)) -> Vect
 pub fn find_optimal_rotation(
     contour: &Contour,
     reference_point: &ContourPoint,
-    target_x: f64,
-    target_y: f64,
-    target_z: f64,
-    x_coord_upper: f64,
-    y_coord_upper: f64,
-    z_coord_upper: f64,
-    x_coord_lower: f64,
-    y_coord_lower: f64,
-    z_coord_lower: f64,
+    aortic_ref_pt: (f64, f64, f64),
+    upper_ref_pt: (f64, f64, f64),
+    lower_ref_pt: (f64, f64, f64),
     angle_step: f64,
     centerline_point: &CenterlinePoint
 ) -> f64 {
     let index_reference = reference_point.point_index;
 
-    let target_aortic = Point3::new(target_x, target_y, target_z);
-    let target_upper = Point3::new(x_coord_upper, y_coord_upper, z_coord_upper);
-    let target_lower = Point3::new(x_coord_lower, y_coord_lower, z_coord_lower);
+    let [target_aortic, target_upper, target_lower]: [Point3<f64>; 3] =
+        [aortic_ref_pt, upper_ref_pt, lower_ref_pt]
+            .map(|(x, y, z)| Point3::new(x, y, z));
 
     let mut best_angle = 0.0;
     let mut min_total_error = f64::MAX;
 
     let mut angle = 0.0;
     println!("---------------------Centerline alignment: Finding optimal rotation---------------------");
-    while angle < 6.283185 { // maybe better approach then bruteforce, fix later
+    while angle < 6.283185 { // maybe better approach then bruteforce, fix later, still fast enough
         let mut temp_frame = contour.clone();
         
         temp_frame.rotate_contour(angle);
@@ -179,10 +173,12 @@ pub fn find_optimal_rotation(
         align_frame(&mut temp_frame, centerline_point);
         let temp_contour = &temp_frame.points;
         
+        let n_points = temp_contour.len() as u32;
+
         // Select the reference_point, and index 0 and 250 since contours already ordered after read in.
         let p_aortic = temp_contour.iter().find(|p| p.point_index == index_reference).unwrap();
         let cont_p_upper = temp_contour.iter().find(|p| p.point_index == 0).unwrap();
-        let cont_p_lower = temp_contour.iter().find(|p| p.point_index == 250).unwrap();
+        let cont_p_lower = temp_contour.iter().find(|p| p.point_index == (n_points / 2)).unwrap();
 
         // Calculate distances for all three points
         let d_aortic = nalgebra::distance(

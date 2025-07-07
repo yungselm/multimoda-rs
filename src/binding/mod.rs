@@ -1,7 +1,7 @@
 pub mod entry_file;
 pub mod classes;
 
-use entry_file::{from_file_full, from_file_state_both, from_file_singlepair, from_file_single};
+use entry_file::{from_file_full_rs, from_file_doublepair_rs, from_file_singlepair_rs, from_file_single_rs};
 use pyo3::prelude::*;
 use classes::{PyContour, PyContourPoint, PyGeometry, PyGeometryPair};
 
@@ -23,7 +23,7 @@ use classes::{PyContour, PyContourPoint, PyGeometry, PyGeometryPair};
         interpolation_steps = 28usize
     )
 )]
-pub fn from_file_full_py(
+pub fn from_file_full(
     rest_input_path: &str,
     stress_input_path: &str,
     steps_best_rotation: usize,
@@ -34,7 +34,7 @@ pub fn from_file_full_py(
     systole_output_path: &str,
     interpolation_steps: usize,
 ) -> PyResult<(PyGeometryPair, PyGeometryPair, PyGeometryPair, PyGeometryPair)> {
-    let (rest_pair, stress_pair, dia_pair, sys_pair) = from_file_full(
+    let (rest_pair, stress_pair, dia_pair, sys_pair) = from_file_full_rs(
         rest_input_path,
         steps_best_rotation,
         range_rotation_rad,
@@ -65,7 +65,7 @@ pub fn from_file_full_py(
     stress_output_path = "output/stress",
     interpolation_steps = 28usize
 ))]
-pub fn from_file_state_both_py(
+pub fn from_file_doublepair(
     rest_input_path: &str,
     stress_input_path: &str,
     steps_best_rotation: usize,
@@ -74,7 +74,7 @@ pub fn from_file_state_both_py(
     stress_output_path: &str,
     interpolation_steps: usize,
 ) -> PyResult<(PyGeometryPair, PyGeometryPair)> {
-    let (rest_pair, stress_pair) = from_file_state_both(
+    let (rest_pair, stress_pair) = from_file_doublepair_rs(
         rest_input_path,
         steps_best_rotation,
         range_rotation_rad,
@@ -100,14 +100,14 @@ pub fn from_file_state_both_py(
     range_rotation_rad = 1.57f64,
     interpolation_steps = 28usize
 ))]
-pub fn from_file_singlepair_py(
+pub fn from_file_singlepair(
     input_path: &str,
     output_path: &str,
     steps_best_rotation: usize,
     range_rotation_rad: f64,
     interpolation_steps: usize,
 ) -> PyResult<PyGeometryPair> {
-    let geom_pair = from_file_singlepair(
+    let geom_pair = from_file_singlepair_rs(
         input_path,
         steps_best_rotation,
         range_rotation_rad,
@@ -130,14 +130,14 @@ pub fn from_file_singlepair_py(
     output_path = "output/single",
     diastole = true,
 ))]
-pub fn from_file_single_py(
+pub fn from_file_single(
     input_path: &str,
     steps_best_rotation: usize,
     range_rotation_rad: f64,
     output_path: &str,
     diastole: bool,
 ) -> PyResult<PyGeometry> {
-    let geom = from_file_single(
+    let geom = from_file_single_rs(
         input_path,
         steps_best_rotation,
         range_rotation_rad,

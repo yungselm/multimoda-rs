@@ -1,44 +1,67 @@
 import numpy as np
-from multimodars import PyGeometryPair, PyGeometry, PyContour, PyContourPoint
+from multimodars import PyGeometry, PyContourPoint
 
 def geometry_to_numpy(geom: PyGeometry, mode="contours") -> np.ndarray:
     """
-    Flatten all contours+points into a single (N,3) array of XYZ,
-    or return a list of per-contour arrays, whichever you prefer.
+    Flatten all contours+points into a single (N, 4) array of
+    [frame_index, x, y, z], concatenated in the requested mode.
     mode: "contours" (default), "catheter", or "walls"
     """
     if mode == "contours":
-        arrays = [np.array(cnt.points_as_tuples(), dtype=float)
-                  for cnt in geom.contours]
+        sequences = geom.contours
     elif mode == "catheter":
-        arrays = [np.array(cat.points_as_tuples(), dtype=float)
-                  for cat in geom.catheter]
+        sequences = geom.catheter
     elif mode == "walls":
-        arrays = [np.array(wall.points_as_tuples(), dtype=float)
-                  for wall in getattr(geom, "walls", [])]
+        # if you later add walls to PyGeometry
+        sequences = getattr(geom, "walls", [])
     else:
-        raise ValueError(f"Unknown mode: {mode}")
+        raise ValueError(f"Unknown mode: {mode!r}")
+
+    arrays = []
+    for seq in sequences:
+        # seq.points is List[PyContourPoint]
+        pts = seq.points
+        if not pts:
+            continue
+        # build an (M,4) Python list
+        block = [
+            (p.frame_index, p.x, p.y, p.z)
+            for p in pts
+        ]
+        # convert to float; frame_index will cast to float
+        arrays.append(np.array(block, dtype=float))
+
     if not arrays:
-        return np.empty((0, 3), dtype=float)
+        # no points at all
+        return np.empty((0, 4), dtype=float)
+
+    # concatenate into one (N,4) array
     return np.concatenate(arrays, axis=0)
 
 
-def numpy_to_geometry(arr: np.ndarray, reference_point=None) -> PyGeometry:
+def numpy_to_geometry(arr: np.ndarray, *, reference_point=None) -> PyGeometry:
     """
-    Build a new PyGeometry from an (N,3) array.
+    Build a new PyGeometry from an (N,4) array of [frame, x, y, z].
+    Packs *all* points into a single contour (toy example).
     """
-    # simple toy: treat entire array as one contour, index everything
     from multimodars import PyContour, PyContourPoint
+
     pts = [
         PyContourPoint(
-          frame_index=0,
-          point_index=i,
-          x=float(x), y=float(y), z=float(z),
-          aortic=False 
+            frame_index=int(row[0]),
+            point_index=i,
+            x=float(row[1]),
+            y=float(row[2]),
+            z=float(row[3]),
+            aortic=False,
         )
-        for i, (x,y,z) in enumerate(arr)
+        for i, row in enumerate(arr)
     ]
-    contour = PyContour(id=0, points=pts, centroid=(0,0,0))
-    # pick reference_point if given, else first point
-    ref = reference_point or pts[0]
+
+    # one big contour; you could split by frame or by some delimiter if you like
+    contour = PyContour(id=0, points=pts, centroid=(0.0, 0.0, 0.0))
+
+    # pick your reference point
+    ref = reference_point if reference_point is not None else pts[0]
+
     return PyGeometry(contours=[contour], catheter=[], reference_point=ref)

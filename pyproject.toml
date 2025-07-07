@@ -6,7 +6,7 @@ build-backend = "maturin"
 name = "multimodars"
 requires-python = ">=3.8"
 dependencies = [
-    "numpy>=2.3.0",
+    "numpy>=2.2.6",
 ]
 classifiers = [
     "Programming Language :: Rust",

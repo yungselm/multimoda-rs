@@ -9,7 +9,7 @@ use crate::processing::contours::align_frames_in_geometry;
 use crate::io::Geometry;
 use crate::io::output::write_obj_mesh_without_uv;
 
-pub fn from_file_full(
+pub fn from_file_full_rs(
     rest_input_path: &str, 
     steps_best_rotation: usize, 
     range_rotation_rad: f64,
@@ -103,7 +103,7 @@ pub fn from_file_full(
 
 /// Only run the REST & STRESS threads and write their outputs.
 /// Does *not* perform any comparison between them.
-pub fn from_file_state_both(
+pub fn from_file_doublepair_rs(
     rest_input_path: &str,
     steps_best_rotation: usize,
     range_rotation_rad: f64,
@@ -168,7 +168,7 @@ pub fn from_file_state_both(
     Ok((rest_geom, stress_geom))
 }
 
-pub fn from_file_singlepair(
+pub fn from_file_singlepair_rs(
     input_path: &str,
     steps_best_rotation: usize,
     range_rotation_rad: f64,
@@ -196,7 +196,7 @@ pub fn from_file_singlepair(
     Ok(processed_pair)
 }
 
-pub fn from_file_single(
+pub fn from_file_single_rs(
     input_path: &str,
     steps_best_rotation: usize,
     range_rotation_rad: f64,

@@ -7,11 +7,49 @@ mod utils;
 mod mesh_to_centerline;
 
 use pyo3::prelude::*;
-use binding::{from_file_full_py, from_file_state_both_py, from_file_singlepair_py, from_file_single_py};
 use pyo3::wrap_pyfunction;
+use binding::{from_file_full, from_file_doublepair, from_file_singlepair, from_file_single};
 use binding::classes::{PyContour, PyContourPoint, PyGeometry, PyGeometryPair};
+use mesh_to_centerline::create_centerline_aligned_meshes;
 
-// fn from_file()
+#[pyfunction]
+#[pyo3(
+    signature = (
+        state,
+        centerline_path,
+        aortic_ref_pt,
+        upper_ref_pt,
+        lower_ref_pt,
+        input_dir = "output/rest",
+        output_dir = "output/rest_aligned",
+        interpolation_steps = 28usize,
+    )
+)]
+pub fn centerline_align(
+    state: &str,
+    centerline_path: &str,
+    aortic_ref_pt: (f64, f64, f64),
+    upper_ref_pt: (f64, f64, f64),
+    lower_ref_pt: (f64, f64, f64),
+    input_dir: &str,
+    output_dir: &str,
+    interpolation_steps: usize,
+) -> Result<(PyGeometry, PyGeometry), PyErr> {
+    let (dia_geom, sys_geom) = create_centerline_aligned_meshes(
+        state, 
+        centerline_path, 
+        input_dir, 
+        output_dir, 
+        interpolation_steps, 
+        aortic_ref_pt, 
+        upper_ref_pt, 
+        lower_ref_pt)
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+    let py_dia_geom = PyGeometry::from(dia_geom);
+    let py_sys_geom = PyGeometry::from(sys_geom);
+    Ok((py_dia_geom, py_sys_geom))
+}
 
 /// This is the module importable from Python:
 ///
@@ -25,10 +63,11 @@ use binding::classes::{PyContour, PyContourPoint, PyGeometry, PyGeometryPair};
 #[pymodule]
 fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
-    m.add_function(wrap_pyfunction!(from_file_full_py, m.clone())?)?;
-    m.add_function(wrap_pyfunction!(from_file_state_both_py, m.clone())?)?;
-    m.add_function(wrap_pyfunction!(from_file_singlepair_py, m.clone())?)?;    
-    m.add_function(wrap_pyfunction!(from_file_single_py, m.clone())?)?;
+    m.add_function(wrap_pyfunction!(from_file_full, m.clone())?)?;
+    m.add_function(wrap_pyfunction!(from_file_doublepair, m.clone())?)?;
+    m.add_function(wrap_pyfunction!(from_file_singlepair, m.clone())?)?;    
+    m.add_function(wrap_pyfunction!(from_file_single, m.clone())?)?;
+    m.add_function(wrap_pyfunction!(centerline_align, m.clone())?)?;
 
     // Updated class registration
     m.add_class::<PyContourPoint>()?;

@@ -3,7 +3,7 @@ pub mod operations;
 
 use preprocessing::{prepare_data_3d_alignment, read_interpolated_meshes};
 use operations::{find_optimal_rotation, get_transformations};
-use crate::io::input::Contour;
+use crate::io::{Geometry, input::Contour};
 use crate::texture::write_mtl_geometry;
 
 use crate::io::output::{GeometryType, write_geometry_vec_to_obj};
@@ -14,16 +14,10 @@ pub fn create_centerline_aligned_meshes(
     input_dir: &str,
     output_dir: &str,
     interpolation_steps: usize,
-    x_coord_ref: f64,
-    y_coord_ref: f64,
-    z_coord_ref: f64,
-    x_coord_upper: f64,
-    y_coord_upper: f64,
-    z_coord_upper: f64,
-    x_coord_lower: f64,
-    y_coord_lower: f64,
-    z_coord_lower: f64,
-) -> anyhow::Result<()> {
+    aortic_ref_pt: (f64, f64, f64),
+    upper_ref_pt: (f64, f64, f64),
+    lower_ref_pt: (f64, f64, f64),
+) -> anyhow::Result<(Geometry, Geometry)> {
     let (centerline, ref_mesh_dia, ref_mesh_sys) = prepare_data_3d_alignment(state, centerline_path, input_dir, interpolation_steps)?;
     let interpolated_meshes = read_interpolated_meshes(state, input_dir, interpolation_steps);
 
@@ -36,15 +30,9 @@ pub fn create_centerline_aligned_meshes(
     let optimal_angle = find_optimal_rotation(
         &ref_mesh_dia.contours[0],
         reference_point,
-        x_coord_ref,
-        y_coord_ref,
-        z_coord_ref,
-        x_coord_upper,
-        y_coord_upper,
-        z_coord_upper,
-        x_coord_lower,
-        y_coord_lower,
-        z_coord_lower,
+        aortic_ref_pt,
+        upper_ref_pt,
+        lower_ref_pt,
         0.01745329, // Step size in degrees
         &centerline.points[0],
     );
@@ -115,5 +103,11 @@ pub fn create_centerline_aligned_meshes(
         &uv_coords_catheter,
     )?;
 
-    Ok(())
+    let n_geometries = geometries.len();
+    let dia_geom = geometries.get(0)
+        .expect("Expected at least one geometry for diastole");
+    let sys_geom = geometries.get(n_geometries - 1)
+        .expect("Expected at least one geometry for systole");
+
+    Ok((dia_geom.clone(), sys_geom.clone()))
 }
