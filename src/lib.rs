@@ -15,22 +15,22 @@ use mesh_to_centerline::create_centerline_aligned_meshes;
 #[pyfunction]
 #[pyo3(
     signature = (
-        state,
         centerline_path,
         aortic_ref_pt,
         upper_ref_pt,
         lower_ref_pt,
+        state="neutral",
         input_dir = "output/rest",
         output_dir = "output/rest_aligned",
         interpolation_steps = 28usize,
     )
 )]
 pub fn centerline_align(
-    state: &str,
     centerline_path: &str,
     aortic_ref_pt: (f64, f64, f64),
     upper_ref_pt: (f64, f64, f64),
     lower_ref_pt: (f64, f64, f64),
+    state: &str,
     input_dir: &str,
     output_dir: &str,
     interpolation_steps: usize,

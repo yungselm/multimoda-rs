@@ -263,6 +263,22 @@ impl PyGeometryPair {
     }
 }
 
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct PyCenterlinePoint {
+    #[pyo3(get, set)]
+    pub contour_point: PyContourPoint,
+    #[pyo3(get, set)]
+    pub normal: (f64, f64, f64)
+}
+
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct PyCenterline {
+    #[pyo3(get, set)]
+    pub points: Vec<PyCenterlinePoint>,
+}
+
 // Conversion from Rust to Python types
 impl From<&Geometry> for PyGeometry {
     fn from(geom: &Geometry) -> Self {
