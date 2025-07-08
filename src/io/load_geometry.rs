@@ -7,7 +7,7 @@ use crate::io::input::{Contour, ContourPoint};
 use crate::io::Geometry;
 
 /// Since process_case() ensures that all points are sorted counterclockwise
-/// and aortic points are always on the right side the original geometry can be rebuild
+/// and aortic points are always on the right side, the original geometry can be rebuild
 /// using simple operations.
 pub fn rebuild_geometry(contour_path: &str, catheter_path: &str) -> Geometry {
     let contours = read_obj_mesh(&contour_path).unwrap();
@@ -36,13 +36,13 @@ pub fn rebuild_geometry(contour_path: &str, catheter_path: &str) -> Geometry {
 
         let mut contour_new = Contour {
             id: frame_idx,
-            points: Vec::new(), // Will be filled after processing
+            points: Vec::new(),
             centroid,
             aortic_thickness: None,
             pulmonary_thickness: None,
         };
 
-        let mut points = input_points; // Use the input points
+        let mut points = input_points;
 
         // Find the point with the highest y-value
         if let Some((max_idx, _)) = points
@@ -53,11 +53,13 @@ pub fn rebuild_geometry(contour_path: &str, catheter_path: &str) -> Geometry {
             points.rotate_left(max_idx);
         }
 
+        let l = points.len();
+
         // Assign indices and set frame_index and aortic flag
         for (i, point) in points.iter_mut().enumerate() {
             point.point_index = i as u32;
             point.frame_index = frame_idx;
-            point.aortic = i >= 250; // >=250 works since in process_case.rs it is ensured that aortic points are on the right side
+            point.aortic = i >= (l / 2); // >= works since ordere counterclockwise, aortic to right
         }
 
         contour_new.points = points;
@@ -112,7 +114,6 @@ fn read_obj_mesh(filename: &str) -> Result<Vec<(u32, Vec<ContourPoint>)>, Box<dy
     // This will be set based on the first face encountered.
     let mut points_per_contour: Option<usize> = None;
 
-    // Loop over every line in the file.
     for line_result in reader.lines() {
         let line = line_result?;
         let trimmed = line.trim();
@@ -123,7 +124,6 @@ fn read_obj_mesh(filename: &str) -> Result<Vec<(u32, Vec<ContourPoint>)>, Box<dy
                 let x = parts[1].parse::<f64>()?;
                 let y = parts[2].parse::<f64>()?;
                 let z = parts[3].parse::<f64>()?;
-                // We temporarily set frame_index to 0.
                 vertices.push(ContourPoint {
                     point_index: 0,
                     frame_index: 0,

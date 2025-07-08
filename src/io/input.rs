@@ -111,7 +111,7 @@ impl Contour {
         (farthest_pair, max_dist)
     }
 
-    /// Find the pair of points whose chord is the smallest diameter,
+    /// Find the pair of points whose coord is the smallest diameter,
     /// by matching each point to the one whose angle (about the centroid)
     /// differs by as close to π radians as possible.
     pub fn find_closest_opposite(&self) -> ((&ContourPoint, &ContourPoint), f64) {
@@ -135,7 +135,6 @@ impl Contour {
 
         // 3) Brute‐force: for each i, find j that best approximates θi+π
         for i in 0..n {
-            // let target = (thetas[i] + std::f64::consts::PI) % (2.0 * std::f64::consts::PI);
             let mut best_angle_diff = f64::MAX;
             let mut best_j = i;
 
@@ -166,6 +165,24 @@ impl Contour {
         }
 
         (best_pair, min_dist)
+    }
+
+    pub fn elliptic_ratio(&self) -> f64 {
+        let major_length = self.find_farthest_points().1;
+        let minor_length = self.find_closest_opposite().1;
+        if major_length < minor_length {
+            minor_length / major_length
+        } else {
+            major_length / minor_length
+        }
+    }
+
+    pub fn area(&self) -> f64 {
+        let major_length = self.find_farthest_points().1;
+        let minor_length = self.find_closest_opposite().1;
+        let a = major_length / 2.0;
+        let b = minor_length / 2.0;
+        std::f64::consts::PI * a * b
     }
 
     /// Angle in radians
@@ -205,11 +222,11 @@ impl Contour {
         self.points.sort_by(|a, b| {
             let angle_a = (a.y - cy).atan2(a.x - cx);
             let angle_b = (b.y - cy).atan2(b.x - cx);
-            // flip the comparison order
+            // flip the comparison order ?
             angle_a.partial_cmp(&angle_b).unwrap()
         });
 
-        // 3) Find the index of the highest‐Y point and rotate it to front
+        // 3) Find the index of the highest y-coord point and rotate it to front
         if let Some(start_idx) = self.points
             .iter()
             .enumerate()

@@ -15,7 +15,6 @@ pub fn write_obj_mesh(
 ) -> anyhow::Result<()> {
     let sorted_contours = contours.to_owned();
 
-    // Validation
     if sorted_contours.len() < 2 {
         bail!("Need at least two contours to create a mesh.");
     }

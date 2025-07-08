@@ -9,6 +9,9 @@ use texture::{
     create_displacement_texture, create_transparent_texture,
 };
 
+/// Creates a UV-map based on displacement between geometries and saves the map
+/// in png format. Additionally creates a .mtl file with material parameter 
+/// 1 1 1 1 for the moment.
 pub fn write_mtl_geometry(
     geometries_to_process: &Vec<Geometry>,
     output_dir: &str,

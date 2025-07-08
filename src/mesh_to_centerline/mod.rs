@@ -33,7 +33,7 @@ pub fn create_centerline_aligned_meshes(
         aortic_ref_pt,
         upper_ref_pt,
         lower_ref_pt,
-        0.01745329, // Step size in degrees
+        0.01745329, // Step size in radians (1 degree)
         &centerline.points[0],
     );
 
@@ -75,7 +75,6 @@ pub fn create_centerline_aligned_meshes(
                 // Assuming catheter points use the same frame index as their corresponding contour
                 // Find the transformation based on catheter's frame index (if applicable)
                 // This part depends on how catheter points are associated with frames
-                // Example (adjust as needed):
                 if let Some(transformation) = transformations.iter().find(|t| t.frame_index == catheter.id) {
                     *pt = transformation.apply_to_point(pt);
                 }

@@ -12,19 +12,16 @@ pub fn prepare_geometries_comparison(
     let dia_stress = geometries_stress.dia_geom;
     let sys_stress = geometries_stress.sys_geom;
 
-    // Align centroids in Z by translating rest to match stress
     translate_z_to_match(&mut dia_rest, &dia_stress);
     translate_z_to_match(&mut sys_rest, &sys_stress);
 
-    // Resample rest meshes at exact stress-slice Z positions
     let dia_rest = resample_to_reference_z(&dia_rest, &dia_stress).unwrap();
     let sys_rest = resample_to_reference_z(&sys_rest, &sys_stress).unwrap();
 
-    // Align XY centroids
+    // Translate in xy-plane, z unchanged
     let dia_rest = align_geometries(&dia_stress, dia_rest);
     let sys_rest = align_geometries(&sys_stress, sys_rest);
 
-    // Package into pairs and trim/adjust
     let dia_pair = GeometryPair { dia_geom: dia_rest, sys_geom: dia_stress };
     let sys_pair = GeometryPair { dia_geom: sys_rest, sys_geom: sys_stress };
 
@@ -46,13 +43,11 @@ fn resample_to_reference_z(
         return Err("Original geometry must have at least two contours for interpolation".into());
     }
 
-    // Extract original Z values
     let orig_z: Vec<f64> = orig_contours
         .iter()
         .map(|c| c.centroid.2)
         .collect();
 
-    // Prepare new contours by matching each reference Z
     let mut new_contours = Vec::with_capacity(reference.contours.len());
     for (idx, ref_c) in reference.contours.iter().enumerate() {
         let z_ref = ref_c.centroid.2;
@@ -83,7 +78,7 @@ fn resample_to_reference_z(
                 aortic: p0.aortic,
             });
         }
-        // Build new Contour
+
         let centroid = Contour::compute_centroid(&interp_points);
         let new_cont = Contour {
             id: idx as u32,

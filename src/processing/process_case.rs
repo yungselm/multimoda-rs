@@ -14,7 +14,6 @@ pub fn create_geometry_pair(
     range_rotation_rad: f64,
 ) -> anyhow::Result<GeometryPair> {
     let geometries = GeometryPair::new(input_dir, case_name.clone())?;
-    println!("-------------------------Z-coordinates before adjustment-------------------------");
     let mut geometries = geometries.adjust_z_coordinates();
 
     geometries = geometries.process_geometry_pair(steps_best_rotation, range_rotation_rad);
@@ -47,7 +46,8 @@ pub fn process_case(
     let dia_geom = geometries.dia_geom;
     let sys_geom = geometries.sys_geom;
     
-    // Interpolate between diastolic and systolic geometries
+    // Interpolate between two geometrys by creating new geometries with coordinates
+    // in between the two geometries.
     let interpolated_geometries =
     interpolate_contours(&dia_geom, &sys_geom, interpolation_steps.clone())?;
     
@@ -106,7 +106,7 @@ pub fn interpolate_contours(
     let eat = &end.catheter[..n];
 
     let mut geoms = Vec::with_capacity(steps + 2);
-    // First frame
+
     geoms.push(start.clone());
 
     for step in 0..steps {

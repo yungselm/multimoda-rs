@@ -36,7 +36,6 @@ fn create_wall_contour_aortic_only(
         let new_contour = offset_contour(contour, 1.0, None);
         new_contour
     } else {
-        // let new_contour = create_aortic_wall(contour);
         let new_contour = create_aortic_wall(contour);
         new_contour
     }
@@ -106,8 +105,12 @@ pub fn offset_contour(
 /// with indices 0-250 will use the enlarge contour function to create a coronary wall.
 /// For easier geometry creation again 500 points are used.
 fn create_aortic_wall(contour: &Contour) -> Contour {
-    // Key measurements
-    let ref_pt = &contour.points[375];
+    let n = contour.points.len();
+    let first_quarter = n / 4;
+    let half = n / 2;
+    let third_quarter = first_quarter * 3;
+
+    let ref_pt = &contour.points[third_quarter];
     let thickness = contour.aortic_thickness
         .expect("aortic_thickness must be present for this contour");
     let outer_x = ref_pt.x + thickness;
@@ -116,7 +119,7 @@ fn create_aortic_wall(contour: &Contour) -> Contour {
     // Define key points (x, y)
     let up_mid = (contour.points[0].x, contour.points[0].y + 1.0);
     let up_right = (outer_x, up_mid.1);
-    let low_mid = (contour.points[250].x, contour.points[250].y - 1.0);
+    let low_mid = (contour.points[half].x, contour.points[half].y - 1.0);
     let low_right = (outer_x, low_mid.1);
 
     // Calculate segment lengths for point distribution
@@ -126,18 +129,18 @@ fn create_aortic_wall(contour: &Contour) -> Contour {
     let total_dist = dist_up + dist_right + dist_low;
 
     // Allocate points proportionally (sum must be 250)
-    let n_points_up = (dist_up / total_dist * 250.0).round() as usize;
-    let n_points_mid = (dist_right / total_dist * 250.0).round() as usize;
-    let mut n_points_low = 250 - n_points_up - n_points_mid;
+    let n_points_up = (dist_up / total_dist * half as f64).round() as usize;
+    let n_points_mid = (dist_right / total_dist * half as f64).round() as usize;
+    let mut n_points_low = half - n_points_up - n_points_mid;
 
-    // Ensure we have exactly 250 points total
+    // Ensure we have exactly half points total
     let total = n_points_up + n_points_mid + n_points_low;
-    if total != 250 {
-        n_points_low += 250 - total; // Distribute remaining points to low segment
+    if total != half {
+        n_points_low += half - total; // Distribute remaining points to low segment
     }
 
     // Generate points for each segment
-    let mut right_points = Vec::with_capacity(250);
+    let mut right_points = Vec::with_capacity(half);
 
     // 1. Horizontal line: low_mid to low_right
     for i in 0..n_points_low {
@@ -161,11 +164,11 @@ fn create_aortic_wall(contour: &Contour) -> Contour {
     }
 
     // Create the contour points
-    let mut left_wall = offset_contour(contour, 1.0, Some(0..=250)).points;
-    left_wall.truncate(251);        // now left_wall.len() == 251
-    let left_len = left_wall.len(); // == 251
+    let mut left_wall = offset_contour(contour, 1.0, Some(0..=half as u32)).points;
+    left_wall.truncate(half + 1);        // + 1 for uneven numbers of points
+    let left_len = left_wall.len();
     
-    let mut right_wall = Vec::with_capacity(250);
+    let mut right_wall = Vec::with_capacity(half);
     for (i, (x, y)) in right_points.into_iter().enumerate() {
         // Use safe index calculation
         let src_index = left_len + i;
@@ -182,7 +185,6 @@ fn create_aortic_wall(contour: &Contour) -> Contour {
         });
     }
 
-    // Combine both halves
     let mut new_points = Vec::with_capacity(contour.points.len());
     new_points.extend(left_wall);
     new_points.extend(right_wall);

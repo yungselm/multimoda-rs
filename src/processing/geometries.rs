@@ -122,7 +122,6 @@ impl GeometryPair {
         // If there are missing frames in between this will create false results, but probably
         // still more accurate then taking the actual frame position due to breathing artefacts
         // and the resampling performed in combined_sorted_manual to counter this. 
-        // 4) Assign evenly spaced Z in parallel across DIA & SYS contours and catheters
         let n_slices = 
             self.dia_geom.contours.len()
             .max(self.sys_geom.contours.len())
@@ -146,7 +145,6 @@ impl GeometryPair {
             assign_z(self.dia_geom.catheter.get_mut(i));
             assign_z(self.sys_geom.catheter.get_mut(i));
 
-            println!("layer {} => z = {}", i, current_z);
             current_z += mean_z_coords;
         }
       
@@ -200,7 +198,6 @@ impl GeometryPair {
             let dia = &mut self.dia_geom.contours[i];
             let sys = &mut self.sys_geom.contours[i];
 
-            // Combine aortic thickness
             let combined_aortic = match (dia.aortic_thickness, sys.aortic_thickness) {
                 (Some(a), Some(b)) => Some((a + b) / 2.0),
                 (Some(a), None   ) => Some(a),
@@ -210,7 +207,6 @@ impl GeometryPair {
             dia.aortic_thickness = combined_aortic;
             sys.aortic_thickness = combined_aortic;
 
-            // Combine pulmonary thickness
             let combined_pulmonary = match (dia.pulmonary_thickness, sys.pulmonary_thickness) {
                 (Some(a), Some(b)) => Some((a + b) / 2.0),
                 (Some(a), None   ) => Some(a),
@@ -255,7 +251,6 @@ pub fn find_best_rotation_all(
                         })
                         .collect();
 
-                    // Compute Hausdorff distance between corresponding contours
                     hausdorff_distance(&d_contour.points, &rotated_points)
                 })
                 .sum();

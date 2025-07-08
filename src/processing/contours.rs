@@ -42,7 +42,6 @@ pub fn align_frames_in_geometry(geometry: Geometry, steps: usize, range: f64) ->
     );
 
     for catheter in geometry.catheter.iter_mut() {
-        // Translate catheter points to match the reference contour
         for (id, translation, best_rot, center) in &id_translation {
             if catheter.id == *id {
                 catheter.translate_contour((-translation.0, -translation.1, translation.2));
@@ -57,15 +56,12 @@ pub fn align_frames_in_geometry(geometry: Geometry, steps: usize, range: f64) ->
 }
 
 fn prep_data_geometry(mut geometry: Geometry) -> (Geometry, u32, usize, Contour) {
-    // Sort contours by frame index.
     geometry.contours.sort_by_key(|contour| contour.id);
 
-    // Use sort_contour_points on all contour points to ensure they are counterclockwise
     for contour in &mut geometry.contours {
         contour.sort_contour_points();
     }
 
-    // Use sort_contour_points on all catheter points to ensure they are counterclockwise
     for catheter in &mut geometry.catheter {
         catheter.sort_contour_points();
     }
@@ -122,7 +118,7 @@ fn assign_aortic(
 
     let use_first = dist_first < dist_second;
 
-    // borrow checker complained, maybe better way
+    // borrow checker complained, maybe there's a better way
     let mut new_contour = contour.clone();
 
     for (i, pt) in new_contour.points.iter_mut().enumerate() {
@@ -200,13 +196,11 @@ fn align_remaining_contours(
             continue;
         }
 
-        // Determine reference points and centroid
         let (ref_points, ref_centroid) = match processed_refs.get(&(contour.id + 1)) {
             Some((points, centroid)) => (points, centroid),
             None => (&ref_contour.points, &ref_contour.centroid),
         };
 
-        // Initial rotation alignment
         contour.rotate_contour(rot);
 
         // Calculate translation
@@ -229,7 +223,7 @@ fn align_remaining_contours(
         contour.rotate_contour(best_rot);
         contour.sort_contour_points();
 
-        // Store transformation data
+        // Store transformation data for later use (speed up)
         id_translation.push((
             contour.id,
             (tx, ty, 0.0),
@@ -238,13 +232,11 @@ fn align_remaining_contours(
         ));
         println!("Matching Contour {:?} -> Contour {:?}, Best rotation: {:.1}°", &contour.id, contour.id + 1, &best_rot.to_degrees());
 
-        // Update reference tracking
         processed_refs.insert(
             contour.id,
             (contour.points.clone(), contour.centroid),
         );
 
-        // Mark aortic points
         let half_len = contour.points.len() / 2;
         for pt in contour.points.iter_mut().skip(half_len) {
             pt.aortic = true;

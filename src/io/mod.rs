@@ -134,10 +134,8 @@ impl Geometry {
 
         // Update the z-coordinates of contours and their points using z_coords
         for (i, contour) in contours.iter_mut().enumerate() {
-            // Replace the centroid's z-coordinate
             contour.centroid.2 = z_coords[i];
 
-            // Replace the z-coordinate for every point in the contour
             for pt in contour.points.iter_mut() {
                 pt.z = z_coords[i];
             }
@@ -245,27 +243,6 @@ mod geometry_tests {
         serde_json::from_reader(file).expect("Failed to parse manifest")
     }
 
-    impl Contour {
-        pub fn elliptic_ratio(&self) -> f64 {
-            let major_length = self.find_farthest_points().1;
-            let minor_length = self.find_closest_opposite().1;
-            // Ensure major is always larger than minor
-            if major_length < minor_length {
-                minor_length / major_length
-            } else {
-                major_length / minor_length
-            }
-        }
-
-        pub fn area(&self) -> f64 {
-            let major_length = self.find_farthest_points().1;
-            let minor_length = self.find_closest_opposite().1;
-            let a = major_length / 2.0;
-            let b = minor_length / 2.0;
-            std::f64::consts::PI * a * b
-        }
-    }
-
     #[test]
     fn test_reorder_matches_manifest_indices() {
         let mode = "rest";
@@ -310,14 +287,13 @@ mod geometry_tests {
         let manifest = load_test_manifest("rest");
         let dia_config = &manifest["dia"];
 
-        // Test contour count
         assert_eq!(
             geometry.contours.len(), 
             dia_config["num_contours"].as_u64().unwrap() as usize,
             "Contour count mismatch"
         );
         let n = geometry.contours.len() as u32;
-        // Test frame indices ordering
+
         let expected_indices: Vec<u32> = (0..=(n - 1)).collect();
         
         let actual_indices: Vec<u32> = geometry.contours.iter()

@@ -13,12 +13,10 @@ pub struct FrameTransformation {
 
 impl FrameTransformation {
     pub fn apply_to_point(&self, point: &ContourPoint) -> ContourPoint {
-        // Apply translation
         let translated_x = point.x + self.translation.x;
         let translated_y = point.y + self.translation.y;
         let translated_z = point.z + self.translation.z;
 
-        // Apply rotation around the pivot
         let current_point = Point3::new(translated_x, translated_y, translated_z);
         let relative_vector = current_point - self.pivot;
         let rotated_relative = self.rotation * relative_vector;
@@ -32,7 +30,6 @@ impl FrameTransformation {
             y: rotated_point.y,
             z: rotated_point.z,
             aortic: point.aortic,
-            // Include other fields if present in ContourPoint
         }
     }
 }
@@ -54,7 +51,6 @@ pub fn get_transformations(
 
 /// Modified align_frame returns the transformation applied.
 fn align_frame(frame: &mut Contour, cl_point: &CenterlinePoint) -> FrameTransformation {
-    // Check that frame.id matches cl_point.contour_point.frame_index, otherwise return an error
     if frame.id != cl_point.contour_point.frame_index {
         panic!(
             "Frame Index {} does not match Centerline Point Frame Index {}",
@@ -76,7 +72,6 @@ fn align_frame(frame: &mut Contour, cl_point: &CenterlinePoint) -> FrameTransfor
         point.y += translation_vec.y;
         point.z += translation_vec.z;
     }
-    // Update the frame's centroid and translation.
     frame.centroid.0 += translation_vec.x;
     frame.centroid.1 += translation_vec.y;
     frame.centroid.2 += translation_vec.z;
@@ -104,7 +99,6 @@ fn align_frame(frame: &mut Contour, cl_point: &CenterlinePoint) -> FrameTransfor
         cl_point.contour_point.y,
         cl_point.contour_point.z,
     );
-    // Apply rotation to every point if needed.
     if angle.abs() >= 1e-6 {
         for point in frame.points.iter_mut() {
             let current_point = Point3::new(point.x, point.y, point.z);
@@ -117,7 +111,7 @@ fn align_frame(frame: &mut Contour, cl_point: &CenterlinePoint) -> FrameTransfor
         }
     }
 
-    // Return the transformation details for later use.
+    // Return the transformation details for later use (speed up).
     FrameTransformation {
         frame_index: frame.id,
         translation: translation_vec,
@@ -128,7 +122,6 @@ fn align_frame(frame: &mut Contour, cl_point: &CenterlinePoint) -> FrameTransfor
 
 /// Calculates the normal vector using a stable cross product method.
 fn calculate_normal(points: &[ContourPoint], centroid: &(f64, f64, f64)) -> Vector3<f64> {
-    // Select three non-collinear points for robust normal calculation.
     let p1 = &points[0];
     let p2 = &points[points.len() / 3];
     let p3 = &points[2 * points.len() / 3];
@@ -175,12 +168,10 @@ pub fn find_optimal_rotation(
         
         let n_points = temp_contour.len() as u32;
 
-        // Select the reference_point, and index 0 and 250 since contours already ordered after read in.
         let p_aortic = temp_contour.iter().find(|p| p.point_index == index_reference).unwrap();
         let cont_p_upper = temp_contour.iter().find(|p| p.point_index == 0).unwrap();
         let cont_p_lower = temp_contour.iter().find(|p| p.point_index == (n_points / 2)).unwrap();
 
-        // Calculate distances for all three points
         let d_aortic = nalgebra::distance(
             &Point3::new(p_aortic.x, p_aortic.y, p_aortic.z),
             &target_aortic
