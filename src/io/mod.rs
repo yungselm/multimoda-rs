@@ -236,7 +236,7 @@ mod geometry_tests {
 
     fn load_test_manifest(mode: &str) -> Value {
         let manifest_path = format!(
-            "python_src/test_geometries/output/{}_csv_files/test_manifest.json", 
+            "tests/fixtures/{}_csv_files/test_manifest.json", 
             mode
         );
         let file = File::open(manifest_path).expect("Failed to open manifest");
@@ -254,7 +254,7 @@ mod geometry_tests {
             .collect();
 
         // Load raw records and geometry
-        let input_dir = format!("python_src/test_geometries/output/{0}_csv_files", mode);
+        let input_dir = format!("tests/fixtures/{0}_csv_files", mode);
         let geometry = Geometry::new(&input_dir, "test".into(), true).unwrap();
         let records = Geometry::load_results(&Path::new(&input_dir).join("combined_sorted_manual.csv")).unwrap();
         let filtered: Vec<u32> = records.into_iter()
@@ -279,7 +279,7 @@ mod geometry_tests {
     #[test]
     fn test_rest_diastolic_config_match() {
         let geometry = Geometry::new(
-            "python_src/test_geometries/output/rest_csv_files",
+            "tests/fixtures/rest_csv_files",
             "test".to_string(),
             true
         ).expect("Failed to load geometry");
@@ -309,7 +309,7 @@ mod geometry_tests {
     #[test]
     fn test_contour_property_consistency() {
         let geometry = Geometry::new(
-            "python_src/test_geometries/output/rest_csv_files",
+            "tests/fixtures/rest_csv_files",
             "test".to_string(),
             true
         ).expect("Failed to load geometry");
@@ -362,7 +362,7 @@ mod geometry_tests {
     #[test]
     fn test_catheter_contour_properties() {
         let geometry = Geometry::new(
-            "python_src/test_geometries/output/rest_csv_files",
+            "tests/fixtures/rest_csv_files",
             "test".to_string(),
             true
         ).expect("Failed to load geometry");
