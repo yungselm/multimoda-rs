@@ -112,51 +112,32 @@ jobs:
           name: wheels-windows-${{ matrix.platform.target }}
           path: dist
 
-  # macos:
-  #   runs-on: ${{ matrix.platform.runner }}
-  #   strategy:
-  #     matrix:
-  #       platform:
-  #         - runner: macos-latest-x64  # Intel runner
-  #           target: x86_64
-  #           arch: x64
-  #         - runner: macos-latest-arm64  # Apple Silicon runner
-  #           target: aarch64
-  #           arch: arm64
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: actions/setup-python@v5
-  #       with:
-  #         python-version: 3.x
-  #     - name: Build wheels
-  #       uses: PyO3/maturin-action@v1
-  #       with:
-  #         target: ${{ matrix.platform.target }}
-  #         args: --release --out dist --find-interpreter
-  #         sccache: 'true'
-  #     - name: Upload wheels
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: wheels-macos-${{ matrix.platform.target }}
-  #         path: dist
-
   macos:
-    runs-on: macos-latest-arm64  # Requires Apple Silicon runner
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      matrix:
+        platform:
+          - runner: macos-latest-x64  # Intel runner
+            target: x86_64
+            arch: x64
+          - runner: macos-14  # Apple Silicon runner
+            target: aarch64
+            arch: arm64
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.x"
-      - name: Build universal2 wheel
+          python-version: 3.x
+      - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
-          target: universal2-apple-darwin
+          target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
           sccache: 'true'
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-macos-universal2
+          name: wheels-macos-${{ matrix.platform.target }}
           path: dist
 
   sdist:
