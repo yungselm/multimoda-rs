@@ -3,7 +3,7 @@ pub mod classes;
 
 use entry_file::{from_file_full_rs, from_file_doublepair_rs, from_file_singlepair_rs, from_file_single_rs};
 use pyo3::prelude::*;
-use classes::{PyContour, PyContourPoint, PyGeometry, PyGeometryPair};
+use classes::{PyGeometry, PyGeometryPair};
 
 /// Python wrapper around Rust pipeline.
 ///

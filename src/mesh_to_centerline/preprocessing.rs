@@ -1,7 +1,117 @@
-use crate::io::input::read_centerline_txt;
+use nalgebra::Vector3;
+
+use crate::io::input::{read_centerline_txt, ContourPoint};
 use crate::io::Geometry;
 use crate::io::load_geometry::rebuild_geometry;
-use crate::io::input::Centerline;
+use crate::io::input::{Centerline, CenterlinePoint};
+
+pub fn smooth_resample_centerline(
+    centerline: Centerline,
+    ref_mesh: &Geometry,
+) -> Centerline {
+    // Extract z-coordinates from reference mesh contours
+    let mut z_refs: Vec<f64> = ref_mesh.contours.iter()
+        .map(|c| c.centroid.2)
+        .collect();
+    z_refs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    z_refs.dedup();
+
+    // Sort centerline points by z
+    let mut sorted_centerline = centerline.points.clone();
+    sorted_centerline.sort_by(|a, b| {
+        a.contour_point.z.partial_cmp(&b.contour_point.z).unwrap()
+    });
+
+    // Handle empty centerline
+    if sorted_centerline.is_empty() {
+        return Centerline { points: Vec::new() };
+    }
+
+    let min_z = sorted_centerline[0].contour_point.z;
+    let max_z = sorted_centerline.last().unwrap().contour_point.z;
+
+    // Filter z_refs to be within [min_z, max_z]
+    let z_refs: Vec<f64> = z_refs.into_iter()
+        .filter(|&z| z >= min_z && z <= max_z)
+        .collect();
+
+    let mut contour_points = Vec::with_capacity(z_refs.len());
+
+    if sorted_centerline.len() == 1 {
+        let p0 = &sorted_centerline[0];
+        for (index, &z) in z_refs.iter().enumerate() {
+            contour_points.push(ContourPoint {
+                frame_index: index as u32,
+                point_index: index as u32,
+                x: p0.contour_point.x,
+                y: p0.contour_point.y,
+                z: p0.contour_point.z,
+                aortic: false,
+            });
+        }
+    } else {
+        for (index, &z) in z_refs.iter().enumerate() {
+            // Binary search to find the segment
+            let i = match sorted_centerline.binary_search_by(|point| {
+                point.contour_point.z.partial_cmp(&z).unwrap()
+            }) {
+                Ok(i) => i,
+                Err(i) => {
+                    if i == 0 {
+                        0
+                    } else if i == sorted_centerline.len() {
+                        sorted_centerline.len() - 2
+                    } else {
+                        i - 1
+                    }
+                }
+            };
+
+            let p0 = &sorted_centerline[i];
+            let p1 = &sorted_centerline[i + 1];
+
+            if p0.contour_point.z == p1.contour_point.z {
+                contour_points.push(ContourPoint {
+                    frame_index: index as u32,
+                    point_index: index as u32,
+                    x: p0.contour_point.x,
+                    y: p0.contour_point.y,
+                    z: p0.contour_point.z,
+                    aortic: false,
+                });
+            } else {
+                let t = (z - p0.contour_point.z) / (p1.contour_point.z - p0.contour_point.z);
+                let x = p0.contour_point.x + t * (p1.contour_point.x - p0.contour_point.x);
+                let y = p0.contour_point.y + t * (p1.contour_point.y - p0.contour_point.y);
+
+                contour_points.push(ContourPoint {
+                    frame_index: index as u32,
+                    point_index: index as u32,
+                    x,
+                    y,
+                    z,
+                    aortic: false,
+                });
+            }
+        }
+    }
+
+    // Build new centerline from contour points
+    if contour_points.is_empty() {
+        Centerline { points: Vec::new() }
+    } else if contour_points.len() == 1 {
+        Centerline {
+            points: vec![
+                CenterlinePoint {
+                    contour_point: contour_points[0].clone(),
+                    normal: Vector3::zeros(),
+                }
+            ]
+        }
+    } else {
+        Centerline::from_contour_points(contour_points)
+    }
+}
 
 pub fn prepare_data_3d_alignment(
     state: &str,
