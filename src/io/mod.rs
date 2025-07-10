@@ -16,7 +16,14 @@ pub struct Geometry {
 
 impl Geometry {
     /// Creates a new Geometry instance by loading all required data files
-    pub fn new(input_dir: &str, label: String, diastole: bool) -> anyhow::Result<Self> {
+    pub fn new(
+        input_dir: &str, 
+        label: String, 
+        diastole: bool,
+        image_center: (f64, f64),
+        radius: f64,
+        n_points: u32,
+    ) -> anyhow::Result<Self> {
         let label = if diastole {
             format!("{}_diastole", label)
         } else {
@@ -73,6 +80,9 @@ impl Geometry {
                 .iter()
                 .flat_map(|c| c.points.clone())
                 .collect::<Vec<_>>(),
+                image_center,
+                radius,
+                n_points,
         )?;
         
         //sort catheter in ascending order
@@ -236,7 +246,7 @@ mod geometry_tests {
 
     fn load_test_manifest(mode: &str) -> Value {
         let manifest_path = format!(
-            "tests/fixtures/{}_csv_files/test_manifest.json", 
+            "data/fixtures/{}_csv_files/test_manifest.json", 
             mode
         );
         let file = File::open(manifest_path).expect("Failed to open manifest");
@@ -254,8 +264,8 @@ mod geometry_tests {
             .collect();
 
         // Load raw records and geometry
-        let input_dir = format!("tests/fixtures/{0}_csv_files", mode);
-        let geometry = Geometry::new(&input_dir, "test".into(), true).unwrap();
+        let input_dir = format!("data/fixtures/{0}_csv_files", mode);
+        let geometry = Geometry::new(&input_dir, "test".into(), true, (4.5, 4.5), 0.5, 20).unwrap();
         let records = Geometry::load_results(&Path::new(&input_dir).join("combined_sorted_manual.csv")).unwrap();
         let filtered: Vec<u32> = records.into_iter()
             .filter(|r| r.phase == "D")
@@ -279,9 +289,12 @@ mod geometry_tests {
     #[test]
     fn test_rest_diastolic_config_match() {
         let geometry = Geometry::new(
-            "tests/fixtures/rest_csv_files",
+            "data/fixtures/rest_csv_files",
             "test".to_string(),
-            true
+            true,
+            (4.5, 4.5),
+            0.5,
+            20,
         ).expect("Failed to load geometry");
         
         let manifest = load_test_manifest("rest");
@@ -309,9 +322,12 @@ mod geometry_tests {
     #[test]
     fn test_contour_property_consistency() {
         let geometry = Geometry::new(
-            "tests/fixtures/rest_csv_files",
+            "data/fixtures/rest_csv_files",
             "test".to_string(),
-            true
+            true,
+            (4.5, 4.5),
+            0.5,
+            20,
         ).expect("Failed to load geometry");
         
         let manifest = load_test_manifest("rest");
@@ -364,7 +380,10 @@ mod geometry_tests {
         let geometry = Geometry::new(
             "tests/fixtures/rest_csv_files",
             "test".to_string(),
-            true
+            true,
+            (4.5, 4.5),
+            0.5, 
+            20,
         ).expect("Failed to load geometry");
 
         // Verify number of catheter points per contour

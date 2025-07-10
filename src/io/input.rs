@@ -58,8 +58,11 @@ impl Contour {
 
     pub fn create_catheter_contours(
         points: &Vec<ContourPoint>,
+        image_center: (f64, f64),
+        radius: f64,
+        n_points: u32,
     ) -> anyhow::Result<Vec<Contour>> {
-        let catheter_points = ContourPoint::create_catheter_points(&points);
+        let catheter_points = ContourPoint::create_catheter_points(&points, image_center, radius, n_points);
 
         let mut groups: HashMap<u32, Vec<ContourPoint>> = HashMap::new();
         for p in catheter_points {
@@ -323,7 +326,12 @@ impl ContourPoint {
         Ok(point)
     }
 
-    pub fn create_catheter_points(points: &Vec<ContourPoint>) -> Vec<ContourPoint> {
+    pub fn create_catheter_points(
+        points: &Vec<ContourPoint>, 
+        image_center: (f64, f64), 
+        radius: f64,
+        n_points: u32,
+    ) -> Vec<ContourPoint> {
         // Map to store unique frame indices and one associated z coordinate per frame.
         let mut frame_z: HashMap<u32, f64> = HashMap::new();
         for point in points {
@@ -337,10 +345,10 @@ impl ContourPoint {
         frames.sort();
 
         // Parameters for the catheter circle.
-        let center_x = 4.5;
-        let center_y = 4.5;
-        let radius = 0.5;
-        let num_points = 20;
+        let center_x = image_center.0;
+        let center_y = image_center.1;
+        let radius = radius;
+        let num_points = n_points;
 
         // For each unique frame, generate 20 catheter points around a circle.
         for frame in frames {
@@ -705,7 +713,7 @@ mod input_tests {
         let points = vec![
             ContourPoint { frame_index: 1, point_index: 0, x: 0.0, y: 0.0, z: 5.0, aortic: false },
         ];
-        let catheter_points = ContourPoint::create_catheter_points(&points);
+        let catheter_points = ContourPoint::create_catheter_points(&points, (4.5, 4.5), 0.5, 20);
         assert_eq!(catheter_points.len(), 20);
         for point in catheter_points {
             assert_eq!(point.frame_index, 1);

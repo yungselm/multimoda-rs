@@ -519,7 +519,7 @@ mod contour_tests {
             };
             // generate its catheter (they all start around (4.5,4.5))
             let catheter_contours =
-                Contour::create_catheter_contours(&contour.points).expect("catheter fail");
+                Contour::create_catheter_contours(&contour.points, (4.5, 4.5), 0.5, 20).expect("catheter fail");
             test_contours.push(contour);
             test_catheters.extend(catheter_contours);
         }

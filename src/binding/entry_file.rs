@@ -19,6 +19,9 @@ pub fn from_file_full_rs(
     stress_output_path: &str,
     diastole_output_path: &str,
     systole_output_path: &str,
+    image_center: (f64, f64),
+    radius: f64,
+    n_points: u32,
 ) -> Result<(GeometryPair, GeometryPair, GeometryPair, GeometryPair)> {
     let result = thread::scope(|s| -> Result<(GeometryPair, GeometryPair, GeometryPair, GeometryPair)> {
         // REST thread
@@ -28,6 +31,9 @@ pub fn from_file_full_rs(
                 rest_input_path,
                 steps_best_rotation,
                 range_rotation_rad,
+                image_center,
+                radius, 
+                n_points,
             )
             .context("create_geometry_pair(rest) failed")?;
             process_case(
@@ -46,6 +52,9 @@ pub fn from_file_full_rs(
                 stress_input_path,
                 steps_best_rotation,
                 range_rotation_rad,
+                image_center,
+                radius,
+                n_points,
             )
             .context("create_geometry_pair(stress) failed")?;
             process_case(
@@ -111,6 +120,9 @@ pub fn from_file_doublepair_rs(
     interpolation_steps: usize,
     stress_input_path: &str,
     stress_output_path: &str,
+    image_center: (f64, f64),
+    radius: f64,
+    n_points: u32,
 ) -> Result<(GeometryPair, GeometryPair)> {
     let result = thread::scope(|s| -> Result<(GeometryPair, GeometryPair)> {
         // REST thread
@@ -120,6 +132,9 @@ pub fn from_file_doublepair_rs(
                 rest_input_path,
                 steps_best_rotation,
                 range_rotation_rad,
+                image_center,
+                radius,
+                n_points,
             )
             .context("create_geometry_pair(rest) failed")?;
             
@@ -141,6 +156,9 @@ pub fn from_file_doublepair_rs(
                 stress_input_path,
                 steps_best_rotation,
                 range_rotation_rad,
+                image_center,
+                radius,
+                n_points,
             )
             .context("create_geometry_pair(stress) failed")?;
             
@@ -174,6 +192,9 @@ pub fn from_file_singlepair_rs(
     range_rotation_rad: f64,
     output_path: &str,
     interpolation_steps: usize,
+    image_center: (f64, f64),
+    radius: f64,
+    n_points: u32,
 ) -> Result<GeometryPair> {
     // Build the raw pair
     let geom_pair = create_geometry_pair(
@@ -181,6 +202,9 @@ pub fn from_file_singlepair_rs(
         input_path,
         steps_best_rotation,
         range_rotation_rad,
+        image_center,
+        radius,
+        n_points,
     )
     .context("create_geometry_pair(single) failed")?;
 
@@ -202,11 +226,17 @@ pub fn from_file_single_rs(
     range_rotation_rad: f64,
     output_path: &str,
     diastole: bool,
+    image_center: (f64, f64),
+    radius: f64,
+    n_points: u32,
 ) -> Result<Geometry> {
     let mut geom = Geometry::new(
         input_path,
         "single".to_string(),
         diastole,
+        image_center,
+        radius,
+        n_points,
     )?;
 
     geom = align_frames_in_geometry(

@@ -13,10 +13,10 @@ pub struct GeometryPair {
 }
 
 impl GeometryPair {
-    pub fn new(input_dir: &str, label: String) -> anyhow::Result<GeometryPair> {
-        let dia_geom = Geometry::new(input_dir, label.clone(), true)?;
+    pub fn new(input_dir: &str, label: String, image_center: (f64, f64), radius: f64, n_points: u32) -> anyhow::Result<GeometryPair> {
+        let dia_geom = Geometry::new(input_dir, label.clone(), true, image_center, radius, n_points)?;
         println!("geometry pair: diastolic geometry generated");
-        let sys_geom = Geometry::new(input_dir, label, false)?;
+        let sys_geom = Geometry::new(input_dir, label, false, image_center, radius, n_points)?;
         println!("geometry pair: systolic geometry generated");
         Ok(GeometryPair { dia_geom, sys_geom })
     }

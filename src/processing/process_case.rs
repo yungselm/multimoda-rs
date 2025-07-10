@@ -12,8 +12,11 @@ pub fn create_geometry_pair(
     input_dir: &str,
     steps_best_rotation: usize,
     range_rotation_rad: f64,
+    image_center: (f64, f64),
+    radius: f64,
+    n_points: u32,
 ) -> anyhow::Result<GeometryPair> {
-    let geometries = GeometryPair::new(input_dir, case_name.clone())?;
+    let geometries = GeometryPair::new(input_dir, case_name.clone(), image_center, radius, n_points)?;
     let mut geometries = geometries.adjust_z_coordinates();
 
     geometries = geometries.process_geometry_pair(steps_best_rotation, range_rotation_rad);
