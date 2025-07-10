@@ -378,7 +378,7 @@ mod geometry_tests {
     #[test]
     fn test_catheter_contour_properties() {
         let geometry = Geometry::new(
-            "tests/fixtures/rest_csv_files",
+            "data/fixtures/rest_csv_files",
             "test".to_string(),
             true,
             (4.5, 4.5),
