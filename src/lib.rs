@@ -8,7 +8,7 @@ mod mesh_to_centerline;
 
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
-use binding::{from_file_full, from_file_doublepair, from_file_singlepair, from_file_single};
+use binding::*;
 use binding::classes::{PyContour, PyContourPoint, PyGeometry, PyGeometryPair};
 use mesh_to_centerline::create_centerline_aligned_meshes;
 
@@ -51,14 +51,16 @@ pub fn centerline_align(
     Ok((py_dia_geom, py_sys_geom))
 }
 
-/// This is the module importable from Python:
-///
+
+/// This is the module importable from Python
+/// 
+/// Test with the provided example data:
 /// ```python
 /// import multimodars as mm
-/// mm.run_process_case_py(
-///     "test_data/rest_csv_files", "test_data/stress_csv_files",
-///     "output/dia.csv", "out/sys.csv"
+/// rest, stress, dia, sys = mm.from_file_full(
+///     "data/ivus_rest", "data/ivus_stress"
 /// )
+/// print(rest)
 /// ```
 #[pymodule]
 fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<()> {
@@ -68,6 +70,7 @@ fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<(
     m.add_function(wrap_pyfunction!(from_file_singlepair, m.clone())?)?;    
     m.add_function(wrap_pyfunction!(from_file_single, m.clone())?)?;
     m.add_function(wrap_pyfunction!(centerline_align, m.clone())?)?;
+    m.add_function(wrap_pyfunction!(create_catheter_contours, m.clone())?)?;
 
     // Updated class registration
     m.add_class::<PyContourPoint>()?;

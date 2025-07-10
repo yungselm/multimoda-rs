@@ -1,5 +1,5 @@
 import numpy as np
-from multimodars import PyGeometry, PyContourPoint
+from multimodars import PyContour, PyContourPoint, PyGeometry, create_catheter_contours
 
 def geometry_to_numpy(geom: PyGeometry, mode="contours") -> np.ndarray:
     """
@@ -12,7 +12,7 @@ def geometry_to_numpy(geom: PyGeometry, mode="contours") -> np.ndarray:
     elif mode == "catheter":
         sequences = geom.catheter
     elif mode == "walls":
-        # if you later add walls to PyGeometry
+        # later add walls to PyGeometry
         sequences = getattr(geom, "walls", [])
     else:
         raise ValueError(f"Unknown mode: {mode!r}")
@@ -23,28 +23,30 @@ def geometry_to_numpy(geom: PyGeometry, mode="contours") -> np.ndarray:
         pts = seq.points
         if not pts:
             continue
-        # build an (M,4) Python list
+
         block = [
             (p.frame_index, p.x, p.y, p.z)
             for p in pts
         ]
-        # convert to float; frame_index will cast to float
         arrays.append(np.array(block, dtype=float))
 
     if not arrays:
-        # no points at all
         return np.empty((0, 4), dtype=float)
 
-    # concatenate into one (N,4) array
     return np.concatenate(arrays, axis=0)
 
 
-def numpy_to_geometry(arr: np.ndarray, *, reference_point=None) -> PyGeometry:
+def numpy_to_geometry(
+    contours: np.ndarray, 
+    reference_point=None,
+    image_center=(4.5, 4.5),
+    radius=0.5, 
+    n_points=20,
+    ) -> PyGeometry:
     """
     Build a new PyGeometry from an (N,4) array of [frame, x, y, z].
     Packs *all* points into a single contour (toy example).
     """
-    from multimodars import PyContour, PyContourPoint
 
     pts = [
         PyContourPoint(
@@ -58,10 +60,11 @@ def numpy_to_geometry(arr: np.ndarray, *, reference_point=None) -> PyGeometry:
         for i, row in enumerate(arr)
     ]
 
+    cath_pts = create_catheter_contours(pts, image_center, radius, n_points)
+
     # one big contour; you could split by frame or by some delimiter if you like
     contour = PyContour(id=0, points=pts, centroid=(0.0, 0.0, 0.0))
 
-    # pick your reference point
     ref = reference_point if reference_point is not None else pts[0]
 
     return PyGeometry(contours=[contour], catheter=[], reference_point=ref)

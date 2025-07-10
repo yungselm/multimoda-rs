@@ -3,7 +3,8 @@ pub mod classes;
 
 use entry_file::{from_file_full_rs, from_file_doublepair_rs, from_file_singlepair_rs, from_file_single_rs};
 use pyo3::prelude::*;
-use classes::{PyGeometry, PyGeometryPair};
+use classes::{PyContourPoint, PyContour, PyGeometry, PyGeometryPair};
+use crate::io::input::{ContourPoint, Contour};
 
 /// Python wrapper around Rust pipeline.
 ///
@@ -185,4 +186,33 @@ pub fn from_file_single(
     let py_geom = geom.into();
 
     Ok(py_geom)
+}
+
+#[pyfunction]
+#[pyo3(signature = (points, image_center = (4.5f64, 4.5f64), radius = 0.5f64, n_points = 20u32))]
+pub fn create_catheter_contours(
+    points: Vec<PyContourPoint>,
+    image_center: (f64, f64),
+    radius: f64,
+    n_points: u32,
+) -> PyResult<Vec<PyContour>> {
+    // 1) Convert Vec<PyContourPoint> → Vec<ContourPoint> using your &PyContourPoint → ContourPoint impl
+    let rust_pts: Vec<ContourPoint> = points.iter().map(ContourPoint::from).collect();
+
+    // 2) Call the Rust-level function
+    let rust_contours: Vec<Contour> = Contour::create_catheter_contours(
+        &rust_pts,
+        image_center,
+        radius,
+        n_points,
+    )
+    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+    // 3) Convert Vec<Contour> → Vec<PyContour> using your &Contour → PyContour impl
+    let py_contours: Vec<PyContour> = rust_contours
+        .iter()
+        .map(PyContour::from)
+        .collect();
+
+    Ok(py_contours)
 }
