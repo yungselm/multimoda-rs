@@ -66,13 +66,15 @@ pub fn process_case(
         &uv_coords_contours,
     )?;
     
-    write_geometry_vec_to_obj(
-        GeometryType::Catheter,
-        case_name,
-        output_dir,
-        &interpolated_geometries,
-        &uv_coords_catheter,
-    )?;
+    if !dia_geom.catheter.is_empty() & !sys_geom.catheter.is_empty() {
+        write_geometry_vec_to_obj(
+            GeometryType::Catheter,
+            case_name,
+            output_dir,
+            &interpolated_geometries,
+            &uv_coords_catheter,
+        )?;
+    }
 
     // test wall mesh
     let dia_wall = create_wall_geometry(&dia_geom, false);
@@ -105,11 +107,16 @@ pub fn interpolate_contours(
     let n = min(start.contours.len(), end.contours.len());
     let sc = &start.contours[..n];
     let ec = &end.contours[..n];
-    let sat = &start.catheter[..n];
-    let eat = &end.catheter[..n];
+
+    // Check catheter lengths
+    let use_catheter = !start.catheter.is_empty() && !end.catheter.is_empty();
+    let (sat, eat) = if use_catheter {
+        (&start.catheter[..n], &end.catheter[..n])
+    } else {
+        (&[][..], &[][..])
+    };
 
     let mut geoms = Vec::with_capacity(steps + 2);
-
     geoms.push(start.clone());
 
     for step in 0..steps {
@@ -120,7 +127,7 @@ pub fn interpolate_contours(
             points: s.points.iter().zip(&e.points)
                 .map(|(ps, pe)| ContourPoint {
                     frame_index: ps.frame_index,
-                    point_index: ps.point_index, // or reassign later
+                    point_index: ps.point_index,
                     x: ps.x * (1.0 - t) + pe.x * t,
                     y: ps.y * (1.0 - t) + pe.y * t,
                     z: ps.z * (1.0 - t) + pe.z * t,
@@ -136,20 +143,19 @@ pub fn interpolate_contours(
             pulmonary_thickness: interpolate_thickness(&s.pulmonary_thickness, &e.pulmonary_thickness, t),
         }).collect();
 
-        let catheter = sat.iter().zip(eat).map(|(s, e)| {
-            // same inner logic, or extract into a helper…
-            Contour { 
+        let catheter = if use_catheter {
+            sat.iter().zip(eat).map(|(s, e)| Contour {
                 id: s.id,
                 points: s.points.iter().zip(&e.points)
-                .map(|(ps, pe)| ContourPoint {
-                    frame_index: ps.frame_index,
-                    point_index: ps.point_index,
-                    x: ps.x * (1.0 - t) + pe.x * t,
-                    y: ps.y * (1.0 - t) + pe.y * t,
-                    z: ps.z * (1.0 - t) + pe.z * t,
-                    aortic: ps.aortic,
-                })
-                .collect(),
+                    .map(|(ps, pe)| ContourPoint {
+                        frame_index: ps.frame_index,
+                        point_index: ps.point_index,
+                        x: ps.x * (1.0 - t) + pe.x * t,
+                        y: ps.y * (1.0 - t) + pe.y * t,
+                        z: ps.z * (1.0 - t) + pe.z * t,
+                        aortic: ps.aortic,
+                    })
+                    .collect(),
                 centroid: (
                     s.centroid.0 * (1.0 - t) + e.centroid.0 * t,
                     s.centroid.1 * (1.0 - t) + e.centroid.1 * t,
@@ -157,21 +163,23 @@ pub fn interpolate_contours(
                 ),
                 aortic_thickness: None,
                 pulmonary_thickness: None,
-            }
-        }).collect();
+            }).collect()
+        } else {
+            Vec::new()
+        };
 
-        geoms.push( Geometry {
+        geoms.push(Geometry {
             contours,
             catheter,
             reference_point: start.reference_point.clone(),
             label: format!("{}_inter_{}", start.label, step),
-        } );
+        });
     }
 
-    // Last frame
     geoms.push(end.clone());
     Ok(geoms)
 }
+
 
 /// Helper function to interpolate Vec<Contour>
 #[allow(dead_code)]

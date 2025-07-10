@@ -69,41 +69,46 @@ pub fn write_mtl_geometry(
     }
 
     let mut uv_coords_catheter = Vec::new();
-
+    
     // for catheter no displacement uv texture needed
     for (i, mesh) in geometries_to_process.into_iter().enumerate() {
-        let uv_coords = compute_uv_coordinates(&mesh.catheter);
-
-        let texture_height = mesh.catheter.len() as u32;
-        let texture_width = if texture_height > 0 {
-            mesh.catheter[0].points.len() as u32
+        if mesh.catheter.is_empty() {
+            let uv_coord = Vec::new();
+            uv_coords_catheter.push(uv_coord);
         } else {
-            0
-        };
+            let uv_coords = compute_uv_coordinates(&mesh.catheter);
 
-        // Fixed (black) texture.
-        let tex_filename = format!("catheter_{:03}_{}.png", i, case_name);
-        let texture_path = Path::new(output_dir).join(&tex_filename);
-        create_black_texture(
-            texture_width,
-            texture_height,
-            texture_path.to_str().unwrap(),
-        )
-        .unwrap();
+            let texture_height = mesh.catheter.len() as u32;
+            let texture_width = if texture_height > 0 {
+                mesh.catheter[0].points.len() as u32
+            } else {
+                0
+            };
 
-        // Write the material file (MTL).
-        let mtl_filename = format!("catheter_{:03}_{}.mtl", i, case_name);
-        let mtl_path = Path::new(output_dir).join(&mtl_filename);
-        let mut mtl_file = File::create(&mtl_path).unwrap();
-        // Set both ambient and diffuse to black.
-        writeln!(
-            mtl_file,
-            "newmtl black_material\nKa 0 0 0\nKd 0 0 0\nmap_Kd {}",
-            tex_filename
-        )
-        .unwrap();
+            // Fixed (black) texture.
+            let tex_filename = format!("catheter_{:03}_{}.png", i, case_name);
+            let texture_path = Path::new(output_dir).join(&tex_filename);
+            create_black_texture(
+                texture_width,
+                texture_height,
+                texture_path.to_str().unwrap(),
+            )
+            .unwrap();
 
-        uv_coords_catheter.push(uv_coords)
+            // Write the material file (MTL).
+            let mtl_filename = format!("catheter_{:03}_{}.mtl", i, case_name);
+            let mtl_path = Path::new(output_dir).join(&mtl_filename);
+            let mut mtl_file = File::create(&mtl_path).unwrap();
+            // Set both ambient and diffuse to black.
+            writeln!(
+                mtl_file,
+                "newmtl black_material\nKa 0 0 0\nKd 0 0 0\nmap_Kd {}",
+                tex_filename
+            )
+            .unwrap();
+
+            uv_coords_catheter.push(uv_coords)
+        }
     }
 
     (uv_coords_contours, uv_coords_catheter)

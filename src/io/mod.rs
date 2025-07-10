@@ -75,15 +75,21 @@ impl Geometry {
 
         Self::reorder_contours(&mut contours, &records, diastole, &z_coords);
 
-        let mut catheter = Contour::create_catheter_contours(
-            &contours
-                .iter()
-                .flat_map(|c| c.points.clone())
-                .collect::<Vec<_>>(),
+        let mut catheter = if n_points == 0 {
+            // no points → empty vector
+            Vec::new()
+        } else {
+            // build your catheter contours and return
+            Contour::create_catheter_contours(
+                &contours
+                    .iter()
+                    .flat_map(|c| c.points.clone())
+                    .collect::<Vec<_>>(),
                 image_center,
                 radius,
                 n_points,
-        )?;
+            )?
+        };
         
         //sort catheter in ascending order
         catheter.sort_by_key(|c| c.id);
