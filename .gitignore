@@ -1,9 +1,11 @@
 /target
+/output
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
 .pytest_cache/
 *.py[cod]
+*.pyc
 
 # C extensions
 *.so
@@ -12,6 +14,7 @@ __pycache__/
 .Python
 .venv/
 env/
+/venv
 bin/
 build/
 develop-eggs/
@@ -24,7 +27,6 @@ sdist/
 var/
 include/
 man/
-venv/
 *.egg-info/
 .installed.cfg
 *.egg
@@ -70,10 +72,3 @@ docs/_build/
 
 # Pyenv
 .python-version
-
-
-/output
-/env
-/.venv
-/venv
-*.pyc

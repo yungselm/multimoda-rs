@@ -1,6 +1,7 @@
 use rayon::prelude::*;
 use std::f64::consts::PI;
 use std::collections::HashSet;
+use std::collections::HashMap;
 
 use crate::io::input::{ContourPoint, Contour};
 use crate::io::Geometry;
@@ -187,7 +188,7 @@ fn align_remaining_contours(
     steps: usize,
     range: f64,
 ) -> (Geometry, Vec<(u32, (f64, f64, f64), f64, (f64, f64))>) {
-    let mut processed_refs = std::collections::HashMap::new();
+    let mut processed_refs: HashMap<u32, (Vec<ContourPoint>, (f64, f64, f64))> = std::collections::HashMap::new();
     let mut id_translation = Vec::new();
 
     // Process contours in reverse order (highest ID first)
@@ -196,10 +197,17 @@ fn align_remaining_contours(
             continue;
         }
 
-        let (ref_points, ref_centroid) = match processed_refs.get(&(contour.id + 1)) {
-            Some((points, centroid)) => (points, centroid),
-            None => (&ref_contour.points, &ref_contour.centroid),
+        // Determine reference points and centroid
+        let (base_ref_points, ref_centroid) = match processed_refs.get(&(contour.id + 1)) {
+            Some((points, centroid)) => (points.clone(), *centroid),
+            None => (ref_contour.points.clone(), ref_contour.centroid),
         };
+
+        // Include corresponding catheter points in reference set
+        let mut ref_points = base_ref_points;
+        if let Some(cat) = geometry.catheter.iter().find(|c| c.id == contour.id + 1) {
+            ref_points.extend_from_slice(&cat.points);
+        }
 
         contour.rotate_contour(rot);
 
@@ -209,10 +217,21 @@ fn align_remaining_contours(
 
         contour.translate_contour((-tx, -ty, 0.0));
 
+        // Add the catheter points to the contour points, and then find the best rotation based on both
+        // Later also add wall points
+        // Find the catheter with the same id as the current contour
+        let target = if let Some(catheter) = geometry.catheter.iter().find(|c| c.id == contour.id) {
+            let mut combined = contour.points.clone();
+            combined.extend_from_slice(&catheter.points);
+            combined
+        } else {
+            contour.points.clone()
+        };
+
         // Optimize rotation
         let best_rot = find_best_rotation(
-            ref_points,
-            &contour.points,
+            &ref_points,
+            &target,
             steps,
             range,
             &contour.centroid,
