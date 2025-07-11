@@ -15,12 +15,13 @@ pub fn create_geometry_pair(
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
+    align_inside: bool,
 ) -> anyhow::Result<GeometryPair> {
     let geometries =
         GeometryPair::new(input_dir, case_name.clone(), image_center, radius, n_points)?;
     let mut geometries = geometries.adjust_z_coordinates();
 
-    geometries = geometries.process_geometry_pair(steps_best_rotation, range_rotation_rad);
+    geometries = geometries.process_geometry_pair(steps_best_rotation, range_rotation_rad, align_inside);
     geometries = geometries.trim_geometries_same_length();
     geometries = geometries.thickness_adjustment();
 

@@ -220,6 +220,18 @@ impl PyGeometry {
     }
 }
 
+impl PyGeometry {
+    /// Rust‐only: convert this Python wrapper into the core Geometry.
+    pub fn to_rust_geometry(&self) -> Geometry {
+        Geometry {
+            contours: self.contours.iter().map(|c| c.to_rust_contour().unwrap()).collect(),
+            catheter: self.catheter.iter().map(|c| c.to_rust_contour().unwrap()).collect(),
+            reference_point: (&self.reference_point).into(),
+            label: String::new(),
+        }
+    }
+}
+
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyGeometryPair {
@@ -357,7 +369,6 @@ impl From<&Contour> for PyContour {
     }
 }
 
-// Add at the bottom of python_bind.rs
 impl From<Geometry> for PyGeometry {
     fn from(geom: Geometry) -> Self {
         PyGeometry {

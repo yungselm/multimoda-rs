@@ -35,6 +35,7 @@ pub fn from_file_full_rs(
                     image_center,
                     radius,
                     n_points,
+                    true, //hardcoded here, since only for from array can preprocess
                 )
                 .context("create_geometry_pair(rest) failed")?;
                 process_case("rest", geom, rest_output_path, interpolation_steps)
@@ -51,6 +52,7 @@ pub fn from_file_full_rs(
                     image_center,
                     radius,
                     n_points,
+                    true, //hardcoded here, since only for from array can preprocess
                 )
                 .context("create_geometry_pair(stress) failed")?;
                 process_case("stress", geom, stress_output_path, interpolation_steps)
@@ -126,6 +128,7 @@ pub fn from_file_doublepair_rs(
                 image_center,
                 radius,
                 n_points,
+                true, //hardcoded here, since only for from array can preprocess
             )
             .context("create_geometry_pair(rest) failed")?;
 
@@ -146,6 +149,7 @@ pub fn from_file_doublepair_rs(
                 image_center,
                 radius,
                 n_points,
+                true, //hardcoded here, since only for from array can preprocess
             )
             .context("create_geometry_pair(stress) failed")?;
 
@@ -192,6 +196,7 @@ pub fn from_file_singlepair_rs(
         image_center,
         radius,
         n_points,
+        true, //hardcoded here, since only for from array can preprocess
     )
     .context("create_geometry_pair(single) failed")?;
 
