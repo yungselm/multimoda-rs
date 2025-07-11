@@ -1,14 +1,55 @@
 pub mod entry_file;
+pub mod entry_arr;
 pub mod classes;
 
 use entry_file::{from_file_full_rs, from_file_doublepair_rs, from_file_singlepair_rs, from_file_single_rs};
+use entry_arr::*;
 use pyo3::prelude::*;
-use classes::{PyContourPoint, PyContour, PyGeometry, PyGeometryPair};
-use crate::io::input::{ContourPoint, Contour};
+use classes::{PyContourPoint, PyContour, PyGeometry, PyGeometryPair, PyRecord};
+use crate::io::input::{ContourPoint, Contour, Record};
 
-/// Python wrapper around Rust pipeline.
+/// This function processes four geometries (rest, stress, diastole, systole) in parallel, 
+/// based on the given input csv files and configuration parameters. It returns 
+/// four geometry pairs corresponding to each phase.
 ///
-/// Uses a Python‐friendly signature to allow defaults.
+///         `Rest`:                             `Stress`:
+///         diastole  ---------------------->   diastole
+///            |                                   |
+///            |                                   |
+///            v                                   v
+///         systole   ---------------------->   systole
+/// 
+/// # Arguments
+/// * `rest_input_path` - Path to the input file for the REST image.
+/// * `stress_input_path` - Path to the input file for the STRESS image.
+/// * `steps_best_rotation` - Number of steps for finding the best rotation (default: 300).
+/// * `range_rotation_rad` - Max rotation range in radians (default: 1.57).
+/// * `rest_output_path` - Output path for processed REST geometry (default: "output/rest").
+/// * `stress_output_path` - Output path for processed STRESS geometry (default: "output/stress").
+/// * `diastole_output_path` - Output path for DIASTOLE geometry (default: "output/diastole").
+/// * `systole_output_path` - Output path for SYSTOLE geometry (default: "output/systole").
+/// * `interpolation_steps` - Number of interpolation steps to use (default: 28).
+/// * `image_center` - Center of the image as a tuple (x, y) (default: (4.5, 4.5)).
+/// * `radius` - Radius to use for processing (default: 0.5).
+/// * `n_points` - Number of boundary points to generate (default: 20).
+/// 
+/// # Expected format .csv file, e.g.:
+///  --------------------------------------------------------------------
+///  |      185     |       5.32     |      2.37       |        0.0     |
+///  |      ...     |       ...      |      ...        |        ...     |
+///  No headers -> frame index, x-coord [mm], y-coord [mm], z-coord [mm]           
+///
+/// # Returns
+/// A tuple of four `PyGeometryPair` objects: `(rest, stress, diastole, systole)`.
+///
+/// # Raises
+/// `RuntimeError` if any part of the pipeline fails.
+///
+/// # Example usage
+/// import multimodars as mm
+/// rest, stress, diastole, systole = mm.from_file_full("data/ivus_rest", "data/ivus_stress")
+/// 
+/// This function is a Python wrapper around the internal Rust implementation.
 #[pyfunction]
 #[pyo3(
     signature = (
@@ -215,4 +256,51 @@ pub fn create_catheter_contours(
         .collect();
 
     Ok(py_contours)
+}
+
+#[pyfunction]
+#[pyo3(signature = (
+    contours,
+    reference_point,
+    steps_best_rotation = 300usize,
+    range_rotation_rad = 1.57f64,
+    image_center = (4.5f64, 4.5f64),
+    radius = 0.5f64,
+    n_points = 20u32,
+    label = "None",
+    records = None,
+    delta = 0.1f64,
+    max_rounds = 5,
+    diastole = true,
+    sort = true,
+))]
+pub fn geometry_from_array(
+    contours: Vec<PyContour>,
+    reference_point: PyContourPoint,
+    steps_best_rotation: usize,
+    range_rotation_rad: f64,
+    image_center: (f64, f64),
+    radius: f64,
+    n_points: u32,
+    label: &str,
+    records: Option<Vec<PyRecord>>,
+    delta: f64,
+    max_rounds: usize,
+    diastole: bool,
+    sort: bool,    
+) -> PyResult<PyGeometry> {
+    let contours_rs: Vec<Contour> = contours
+        .iter()
+        .map(|pyc| pyc.to_rust_contour().unwrap())
+        .collect();
+
+    let reference_point_rs: ContourPoint = (&reference_point).into();
+
+    let records_rs: Option<Vec<Record>> = records
+        .map(|vec_py| vec_py.into_iter().map(|py| py.to_rust_record()).collect());
+
+    let geom_rs = geometry_from_array_rs(contours_rs, reference_point_rs, steps_best_rotation, range_rotation_rad, image_center, radius, n_points, label, records_rs, delta, max_rounds, diastole, sort)
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    let py_geom = PyGeometry::from(geom_rs);
+    Ok(py_geom)
 }

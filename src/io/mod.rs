@@ -125,7 +125,7 @@ impl Geometry {
     }
 
     /// Reorders contours by record frame order, updates z-coordinates and ids
-    fn reorder_contours(
+    pub fn reorder_contours(
         contours: &mut Vec<Contour>,
         records: &[Record],
         diastole: bool,

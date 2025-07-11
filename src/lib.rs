@@ -9,7 +9,7 @@ mod mesh_to_centerline;
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
 use binding::*;
-use binding::classes::{PyContour, PyContourPoint, PyGeometry, PyGeometryPair};
+use binding::classes::{PyContour, PyContourPoint, PyGeometry, PyGeometryPair, PyRecord};
 use mesh_to_centerline::create_centerline_aligned_meshes;
 
 #[pyfunction]
@@ -71,11 +71,13 @@ fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<(
     m.add_function(wrap_pyfunction!(from_file_single, m.clone())?)?;
     m.add_function(wrap_pyfunction!(centerline_align, m.clone())?)?;
     m.add_function(wrap_pyfunction!(create_catheter_contours, m.clone())?)?;
+    m.add_function(wrap_pyfunction!(geometry_from_array, m.clone())?)?;
 
     // Updated class registration
     m.add_class::<PyContourPoint>()?;
     m.add_class::<PyContour>()?;
     m.add_class::<PyGeometry>()?;
     m.add_class::<PyGeometryPair>()?;
+    m.add_class::<PyRecord>()?;
     Ok(())
 }

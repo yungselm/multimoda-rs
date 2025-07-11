@@ -1,6 +1,6 @@
 // File: src/python_bind.rs
 use pyo3::prelude::*;
-use crate::io::input::{ContourPoint, Contour};
+use crate::io::input::{ContourPoint, Contour, Record};
 use crate::io::Geometry;
 use crate::processing::geometries::GeometryPair;
 
@@ -133,7 +133,7 @@ impl PyContour {
 }
 
 impl PyContour {
-    fn to_rust_contour(&self) -> PyResult<Contour> {
+    pub fn to_rust_contour(&self) -> PyResult<Contour> {
         let points = self.points
             .iter()
             .map(|p| ContourPoint::from(p))
@@ -277,6 +277,70 @@ pub struct PyCenterlinePoint {
 pub struct PyCenterline {
     #[pyo3(get, set)]
     pub points: Vec<PyCenterlinePoint>,
+}
+
+/// Python wrapper for your Rust `Record`
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct PyRecord {
+    #[pyo3(get, set)]
+    pub frame: u32,
+    #[pyo3(get, set)]
+    pub phase: String,
+    #[pyo3(get, set)]
+    pub measurement_1: Option<f64>,
+    #[pyo3(get, set)]
+    pub measurement_2: Option<f64>,
+}
+
+#[pymethods]
+impl PyRecord {
+    /// Python constructor
+    #[new]
+    fn new(
+        frame: u32,
+        phase: String,
+        measurement_1: Option<f64>,
+        measurement_2: Option<f64>,
+    ) -> Self {
+        PyRecord {
+            frame,
+            phase,
+            measurement_1,
+            measurement_2,
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Record(frame={}, phase={}, m1={:?}, m2={:?})",
+            self.frame, self.phase, self.measurement_1, self.measurement_2
+        )
+    }
+}
+
+// Convert PyRecord → Record (for passing into your Rust core)
+impl PyRecord {
+    pub fn to_rust_record(&self) -> Record {
+        Record {
+            frame: self.frame,
+            phase: self.phase.clone(),
+            measurement_1: self.measurement_1,
+            measurement_2: self.measurement_2,
+        }
+    }
+}
+
+// Convert &Record → PyRecord (for returning back out)
+impl From<&Record> for PyRecord {
+    fn from(r: &Record) -> Self {
+        PyRecord {
+            frame: r.frame,
+            phase: r.phase.clone(),
+            measurement_1: r.measurement_1,
+            measurement_2: r.measurement_2,
+        }
+    }
 }
 
 // Conversion from Rust to Python types
