@@ -10,7 +10,7 @@ use texture::{
 };
 
 /// Creates a UV-map based on displacement between geometries and saves the map
-/// in png format. Additionally creates a .mtl file with material parameter 
+/// in png format. Additionally creates a .mtl file with material parameter
 /// 1 1 1 1 for the moment.
 pub fn write_mtl_geometry(
     geometries_to_process: &Vec<Geometry>,
@@ -69,7 +69,7 @@ pub fn write_mtl_geometry(
     }
 
     let mut uv_coords_catheter = Vec::new();
-    
+
     // for catheter no displacement uv texture needed
     for (i, mesh) in geometries_to_process.into_iter().enumerate() {
         if mesh.catheter.is_empty() {
@@ -117,7 +117,7 @@ pub fn write_mtl_geometry(
 pub fn write_mtl_wall(
     walls_to_process: &Vec<Geometry>,
     output_dir: &str,
-    case_name: &str,    
+    case_name: &str,
 ) -> Vec<Vec<(f64, f64)>> {
     let mut uv_coords_walls = Vec::new();
 

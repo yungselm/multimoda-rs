@@ -22,11 +22,21 @@ pub fn prepare_geometries_comparison(
     let dia_rest = align_geometries(&dia_stress, dia_rest);
     let sys_rest = align_geometries(&sys_stress, sys_rest);
 
-    let dia_pair = GeometryPair { dia_geom: dia_rest, sys_geom: dia_stress };
-    let sys_pair = GeometryPair { dia_geom: sys_rest, sys_geom: sys_stress };
+    let dia_pair = GeometryPair {
+        dia_geom: dia_rest,
+        sys_geom: dia_stress,
+    };
+    let sys_pair = GeometryPair {
+        dia_geom: sys_rest,
+        sys_geom: sys_stress,
+    };
 
-    let dia_pair = dia_pair.trim_geometries_same_length().adjust_z_coordinates();
-    let sys_pair = sys_pair.trim_geometries_same_length().adjust_z_coordinates();
+    let dia_pair = dia_pair
+        .trim_geometries_same_length()
+        .adjust_z_coordinates();
+    let sys_pair = sys_pair
+        .trim_geometries_same_length()
+        .adjust_z_coordinates();
 
     (dia_pair, sys_pair)
 }
@@ -43,10 +53,7 @@ fn resample_to_reference_z(
         return Err("Original geometry must have at least two contours for interpolation".into());
     }
 
-    let orig_z: Vec<f64> = orig_contours
-        .iter()
-        .map(|c| c.centroid.2)
-        .collect();
+    let orig_z: Vec<f64> = orig_contours.iter().map(|c| c.centroid.2).collect();
 
     let mut new_contours = Vec::with_capacity(reference.contours.len());
     for (idx, ref_c) in reference.contours.iter().enumerate() {
@@ -104,7 +111,11 @@ fn resample_to_reference_z(
             };
             let z0 = orig_cat_z[i];
             let z1 = orig_cat_z[i + 1];
-            let t = if (z1 - z0).abs() < std::f64::EPSILON { 0.0 } else { (z_ref - z0) / (z1 - z0) };
+            let t = if (z1 - z0).abs() < std::f64::EPSILON {
+                0.0
+            } else {
+                (z_ref - z0) / (z1 - z0)
+            };
             let pts0 = &cat_curve[i].points;
             let pts1 = &cat_curve[i + 1].points;
             let mut interp_pts = Vec::with_capacity(pts0.len());
@@ -154,10 +165,7 @@ fn translate_z_to_match(orig: &mut Geometry, ref_geom: &Geometry) {
 }
 
 /// Align XY centroids (keeps Z unchanged)
-fn align_geometries(
-    ref_geom: &Geometry,
-    mut geom: Geometry,
-) -> Geometry {
+fn align_geometries(ref_geom: &Geometry, mut geom: Geometry) -> Geometry {
     let ref_centroid = ref_geom.contours.last().unwrap().centroid;
     for contour in geom.contours.iter_mut().chain(geom.catheter.iter_mut()) {
         let c = contour.centroid;
@@ -174,8 +182,6 @@ fn align_geometries(
 //     use approx::assert_relative_eq;
 //     use std::f64::consts::PI;
 //     use crate::utils::test_utils::{generate_ellipse_points, new_dummy_contour}
-
-
 
 //     #[test]
 //     fn test_translate_z_to_match() {

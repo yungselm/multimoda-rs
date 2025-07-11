@@ -1,5 +1,5 @@
-use std::f64::consts::PI;
 use crate::io::input::{Contour, ContourPoint};
+use std::f64::consts::PI;
 
 /// Generates ellipse contour points for testing
 pub fn generate_ellipse_points(

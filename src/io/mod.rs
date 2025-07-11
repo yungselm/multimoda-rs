@@ -2,9 +2,9 @@ pub mod input;
 pub mod load_geometry;
 pub mod output;
 
+use anyhow::{bail, Context};
 use input::{read_records, Contour, ContourPoint, Record};
 use std::path::Path;
-use anyhow::{bail, Context};
 
 #[derive(Debug, Clone)]
 pub struct Geometry {
@@ -17,8 +17,8 @@ pub struct Geometry {
 impl Geometry {
     /// Creates a new Geometry instance by loading all required data files
     pub fn new(
-        input_dir: &str, 
-        label: String, 
+        input_dir: &str,
+        label: String,
         diastole: bool,
         image_center: (f64, f64),
         radius: f64,
@@ -48,21 +48,31 @@ impl Geometry {
         let mut contours = Self::load_contours(&contour_path, &records_path)
             .with_context(|| format!("Failed to load contours from {}", contour_path.display()))?;
         if contours.is_empty() {
-            bail!("Contour file {} was empty — this data is required", contour_path.display());
+            bail!(
+                "Contour file {} was empty — this data is required",
+                contour_path.display()
+            );
         }
         println!("Loaded contours");
 
-        let reference_point = Self::load_reference_point(&reference_path)
-            .with_context(|| format!("Failed to load reference point from {}", reference_path.display()))?;
+        let reference_point = Self::load_reference_point(&reference_path).with_context(|| {
+            format!(
+                "Failed to load reference point from {}",
+                reference_path.display()
+            )
+        })?;
         println!("Loaded reference_point");
 
         let records = Self::load_results(&records_path)
             .with_context(|| format!("Failed to load records from {}", records_path.display()))?;
         if records.is_empty() {
-            bail!("Results file {} was empty — this data is required", records_path.display());
+            bail!(
+                "Results file {} was empty — this data is required",
+                records_path.display()
+            );
         }
         println!("Loaded results");
-        
+
         // since reordeing the frames, destroys the z-coordinates of everyframe they need to be stored here
         // and then be reused after reordering them
         let mut z_coords = Vec::new();
@@ -90,7 +100,7 @@ impl Geometry {
                 n_points,
             )?
         };
-        
+
         //sort catheter in ascending order
         catheter.sort_by_key(|c| c.id);
 
@@ -105,10 +115,7 @@ impl Geometry {
         })
     }
 
-    fn load_contours(
-        contour_path: &Path,
-        records_path: &Path,
-    ) -> anyhow::Result<Vec<Contour>> {
+    fn load_contours(contour_path: &Path, records_path: &Path) -> anyhow::Result<Vec<Contour>> {
         let raw_points = ContourPoint::read_contour_data(contour_path)?;
         let results = read_records(records_path)?;
 
@@ -251,10 +258,7 @@ mod geometry_tests {
     const NUM_POINTS_CATHETER: usize = 20;
 
     fn load_test_manifest(mode: &str) -> Value {
-        let manifest_path = format!(
-            "data/fixtures/{}_csv_files/test_manifest.json", 
-            mode
-        );
+        let manifest_path = format!("data/fixtures/{}_csv_files/test_manifest.json", mode);
         let file = File::open(manifest_path).expect("Failed to open manifest");
         serde_json::from_reader(file).expect("Failed to parse manifest")
     }
@@ -264,7 +268,8 @@ mod geometry_tests {
         let mode = "rest";
         let manifest = load_test_manifest(mode);
         let dia_expected: Vec<u32> = manifest["dia"]["expected_indices"]
-            .as_array().unwrap()
+            .as_array()
+            .unwrap()
             .iter()
             .map(|v| v.as_u64().unwrap() as u32)
             .collect();
@@ -272,14 +277,19 @@ mod geometry_tests {
         // Load raw records and geometry
         let input_dir = format!("data/fixtures/{0}_csv_files", mode);
         let geometry = Geometry::new(&input_dir, "test".into(), true, (4.5, 4.5), 0.5, 20).unwrap();
-        let records = Geometry::load_results(&Path::new(&input_dir).join("combined_sorted_manual.csv")).unwrap();
-        let filtered: Vec<u32> = records.into_iter()
+        let records =
+            Geometry::load_results(&Path::new(&input_dir).join("combined_sorted_manual.csv"))
+                .unwrap();
+        let filtered: Vec<u32> = records
+            .into_iter()
             .filter(|r| r.phase == "D")
             .map(|r| r.frame)
             .collect();
 
         // Map reordered contours back to original frame indices
-        let actual_sequence: Vec<u32> = geometry.contours.iter()
+        let actual_sequence: Vec<u32> = geometry
+            .contours
+            .iter()
             .map(|c| filtered[c.id as usize])
             .collect();
 
@@ -301,23 +311,22 @@ mod geometry_tests {
             (4.5, 4.5),
             0.5,
             20,
-        ).expect("Failed to load geometry");
-        
+        )
+        .expect("Failed to load geometry");
+
         let manifest = load_test_manifest("rest");
         let dia_config = &manifest["dia"];
 
         assert_eq!(
-            geometry.contours.len(), 
+            geometry.contours.len(),
             dia_config["num_contours"].as_u64().unwrap() as usize,
             "Contour count mismatch"
         );
         let n = geometry.contours.len() as u32;
 
         let expected_indices: Vec<u32> = (0..=(n - 1)).collect();
-        
-        let actual_indices: Vec<u32> = geometry.contours.iter()
-            .map(|c| c.id)
-            .collect();
+
+        let actual_indices: Vec<u32> = geometry.contours.iter().map(|c| c.id).collect();
 
         assert_eq!(
             actual_indices, expected_indices,
@@ -334,12 +343,16 @@ mod geometry_tests {
             (4.5, 4.5),
             0.5,
             20,
-        ).expect("Failed to load geometry");
-        
+        )
+        .expect("Failed to load geometry");
+
         let manifest = load_test_manifest("rest");
         let dia_config = &manifest["dia"];
 
-        println!("Elliptic ratios manifest: {:?}", dia_config["elliptic_ratios"]);
+        println!(
+            "Elliptic ratios manifest: {:?}",
+            dia_config["elliptic_ratios"]
+        );
         let mut elliptic_ratios_contours = Vec::new();
         let mut contour_ids = Vec::new();
         for c in geometry.contours.iter() {
@@ -356,16 +369,12 @@ mod geometry_tests {
             assert_relative_eq!(
                 contour.elliptic_ratio(),
                 expected_ratio,
-                epsilon = 0.1  // Allow some tolerance
+                epsilon = 0.1 // Allow some tolerance
             );
 
             // Verify area
             let expected_area = dia_config["areas"][i].as_f64().unwrap();
-            assert_relative_eq!(
-                contour.area(),
-                expected_area,
-                epsilon = 0.1
-            );
+            assert_relative_eq!(contour.area(), expected_area, epsilon = 0.1);
 
             // Verify aortic thickness
             let expected_thickness = match dia_config["aortic_thickness"][i].as_f64() {
@@ -373,8 +382,7 @@ mod geometry_tests {
                 None => None,
             };
             assert_eq!(
-                contour.aortic_thickness, 
-                expected_thickness,
+                contour.aortic_thickness, expected_thickness,
                 "Aortic thickness mismatch at index {}",
                 i
             );
@@ -388,9 +396,10 @@ mod geometry_tests {
             "test".to_string(),
             true,
             (4.5, 4.5),
-            0.5, 
+            0.5,
             20,
-        ).expect("Failed to load geometry");
+        )
+        .expect("Failed to load geometry");
 
         // Verify number of catheter points per contour
         for catheter_contour in &geometry.catheter {
@@ -403,11 +412,7 @@ mod geometry_tests {
 
         // Verify z-coordinate consistency
         for (contour, catheter) in geometry.contours.iter().zip(&geometry.catheter) {
-            assert_relative_eq!(
-                catheter.centroid.2,
-                contour.centroid.2,
-                epsilon = 1e-6
-            );
+            assert_relative_eq!(catheter.centroid.2, contour.centroid.2, epsilon = 1e-6);
         }
     }
 }

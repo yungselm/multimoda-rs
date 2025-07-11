@@ -1,21 +1,18 @@
 use rayon::prelude::*;
-use std::f64::consts::PI;
-use std::collections::HashSet;
 use std::collections::HashMap;
+use std::collections::HashSet;
+use std::f64::consts::PI;
 
-use crate::io::input::{ContourPoint, Contour};
+use crate::io::input::{Contour, ContourPoint};
 use crate::io::Geometry;
 
-
 pub fn align_frames_in_geometry(geometry: Geometry, steps: usize, range: f64) -> Geometry {
-    let (mut geometry, reference_index, reference_pos, ref_contour) = 
-        prep_data_geometry(geometry);
-    
-    let (p1, p2, updated_ref) = 
-        assign_aortic(ref_contour.clone(), &geometry);
+    let (mut geometry, reference_index, reference_pos, ref_contour) = prep_data_geometry(geometry);
+
+    let (p1, p2, updated_ref) = assign_aortic(ref_contour.clone(), &geometry);
     let ref_contour = updated_ref.clone();
 
-    let (_line_angle, rotation_to_y, rotated_ref) = 
+    let (_line_angle, rotation_to_y, rotated_ref) =
         rotate_reference_contour(p1, p2, ref_contour.clone());
 
     // Update the reference contour in geometry with rotated version
@@ -31,7 +28,7 @@ pub fn align_frames_in_geometry(geometry: Geometry, steps: usize, range: f64) ->
             catheter.sort_contour_points();
             break;
         }
-    }    
+    }
 
     let (mut geometry, id_translation) = align_remaining_contours(
         geometry,
@@ -82,15 +79,17 @@ fn prep_data_geometry(mut geometry: Geometry) -> (Geometry, u32, usize, Contour)
     let ref_contour = &mut geometry.contours.remove(reference_pos);
     println!("Using contour {} as reference.", reference_index);
 
-    (geometry, reference_index, reference_pos, ref_contour.clone())    
+    (
+        geometry,
+        reference_index,
+        reference_pos,
+        ref_contour.clone(),
+    )
 }
 
 /// expects: a reference Contour and the Geometry the Contour is derived from
 /// returns: farthest points and Contour with assigned aortic bool
-fn assign_aortic(
-    contour: Contour,
-    geometry: &Geometry, 
-) -> (ContourPoint, ContourPoint, Contour) {
+fn assign_aortic(contour: Contour, geometry: &Geometry) -> (ContourPoint, ContourPoint, Contour) {
     let ((p1, p2), _dist) = contour.find_farthest_points();
 
     let p1_pos = contour.points.iter().position(|pt| pt == p1).unwrap();
@@ -99,21 +98,27 @@ fn assign_aortic(
     let (first_half_indices, second_half_indices) = if p1_pos < p2_pos {
         (
             (p1_pos..=p2_pos).collect::<HashSet<_>>(),
-            (0..p1_pos).chain(p2_pos+1..contour.points.len()).collect::<HashSet<_>>()
+            (0..p1_pos)
+                .chain(p2_pos + 1..contour.points.len())
+                .collect::<HashSet<_>>(),
         )
     } else {
         (
-            (p1_pos..contour.points.len()).chain(0..=p2_pos).collect::<HashSet<_>>(),
-            (p2_pos+1..p1_pos).collect::<HashSet<_>>()
+            (p1_pos..contour.points.len())
+                .chain(0..=p2_pos)
+                .collect::<HashSet<_>>(),
+            (p2_pos + 1..p1_pos).collect::<HashSet<_>>(),
         )
     };
 
     // Compute distances first — no borrows beyond this point
-    let dist_first = first_half_indices.iter()
+    let dist_first = first_half_indices
+        .iter()
         .map(|&i| contour.points[i].distance_to(&geometry.reference_point))
         .sum::<f64>();
 
-    let dist_second = second_half_indices.iter()
+    let dist_second = second_half_indices
+        .iter()
         .map(|&i| contour.points[i].distance_to(&geometry.reference_point))
         .sum::<f64>();
 
@@ -152,7 +157,9 @@ fn rotate_reference_contour(
     println!("----------------------Aligning frames----------------------");
     println!(
         "Reference line angle: {:.3} rad; rotating reference by {:.3} rad ({:.1}°)",
-        line_angle, rotation_to_y, rotation_to_y.to_degrees()
+        line_angle,
+        rotation_to_y,
+        rotation_to_y.to_degrees()
     );
 
     let mut rotated_ref = contour.clone();
@@ -161,11 +168,7 @@ fn rotate_reference_contour(
     let ((p3, p4), _dist) = rotated_ref.find_closest_opposite();
     // Determine which point is aortic
     println!("------------------------Aortic alignment test--------------------");
-    let (aortic_pt, non_aortic_pt) = if p3.aortic {
-        (&p3, &p4)
-    } else {
-        (&p4, &p3)
-    };
+    let (aortic_pt, non_aortic_pt) = if p3.aortic { (&p3, &p4) } else { (&p4, &p3) };
 
     // Adjust rotation if aortic is on the left
     if aortic_pt.x < non_aortic_pt.x {
@@ -188,7 +191,8 @@ fn align_remaining_contours(
     steps: usize,
     range: f64,
 ) -> (Geometry, Vec<(u32, (f64, f64, f64), f64, (f64, f64))>) {
-    let mut processed_refs: HashMap<u32, (Vec<ContourPoint>, (f64, f64, f64))> = std::collections::HashMap::new();
+    let mut processed_refs: HashMap<u32, (Vec<ContourPoint>, (f64, f64, f64))> =
+        std::collections::HashMap::new();
     let mut id_translation = Vec::new();
 
     // Process contours in reverse order (highest ID first)
@@ -229,13 +233,7 @@ fn align_remaining_contours(
         };
 
         // Optimize rotation
-        let best_rot = find_best_rotation(
-            &ref_points,
-            &target,
-            steps,
-            range,
-            &contour.centroid,
-        );
+        let best_rot = find_best_rotation(&ref_points, &target, steps, range, &contour.centroid);
 
         // Apply final rotation
         let total_rotation = rot + best_rot;
@@ -249,12 +247,14 @@ fn align_remaining_contours(
             total_rotation,
             (contour.centroid.0, contour.centroid.1),
         ));
-        println!("Matching Contour {:?} -> Contour {:?}, Best rotation: {:.1}°", &contour.id, contour.id + 1, &best_rot.to_degrees());
-
-        processed_refs.insert(
-            contour.id,
-            (contour.points.clone(), contour.centroid),
+        println!(
+            "Matching Contour {:?} -> Contour {:?}, Best rotation: {:.1}°",
+            &contour.id,
+            contour.id + 1,
+            &best_rot.to_degrees()
         );
+
+        processed_refs.insert(contour.id, (contour.points.clone(), contour.centroid));
 
         let half_len = contour.points.len() / 2;
         for pt in contour.points.iter_mut().skip(half_len) {
@@ -329,9 +329,9 @@ fn directed_hausdorff(contour_a: &[ContourPoint], contour_b: &[ContourPoint]) ->
 #[cfg(test)]
 mod contour_tests {
     use super::*;
+    use crate::utils::test_utils::{generate_ellipse_points, new_dummy_contour};
     use approx::assert_relative_eq;
     use std::f64::consts::PI;
-    use crate::utils::test_utils::{generate_ellipse_points, new_dummy_contour};
 
     #[test]
     fn test_assign_aortic_splits_correctly() {
@@ -411,8 +411,7 @@ mod contour_tests {
             label: "test".to_string(),
         };
         let (p1, p2, contour_with_aortic) = assign_aortic(contour, &geometry);
-        let (_, rotation, rotated_contour) =
-            rotate_reference_contour(p1, p2, contour_with_aortic);
+        let (_, rotation, rotated_contour) = rotate_reference_contour(p1, p2, contour_with_aortic);
         // Check rotation is applied correctly
         assert_relative_eq!(rotation, 3.0 * PI / 2.0, epsilon = 1e-2);
         // Aortic points should be on the right (x > 0)
@@ -421,7 +420,10 @@ mod contour_tests {
             .iter()
             .filter(|p| p.aortic)
             .all(|p| p.x > 0.0);
-        assert!(aortic_right, "Aortic points should be on the right after rotation");
+        assert!(
+            aortic_right,
+            "Aortic points should be on the right after rotation"
+        );
     }
 
     #[test]
@@ -441,14 +443,8 @@ mod contour_tests {
         };
 
         // Contour 2: rotated 30 degrees, translated to (5,5)
-        let contour2_points = generate_ellipse_points(
-            major,
-            minor,
-            num_points,
-            30_f64.to_radians(),
-            (5.0, 5.0),
-            2
-        );
+        let contour2_points =
+            generate_ellipse_points(major, minor, num_points, 30_f64.to_radians(), (5.0, 5.0), 2);
         let contour2 = Contour {
             id: 2,
             points: contour2_points,
@@ -464,7 +460,7 @@ mod contour_tests {
             num_points,
             60_f64.to_radians(),
             (10.0, 10.0),
-            1
+            1,
         );
         let contour1 = Contour {
             id: 1,
@@ -538,7 +534,8 @@ mod contour_tests {
             };
             // generate its catheter (they all start around (4.5,4.5))
             let catheter_contours =
-                Contour::create_catheter_contours(&contour.points, (4.5, 4.5), 0.5, 20).expect("catheter fail");
+                Contour::create_catheter_contours(&contour.points, (4.5, 4.5), 0.5, 20)
+                    .expect("catheter fail");
             test_contours.push(contour);
             test_catheters.extend(catheter_contours);
         }

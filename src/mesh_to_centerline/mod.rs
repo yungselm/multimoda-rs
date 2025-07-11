@@ -1,12 +1,12 @@
-pub mod preprocessing;
 pub mod operations;
+pub mod preprocessing;
 
-use preprocessing::{prepare_data_3d_alignment, read_interpolated_meshes};
-use operations::{find_optimal_rotation, get_transformations};
-use crate::io::{Geometry, input::Contour};
+use crate::io::{input::Contour, Geometry};
 use crate::texture::write_mtl_geometry;
+use operations::{find_optimal_rotation, get_transformations};
+use preprocessing::{prepare_data_3d_alignment, read_interpolated_meshes};
 
-use crate::io::output::{GeometryType, write_geometry_vec_to_obj};
+use crate::io::output::{write_geometry_vec_to_obj, GeometryType};
 
 pub fn create_centerline_aligned_meshes(
     state: &str,
@@ -18,7 +18,8 @@ pub fn create_centerline_aligned_meshes(
     upper_ref_pt: (f64, f64, f64),
     lower_ref_pt: (f64, f64, f64),
 ) -> anyhow::Result<(Geometry, Geometry)> {
-    let (centerline, ref_mesh_dia, ref_mesh_sys) = prepare_data_3d_alignment(state, centerline_path, input_dir, interpolation_steps)?;
+    let (centerline, ref_mesh_dia, ref_mesh_sys) =
+        prepare_data_3d_alignment(state, centerline_path, input_dir, interpolation_steps)?;
     let interpolated_meshes = read_interpolated_meshes(state, input_dir, interpolation_steps);
 
     let mut geometries = vec![ref_mesh_dia.clone()];
@@ -48,9 +49,15 @@ pub fn create_centerline_aligned_meshes(
     for geometry in &mut geometries {
         for catheter in &mut geometry.catheter {
             if let Some(contour) = geometry.contours.iter().find(|c| c.id == catheter.id) {
-                catheter.rotate_contour_around_point(optimal_angle, (contour.centroid.0, contour.centroid.1));
+                catheter.rotate_contour_around_point(
+                    optimal_angle,
+                    (contour.centroid.0, contour.centroid.1),
+                );
             } else {
-                eprintln!("No matching contour found for catheter with id {}", catheter.id);
+                eprintln!(
+                    "No matching contour found for catheter with id {}",
+                    catheter.id
+                );
             }
         }
     }
@@ -59,7 +66,9 @@ pub fn create_centerline_aligned_meshes(
 
     for geometry in &mut geometries {
         for contour in &mut geometry.contours {
-            if let Some(transformation) = transformations.iter().find(|t| t.frame_index == contour.id) {
+            if let Some(transformation) =
+                transformations.iter().find(|t| t.frame_index == contour.id)
+            {
                 for pt in &mut contour.points {
                     *pt = transformation.apply_to_point(pt);
                 }
@@ -75,7 +84,10 @@ pub fn create_centerline_aligned_meshes(
                 // Assuming catheter points use the same frame index as their corresponding contour
                 // Find the transformation based on catheter's frame index (if applicable)
                 // This part depends on how catheter points are associated with frames
-                if let Some(transformation) = transformations.iter().find(|t| t.frame_index == catheter.id) {
+                if let Some(transformation) = transformations
+                    .iter()
+                    .find(|t| t.frame_index == catheter.id)
+                {
                     *pt = transformation.apply_to_point(pt);
                 }
             }
@@ -83,7 +95,7 @@ pub fn create_centerline_aligned_meshes(
         }
     }
 
-    let (uv_coords_contours, uv_coords_catheter) = 
+    let (uv_coords_contours, uv_coords_catheter) =
         write_mtl_geometry(&geometries, output_dir, state);
 
     write_geometry_vec_to_obj(
@@ -103,9 +115,11 @@ pub fn create_centerline_aligned_meshes(
     )?;
 
     let n_geometries = geometries.len();
-    let dia_geom = geometries.get(0)
+    let dia_geom = geometries
+        .get(0)
         .expect("Expected at least one geometry for diastole");
-    let sys_geom = geometries.get(n_geometries - 1)
+    let sys_geom = geometries
+        .get(n_geometries - 1)
         .expect("Expected at least one geometry for systole");
 
     Ok((dia_geom.clone(), sys_geom.clone()))

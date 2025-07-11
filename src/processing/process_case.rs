@@ -1,11 +1,11 @@
 use anyhow::bail;
 
 use crate::io::input::{Contour, ContourPoint};
-use crate::io::output::{GeometryType, write_geometry_vec_to_obj};
+use crate::io::output::{write_geometry_vec_to_obj, GeometryType};
 use crate::io::Geometry;
 use crate::processing::geometries::GeometryPair;
-use crate::texture::{write_mtl_geometry, write_mtl_wall};
 use crate::processing::walls::create_wall_geometry;
+use crate::texture::{write_mtl_geometry, write_mtl_wall};
 
 pub fn create_geometry_pair(
     case_name: String,
@@ -16,7 +16,8 @@ pub fn create_geometry_pair(
     radius: f64,
     n_points: u32,
 ) -> anyhow::Result<GeometryPair> {
-    let geometries = GeometryPair::new(input_dir, case_name.clone(), image_center, radius, n_points)?;
+    let geometries =
+        GeometryPair::new(input_dir, case_name.clone(), image_center, radius, n_points)?;
     let mut geometries = geometries.adjust_z_coordinates();
 
     geometries = geometries.process_geometry_pair(steps_best_rotation, range_rotation_rad);
@@ -26,7 +27,7 @@ pub fn create_geometry_pair(
     let dia_geom = geometries.dia_geom;
     let dia_geom = dia_geom.smooth_contours();
     let sys_geom = geometries.sys_geom;
-    let sys_geom = sys_geom.smooth_contours(); 
+    let sys_geom = sys_geom.smooth_contours();
 
     Ok(GeometryPair {
         dia_geom: dia_geom,
@@ -48,15 +49,15 @@ pub fn process_case(
 
     let dia_geom = geometries.dia_geom;
     let sys_geom = geometries.sys_geom;
-    
+
     // Interpolate between two geometrys by creating new geometries with coordinates
     // in between the two geometries.
     let interpolated_geometries =
-    interpolate_contours(&dia_geom, &sys_geom, interpolation_steps.clone())?;
-    
+        interpolate_contours(&dia_geom, &sys_geom, interpolation_steps.clone())?;
+
     let (uv_coords_contours, uv_coords_catheter) =
-    write_mtl_geometry(&interpolated_geometries, output_dir, case_name);
-    
+        write_mtl_geometry(&interpolated_geometries, output_dir, case_name);
+
     // Write contours (mesh) and catheter using the enum
     write_geometry_vec_to_obj(
         GeometryType::Contour,
@@ -65,7 +66,7 @@ pub fn process_case(
         &interpolated_geometries,
         &uv_coords_contours,
     )?;
-    
+
     if !dia_geom.catheter.is_empty() & !sys_geom.catheter.is_empty() {
         write_geometry_vec_to_obj(
             GeometryType::Catheter,
@@ -80,8 +81,8 @@ pub fn process_case(
     let dia_wall = create_wall_geometry(&dia_geom, false);
     let sys_wall = create_wall_geometry(&sys_geom, false);
 
-    let interpolated_walls = 
-    interpolate_contours(&dia_wall, &sys_wall, interpolation_steps.clone())?;
+    let interpolated_walls =
+        interpolate_contours(&dia_wall, &sys_wall, interpolation_steps.clone())?;
 
     let uv_coords_walls = write_mtl_wall(&interpolated_walls, output_dir, case_name);
 
@@ -92,7 +93,7 @@ pub fn process_case(
         &interpolated_walls,
         &uv_coords_walls,
     )?;
-    
+
     Ok(GeometryPair { dia_geom, sys_geom })
 }
 
@@ -100,7 +101,7 @@ pub fn process_case(
 /// used to visualize deformation over a cardiac cycle.
 pub fn interpolate_contours(
     start: &Geometry,
-    end:   &Geometry,
+    end: &Geometry,
     steps: usize,
 ) -> anyhow::Result<Vec<Geometry>> {
     use std::cmp::min;
@@ -122,31 +123,15 @@ pub fn interpolate_contours(
     for step in 0..steps {
         let t = step as f64 / (steps - 1) as f64;
 
-        let contours = sc.iter().zip(ec).map(|(s, e)| Contour {
-            id: s.id,
-            points: s.points.iter().zip(&e.points)
-                .map(|(ps, pe)| ContourPoint {
-                    frame_index: ps.frame_index,
-                    point_index: ps.point_index,
-                    x: ps.x * (1.0 - t) + pe.x * t,
-                    y: ps.y * (1.0 - t) + pe.y * t,
-                    z: ps.z * (1.0 - t) + pe.z * t,
-                    aortic: ps.aortic,
-                })
-                .collect(),
-            centroid: (
-                s.centroid.0 * (1.0 - t) + e.centroid.0 * t,
-                s.centroid.1 * (1.0 - t) + e.centroid.1 * t,
-                s.centroid.2 * (1.0 - t) + e.centroid.2 * t,
-            ),
-            aortic_thickness: interpolate_thickness(&s.aortic_thickness, &e.aortic_thickness, t),
-            pulmonary_thickness: interpolate_thickness(&s.pulmonary_thickness, &e.pulmonary_thickness, t),
-        }).collect();
-
-        let catheter = if use_catheter {
-            sat.iter().zip(eat).map(|(s, e)| Contour {
+        let contours = sc
+            .iter()
+            .zip(ec)
+            .map(|(s, e)| Contour {
                 id: s.id,
-                points: s.points.iter().zip(&e.points)
+                points: s
+                    .points
+                    .iter()
+                    .zip(&e.points)
                     .map(|(ps, pe)| ContourPoint {
                         frame_index: ps.frame_index,
                         point_index: ps.point_index,
@@ -161,9 +146,46 @@ pub fn interpolate_contours(
                     s.centroid.1 * (1.0 - t) + e.centroid.1 * t,
                     s.centroid.2 * (1.0 - t) + e.centroid.2 * t,
                 ),
-                aortic_thickness: None,
-                pulmonary_thickness: None,
-            }).collect()
+                aortic_thickness: interpolate_thickness(
+                    &s.aortic_thickness,
+                    &e.aortic_thickness,
+                    t,
+                ),
+                pulmonary_thickness: interpolate_thickness(
+                    &s.pulmonary_thickness,
+                    &e.pulmonary_thickness,
+                    t,
+                ),
+            })
+            .collect();
+
+        let catheter = if use_catheter {
+            sat.iter()
+                .zip(eat)
+                .map(|(s, e)| Contour {
+                    id: s.id,
+                    points: s
+                        .points
+                        .iter()
+                        .zip(&e.points)
+                        .map(|(ps, pe)| ContourPoint {
+                            frame_index: ps.frame_index,
+                            point_index: ps.point_index,
+                            x: ps.x * (1.0 - t) + pe.x * t,
+                            y: ps.y * (1.0 - t) + pe.y * t,
+                            z: ps.z * (1.0 - t) + pe.z * t,
+                            aortic: ps.aortic,
+                        })
+                        .collect(),
+                    centroid: (
+                        s.centroid.0 * (1.0 - t) + e.centroid.0 * t,
+                        s.centroid.1 * (1.0 - t) + e.centroid.1 * t,
+                        s.centroid.2 * (1.0 - t) + e.centroid.2 * t,
+                    ),
+                    aortic_thickness: None,
+                    pulmonary_thickness: None,
+                })
+                .collect()
         } else {
             Vec::new()
         };
@@ -179,7 +201,6 @@ pub fn interpolate_contours(
     geoms.push(end.clone());
     Ok(geoms)
 }
-
 
 /// Helper function to interpolate Vec<Contour>
 #[allow(dead_code)]
@@ -250,14 +271,10 @@ fn interpolate_points(
 }
 
 /// Interpolate two optional thickness values at fraction `t` (0.0..1.0).
-fn interpolate_thickness(
-    start: &Option<f64>,
-    end:   &Option<f64>,
-    t:     f64,
-) -> Option<f64> {
+fn interpolate_thickness(start: &Option<f64>, end: &Option<f64>, t: f64) -> Option<f64> {
     match (start, end) {
         (Some(s), Some(e)) => Some(s * (1.0 - t) + e * t),
-        _                  => None,
+        _ => None,
     }
 }
 
@@ -270,32 +287,30 @@ mod process_tests {
     // Helper to create mock geometry
     fn mock_geometry(label: &str) -> Geometry {
         Geometry {
-            contours: vec![
-                Contour {
-                    id: 1,
-                    points: vec![
-                        ContourPoint {
-                            frame_index: 0,
-                            point_index: 0,
-                            x: 1.0,
-                            y: 2.0,
-                            z: 3.0,
-                            aortic: true,
-                        },
-                        ContourPoint {
-                            frame_index: 0,
-                            point_index: 1,
-                            x: 4.0,
-                            y: 5.0,
-                            z: 6.0,
-                            aortic: true,
-                        },
-                    ],
-                    centroid: (0.5, 1.0, 1.5),
-                    aortic_thickness: Some(1.0),
-                    pulmonary_thickness: Some(2.0),
-                },
-            ],
+            contours: vec![Contour {
+                id: 1,
+                points: vec![
+                    ContourPoint {
+                        frame_index: 0,
+                        point_index: 0,
+                        x: 1.0,
+                        y: 2.0,
+                        z: 3.0,
+                        aortic: true,
+                    },
+                    ContourPoint {
+                        frame_index: 0,
+                        point_index: 1,
+                        x: 4.0,
+                        y: 5.0,
+                        z: 6.0,
+                        aortic: true,
+                    },
+                ],
+                centroid: (0.5, 1.0, 1.5),
+                aortic_thickness: Some(1.0),
+                pulmonary_thickness: Some(2.0),
+            }],
             catheter: vec![Contour {
                 id: 2,
                 points: vec![ContourPoint {
@@ -338,20 +353,20 @@ mod process_tests {
         assert_eq!(result[0].contours[0].points[0].x, 1.0);
 
         // Verify end is unchanged
-        assert_eq!(result[result.len()-1].label, "end");
-        assert_eq!(result[result.len()-1].contours[0].points[0].x, 1.0);
+        assert_eq!(result[result.len() - 1].label, "end");
+        assert_eq!(result[result.len() - 1].contours[0].points[0].x, 1.0);
 
         // Verify interpolation at midpoint
         let mid = &result[1];
         assert_eq!(mid.label, "start_inter_0");
-        
+
         // Point interpolation
         assert_relative_eq!(mid.contours[0].points[0].x, 1.0, epsilon = 1e-5);
         assert_relative_eq!(mid.contours[0].points[1].y, 5.0, epsilon = 1e-5);
-        
+
         // Centroid interpolation
         assert_relative_eq!(mid.contours[0].centroid.0, 0.5, epsilon = 1e-5);
-        
+
         // Catheter interpolation
         assert_relative_eq!(mid.catheter[0].points[0].z, 30.0, epsilon = 1e-5);
     }
@@ -360,7 +375,7 @@ mod process_tests {
     fn test_interpolate_contours_different_lengths() {
         let start = mock_geometry("start");
         let mut end = mock_geometry("end");
-        
+
         // Add extra contour to end geometry
         end.contours.push(Contour {
             id: 3,
@@ -378,16 +393,16 @@ mod process_tests {
         });
 
         let result = interpolate_contours(&start, &end, 1).unwrap();
-        
+
         // Verify frame counts
         assert_eq!(result.len(), 3);
-        
+
         // Start frame has original 1 contour
         assert_eq!(result[0].contours.len(), 1);
-        
+
         // Interpolated frame uses min contours (1)
         assert_eq!(result[1].contours.len(), 1);
-        
+
         // End frame retains its original 2 contours
         assert_eq!(result[2].contours.len(), 2);
     }
@@ -399,33 +414,24 @@ mod process_tests {
             interpolate_thickness(&Some(1.0), &Some(3.0), 0.5),
             Some(2.0)
         );
-        
+
         // Start missing
-        assert_eq!(
-            interpolate_thickness(&None, &Some(3.0), 0.5),
-            None
-        );
-        
+        assert_eq!(interpolate_thickness(&None, &Some(3.0), 0.5), None);
+
         // End missing
-        assert_eq!(
-            interpolate_thickness(&Some(1.0), &None, 0.5),
-            None
-        );
-        
+        assert_eq!(interpolate_thickness(&Some(1.0), &None, 0.5), None);
+
         // Both missing
-        assert_eq!(
-            interpolate_thickness(&None, &None, 0.5),
-            None
-        );
+        assert_eq!(interpolate_thickness(&None, &None, 0.5), None);
     }
 
     #[test]
     fn test_interpolate_contours_zero_steps() {
         let start = mock_geometry("start");
         let end = mock_geometry("end");
-        
+
         let result = interpolate_contours(&start, &end, 0).unwrap();
-        
+
         // Should still have start and end frames
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].label, "start");
@@ -436,10 +442,10 @@ mod process_tests {
     fn test_interpolate_contours_mismatched_ids() {
         let start = mock_geometry("start");
         let mut end = mock_geometry("end");
-        
+
         // Create ID mismatch
         end.contours[0].id = 99;
-        
+
         let result = interpolate_contours(&start, &end, 1);
         assert!(result.is_ok(), "Should handle ID mismatch gracefully");
     }

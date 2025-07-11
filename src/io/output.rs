@@ -1,4 +1,4 @@
-use anyhow::{bail, anyhow, Context};
+use anyhow::{anyhow, bail, Context};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
@@ -111,9 +111,7 @@ pub fn write_obj_mesh_without_uv(
     }
     let empty_uv_coords = vec![(0.0, 0.0); contours.iter().map(|c| c.points.len()).sum()];
     write_obj_mesh(contours, &empty_uv_coords, filename, mtl_filename)
-        .map_err(|e| {
-            anyhow!("Failed to write OBJ mesh without UV: {}", e)
-        })
+        .map_err(|e| anyhow!("Failed to write OBJ mesh without UV: {}", e))
 }
 
 #[derive(Copy, Clone)]
@@ -162,20 +160,10 @@ pub fn write_geometry_vec_to_obj(
             // Clone necessary values for this thread
             let case_name = case_name.clone();
             let output_dir = output_dir_path.clone();
-            
-            let obj_filename = format!(
-                "{}_{:03}_{}.obj",
-                geometry_type.as_str(),
-                i,
-                case_name
-            );
-            let mtl_filename = format!(
-                "{}_{:03}_{}.mtl",
-                geometry_type.as_str(),
-                i,
-                case_name
-            );
-            
+
+            let obj_filename = format!("{}_{:03}_{}.obj", geometry_type.as_str(), i, case_name);
+            let mtl_filename = format!("{}_{:03}_{}.mtl", geometry_type.as_str(), i, case_name);
+
             let obj_path = output_dir.join(&obj_filename);
             let obj_path_str = obj_path
                 .to_str()
@@ -184,14 +172,9 @@ pub fn write_geometry_vec_to_obj(
             // Get contours
             let contours = geometry_type.get_contours(geometry);
 
-            write_obj_mesh(
-                contours,
-                uv_coords_mesh,
-                obj_path_str,
-                &mtl_filename,
-            )
-            .map_err(|e| anyhow!("Failed to write OBJ mesh: {}", e))?;
-            
+            write_obj_mesh(contours, uv_coords_mesh, obj_path_str, &mtl_filename)
+                .map_err(|e| anyhow!("Failed to write OBJ mesh: {}", e))?;
+
             Ok(())
         })
 }

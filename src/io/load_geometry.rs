@@ -18,13 +18,14 @@ pub fn rebuild_geometry(contour_path: &str, catheter_path: &str) -> Geometry {
     let mut geometry = Geometry {
         contours: Vec::new(),
         catheter: Vec::new(),
-        reference_point: ContourPoint { 
-            frame_index: n, 
-            point_index: n, 
-            x: 0.0, 
-            y: 0.0, 
-            z: 0.0, 
-            aortic: false },
+        reference_point: ContourPoint {
+            frame_index: n,
+            point_index: n,
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            aortic: false,
+        },
         label: "None".to_string(),
     };
 
@@ -182,4 +183,3 @@ fn read_obj_mesh(filename: &str) -> Result<Vec<(u32, Vec<ContourPoint>)>, Box<dy
 
     Ok(contours)
 }
-

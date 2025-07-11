@@ -1,5 +1,5 @@
-use crate::io::input::{Contour, ContourPoint};
 use crate::io::input::{Centerline, CenterlinePoint};
+use crate::io::input::{Contour, ContourPoint};
 use crate::io::Geometry;
 use nalgebra::{Point3, Rotation3, Unit, Vector3};
 
@@ -34,10 +34,7 @@ impl FrameTransformation {
     }
 }
 
-pub fn get_transformations(
-    mesh: Geometry,
-    centerline: &Centerline,
-) -> Vec<FrameTransformation> {
+pub fn get_transformations(mesh: Geometry, centerline: &Centerline) -> Vec<FrameTransformation> {
     let mut transformations = Vec::new();
 
     for mut contour in mesh.contours.into_iter() {
@@ -58,7 +55,10 @@ fn align_frame(frame: &mut Contour, cl_point: &CenterlinePoint) -> FrameTransfor
         );
     }
 
-    println!("aligning frame {:?} with centerline point {:?}", &frame.id, &cl_point.contour_point.frame_index);
+    println!(
+        "aligning frame {:?} with centerline point {:?}",
+        &frame.id, &cl_point.contour_point.frame_index
+    );
 
     // === Translation Step ===
     // Compute the translation vector to bring the frame's centroid to the centerline point.
@@ -132,7 +132,6 @@ fn calculate_normal(points: &[ContourPoint], centroid: &(f64, f64, f64)) -> Vect
 
     // need to take the negative normal, since centerline "appears backwards"
     -(v1.cross(&v2) + v2.cross(&v3)).normalize()
-    
 }
 
 /// Finds the optimal rotation angle by minimizing the distance between the closest opposite point
@@ -144,47 +143,54 @@ pub fn find_optimal_rotation(
     upper_ref_pt: (f64, f64, f64),
     lower_ref_pt: (f64, f64, f64),
     angle_step: f64,
-    centerline_point: &CenterlinePoint
+    centerline_point: &CenterlinePoint,
 ) -> f64 {
     let index_reference = reference_point.point_index;
 
     let [target_aortic, target_upper, target_lower]: [Point3<f64>; 3] =
-        [aortic_ref_pt, upper_ref_pt, lower_ref_pt]
-            .map(|(x, y, z)| Point3::new(x, y, z));
+        [aortic_ref_pt, upper_ref_pt, lower_ref_pt].map(|(x, y, z)| Point3::new(x, y, z));
 
     let mut best_angle = 0.0;
     let mut min_total_error = f64::MAX;
 
     let mut angle = 0.0;
-    println!("---------------------Centerline alignment: Finding optimal rotation---------------------");
-    while angle < 6.283185 { // maybe better approach then bruteforce, fix later, still fast enough
+    println!(
+        "---------------------Centerline alignment: Finding optimal rotation---------------------"
+    );
+    while angle < 6.283185 {
+        // maybe better approach then bruteforce, fix later, still fast enough
         let mut temp_frame = contour.clone();
-        
+
         temp_frame.rotate_contour(angle);
-        
-        
+
         align_frame(&mut temp_frame, centerline_point);
         let temp_contour = &temp_frame.points;
-        
+
         let n_points = temp_contour.len() as u32;
 
-        let p_aortic = temp_contour.iter().find(|p| p.point_index == index_reference).unwrap();
+        let p_aortic = temp_contour
+            .iter()
+            .find(|p| p.point_index == index_reference)
+            .unwrap();
         let cont_p_upper = temp_contour.iter().find(|p| p.point_index == 0).unwrap();
-        let cont_p_lower = temp_contour.iter().find(|p| p.point_index == (n_points / 2)).unwrap();
+        let cont_p_lower = temp_contour
+            .iter()
+            .find(|p| p.point_index == (n_points / 2))
+            .unwrap();
 
         let d_aortic = nalgebra::distance(
             &Point3::new(p_aortic.x, p_aortic.y, p_aortic.z),
-            &target_aortic
+            &target_aortic,
         );
 
         let d_upper = nalgebra::distance(
             &Point3::new(cont_p_upper.x, cont_p_upper.y, cont_p_upper.z),
-            &target_upper
+            &target_upper,
         );
 
         let d_lower = nalgebra::distance(
             &Point3::new(cont_p_lower.x, cont_p_lower.y, cont_p_lower.z),
-            &target_lower
+            &target_lower,
         );
 
         // Calculate sum of squared errors

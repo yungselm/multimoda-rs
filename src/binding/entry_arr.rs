@@ -1,6 +1,18 @@
+use crate::io::input::{Contour, ContourPoint, Record};
 use crate::io::Geometry;
-use crate::io::input::{ContourPoint, Contour, Record};
 use crate::processing::contours::{align_frames_in_geometry, hausdorff_distance};
+use crate::processing::geometries::GeometryPair;
+
+pub fn to_geometry_pair_rs(
+    geometry_1: Geometry,
+    geometry_2: Geometry,
+) -> Result<GeometryPair, Box<dyn std::error::Error>> {
+    let geom_pair = GeometryPair {
+        dia_geom: geometry_1,
+        sys_geom: geometry_2,
+    };
+    Ok(geom_pair)
+}
 
 pub fn geometry_from_array_rs(
     contours: Vec<Contour>,
@@ -25,7 +37,10 @@ pub fn geometry_from_array_rs(
         Vec::new()
     } else {
         Contour::create_catheter_contours(
-            &contours.iter().flat_map(|c| c.points.clone()).collect::<Vec<_>>(),
+            &contours
+                .iter()
+                .flat_map(|c| c.points.clone())
+                .collect::<Vec<_>>(),
             image_center,
             radius,
             n_points,
@@ -47,7 +62,12 @@ pub fn geometry_from_array_rs(
             label: label.clone(),
         }
     } else {
-        Geometry { contours, catheter, reference_point, label }
+        Geometry {
+            contours,
+            catheter,
+            reference_point,
+            label,
+        }
     };
 
     // Optionally align and refine ordering
@@ -61,8 +81,13 @@ pub fn geometry_from_array_rs(
     Ok(geometry)
 }
 
-
-fn refine_ordering(mut geom: Geometry, delta: f64, max_rounds: usize, steps: usize, range: f64) -> Geometry {
+fn refine_ordering(
+    mut geom: Geometry,
+    delta: f64,
+    max_rounds: usize,
+    steps: usize,
+    range: f64,
+) -> Geometry {
     let mut last_order = Vec::new();
     for _round in 0..max_rounds {
         let cost = build_cost_matrix(&geom.contours, delta);
@@ -73,7 +98,7 @@ fn refine_ordering(mut geom: Geometry, delta: f64, max_rounds: usize, steps: usi
             two_opt(&cost, 500)
         };
         if order == last_order {
-            break;  // converged
+            break; // converged
         }
         last_order = order.clone();
         geom = reorder_geometry(geom, &order);
@@ -83,10 +108,12 @@ fn refine_ordering(mut geom: Geometry, delta: f64, max_rounds: usize, steps: usi
 }
 
 fn reorder_geometry(mut geom: Geometry, new_order: &[usize]) -> Geometry {
-    let reordered_contours = new_order.iter()
+    let reordered_contours = new_order
+        .iter()
         .map(|&i| geom.contours[i].clone())
         .collect();
-    let reordered_catheter = new_order.iter()
+    let reordered_catheter = new_order
+        .iter()
         .map(|&i| geom.catheter[i].clone())
         .collect();
     geom.contours = reordered_contours;
@@ -118,16 +145,24 @@ fn held_karp(cost: &[Vec<f64>]) -> Vec<usize> {
     // dp[mask][j] = best cost to start at 0, visit mask, end at j
     let mut dp = vec![vec![f64::INFINITY; n]; 1 << n];
     let mut parent = vec![vec![None; n]; 1 << n];
-    
+
     dp[1 << 0][0] = 0.0;
     for mask in 1..=full_mask {
-        if (mask & 1) == 0 { continue } // must always include node 0
+        if (mask & 1) == 0 {
+            continue;
+        } // must always include node 0
         for j in 0..n {
-            if mask & (1 << j) == 0 { continue; }
-            if j == 0 && mask != (1 << 0) { continue; }
+            if mask & (1 << j) == 0 {
+                continue;
+            }
+            if j == 0 && mask != (1 << 0) {
+                continue;
+            }
             let prev_mask = mask ^ (1 << j);
             for i in 0..n {
-                if prev_mask & (1 << i) == 0 { continue; }
+                if prev_mask & (1 << i) == 0 {
+                    continue;
+                }
                 let cost_ij = cost[i][j];
                 let cand = dp[prev_mask][i] + cost_ij;
                 if cand < dp[mask][j] {
@@ -159,10 +194,12 @@ fn held_karp(cost: &[Vec<f64>]) -> Vec<usize> {
 fn two_opt(cost: &[Vec<f64>], max_iters: usize) -> Vec<usize> {
     let n = cost.len();
     let mut order: Vec<usize> = (0..n).collect();
-    
+
     let mut best_impr = true;
     for _ in 0..max_iters {
-        if !best_impr { break; }
+        if !best_impr {
+            break;
+        }
         best_impr = false;
         for a in 1..n - 1 {
             for b in a + 1..n {
@@ -171,11 +208,9 @@ fn two_opt(cost: &[Vec<f64>], max_iters: usize) -> Vec<usize> {
                 let j = order[a];
                 let k = order[b];
                 let l = if b + 1 < n { order[b + 1] } else { usize::MAX };
-                
-                let before = cost[i][j]
-                           + if l != usize::MAX { cost[k][l] } else { 0.0 };
-                let after  = cost[i][k]
-                           + if l != usize::MAX { cost[j][l] } else { 0.0 };
+
+                let before = cost[i][j] + if l != usize::MAX { cost[k][l] } else { 0.0 };
+                let after = cost[i][k] + if l != usize::MAX { cost[j][l] } else { 0.0 };
                 if after + 1e-9 < before {
                     order[a..=b].reverse();
                     best_impr = true;

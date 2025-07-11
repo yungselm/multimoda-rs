@@ -3,10 +3,7 @@ use std::ops::RangeInclusive;
 use crate::io::input::{Contour, ContourPoint};
 use crate::io::Geometry;
 
-pub fn create_wall_geometry(
-    geometry: &Geometry,
-    with_pulmonary: bool,
-) -> Geometry {
+pub fn create_wall_geometry(geometry: &Geometry, with_pulmonary: bool) -> Geometry {
     let mut new_contours = Vec::new();
 
     for contour in &geometry.contours {
@@ -29,9 +26,7 @@ pub fn create_wall_geometry(
     new_geometry
 }
 
-fn create_wall_contour_aortic_only(
-    contour: &Contour,
-) -> Contour {
+fn create_wall_contour_aortic_only(contour: &Contour) -> Contour {
     if contour.aortic_thickness.is_none() {
         let new_contour = offset_contour(contour, 1.0, None);
         new_contour
@@ -42,9 +37,7 @@ fn create_wall_contour_aortic_only(
 }
 
 #[allow(dead_code)]
-fn create_wall_contour_with_pulmonary(
-    _contour: &Contour,
-) -> Contour {
+fn create_wall_contour_with_pulmonary(_contour: &Contour) -> Contour {
     todo!("not yet implemented");
 }
 
@@ -72,7 +65,7 @@ pub fn offset_contour(
             let dy = pt.y - cy;
             let dz = pt.z - cz;
 
-            let len = (dx*dx + dy*dy + dz*dz).sqrt();
+            let len = (dx * dx + dy * dy + dz * dz).sqrt();
             if len > std::f64::EPSILON {
                 // build a unit vector, then add `distance` along it
                 let ux = dx / len;
@@ -111,7 +104,8 @@ fn create_aortic_wall(contour: &Contour) -> Contour {
     let third_quarter = first_quarter * 3;
 
     let ref_pt = &contour.points[third_quarter];
-    let thickness = contour.aortic_thickness
+    let thickness = contour
+        .aortic_thickness
         .expect("aortic_thickness must be present for this contour");
     let outer_x = ref_pt.x + thickness;
     let z = ref_pt.z;
@@ -165,15 +159,20 @@ fn create_aortic_wall(contour: &Contour) -> Contour {
 
     // Create the contour points
     let mut left_wall = offset_contour(contour, 1.0, Some(0..=half as u32)).points;
-    left_wall.truncate(half + 1);        // + 1 for uneven numbers of points
+    left_wall.truncate(half + 1); // + 1 for uneven numbers of points
     let left_len = left_wall.len();
-    
+
     let mut right_wall = Vec::with_capacity(half);
     for (i, (x, y)) in right_points.into_iter().enumerate() {
         // Use safe index calculation
         let src_index = left_len + i;
-        assert!(src_index < contour.points.len(), "Index out of bounds: {} >= {}", src_index, contour.points.len());
-        
+        assert!(
+            src_index < contour.points.len(),
+            "Index out of bounds: {} >= {}",
+            src_index,
+            contour.points.len()
+        );
+
         let src = &contour.points[src_index];
         right_wall.push(ContourPoint {
             frame_index: src.frame_index,

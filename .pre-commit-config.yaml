@@ -4,7 +4,7 @@ repos:
 
       - id: rust-fmt
         name: Rust format (cargo fmt)
-        entry: bash -lc 'cargo fmt -- --check'
+        entry: bash -lc 'cargo fmt'
         language: system
         types: [rust]
 

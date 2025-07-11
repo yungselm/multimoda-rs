@@ -35,7 +35,8 @@ pub fn compute_displacements(mesh: &Geometry, diastole: &Geometry) -> Vec<f64> {
         .iter()
         .zip(diastole.contours.iter())
         .flat_map(|(contour, diastole_contour)| {
-            contour.points
+            contour
+                .points
                 .iter()
                 .zip(diastole_contour.points.iter())
                 .map(|(point, diastole_point)| {
