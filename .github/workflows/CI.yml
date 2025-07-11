@@ -117,9 +117,8 @@ jobs:
     strategy:
       matrix:
         platform:
-          - runner: macos-latest-x64  # Intel runner
+          - runner: macos-latest  # Intel runner
             target: x86_64
-            arch: x64
           - runner: macos-14  # Apple Silicon runner
             target: aarch64
             arch: arm64

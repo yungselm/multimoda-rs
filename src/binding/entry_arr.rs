@@ -78,8 +78,10 @@ pub fn geometry_from_array_rs(
     }
 
     if write_obj {
-        let filename = format!("{}/mesh_000_single.obj", output_path);
-        write_obj_mesh_without_uv(&geometry.contours, &filename, "mesh_000_single.mtl")?;
+        let filename_cont = format!("{}/mesh_000_single.obj", output_path);
+        let filename_cath = format!("{}/catheter_000_single.obj", output_path);
+        write_obj_mesh_without_uv(&geometry.contours, &filename_cont, "mesh_000_single.mtl")?;
+        write_obj_mesh_without_uv(&geometry.catheter, &filename_cath, "catheter_000_single.mtl")?;
     }
 
     let new_geometry = geometry.smooth_contours();
