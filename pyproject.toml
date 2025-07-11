@@ -1,6 +1,6 @@
 [project]
 name = "multimodars"
-version = "0.1.0"
+version = "0.0.1"
 authors = [
     { name = "Anselm W. Stark"}
 ]
@@ -8,7 +8,7 @@ description = "A Rust-powered cardiac multi-image modality fusion package"
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
-    "numpy>=1.26",
+    "numpy>=2.0.0,<3.0.0",
 ]
 classifiers = [
     "Programming Language :: Rust",
