@@ -10,6 +10,7 @@ use std::path::Path;
 pub struct Geometry {
     pub contours: Vec<Contour>,
     pub catheter: Vec<Contour>,
+    pub walls: Vec<Contour>,
     pub reference_point: ContourPoint, // needs to be set on aortic wall ostium!
     pub label: String,
 }
@@ -106,10 +107,13 @@ impl Geometry {
 
         println!("Created catheter contours");
         println!("Generating geometry for {:?}", input_dir);
+        
+        let walls = Vec::new();
 
         Ok(Self {
             contours,
             catheter,
+            walls,
             reference_point,
             label,
         })

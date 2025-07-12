@@ -146,6 +146,7 @@ fn resample_to_reference_z(
     Ok(Geometry {
         contours: new_contours,
         catheter: new_catheter,
+        walls: vec![],
         reference_point: original.reference_point.clone(),
         label: original.label.clone(),
     })

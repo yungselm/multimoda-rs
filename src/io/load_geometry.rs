@@ -9,15 +9,17 @@ use crate::io::Geometry;
 /// Since process_case() ensures that all points are sorted counterclockwise
 /// and aortic points are always on the right side, the original geometry can be rebuild
 /// using simple operations.
-pub fn rebuild_geometry(contour_path: &str, catheter_path: &str) -> Geometry {
+pub fn rebuild_geometry(contour_path: &str, catheter_path: &str, wall_path: &str) -> Geometry {
     let contours = read_obj_mesh(&contour_path).unwrap();
     let catheter = read_obj_mesh(&catheter_path).unwrap();
+    let _walls =  read_obj_mesh(&wall_path).unwrap();
 
     let n = contours.len() as u32;
 
     let mut geometry = Geometry {
         contours: Vec::new(),
         catheter: Vec::new(),
+        walls: Vec::new(),
         reference_point: ContourPoint {
             frame_index: n,
             point_index: n,

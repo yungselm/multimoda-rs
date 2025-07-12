@@ -33,7 +33,7 @@ pub fn smooth_resample_centerline(centerline: Centerline, ref_mesh: &Geometry) -
 
     if sorted_centerline.len() == 1 {
         let p0 = &sorted_centerline[0];
-        for (index, &z) in z_refs.iter().enumerate() {
+        for (index, _) in z_refs.iter().enumerate() {
             contour_points.push(ContourPoint {
                 frame_index: index as u32,
                 point_index: index as u32,
@@ -119,7 +119,8 @@ pub fn prepare_data_3d_alignment(
     let ref_mesh_path = format!("{}/mesh_000_{}.obj", input_dir, state);
     let catheter_path = format!("{}/catheter_000_{}.obj", input_dir, state);
 
-    let mut reference_mesh = rebuild_geometry(&ref_mesh_path, &catheter_path);
+    todo!("Implement rereading of wall contours.");
+    let mut reference_mesh = rebuild_geometry(&ref_mesh_path, &catheter_path, &ref_mesh_path); // implement later!!
 
     reference_mesh.contours.reverse(); // reverse contours since for centerline alignment it is beneficial to have 0 for the ostium
     for (index, contour) in reference_mesh.contours.iter_mut().enumerate() {
@@ -163,7 +164,7 @@ pub fn prepare_data_3d_alignment(
         state
     );
 
-    let mut reference_mesh_sys = rebuild_geometry(&ref_mesh_path_sys, &catheter_path_sys);
+    let mut reference_mesh_sys = rebuild_geometry(&ref_mesh_path_sys, &catheter_path_sys, &ref_mesh_path_sys); // Fix later !!!
     reference_mesh_sys.contours.reverse();
     for (index, contour) in reference_mesh_sys.contours.iter_mut().enumerate() {
         contour.id = index as u32;
@@ -200,7 +201,7 @@ pub fn read_interpolated_meshes(
         let mesh_path = format!("{}/mesh_{:03}_{}.obj", input_dir, i, state);
         let catheter_path = format!("{}/catheter_{:03}_{}.obj", input_dir, i, state);
 
-        let mut mesh = rebuild_geometry(&mesh_path, &catheter_path);
+        let mut mesh = rebuild_geometry(&mesh_path, &catheter_path, &mesh_path); // Fix later!!!!
         mesh.contours.reverse();
         for (index, contour) in mesh.contours.iter_mut().enumerate() {
             contour.id = index as u32;

@@ -349,6 +349,7 @@ mod contour_tests {
         let geometry = Geometry {
             contours: vec![],
             catheter: vec![],
+            walls: vec![],
             reference_point: ContourPoint {
                 frame_index: 0,
                 point_index: 0,
@@ -400,6 +401,7 @@ mod contour_tests {
         let geometry = Geometry {
             contours: vec![],
             catheter: vec![],
+            walls: vec![],
             reference_point: ContourPoint {
                 frame_index: 0,
                 point_index: 0,
@@ -479,6 +481,7 @@ mod contour_tests {
         let geometry = Geometry {
             contours: vec![contour1, contour2, ref_contour.clone()],
             catheter: catheters,
+            walls: vec![],
             reference_point: ContourPoint {
                 frame_index: 0,
                 point_index: 0,
@@ -544,6 +547,7 @@ mod contour_tests {
         let geometry = Geometry {
             contours: test_contours,
             catheter: test_catheters,
+            walls: vec![],
             reference_point: ContourPoint {
                 frame_index: 0,
                 point_index: 0,

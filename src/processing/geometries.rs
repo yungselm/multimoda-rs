@@ -345,6 +345,7 @@ mod geometry_pair_tests {
         Geometry {
             contours: vec![contour],
             catheter: vec![],
+            walls: vec![],
             reference_point: p1,
             label: "test".into(),
         }
@@ -464,6 +465,7 @@ mod geometry_pair_tests {
         let sys = Geometry {
             contours: vec![sys_contour],
             catheter: vec![],
+            walls: vec![],
             reference_point: p1,
             label: "".into(),
         };

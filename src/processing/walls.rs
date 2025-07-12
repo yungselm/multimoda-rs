@@ -17,8 +17,9 @@ pub fn create_wall_geometry(geometry: &Geometry, with_pulmonary: bool) -> Geomet
     }
 
     let new_geometry = Geometry {
-        contours: new_contours,
+        contours: geometry.contours.clone(),
         catheter: geometry.catheter.clone(),
+        walls: new_contours,
         reference_point: geometry.reference_point.clone(),
         label: geometry.label.clone(),
     };

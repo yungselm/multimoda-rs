@@ -149,6 +149,8 @@ pub struct PyGeometry {
     #[pyo3(get, set)]
     pub catheter: Vec<PyContour>,
     #[pyo3(get, set)]
+    pub walls: Vec<PyContour>,    
+    #[pyo3(get, set)]
     pub reference_point: PyContourPoint,
 }
 
@@ -158,11 +160,13 @@ impl PyGeometry {
     fn new(
         contours: Vec<PyContour>,
         catheter: Vec<PyContour>,
+        walls: Vec<PyContour>,
         reference_point: PyContourPoint,
     ) -> Self {
         Self {
             contours,
             catheter,
+            walls,
             reference_point,
         }
     }
@@ -170,8 +174,9 @@ impl PyGeometry {
     // Add a __repr__ method for better printing
     fn __repr__(&self) -> String {
         format!(
-            "Geometry({} contours), Catheter({} catheter), Reference Point: {}",
+            "Geometry({} contours, {} walls), Catheter({} catheter), Reference Point: {}",
             self.contours.len(),
+            self.walls.len(),
             self.catheter.len(),
             self.reference_point.__repr__()
         )
@@ -226,6 +231,7 @@ impl PyGeometry {
         Geometry {
             contours: self.contours.iter().map(|c| c.to_rust_contour().unwrap()).collect(),
             catheter: self.catheter.iter().map(|c| c.to_rust_contour().unwrap()).collect(),
+            walls: self.walls.iter().map(|c| c.to_rust_contour().unwrap()).collect(),
             reference_point: (&self.reference_point).into(),
             label: String::new(),
         }
@@ -354,6 +360,7 @@ impl From<&Geometry> for PyGeometry {
         PyGeometry {
             contours: geom.contours.iter().map(|c| c.into()).collect(),
             catheter: geom.catheter.iter().map(|c| c.into()).collect(),
+            walls: geom.walls.iter().map(|c| c.into()).collect(),
             reference_point: PyContourPoint::from(&geom.reference_point),
         }
     }
@@ -374,6 +381,7 @@ impl From<Geometry> for PyGeometry {
         PyGeometry {
             contours: geom.contours.iter().map(|c| c.into()).collect(),
             catheter: geom.catheter.iter().map(|c| c.into()).collect(),
+            walls: geom.walls.iter().map(|c| c.into()).collect(),
             reference_point: PyContourPoint::from(&geom.reference_point),
         }
     }

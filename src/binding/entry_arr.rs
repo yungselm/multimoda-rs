@@ -31,6 +31,8 @@ pub fn geometry_from_array_rs(
     let mut contours = contours;
     let label = label.to_string();
 
+    let walls = Vec::new();
+    
     // Build catheter contours, propagating any errors
     let mut catheter = if n_points == 0 {
         Vec::new()
@@ -57,6 +59,7 @@ pub fn geometry_from_array_rs(
         Geometry {
             contours,
             catheter,
+            walls,
             reference_point,
             label: label.clone(),
         }
@@ -64,6 +67,7 @@ pub fn geometry_from_array_rs(
         Geometry {
             contours,
             catheter,
+            walls,
             reference_point,
             label,
         }

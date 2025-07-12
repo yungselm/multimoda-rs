@@ -3,7 +3,7 @@ from multimodars import PyContour, PyContourPoint, PyGeometry, create_catheter_c
 
 def geometry_to_numpy(geom: PyGeometry, mode="contours") -> np.ndarray:
     """
-    Flatten all contours+points into a single (N, 4) array of
+    Flatten all contours+points into a single (N, 4, 3) array of
     [frame_index, x, y, z], concatenated in the requested mode.
     mode: "contours" (default), "catheter", or "walls"
     """
