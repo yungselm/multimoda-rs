@@ -13,6 +13,7 @@ use crate::io::output::write_obj_mesh_without_uv;
 
 pub fn geometry_from_array_rs(
     contours: Vec<Contour>,
+    walls: Vec<Contour>,
     reference_point: ContourPoint,
     steps: usize,
     range: f64,
@@ -31,8 +32,6 @@ pub fn geometry_from_array_rs(
     let mut contours = contours;
     let label = label.to_string();
 
-    let walls = Vec::new();
-    
     // Build catheter contours, propagating any errors
     let mut catheter = if n_points == 0 {
         Vec::new()
@@ -73,6 +72,12 @@ pub fn geometry_from_array_rs(
         }
     };
 
+    geometry = if geometry.walls.is_empty() {
+        crate::processing::walls::create_wall_geometry(&geometry, false)
+    } else {
+        geometry
+    };
+
     // Optionally align and refine ordering
     if sort {
         let aligned = align_frames_in_geometry(geometry, steps, range);
@@ -81,14 +86,16 @@ pub fn geometry_from_array_rs(
         geometry = align_frames_in_geometry(geometry, steps, range);
     }
 
+    let new_geometry = geometry.smooth_contours();
+    
     if write_obj {
         let filename_cont = format!("{}/mesh_000_single.obj", output_path);
+        let filename_walls = format!("{}/wall_000_single.obj", output_path);
         let filename_cath = format!("{}/catheter_000_single.obj", output_path);
-        write_obj_mesh_without_uv(&geometry.contours, &filename_cont, "mesh_000_single.mtl")?;
-        write_obj_mesh_without_uv(&geometry.catheter, &filename_cath, "catheter_000_single.mtl")?;
+        write_obj_mesh_without_uv(&new_geometry.contours, &filename_cont, "mesh_000_single.mtl")?;
+        write_obj_mesh_without_uv(&new_geometry.walls, &filename_walls, "wall_000_single.mtl")?;
+        write_obj_mesh_without_uv(&new_geometry.catheter, &filename_cath, "catheter_000_single.mtl")?;
     }
-
-    let new_geometry = geometry.smooth_contours();
 
     Ok(new_geometry)
 }

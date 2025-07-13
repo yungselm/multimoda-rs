@@ -3,6 +3,9 @@
 - [x] Bind all Rust structs to python objects
 - [x] Single mesh alignment (ignoring systole and diastole (for OCT))
 - [x] Functions should return obj, as python objects
+- [] Walls not rotated together with contours, and also catheter. 
+    here a helper function that performs operations on all ContourPoints
+    inside of a Geometry regardless of type, should solve the problem.
 
 # Centerline alignment module
 - [] Centerline resampling based on geometry
@@ -15,8 +18,7 @@
 - [] Shrink/Expand CCTA to best match Aortic wall and shrink/expand coronary to match iv images
 - [] ensure works for IVUS and OCT
 
-
-# final functions list:
+# v0.1.0 desired functionality:
 - [] .from_file(mode = {full, single}, "rest dir", "stress dir", "dia dir", "sys dir")
 - [] .from_array(rest, stress, dia, sys)
 - [] .frame_align / .frame_reorder -> initial alignment, without breathing correction, reorder, checks for better order then reruns
@@ -24,4 +26,5 @@
 - [] .get_array()
 
 # Miscellaneous
-- [] change hardcoded catheter settings
+- [x] change hardcoded catheter settings
+- [] better summarized print statement

@@ -339,8 +339,7 @@ pub fn create_catheter_contours(
 
 #[pyfunction]
 #[pyo3(signature = (
-    contours,
-    reference_point,
+    geometry,
     steps_best_rotation = 300usize,
     range_rotation_rad = 1.57f64,
     image_center = (4.5f64, 4.5f64),
@@ -356,8 +355,7 @@ pub fn create_catheter_contours(
     output_path="output/single"
 ))]
 pub fn geometry_from_array(
-    contours: Vec<PyContour>,
-    reference_point: PyContourPoint,
+    geometry: PyGeometry,
     steps_best_rotation: usize,
     range_rotation_rad: f64,
     image_center: (f64, f64),
@@ -372,18 +370,24 @@ pub fn geometry_from_array(
     write_obj: bool,
     output_path: &str,
 ) -> PyResult<PyGeometry> {
-    let contours_rs: Vec<Contour> = contours
+    let contours_rs: Vec<Contour> = geometry.contours
         .iter()
         .map(|pyc| pyc.to_rust_contour().unwrap())
         .collect();
 
-    let reference_point_rs: ContourPoint = (&reference_point).into();
+    let walls_rs: Vec<Contour> = geometry.walls
+        .iter()
+        .map(|pyc| pyc.to_rust_contour().unwrap())
+        .collect();
+
+    let reference_point_rs: ContourPoint = (&geometry.reference_point).into();
 
     let records_rs: Option<Vec<Record>> =
         records.map(|vec_py| vec_py.into_iter().map(|py| py.to_rust_record()).collect());
 
     let geom_rs = geometry_from_array_rs(
         contours_rs,
+        walls_rs,
         reference_point_rs,
         steps_best_rotation,
         range_rotation_rad,
