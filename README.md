@@ -1,7 +1,11 @@
-<!-- Title, badges, logo -->
-<h1 align="center">
-    <img src="media/multimoda-rs.jpg" alt="multimoda-rs logo">
-</h1>
+<p align="center">
+  <a href="https://github.com/yungselm/multimoda-rs">
+    <img
+      src="https://raw.githubusercontent.com/yungselm/multimoda-rs/main/media/multimoda-rs.jpg"
+      alt="multimoda-rs logo"
+    >
+  </a>
+</p>
 
 [![PyPI](https://img.shields.io/pypi/v/multimodars.svg)](https://pypi.org/project/multimodars)
 [![License](https://img.shields.io/pypi/l/multimodars.svg)](LICENSE.md)
@@ -44,7 +48,7 @@ Run the script with the provided test cases, to ensure sufficient set up.
 import multimodars as mm
 
 # reads in ivus contours from .csv and aligns them
-rest, stress, dia, sys = mm.from_file_full("data/ivus_rest", "ivus_stress")
+rest, stress, dia, sys = mm.from_file_full("data/ivus_rest", "data/ivus_stress")
 
 # get the diastolic rest geometry and align with centerline
 geometry = rest.dia_geom
