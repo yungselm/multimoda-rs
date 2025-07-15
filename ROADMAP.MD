@@ -28,3 +28,5 @@
 # Miscellaneous
 - [x] change hardcoded catheter settings
 - [] better summarized print statement
+-- [x] input/mod.rs
+-- []

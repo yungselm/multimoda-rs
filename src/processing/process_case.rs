@@ -5,7 +5,7 @@ use crate::io::output::{write_geometry_vec_to_obj, GeometryType};
 use crate::io::Geometry;
 use crate::processing::geometries::GeometryPair;
 use crate::processing::walls::create_wall_geometry;
-use crate::texture::{write_mtl_geometry, write_mtl_wall};
+use crate::texture::write_mtl_geometry;
 
 pub fn create_geometry_pair(
     case_name: String,
@@ -48,15 +48,19 @@ pub fn process_case(
 ) -> anyhow::Result<GeometryPair> {
     std::fs::create_dir_all(output_dir)?;
 
-    let dia_geom = geometries.dia_geom;
-    let sys_geom = geometries.sys_geom;
+    let mut dia_geom = geometries.dia_geom;
+    let mut sys_geom = geometries.sys_geom;
+
+    // test wall mesh
+    dia_geom = create_wall_geometry(&dia_geom, false);
+    sys_geom = create_wall_geometry(&sys_geom, false);
 
     // Interpolate between two geometrys by creating new geometries with coordinates
     // in between the two geometries.
     let interpolated_geometries =
         interpolate_contours(&dia_geom, &sys_geom, interpolation_steps.clone())?;
 
-    let (uv_coords_contours, uv_coords_catheter) =
+    let (uv_coords_contours, uv_coords_catheter, uv_coords_walls) =
         write_mtl_geometry(&interpolated_geometries, output_dir, case_name);
 
     // Write contours (mesh) and catheter using the enum
@@ -78,20 +82,11 @@ pub fn process_case(
         )?;
     }
 
-    // test wall mesh
-    let dia_wall = create_wall_geometry(&dia_geom, false);
-    let sys_wall = create_wall_geometry(&sys_geom, false);
-
-    let interpolated_walls =
-        interpolate_contours(&dia_wall, &sys_wall, interpolation_steps.clone())?;
-
-    let uv_coords_walls = write_mtl_wall(&interpolated_walls, output_dir, case_name);
-
     write_geometry_vec_to_obj(
         GeometryType::Wall,
         case_name,
         output_dir,
-        &interpolated_walls,
+        &interpolated_geometries,
         &uv_coords_walls,
     )?;
 
@@ -106,10 +101,12 @@ pub fn interpolate_contours(
     steps: usize,
 ) -> anyhow::Result<Vec<Geometry>> {
     use std::cmp::min;
-    let n = min(start.contours.len(), end.contours.len());
 
-    // Check catheter lengths
-    let use_catheter = !start.catheter.is_empty() && !end.catheter.is_empty();
+    // Find matching lengths per layer
+    let n_contours = min(start.contours.len(), end.contours.len());
+    let n_catheter = min(start.catheter.len(), end.catheter.len());
+    let n_walls    = min(start.walls.len(),    end.walls.len());
+    let use_catheter = n_catheter > 0;
 
     let mut geoms = Vec::with_capacity(steps + 2);
     geoms.push(start.clone());
@@ -117,10 +114,10 @@ pub fn interpolate_contours(
     for step in 0..steps {
         let t = step as f64 / (steps - 1) as f64;
 
-        let contours = interp_contour_list(&start.contours[..n], &end.contours[..n], t);
+        let contours = interp_contour_list(&start.contours[..n_contours], &end.contours[..n_contours], t);
 
         let catheter = if use_catheter {
-            interp_contour_list(&start.catheter[..n], &end.catheter[..n], t)
+            interp_contour_list(&start.catheter[..n_catheter], &end.catheter[..n_catheter], t)
                 .into_iter()
                 // catheter contours don’t carry thickness
                 .map(|mut c| { c.aortic_thickness = None; c.pulmonary_thickness = None; c })
@@ -130,7 +127,7 @@ pub fn interpolate_contours(
         };
 
         // now simply interpolate walls exactly the same way:
-        let walls = interp_contour_list(&start.walls[..n], &end.walls[..n], t);
+        let walls = interp_contour_list(&start.walls[..n_walls], &end.walls[..n_walls], t);
 
         geoms.push(Geometry {
             contours,

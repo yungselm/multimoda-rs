@@ -13,17 +13,17 @@ from multimodars import (
     from_array_singlepair,
 )
 
-from multimodars import Geometry, GeometryPair
+from .multimodars import PyGeometry, PyGeometryPair
 
 Mode = Literal["full", "doublepair", "singlepair", "single"]
 
 def from_file(
     mode: Mode,
     **kwargs: Any,
-) -> Union[Tuple[GeometryPair, GeometryPair, GeometryPair, GeometryPair],
-           Tuple[GeometryPair, GeometryPair],
-           GeometryPair,
-           Geometry]:
+) -> Union[Tuple[PyGeometryPair, PyGeometryPair, PyGeometryPair, PyGeometryPair],
+           Tuple[PyGeometryPair, PyGeometryPair],
+           PyGeometryPair,
+           PyGeometry]:
     """
     A unified entrypoint for all `from_file_*` variants.
 
@@ -46,13 +46,23 @@ def from_file(
                            steps_best_rotation, range_rotation_rad,
                            diastole (bool), image_center, radius, n_points
 
+    Defaults:
+    ---------
+        - steps_best_rotation = 300
+        - range_rotation_Rad = 1.57
+        - interpolation_steps = 28
+        - rest_output_path = "output/rest"
+        - stress_output_path = "output/stress"
+        - diastole_output_path = "output/diastole"
+        - systole_output_path = "output/systole"
+
     Returns
     -------
     Depending on mode, returns:
     - full        → (rest_pair, stress_pair, dia_pair, sys_pair)
     - doublepair  → (rest_pair, stress_pair)
-    - singlepair  → GeometryPair
-    - single      → Geometry
+    - singlepair  → PyGeometryPair
+    - single      → PyGeometry
     """
     if mode == "full":
         required = (
@@ -143,13 +153,13 @@ def from_array(
     mode: Mode,
     **kwargs: Any,
 ) -> Union[
-    Tuple[GeometryPair, GeometryPair, GeometryPair, GeometryPair],
-    Tuple[GeometryPair, GeometryPair],
-    GeometryPair,
-    Geometry,
+    Tuple[PyGeometryPair, PyGeometryPair, PyGeometryPair, PyGeometryPair],
+    Tuple[PyGeometryPair, PyGeometryPair],
+    PyGeometryPair,
+    PyGeometry,
 ]:
     """
-    Unified entry for all array‑based pipelines.
+    Unified entry for all array-based pipelines.
 
     mode : one of
       - "full"        → from_array_full(rest_dia, rest_sys, stress_dia, stress_sys,
@@ -169,6 +179,23 @@ def from_array(
                                             steps, range, image_center, radius, n_points,
                                             label, records, delta, max_rounds,
                                             diastole, sort, write_obj, output_path)
+    Defaults:
+    ---------
+        - steps_best_rotation = 300
+        - range_rotation_Rad = 1.57
+        - interpolation_steps = 28
+        - rest_output_path = "output/rest"
+        - stress_output_path = "output/stress"
+        - diastole_output_path = "output/diastole"
+        - systole_output_path = "output/systole"
+
+    Returns
+    -------
+    Depending on mode, returns:
+    - full        → (rest_pair, stress_pair, dia_pair, sys_pair)
+    - doublepair  → (rest_pair, stress_pair)
+    - singlepair  → PyGeometryPair
+    - single      → PyGeometry
     """
     if mode == "full":
         required = (

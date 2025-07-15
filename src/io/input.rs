@@ -292,7 +292,6 @@ impl ContourPoint {
     pub fn read_contour_data<P: AsRef<Path> + std::fmt::Debug + Clone>(
         path: P,
     ) -> anyhow::Result<Vec<ContourPoint>> {
-        let debug_path = path.clone();
         let file = File::open(path)?;
         let mut rdr = csv::ReaderBuilder::new()
             .has_headers(false)
@@ -309,7 +308,7 @@ impl ContourPoint {
                 Err(e) => eprintln!("Skipping invalid row: {:?}", e),
             }
         }
-        println!("Reading from {:?}", debug_path);
+        
         Ok(points)
     }
 

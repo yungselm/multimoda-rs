@@ -127,7 +127,7 @@ impl GeometryType {
         match self {
             GeometryType::Contour => &geometry.contours,
             GeometryType::Catheter => &geometry.catheter,
-            GeometryType::Wall => &geometry.contours,
+            GeometryType::Wall => &geometry.walls,
         }
     }
 

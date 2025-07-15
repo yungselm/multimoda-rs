@@ -95,7 +95,7 @@ pub fn create_centerline_aligned_meshes(
         }
     }
 
-    let (uv_coords_contours, uv_coords_catheter) =
+    let (uv_coords_contours, uv_coords_catheter, uv_coords_walls) =
         write_mtl_geometry(&geometries, output_dir, state);
 
     write_geometry_vec_to_obj(
@@ -112,6 +112,14 @@ pub fn create_centerline_aligned_meshes(
         output_dir,
         &geometries,
         &uv_coords_catheter,
+    )?;
+
+    write_geometry_vec_to_obj(
+        GeometryType::Wall,
+        state,
+        output_dir,
+        &geometries,
+        &uv_coords_walls,
     )?;
 
     let n_geometries = geometries.len();

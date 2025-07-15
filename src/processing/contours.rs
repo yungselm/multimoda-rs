@@ -2,15 +2,28 @@ use rayon::prelude::*;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::f64::consts::PI;
+use std::sync::{Arc, Mutex};
 
 use crate::io::input::{Contour, ContourPoint};
 use crate::io::Geometry;
+
+#[derive(Debug)]
+struct AlignLog {
+    contour_id:    u32,
+    matched_to:    u32,
+    best_rot_deg:  f64,
+    tx:            f64,
+    ty:            f64,
+    centroid:      (f64, f64),
+}
 
 pub fn align_frames_in_geometry(geometry: Geometry, steps: usize, range: f64) -> Geometry {
     let (mut geometry, reference_index, reference_pos, ref_contour) = prep_data_geometry(geometry);
 
     let (p1, p2, updated_ref) = assign_aortic(ref_contour.clone(), &geometry);
     let ref_contour = updated_ref.clone();
+
+    println!("Processing Geometry: {}", &geometry.label);
 
     let (_line_angle, rotation_to_y, rotated_ref) =
         rotate_reference_contour(p1, p2, ref_contour.clone());
@@ -30,6 +43,8 @@ pub fn align_frames_in_geometry(geometry: Geometry, steps: usize, range: f64) ->
         }
     }
 
+    let logger = Arc::new(Mutex::new(Vec::<AlignLog>::new()));
+
     let (mut geometry, id_translation) = align_remaining_contours(
         geometry,
         reference_index,
@@ -37,6 +52,7 @@ pub fn align_frames_in_geometry(geometry: Geometry, steps: usize, range: f64) ->
         rotation_to_y,
         steps,
         range,
+        Arc::clone(&logger),
     );
 
     for catheter in geometry.catheter.iter_mut() {
@@ -49,6 +65,13 @@ pub fn align_frames_in_geometry(geometry: Geometry, steps: usize, range: f64) ->
             }
         }
     }
+
+    // dump the collected logs as a table
+    let logs = Arc::try_unwrap(logger)
+        .expect("No other Arc references to logger exist")
+        .into_inner()
+        .expect("Logger mutex was poisoned");
+    dump_table(&logs);
 
     geometry
 }
@@ -77,7 +100,6 @@ fn prep_data_geometry(mut geometry: Geometry) -> (Geometry, u32, usize, Contour)
         .position(|contour| contour.id == reference_index)
         .expect("Reference contour not found");
     let ref_contour = &mut geometry.contours.remove(reference_pos);
-    println!("Using contour {} as reference.", reference_index);
 
     (
         geometry,
@@ -154,6 +176,13 @@ fn rotate_reference_contour(
     // Normalize the rotation angle to [0, 2π)
     rotation_to_y = rotation_to_y.rem_euclid(2.0 * PI);
 
+    let mut rotated_ref = contour.clone();
+    rotated_ref.rotate_contour(rotation_to_y);
+    rotated_ref.sort_contour_points();
+    let ((p3, p4), _dist) = rotated_ref.find_closest_opposite();
+    // Determine which point is aortic
+    let (aortic_pt, non_aortic_pt) = if p3.aortic { (&p3, &p4) } else { (&p4, &p3) };
+    
     println!("----------------------Aligning frames----------------------");
     println!(
         "Reference line angle: {:.3} rad; rotating reference by {:.3} rad ({:.1}°)",
@@ -161,15 +190,7 @@ fn rotate_reference_contour(
         rotation_to_y,
         rotation_to_y.to_degrees()
     );
-
-    let mut rotated_ref = contour.clone();
-    rotated_ref.rotate_contour(rotation_to_y);
-    rotated_ref.sort_contour_points();
-    let ((p3, p4), _dist) = rotated_ref.find_closest_opposite();
-    // Determine which point is aortic
     println!("------------------------Aortic alignment test--------------------");
-    let (aortic_pt, non_aortic_pt) = if p3.aortic { (&p3, &p4) } else { (&p4, &p3) };
-
     // Adjust rotation if aortic is on the left
     if aortic_pt.x < non_aortic_pt.x {
         rotation_to_y += PI;
@@ -190,6 +211,7 @@ fn align_remaining_contours(
     rot: f64,
     steps: usize,
     range: f64,
+    logger: Arc<Mutex<Vec<AlignLog>>>,
 ) -> (Geometry, Vec<(u32, (f64, f64, f64), f64, (f64, f64))>) {
     let mut processed_refs: HashMap<u32, (Vec<ContourPoint>, (f64, f64, f64))> =
         std::collections::HashMap::new();
@@ -247,12 +269,16 @@ fn align_remaining_contours(
             total_rotation,
             (contour.centroid.0, contour.centroid.1),
         ));
-        println!(
-            "Matching Contour {:?} -> Contour {:?}, Best rotation: {:.1}°",
-            &contour.id,
-            contour.id + 1,
-            &best_rot.to_degrees()
-        );
+
+        let entry = AlignLog {
+            contour_id: contour.id, 
+            matched_to: contour.id + 1, 
+            best_rot_deg: best_rot.to_degrees(),
+            tx,
+            ty,
+            centroid: (contour.centroid.0, contour.centroid.1),
+        };
+        logger.lock().unwrap().push(entry);
 
         processed_refs.insert(contour.id, (contour.points.clone(), contour.centroid));
 
@@ -324,6 +350,78 @@ fn directed_hausdorff(contour_a: &[ContourPoint], contour_b: &[ContourPoint]) ->
                 .fold(std::f64::MAX, f64::min) // Directly find min without storing a Vec
         })
         .reduce(|| 0.0, f64::max) // Directly find max without extra allocation
+}
+
+fn dump_table(logs: &[AlignLog]) {
+    // 1) Decide on column headers and collect rows as strings
+    let headers = ["Contour", "Matched To", "ΔRot (°)", "Tx", "Ty", "Centroid"];
+    let rows: Vec<[String;6]> = logs.iter()
+        .map(|e| [
+            e.contour_id.to_string(),
+            e.matched_to.to_string(),
+            format!("{:.1}", e.best_rot_deg),
+            format!("{:.2}", e.tx),
+            format!("{:.2}", e.ty),
+            format!("({:.2},{:.2})", e.centroid.0, e.centroid.1),
+        ])
+        .collect();
+
+    // 2) Compute max width for each of the 6 columns
+    let mut widths = [0usize; 6];
+    for (i, &h) in headers.iter().enumerate() {
+        widths[i] = h.len();
+    }
+    for row in &rows {
+        for (i, cell) in row.iter().enumerate() {
+            widths[i] = widths[i].max(cell.len());
+        }
+    }
+
+    // 3a) Left‑align any data row
+    fn print_row(cells: &[String], widths: &[usize]) {
+        print!("|");
+        for (i, cell) in cells.iter().enumerate() {
+        let pad = widths[i] - cell.len();
+            print!(" {}{} |", cell, " ".repeat(pad));
+        }
+        println!();
+    }
+
+    // 3b) Center a header row
+    fn print_header(cells: &[String], widths: &[usize]) {
+        print!("|");
+        for (i, cell) in cells.iter().enumerate() {
+            let total_pad = widths[i] - cell.len();
+            let left = total_pad / 2;
+            let right = total_pad - left;
+            print!(" {}{}{} |", " ".repeat(left), cell, " ".repeat(right));
+        }
+        println!();
+    }
+
+    // 4) Top border
+    print!("+");
+    for w in &widths { print!("{}+", "-".repeat(w+2)); }
+    println!();
+
+    // 5) Header row
+    let header_cells: Vec<String> = headers.iter().map(|&s| s.to_string()).collect();
+    print_header(&header_cells, &widths);
+
+    // 6) Separator
+    print!("+");
+    for w in &widths { print!("{}+", "-".repeat(w+2)); }
+    println!();
+
+    // 7) Data rows
+    for row in &rows {
+        print_row(&row.to_vec(), &widths);
+    }
+
+    // 8) Bottom border
+    print!("+");
+    for w in &widths { print!("{}+", "-".repeat(w+2)); }
+    println!();
 }
 
 #[cfg(test)]

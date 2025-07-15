@@ -1,7 +1,7 @@
 import numpy as np
 from multimodars import PyContour, PyContourPoint, PyGeometry, create_catheter_contours
 
-def geometry_to_numpy(geom):
+def geometry_to_numpy(geom) -> np.ndarray:
     """
     Flatten all contours + catheter + walls + reference point
     into a single array of shape (N, 4, 4):

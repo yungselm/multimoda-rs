@@ -54,7 +54,6 @@ impl Geometry {
                 contour_path.display()
             );
         }
-        println!("Loaded contours");
 
         let reference_point = Self::load_reference_point(&reference_path).with_context(|| {
             format!(
@@ -62,17 +61,9 @@ impl Geometry {
                 reference_path.display()
             )
         })?;
-        println!("Loaded reference_point");
 
         let records = Self::load_results(&records_path)
             .with_context(|| format!("Failed to load records from {}", records_path.display()))?;
-        if records.is_empty() {
-            bail!(
-                "Results file {} was empty — this data is required",
-                records_path.display()
-            );
-        }
-        println!("Loaded results");
 
         // since reordeing the frames, destroys the z-coordinates of everyframe they need to be stored here
         // and then be reused after reordering them
@@ -105,9 +96,16 @@ impl Geometry {
         //sort catheter in ascending order
         catheter.sort_by_key(|c| c.id);
 
-        println!("Created catheter contours");
+        let contours_loaded = !contours.is_empty();
+        let reference_loaded = !Some(reference_point).is_none();
+        let records_loaded = !records.is_empty();
+
         println!("Generating geometry for {:?}", input_dir);
-        
+        println!("{:<50} {}", "file/path", "loaded");
+        println!("{:<50} {}", contour_path.display(), contours_loaded);
+        println!("{:<50} {}", reference_path.display(), reference_loaded);        
+        println!("{:<50} {}", records_path.display(), records_loaded);
+
         let walls = Vec::new();
 
         Ok(Self {
