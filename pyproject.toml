@@ -28,3 +28,18 @@ features = ["pyo3/extension-module"]
 [project.urls]
 Homepage = "https://github.com/yungselm/multimoda-rs"
 Issues = "https://github.com/yungselm/multimoda-rs/issues"
+
+[project.optional-dependencies]
+docs = [
+    "sphinx>=8.0",
+    "sphinx-autobuild",
+    "sphinx-rtd-theme",
+    "breathe",
+    "exhale",
+]
+test = [
+    "pytest>=8.0",
+    "pytest-cov",
+    "ruff",
+    "black",
+]

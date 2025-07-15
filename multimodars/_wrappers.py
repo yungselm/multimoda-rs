@@ -29,40 +29,44 @@ def from_file(
 
     Parameters
     ----------
-    mode : one of
-        - "full"         → needs rest_input_path, stress_input_path,
-                           rest_output_path, stress_output_path,
-                           diastole_output_path, systole_output_path,
-                           steps_best_rotation, range_rotation_rad,
-                           interpolation_steps, image_center, radius, n_points
-        - "doublepair"   → needs rest_input_path, stress_input_path,
-                           rest_output_path, stress_output_path,
-                           steps_best_rotation, range_rotation_rad,
-                           interpolation_steps, image_center, radius, n_points
-        - "singlepair"   → needs input_path, output_path,
-                           steps_best_rotation, range_rotation_rad,
-                           interpolation_steps, image_center, radius, n_points
-        - "single"       → needs input_path, output_path,
-                           steps_best_rotation, range_rotation_rad,
-                           diastole (bool), image_center, radius, n_points
+    mode : {"full","doublepair","singlepair","single"}
+        Selects which low-level function is called.  
+        
+          - "full"       → needs rest_input_path, stress_input_path,
+                            rest_output_path, stress_output_path,
+                            diastole_output_path, systole_output_path,
+                            steps_best_rotation, range_rotation_rad,
+                            interpolation_steps, image_center, radius, n_points
+          - "doublepair" → needs rest_input_path, stress_input_path,
+                            rest_output_path, stress_output_path,
+                            steps_best_rotation, range_rotation_rad,
+                            interpolation_steps, image_center, radius, n_points
+          - "singlepair" → needs input_path, output_path,
+                            steps_best_rotation, range_rotation_rad,
+                            interpolation_steps, image_center, radius, n_points
+          - "single"     → needs input_path, output_path,
+                            steps_best_rotation, range_rotation_rad,
+                            diastole, image_center, radius, n_points
 
-    Defaults:
-    ---------
-        - steps_best_rotation = 300
-        - range_rotation_Rad = 1.57
-        - interpolation_steps = 28
-        - rest_output_path = "output/rest"
-        - stress_output_path = "output/stress"
-        - diastole_output_path = "output/diastole"
-        - systole_output_path = "output/systole"
+    Other Parameters
+    ----------------
+    **kwargs : dict
+        Keyword arguments required depend on `mode` (see above).
 
     Returns
     -------
-    Depending on mode, returns:
-    - full        → (rest_pair, stress_pair, dia_pair, sys_pair)
-    - doublepair  → (rest_pair, stress_pair)
-    - singlepair  → PyGeometryPair
-    - single      → PyGeometry
+    Union[
+      Tuple[PyGeometryPair,PyGeometryPair,PyGeometryPair,PyGeometryPair],
+      Tuple[PyGeometryPair,PyGeometryPair],
+      PyGeometryPair,
+      PyGeometry
+    ]
+        The exact return shape depends on `mode`.
+
+    Raises
+    ------
+    ValueError
+        If an unsupported `mode` is passed.
     """
     if mode == "full":
         required = (
@@ -161,41 +165,49 @@ def from_array(
     """
     Unified entry for all array-based pipelines.
 
-    mode : one of
-      - "full"        → from_array_full(rest_dia, rest_sys, stress_dia, stress_sys,
-                                         steps_best_rotation, range_rotation_rad,
-                                         interpolation_steps,
-                                         rest_output_path, stress_output_path,
-                                         diastole_output_path, systole_output_path)
-      - "doublepair"  → from_array_doublepair(rest_dia, rest_sys, stress_dia, stress_sys,
-                                              steps_best_rotation, range_rotation_rad,
-                                              interpolation_steps,
-                                              rest_output_path, stress_output_path)
-      - "singlepair"  → from_array_singlepair(rest_dia, rest_sys,
-                                              output_path,
-                                              steps_best_rotation, range_rotation_rad,
-                                              interpolation_steps)
-      - "single"      → geometry_from_array(contours, walls, reference_point,
-                                            steps, range, image_center, radius, n_points,
-                                            label, records, delta, max_rounds,
-                                            diastole, sort, write_obj, output_path)
-    Defaults:
-    ---------
-        - steps_best_rotation = 300
-        - range_rotation_Rad = 1.57
-        - interpolation_steps = 28
-        - rest_output_path = "output/rest"
-        - stress_output_path = "output/stress"
-        - diastole_output_path = "output/diastole"
-        - systole_output_path = "output/systole"
+    Supported modes
+    ---------------
+
+    ::
+      - "full"       → from_array_full(rest_dia, rest_sys, stress_dia, stress_sys,
+                                       steps_best_rotation, range_rotation_rad,
+                                       interpolation_steps,
+                                       rest_output_path, stress_output_path,
+                                       diastole_output_path, systole_output_path)
+      - "doublepair" → from_array_doublepair(rest_dia, rest_sys, stress_dia, stress_sys,
+                                             steps_best_rotation, range_rotation_rad,
+                                             interpolation_steps,
+                                             rest_output_path, stress_output_path)
+      - "singlepair" → from_array_singlepair(rest_dia, rest_sys,
+                                             output_path,
+                                             steps_best_rotation, range_rotation_rad,
+                                             interpolation_steps)
+      - "single"     → geometry_from_array(contours, walls, reference_point,
+                                           steps, range, image_center, radius, n_points,
+                                           label, records, delta, max_rounds,
+                                           diastole, sort, write_obj, output_path)
+
+    Parameters
+    ----------
+    mode : {"full","doublepair","singlepair","single"}
+        Which array-based pipeline to run (see “Supported modes” above).
+    **kwargs : dict
+        Keyword-only arguments required vary by mode (see above).
 
     Returns
     -------
-    Depending on mode, returns:
-    - full        → (rest_pair, stress_pair, dia_pair, sys_pair)
-    - doublepair  → (rest_pair, stress_pair)
-    - singlepair  → PyGeometryPair
-    - single      → PyGeometry
+    Union[
+      Tuple[PyGeometryPair,PyGeometryPair,PyGeometryPair,PyGeometryPair],
+      Tuple[PyGeometryPair,PyGeometryPair],
+      PyGeometryPair,
+      PyGeometry
+    ]
+        Depends on `mode`.
+
+    Raises
+    ------
+    ValueError
+        If an unsupported `mode` is passed.
     """
     if mode == "full":
         required = (

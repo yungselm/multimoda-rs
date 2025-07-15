@@ -4,9 +4,15 @@ from multimodars import PyContour, PyContourPoint, PyGeometry, create_catheter_c
 def geometry_to_numpy(geom) -> np.ndarray:
     """
     Flatten all contours + catheter + walls + reference point
-    into a single array of shape (N, 4, 4):
+    into a single array of shape (N, 4, 4), where::
+
       - axis 1 layers: contours, catheter, walls, reference
       - axis 2 coords: [frame_index, x, y, z]
+
+    Returns
+    -------
+    np.ndarray
+        A 3D array of shape (max_frames, 4 layers, 4 coords) ready for downstream processing.
     """
     layers = {
         "contours": [
@@ -52,10 +58,26 @@ def numpy_to_geometry_layers(
     reference_arr: np.ndarray,
 ) -> PyGeometry:
     """
-    Build a PyGeometry from four (M,4) arrays:
+    Build a PyGeometry from four (M, 4) NumPy arrays, one per layer, where::
+
       - each row: [frame_index, x, y, z]
       - contours_arr, catheter_arr, walls_arr: shape (Nc,4), (Ncat,4), (Nw,4)
-      - reference_arr: shape (1,4) or (Nr,4) but we'll only take the first row
+      - reference_arr: shape (1,4); only the first row is used
+
+    Parameters
+    ----------
+    contours_arr : np.ndarray
+        (Nc,4) array of contour points.
+    catheter_arr : np.ndarray
+        (Ncat,4) array of catheter points.
+    walls_arr : np.ndarray
+        (Nw,4) array of wall points.
+    reference_arr : np.ndarray
+        (1,4) or (Nr,4) array; only row 0 is read as the reference.
+
+    Returns
+    -------
+    PyGeometry
     """
     def build_contour(points_arr: np.ndarray, contour_id: int) -> PyContour:
         pts = [

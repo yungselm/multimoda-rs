@@ -30,3 +30,15 @@
 - [] better summarized print statement
 -- [x] input/mod.rs
 -- []
+
+# Prepublish checklist:
+- [] tests/ with unit tests checking that importing and running every public function works
+- [] Integrate coverage measurement (e.g. pytest-cov) and upload reports to Coverall or Codecov
+- [] Status badge for coverage to README
+- [] Add testing to the CI workflow
+- [] Auto-generated API docs
+- [] High-level "Getting Started" guide
+- [] CONTRIBUTING.md
+
+- [] Example scripts Jupyter notebook?
+- [] mypy in pre-commit hooks

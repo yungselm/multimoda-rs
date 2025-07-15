@@ -12,6 +12,30 @@ use mesh_to_centerline::create_centerline_aligned_meshes;
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
 
+/// Creates centerline-aligned meshes for diastolic and systolic geometries
+///
+/// Args:
+///     centerline_path: Path to centerline data
+///     aortic_ref_pt: Reference point for aortic position
+///     upper_ref_pt: Upper reference point
+///     lower_ref_pt: Lower reference point
+///     state: Physiological state ("rest" or "stress")
+///     input_dir: Input directory for raw geometries
+///     output_dir: Output directory for aligned meshes
+///     interpolation_steps: Number of interpolation steps
+///
+/// Returns:
+///     Tuple of (diastolic geometry, systolic geometry)
+///
+/// Example:
+///     >>> import multimodars as mm
+///     >>> dia, sys = mm.centerline_align(
+///     ...     "path/to/centerline.csv",
+///     ...     (1.0, 2.0, 3.0),
+///     ...     (4.0, 5.0, 6.0),
+///     ...     (7.0, 8.0, 9.0),
+///     ...     "rest"
+///     ... )
 #[pyfunction]
 #[pyo3(
     signature = (

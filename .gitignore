@@ -72,3 +72,17 @@ docs/_build/
 
 # Pyenv
 .python-version
+
+# Documentation artifacts
+docs/_build/
+docs/_doxygen/
+docs/rust-api/
+
+# Doxygen/Exhale generated files
+combined.xslt
+compound.xsd
+index.xml
+index.xsd
+xml.xsd
+rust-library-root.rst
+unabridged_api.rst.include

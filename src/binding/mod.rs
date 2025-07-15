@@ -10,48 +10,51 @@ use entry_file::{
 use entry_arr::*;
 use pyo3::prelude::*;
 
-/// This function processes four geometries (rest, stress, diastole, systole) in parallel,
-/// based on the given input csv files and configuration parameters. It returns
-/// four geometry pairs corresponding to each phase.
+/// Processes four geometries in parallel
 ///
-///         `Rest`:                             `Stress`:
-///         diastole  ---------------------->   diastole
-///            |                                   |
-///            |                                   |
-///            v                                   v
-///         systole   ---------------------->   systole
+/// Pipeline:
+/// 
+/// ```text
+/// `Rest`:                             `Stress`:
+/// diastole  ---------------------->   diastole
+///    |                                   |
+///    |                                   |
+///    v                                   v
+/// systole   ---------------------->   systole
+/// ```
 ///
 /// # Arguments
-/// * `rest_input_path` - Path to the input file for the REST image.
-/// * `stress_input_path` - Path to the input file for the STRESS image.
-/// * `steps_best_rotation` - Number of steps for finding the best rotation (default: 300).
-/// * `range_rotation_rad` - Max rotation range in radians (default: 1.57).
-/// * `rest_output_path` - Output path for processed REST geometry (default: "output/rest").
-/// * `stress_output_path` - Output path for processed STRESS geometry (default: "output/stress").
-/// * `diastole_output_path` - Output path for DIASTOLE geometry (default: "output/diastole").
-/// * `systole_output_path` - Output path for SYSTOLE geometry (default: "output/systole").
-/// * `interpolation_steps` - Number of interpolation steps to use (default: 28).
-/// * `image_center` - Center of the image as a tuple (x, y) (default: (4.5, 4.5)).
-/// * `radius` - Radius to use for processing (default: 0.5).
-/// * `n_points` - Number of boundary points to generate (default: 20).
+/// * `rest_input_path` - Path to REST input file
+/// * `stress_input_path` - Path to STRESS input file
+/// * `steps_best_rotation` - Rotation steps (default: 300)
+/// * `range_rotation_rad` - Rotation range in radians (default: 1.57)
+/// * `rest_output_path` - REST output path (default: "output/rest")
+/// * `stress_output_path` - STRESS output path (default: "output/stress")
+/// * `diastole_output_path` - Diastole output (default: "output/diastole")
+/// * `systole_output_path` - Systole output (default: "output/systole")
+/// * `interpolation_steps` - Interpolation steps (default: 28)
+/// * `image_center` - Image center coordinates (default: (4.5, 4.5))
+/// * `radius` - Processing radius (default: 0.5)
+/// * `n_points` - Boundary points count (default: 20)
 ///
-/// # Expected format .csv file, e.g.:
+/// # CSV Format
+/// ```text
 ///  --------------------------------------------------------------------
-///  |      185     |       5.32     |      2.37       |        0.0     |
-///  |      ...     |       ...      |      ...        |        ...     |
-///  No headers -> frame index, x-coord [mm], y-coord [mm], z-coord [mm]           
+///  | Frame Index | X-coord (mm) | Y-coord (mm) | Z-coord (mm)         |
+///  | 185        | 5.32         | 2.37         | 0.0                  |
+///  | ...        | ...          | ...          | ...                  |
+/// ```
 ///
 /// # Returns
-/// A tuple of four `PyGeometryPair` objects: `(rest, stress, diastole, systole)`.
+/// Tuple of four `PyGeometryPair` objects
 ///
-/// # Raises
-/// `RuntimeError` if any part of the pipeline fails.
-///
-/// # Example usage
+/// # Example
+/// ```python
 /// import multimodars as mm
-/// rest, stress, diastole, systole = mm.from_file_full("data/ivus_rest", "data/ivus_stress")
-///
-/// This function is a Python wrapper around the internal Rust implementation.
+/// rest, stress, dia, sys = mm.from_file_full(
+///     "data/ivus_rest", "data/ivus_stress"
+/// )
+/// ```
 #[pyfunction]
 #[pyo3(
     signature = (
@@ -113,46 +116,51 @@ pub fn from_file_full(
     Ok((py_rest, py_stress, py_dia, py_sys))
 }
 
-/// This function processes four geometries (rest, stress, diastole, systole) in parallel,
-/// based on the given input csv files and configuration parameters. It returns
-/// two geometry pairs corresponding to each phase.
+/// Processes four geometries in parallel
 ///
-///         `Rest`:                             `Stress`:
-///         diastole                            diastole
-///            |                                   |
-///            |                                   |
-///            v                                   v
-///         systole                             systole
+/// Pipeline:
+/// 
+/// ```text
+/// `Rest`:                             `Stress`:
+/// diastole                            diastole
+///    |                                   |
+///    |                                   |
+///    v                                   v
+/// systole                             systole
+/// ```
 ///
 /// # Arguments
-/// * `rest_input_path` - Path to the input file for the REST image.
-/// * `stress_input_path` - Path to the input file for the STRESS image.
-/// * `steps_best_rotation` - Number of steps for finding the best rotation (default: 300).
-/// * `range_rotation_rad` - Max rotation range in radians (default: 1.57).
-/// * `rest_output_path` - Output path for processed REST geometry (default: "output/rest").
-/// * `stress_output_path` - Output path for processed STRESS geometry (default: "output/stress").
-/// * `interpolation_steps` - Number of interpolation steps to use (default: 28).
-/// * `image_center` - Center of the image as a tuple (x, y) (default: (4.5, 4.5)).
-/// * `radius` - Radius to use for processing (default: 0.5).
-/// * `n_points` - Number of boundary points to generate (default: 20).
+/// * `rest_input_path` - Path to REST input file
+/// * `stress_input_path` - Path to STRESS input file
+/// * `steps_best_rotation` - Rotation steps (default: 300)
+/// * `range_rotation_rad` - Rotation range in radians (default: 1.57)
+/// * `rest_output_path` - REST output path (default: "output/rest")
+/// * `stress_output_path` - STRESS output path (default: "output/stress")
+/// * `diastole_output_path` - Diastole output (default: "output/diastole")
+/// * `systole_output_path` - Systole output (default: "output/systole")
+/// * `interpolation_steps` - Interpolation steps (default: 28)
+/// * `image_center` - Image center coordinates (default: (4.5, 4.5))
+/// * `radius` - Processing radius (default: 0.5)
+/// * `n_points` - Boundary points count (default: 20)
 ///
-/// # Expected format .csv file, e.g.:
+/// # CSV Format
+/// ```text
 ///  --------------------------------------------------------------------
-///  |      185     |       5.32     |      2.37       |        0.0     |
-///  |      ...     |       ...      |      ...        |        ...     |
-///  No headers -> frame index, x-coord [mm], y-coord [mm], z-coord [mm]           
+///  | Frame Index | X-coord (mm) | Y-coord (mm) | Z-coord (mm)         |
+///  | 185        | 5.32         | 2.37         | 0.0                  |
+///  | ...        | ...          | ...          | ...                  |
+/// ```
 ///
 /// # Returns
-/// A tuple of two `PyGeometryPair` objects: `(rest, stress)`.
+/// A tuple of two `PyGeometryPair` objects `(rest, stress)`.
 ///
-/// # Raises
-/// `RuntimeError` if any part of the pipeline fails.
-///
-/// # Example usage
+/// # Example
+/// ```python
 /// import multimodars as mm
-/// rest, stress, diastole, systole = mm.from_file_doublepair("data/ivus_rest", "data/ivus_stress")
-///
-/// This function is a Python wrapper around the internal Rust implementation.
+/// rest, stress = mm.from_file_doublepair(
+///     "data/ivus_rest", "data/ivus_stress"
+/// )
+/// ```
 #[pyfunction]
 #[pyo3(signature = (
     rest_input_path,

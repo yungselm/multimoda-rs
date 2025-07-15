@@ -4,6 +4,25 @@ use crate::io::Geometry;
 use crate::processing::geometries::GeometryPair;
 use pyo3::prelude::*;
 
+/// Python representation of a 3D contour point
+///
+/// Attributes:
+///     frame_index (int): Frame number in sequence
+///     point_index (int): Index within contour
+///     x (float): X-coordinate in mm
+///     y (float): Y-coordinate in mm
+///     z (float): Z-coordinate (depth) in mm
+///     aortic (bool): Flag indicating aortic position
+///
+/// Example:
+///     >>> point = PyContourPoint(
+///     ...     frame_index=0,
+///     ...     point_index=1,
+///     ...     x=1.23,
+///     ...     y=4.56,
+///     ...     z=7.89,
+///     ...     aortic=True
+///     ... )
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyContourPoint {
