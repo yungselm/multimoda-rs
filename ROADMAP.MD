@@ -27,9 +27,7 @@
 
 # Miscellaneous
 - [x] change hardcoded catheter settings
-- [] better summarized print statement
--- [x] input/mod.rs
--- []
+- [x] better summarized print statement
 
 # Prepublish checklist:
 - [] tests/ with unit tests checking that importing and running every public function works

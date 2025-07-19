@@ -253,7 +253,7 @@ pub fn find_best_rotation_all(
     println!("---------------------Finding optimal rotation Diastole/Systole---------------------");
     let increment = (2.0 * range) / steps as f64;
 
-    (0..=steps)
+    let results: Vec<(f64, f64)> = (0..=steps)
         .into_par_iter()
         .map(|i| {
             let angle = -range + i as f64 * increment;
@@ -281,12 +281,32 @@ pub fn find_best_rotation_all(
 
             let avg_distance = total_distance / diastole.contours.len() as f64;
 
-            println!("Angle: {:.3} rad, Avg Distance: {:.3}", angle, avg_distance);
             (angle, avg_distance)
         })
-        .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
-        .map(|(angle, _)| angle)
-        .unwrap_or(0.0)
+        .collect();
+
+    let (best_angle, best_dist) = results
+        .into_iter()
+        .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+        .unwrap_or((0.0, std::f64::INFINITY));
+
+    // 3) Print a tiny table
+    println!();
+    println!(
+        "{:>20} | {:>20} | {:>15} | {:>12}",
+        "Geometry A", "Geometry B", "Best Distance", "Best Angle (°)"
+    );
+    println!("{:-<75}", "");
+    println!(
+        "{:>20} | {:>20} | {:>15.3} | {:>12.3}",
+        diastole.label,
+        systole.label,
+        best_dist,
+        best_angle.to_degrees(),
+    );
+    println!();
+
+    best_angle
 }
 
 #[cfg(test)]

@@ -5,7 +5,7 @@ use std::io::{BufWriter, Write};
 use crate::io::input::Contour;
 use crate::io::Geometry;
 use rayon::prelude::*;
-use std::path::PathBuf;
+use std::path::Path;
 
 pub fn write_obj_mesh(
     contours: &Vec<Contour>,
@@ -96,7 +96,6 @@ pub fn write_obj_mesh(
         }
     }
 
-    println!("OBJ mesh with normals written to {}", filename);
     Ok(())
 }
 
@@ -144,37 +143,63 @@ impl GeometryType {
 pub fn write_geometry_vec_to_obj(
     geometry_type: GeometryType,
     case_name: &str,
-    output_dir: &str,
+    output_dir: impl AsRef<Path>,
     geometries: &[Geometry],
     uv_coords: &[Vec<(f64, f64)>],
 ) -> anyhow::Result<()> {
     // Create owned versions for thread-safe capture
+    let output_dir = output_dir.as_ref();  // Get &Path reference
+    std::fs::create_dir_all(output_dir)
+        .context(format!("Could not create output directory: {:?}", output_dir))?;
+    
     let case_name = case_name.to_owned();
-    let output_dir_path = PathBuf::from(output_dir);
+    let total = geometries.len();
 
-    geometries
+    let results: Vec<anyhow::Result<()>> = geometries
         .par_iter()
         .zip(uv_coords.par_iter())
         .enumerate()
-        .try_for_each(|(i, (geometry, uv_coords_mesh))| {
-            // Clone necessary values for this thread
-            let case_name = case_name.clone();
-            let output_dir = output_dir_path.clone();
-
-            let obj_filename = format!("{}_{:03}_{}.obj", geometry_type.as_str(), i, case_name);
-            let mtl_filename = format!("{}_{:03}_{}.mtl", geometry_type.as_str(), i, case_name);
-
-            let obj_path = output_dir.join(&obj_filename);
+        .map(|(i, (geometry, mesh_uv))| {
+            let obj_name = format!("{}_{:03}_{}.obj", geometry_type.as_str(), i, case_name);
+            let mtl_name = format!("{}_{:03}_{}.mtl", geometry_type.as_str(), i, case_name);
+            
+            let obj_path = output_dir.join(&obj_name);  
+            
             let obj_path_str = obj_path
                 .to_str()
                 .ok_or_else(|| anyhow!("Invalid path for OBJ file"))?;
 
-            // Get contours
             let contours = geometry_type.get_contours(geometry);
-
-            write_obj_mesh(contours, uv_coords_mesh, obj_path_str, &mtl_filename)
-                .map_err(|e| anyhow!("Failed to write OBJ mesh: {}", e))?;
-
-            Ok(())
+            write_obj_mesh(contours, mesh_uv, obj_path_str, &mtl_name)
+                .map_err(|e| anyhow!("Failed [{}]: {}", obj_name, e))
         })
+        .collect();
+
+    let success_count = results.iter().filter(|r| r.is_ok()).count();
+    let fail_count = total - success_count;
+
+    println!(
+        "{} .obj files: {}/{} written successfully{}",
+        geometry_type.as_str().to_uppercase(),
+        success_count,
+        total,
+        if fail_count > 0 {
+            format!(", {} failures", fail_count)
+        } else {
+            String::new()
+        }
+    );
+
+    // If any failed, return an Err with all messages joined
+    if fail_count > 0 {
+        let errors = results
+            .into_iter()
+            .filter_map(|r| r.err())
+            .map(|e| e.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        bail!("Some .obj writes failed:\n{}", errors);
+    }
+
+    Ok(())
 }

@@ -23,9 +23,7 @@ pub fn align_frames_in_geometry(geometry: Geometry, steps: usize, range: f64) ->
     let (p1, p2, updated_ref) = assign_aortic(ref_contour.clone(), &geometry);
     let ref_contour = updated_ref.clone();
 
-    println!("Processing Geometry: {}", &geometry.label);
-
-    let (_line_angle, rotation_to_y, rotated_ref) =
+    let (_line_angle, rotation_to_y, rotated_ref, aortic_flag) =
         rotate_reference_contour(p1, p2, ref_contour.clone());
 
     // Update the reference contour in geometry with rotated version
@@ -65,7 +63,8 @@ pub fn align_frames_in_geometry(geometry: Geometry, steps: usize, range: f64) ->
             }
         }
     }
-
+    println!("Processing Geometry: {}", &geometry.label);
+    println!("Reference angle to vertical: {:.1} (°) \n Rotating Reference by: {:.1} (°) \n Added additionall 180° rotation: {}", _line_angle.to_degrees(), rotation_to_y.to_degrees(), aortic_flag);
     // dump the collected logs as a table
     let logs = Arc::try_unwrap(logger)
         .expect("No other Arc references to logger exist")
@@ -167,7 +166,7 @@ fn rotate_reference_contour(
     p1: ContourPoint,
     p2: ContourPoint,
     contour: Contour,
-) -> (f64, f64, Contour) {
+) -> (f64, f64, Contour, bool) {
     let dx = p2.x - p1.x;
     let dy = p2.y - p1.y;
     let line_angle = dy.atan2(dx);
@@ -183,25 +182,16 @@ fn rotate_reference_contour(
     // Determine which point is aortic
     let (aortic_pt, non_aortic_pt) = if p3.aortic { (&p3, &p4) } else { (&p4, &p3) };
     
-    println!("----------------------Aligning frames----------------------");
-    println!(
-        "Reference line angle: {:.3} rad; rotating reference by {:.3} rad ({:.1}°)",
-        line_angle,
-        rotation_to_y,
-        rotation_to_y.to_degrees()
-    );
-    println!("------------------------Aortic alignment test--------------------");
-    // Adjust rotation if aortic is on the left
+    let mut aortic_flag = false;
+
     if aortic_pt.x < non_aortic_pt.x {
         rotation_to_y += PI;
         rotated_ref.rotate_contour(PI);
         rotated_ref.sort_contour_points();
-        println!("Added additional 180° to the rotation");
-    } else {
-        println!("No additional rotation");
+        aortic_flag = true;
     }
 
-    (line_angle, rotation_to_y, rotated_ref)
+    (line_angle, rotation_to_y, rotated_ref, aortic_flag)
 }
 
 fn align_remaining_contours(
@@ -511,7 +501,7 @@ mod contour_tests {
             label: "test".to_string(),
         };
         let (p1, p2, contour_with_aortic) = assign_aortic(contour, &geometry);
-        let (_, rotation, rotated_contour) = rotate_reference_contour(p1, p2, contour_with_aortic);
+        let (_, rotation, rotated_contour, _) = rotate_reference_contour(p1, p2, contour_with_aortic);
         // Check rotation is applied correctly
         assert_relative_eq!(rotation, 3.0 * PI / 2.0, epsilon = 1e-2);
         // Aortic points should be on the right (x > 0)
