@@ -16,7 +16,11 @@ pub fn write_mtl_geometry(
     geometries_to_process: &Vec<Geometry>,
     output_dir: &str,
     case_name: &str,
-) -> (Vec<Vec<(f64, f64)>>, Vec<Vec<(f64, f64)>>, Vec<Vec<(f64, f64)>>) {
+) -> (
+    Vec<Vec<(f64, f64)>>,
+    Vec<Vec<(f64, f64)>>,
+    Vec<Vec<(f64, f64)>>,
+) {
     let reference_contours = geometries_to_process[0].clone();
 
     // calculate max displacements, since all meshes in between are interpolated

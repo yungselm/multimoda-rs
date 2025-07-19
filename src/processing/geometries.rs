@@ -391,7 +391,9 @@ mod geometry_pair_tests {
             dia_geom: dia.clone(),
             sys_geom: simple_geometry((0.0, 0.0), 2.0, (None, None)),
         };
-        gp = gp.process_geometry_pair(1, 0.0, true).adjust_z_coordinates();
+        gp = gp
+            .process_geometry_pair(1, 0.0, true)
+            .adjust_z_coordinates();
         for contour in gp.dia_geom.contours.iter() {
             assert!(contour.centroid.2.is_finite());
         }

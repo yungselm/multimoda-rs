@@ -164,7 +164,8 @@ pub fn prepare_data_3d_alignment(
         state
     );
 
-    let mut reference_mesh_sys = rebuild_geometry(&ref_mesh_path_sys, &catheter_path_sys, &ref_mesh_path_sys); // Fix later !!!
+    let mut reference_mesh_sys =
+        rebuild_geometry(&ref_mesh_path_sys, &catheter_path_sys, &ref_mesh_path_sys); // Fix later !!!
     reference_mesh_sys.contours.reverse();
     for (index, contour) in reference_mesh_sys.contours.iter_mut().enumerate() {
         contour.id = index as u32;

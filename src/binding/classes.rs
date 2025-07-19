@@ -1,9 +1,9 @@
 // File: src/python_bind.rs
-use crate::io::input::{Contour, ContourPoint, Record, Centerline, CenterlinePoint};
+use crate::io::input::{Centerline, CenterlinePoint, Contour, ContourPoint, Record};
 use crate::io::Geometry;
 use crate::processing::geometries::GeometryPair;
-use pyo3::prelude::*;
 use nalgebra::Vector3;
+use pyo3::prelude::*;
 
 /// Python representation of a 3D contour point
 ///
@@ -169,7 +169,7 @@ pub struct PyGeometry {
     #[pyo3(get, set)]
     pub catheter: Vec<PyContour>,
     #[pyo3(get, set)]
-    pub walls: Vec<PyContour>,    
+    pub walls: Vec<PyContour>,
     #[pyo3(get, set)]
     pub reference_point: PyContourPoint,
 }
@@ -249,9 +249,21 @@ impl PyGeometry {
     /// Rust‐only: convert this Python wrapper into the core Geometry.
     pub fn to_rust_geometry(&self) -> Geometry {
         Geometry {
-            contours: self.contours.iter().map(|c| c.to_rust_contour().unwrap()).collect(),
-            catheter: self.catheter.iter().map(|c| c.to_rust_contour().unwrap()).collect(),
-            walls: self.walls.iter().map(|c| c.to_rust_contour().unwrap()).collect(),
+            contours: self
+                .contours
+                .iter()
+                .map(|c| c.to_rust_contour().unwrap())
+                .collect(),
+            catheter: self
+                .catheter
+                .iter()
+                .map(|c| c.to_rust_contour().unwrap())
+                .collect(),
+            walls: self
+                .walls
+                .iter()
+                .map(|c| c.to_rust_contour().unwrap())
+                .collect(),
             reference_point: (&self.reference_point).into(),
             label: String::new(),
         }
@@ -307,7 +319,10 @@ pub struct PyCenterlinePoint {
 impl PyCenterlinePoint {
     #[new]
     fn new(contour_point: PyContourPoint, normal: (f64, f64, f64)) -> Self {
-        Self { contour_point, normal }
+        Self {
+            contour_point,
+            normal,
+        }
     }
 
     fn __repr__(&self) -> String {

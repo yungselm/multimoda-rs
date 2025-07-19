@@ -148,10 +148,12 @@ pub fn write_geometry_vec_to_obj(
     uv_coords: &[Vec<(f64, f64)>],
 ) -> anyhow::Result<()> {
     // Create owned versions for thread-safe capture
-    let output_dir = output_dir.as_ref();  // Get &Path reference
-    std::fs::create_dir_all(output_dir)
-        .context(format!("Could not create output directory: {:?}", output_dir))?;
-    
+    let output_dir = output_dir.as_ref(); // Get &Path reference
+    std::fs::create_dir_all(output_dir).context(format!(
+        "Could not create output directory: {:?}",
+        output_dir
+    ))?;
+
     let case_name = case_name.to_owned();
     let total = geometries.len();
 
@@ -162,9 +164,9 @@ pub fn write_geometry_vec_to_obj(
         .map(|(i, (geometry, mesh_uv))| {
             let obj_name = format!("{}_{:03}_{}.obj", geometry_type.as_str(), i, case_name);
             let mtl_name = format!("{}_{:03}_{}.mtl", geometry_type.as_str(), i, case_name);
-            
-            let obj_path = output_dir.join(&obj_name);  
-            
+
+            let obj_path = output_dir.join(&obj_name);
+
             let obj_path_str = obj_path
                 .to_str()
                 .ok_or_else(|| anyhow!("Invalid path for OBJ file"))?;

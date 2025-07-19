@@ -9,12 +9,12 @@ use crate::io::Geometry;
 
 #[derive(Debug)]
 struct AlignLog {
-    contour_id:    u32,
-    matched_to:    u32,
-    best_rot_deg:  f64,
-    tx:            f64,
-    ty:            f64,
-    centroid:      (f64, f64),
+    contour_id: u32,
+    matched_to: u32,
+    best_rot_deg: f64,
+    tx: f64,
+    ty: f64,
+    centroid: (f64, f64),
 }
 
 pub fn align_frames_in_geometry(geometry: Geometry, steps: usize, range: f64) -> Geometry {
@@ -181,7 +181,7 @@ fn rotate_reference_contour(
     let ((p3, p4), _dist) = rotated_ref.find_closest_opposite();
     // Determine which point is aortic
     let (aortic_pt, non_aortic_pt) = if p3.aortic { (&p3, &p4) } else { (&p4, &p3) };
-    
+
     let mut aortic_flag = false;
 
     if aortic_pt.x < non_aortic_pt.x {
@@ -261,8 +261,8 @@ fn align_remaining_contours(
         ));
 
         let entry = AlignLog {
-            contour_id: contour.id, 
-            matched_to: contour.id + 1, 
+            contour_id: contour.id,
+            matched_to: contour.id + 1,
             best_rot_deg: best_rot.to_degrees(),
             tx,
             ty,
@@ -345,15 +345,18 @@ fn directed_hausdorff(contour_a: &[ContourPoint], contour_b: &[ContourPoint]) ->
 fn dump_table(logs: &[AlignLog]) {
     // 1) Decide on column headers and collect rows as strings
     let headers = ["Contour", "Matched To", "ΔRot (°)", "Tx", "Ty", "Centroid"];
-    let rows: Vec<[String;6]> = logs.iter()
-        .map(|e| [
-            e.contour_id.to_string(),
-            e.matched_to.to_string(),
-            format!("{:.1}", e.best_rot_deg),
-            format!("{:.2}", e.tx),
-            format!("{:.2}", e.ty),
-            format!("({:.2},{:.2})", e.centroid.0, e.centroid.1),
-        ])
+    let rows: Vec<[String; 6]> = logs
+        .iter()
+        .map(|e| {
+            [
+                e.contour_id.to_string(),
+                e.matched_to.to_string(),
+                format!("{:.1}", e.best_rot_deg),
+                format!("{:.2}", e.tx),
+                format!("{:.2}", e.ty),
+                format!("({:.2},{:.2})", e.centroid.0, e.centroid.1),
+            ]
+        })
         .collect();
 
     // 2) Compute max width for each of the 6 columns
@@ -371,7 +374,7 @@ fn dump_table(logs: &[AlignLog]) {
     fn print_row(cells: &[String], widths: &[usize]) {
         print!("|");
         for (i, cell) in cells.iter().enumerate() {
-        let pad = widths[i] - cell.len();
+            let pad = widths[i] - cell.len();
             print!(" {}{} |", cell, " ".repeat(pad));
         }
         println!();
@@ -391,7 +394,9 @@ fn dump_table(logs: &[AlignLog]) {
 
     // 4) Top border
     print!("+");
-    for w in &widths { print!("{}+", "-".repeat(w+2)); }
+    for w in &widths {
+        print!("{}+", "-".repeat(w + 2));
+    }
     println!();
 
     // 5) Header row
@@ -400,7 +405,9 @@ fn dump_table(logs: &[AlignLog]) {
 
     // 6) Separator
     print!("+");
-    for w in &widths { print!("{}+", "-".repeat(w+2)); }
+    for w in &widths {
+        print!("{}+", "-".repeat(w + 2));
+    }
     println!();
 
     // 7) Data rows
@@ -410,7 +417,9 @@ fn dump_table(logs: &[AlignLog]) {
 
     // 8) Bottom border
     print!("+");
-    for w in &widths { print!("{}+", "-".repeat(w+2)); }
+    for w in &widths {
+        print!("{}+", "-".repeat(w + 2));
+    }
     println!();
 }
 
@@ -501,7 +510,8 @@ mod contour_tests {
             label: "test".to_string(),
         };
         let (p1, p2, contour_with_aortic) = assign_aortic(contour, &geometry);
-        let (_, rotation, rotated_contour, _) = rotate_reference_contour(p1, p2, contour_with_aortic);
+        let (_, rotation, rotated_contour, _) =
+            rotate_reference_contour(p1, p2, contour_with_aortic);
         // Check rotation is applied correctly
         assert_relative_eq!(rotation, 3.0 * PI / 2.0, epsilon = 1e-2);
         // Aortic points should be on the right (x > 0)

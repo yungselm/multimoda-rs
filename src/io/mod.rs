@@ -103,7 +103,7 @@ impl Geometry {
         println!("Generating geometry for {:?}", input_dir);
         println!("{:<50} {}", "file/path", "loaded");
         println!("{:<50} {}", contour_path.display(), contours_loaded);
-        println!("{:<50} {}", reference_path.display(), reference_loaded);        
+        println!("{:<50} {}", reference_path.display(), reference_loaded);
         println!("{:<50} {}", records_path.display(), records_loaded);
 
         let walls = Vec::new();

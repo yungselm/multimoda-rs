@@ -4,16 +4,16 @@ pub mod entry_file;
 
 use crate::io::input::{Contour, ContourPoint, Record};
 use classes::{PyContour, PyContourPoint, PyGeometry, PyGeometryPair, PyRecord};
+use entry_arr::*;
 use entry_file::{
     from_file_doublepair_rs, from_file_full_rs, from_file_single_rs, from_file_singlepair_rs,
 };
-use entry_arr::*;
 use pyo3::prelude::*;
 
 /// Processes four geometries in parallel
 ///
 /// Pipeline:
-/// 
+///
 /// ```text
 /// `Rest`:                             `Stress`:
 /// diastole  ---------------------->   diastole
@@ -119,7 +119,7 @@ pub fn from_file_full(
 /// Processes four geometries in parallel
 ///
 /// Pipeline:
-/// 
+///
 /// ```text
 /// `Rest`:                             `Stress`:
 /// diastole                            diastole
@@ -378,12 +378,14 @@ pub fn geometry_from_array(
     write_obj: bool,
     output_path: &str,
 ) -> PyResult<PyGeometry> {
-    let contours_rs: Vec<Contour> = geometry.contours
+    let contours_rs: Vec<Contour> = geometry
+        .contours
         .iter()
         .map(|pyc| pyc.to_rust_contour().unwrap())
         .collect();
 
-    let walls_rs: Vec<Contour> = geometry.walls
+    let walls_rs: Vec<Contour> = geometry
+        .walls
         .iter()
         .map(|pyc| pyc.to_rust_contour().unwrap())
         .collect();
@@ -497,10 +499,7 @@ pub fn from_array_doublepair(
     interpolation_steps: usize,
     rest_output_path: &str,
     stress_output_path: &str,
-) -> PyResult<(
-    PyGeometryPair,
-    PyGeometryPair,
-)> {
+) -> PyResult<(PyGeometryPair, PyGeometryPair)> {
     let (rest_pair, stress_pair) = from_array_doublepair_rs(
         rest_geometry_dia.to_rust_geometry(),
         rest_geometry_sys.to_rust_geometry(),

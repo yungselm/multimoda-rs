@@ -3,13 +3,12 @@ use crossbeam::thread;
 
 use crate::io::input::{Contour, ContourPoint, Record};
 use crate::io::Geometry;
+use crate::processing::comparison::prepare_geometries_comparison;
 use crate::processing::contours::{align_frames_in_geometry, hausdorff_distance};
 use crate::processing::geometries::GeometryPair;
 use crate::processing::process_case::process_case;
-use crate::processing::comparison::prepare_geometries_comparison;
 
 use crate::io::output::write_obj_mesh_without_uv;
-
 
 pub fn geometry_from_array_rs(
     contours: Vec<Contour>,
@@ -87,14 +86,22 @@ pub fn geometry_from_array_rs(
     }
 
     let new_geometry = geometry.smooth_contours();
-    
+
     if write_obj {
         let filename_cont = format!("{}/mesh_000_single.obj", output_path);
         let filename_walls = format!("{}/wall_000_single.obj", output_path);
         let filename_cath = format!("{}/catheter_000_single.obj", output_path);
-        write_obj_mesh_without_uv(&new_geometry.contours, &filename_cont, "mesh_000_single.mtl")?;
+        write_obj_mesh_without_uv(
+            &new_geometry.contours,
+            &filename_cont,
+            "mesh_000_single.mtl",
+        )?;
         write_obj_mesh_without_uv(&new_geometry.walls, &filename_walls, "wall_000_single.mtl")?;
-        write_obj_mesh_without_uv(&new_geometry.catheter, &filename_cath, "catheter_000_single.mtl")?;
+        write_obj_mesh_without_uv(
+            &new_geometry.catheter,
+            &filename_cath,
+            "catheter_000_single.mtl",
+        )?;
     }
 
     Ok(new_geometry)
@@ -246,11 +253,12 @@ fn geometry_pair_from_array_rs(
     steps_best_rotation: usize,
     range_rotation_rad: f64,
 ) -> anyhow::Result<GeometryPair> {
-    let geometries = GeometryPair{
+    let geometries = GeometryPair {
         dia_geom: geometry_dia,
         sys_geom: geometry_sys,
     };
-    let mut geometries = geometries.process_geometry_pair(steps_best_rotation, range_rotation_rad, false);
+    let mut geometries =
+        geometries.process_geometry_pair(steps_best_rotation, range_rotation_rad, false);
 
     geometries = geometries.process_geometry_pair(steps_best_rotation, range_rotation_rad, false);
     geometries = geometries.trim_geometries_same_length();
@@ -285,9 +293,9 @@ pub fn from_array_full_rs(
             // REST thread
             let rest_handle = s.spawn(|_| {
                 let geom = geometry_pair_from_array_rs(
-                    rest_geometry_dia, 
-                    rest_geometry_sys, 
-                    steps_best_rotation, 
+                    rest_geometry_dia,
+                    rest_geometry_sys,
+                    steps_best_rotation,
                     range_rotation_rad,
                 )
                 .context("create_geometry_pair(rest) failed")?;
@@ -298,10 +306,10 @@ pub fn from_array_full_rs(
             // STRESS thread
             let stress_handle = s.spawn(|_| {
                 let geom = geometry_pair_from_array_rs(
-                    stress_geometry_dia, 
-                    stress_geometry_sys, 
-                    steps_best_rotation, 
-                    range_rotation_rad, 
+                    stress_geometry_dia,
+                    stress_geometry_sys,
+                    steps_best_rotation,
+                    range_rotation_rad,
                 )
                 .context("create_geometry_pair(stress) failed")?;
                 process_case("stress", geom, stress_output_path, interpolation_steps)
@@ -367,9 +375,9 @@ pub fn from_array_doublepair_rs(
         // REST thread
         let rest_handle = s.spawn(|_| -> Result<_> {
             let geom_rest = geometry_pair_from_array_rs(
-                rest_geometry_dia, 
-                rest_geometry_sys, 
-                steps_best_rotation, 
+                rest_geometry_dia,
+                rest_geometry_sys,
+                steps_best_rotation,
                 range_rotation_rad,
             )
             .context("create_geometry_pair(rest) failed")?;
@@ -384,10 +392,10 @@ pub fn from_array_doublepair_rs(
         // STRESS thread
         let stress_handle = s.spawn(|_| -> Result<_> {
             let geom_stress = geometry_pair_from_array_rs(
-                stress_geometry_dia, 
-                stress_geometry_sys, 
-                steps_best_rotation, 
-                range_rotation_rad, 
+                stress_geometry_dia,
+                stress_geometry_sys,
+                steps_best_rotation,
+                range_rotation_rad,
             )
             .context("create_geometry_pair(stress) failed")?;
 
@@ -425,9 +433,9 @@ pub fn from_array_singlepair_rs(
 ) -> Result<GeometryPair> {
     // Build the raw pair
     let geom_pair = geometry_pair_from_array_rs(
-        rest_geometry_dia, 
-        rest_geometry_sys, 
-        steps_best_rotation, 
+        rest_geometry_dia,
+        rest_geometry_sys,
+        steps_best_rotation,
         range_rotation_rad,
     )
     .context("create_geometry_pair(single) failed")?;

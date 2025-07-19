@@ -12,7 +12,7 @@ use crate::io::Geometry;
 pub fn rebuild_geometry(contour_path: &str, catheter_path: &str, wall_path: &str) -> Geometry {
     let contours = read_obj_mesh(&contour_path).unwrap();
     let catheter = read_obj_mesh(&catheter_path).unwrap();
-    let _walls =  read_obj_mesh(&wall_path).unwrap();
+    let _walls = read_obj_mesh(&wall_path).unwrap();
 
     let n = contours.len() as u32;
 

@@ -21,7 +21,8 @@ pub fn create_geometry_pair(
         GeometryPair::new(input_dir, case_name.clone(), image_center, radius, n_points)?;
     let mut geometries = geometries.adjust_z_coordinates();
 
-    geometries = geometries.process_geometry_pair(steps_best_rotation, range_rotation_rad, align_inside);
+    geometries =
+        geometries.process_geometry_pair(steps_best_rotation, range_rotation_rad, align_inside);
     geometries = geometries.trim_geometries_same_length();
     geometries = geometries.thickness_adjustment();
 
@@ -105,7 +106,7 @@ pub fn interpolate_contours(
     // Find matching lengths per layer
     let n_contours = min(start.contours.len(), end.contours.len());
     let n_catheter = min(start.catheter.len(), end.catheter.len());
-    let n_walls    = min(start.walls.len(),    end.walls.len());
+    let n_walls = min(start.walls.len(), end.walls.len());
     let use_catheter = n_catheter > 0;
 
     let mut geoms = Vec::with_capacity(steps + 2);
@@ -114,14 +115,26 @@ pub fn interpolate_contours(
     for step in 0..steps {
         let t = step as f64 / (steps - 1) as f64;
 
-        let contours = interp_contour_list(&start.contours[..n_contours], &end.contours[..n_contours], t);
+        let contours = interp_contour_list(
+            &start.contours[..n_contours],
+            &end.contours[..n_contours],
+            t,
+        );
 
         let catheter = if use_catheter {
-            interp_contour_list(&start.catheter[..n_catheter], &end.catheter[..n_catheter], t)
-                .into_iter()
-                // catheter contours don’t carry thickness
-                .map(|mut c| { c.aortic_thickness = None; c.pulmonary_thickness = None; c })
-                .collect()
+            interp_contour_list(
+                &start.catheter[..n_catheter],
+                &end.catheter[..n_catheter],
+                t,
+            )
+            .into_iter()
+            // catheter contours don’t carry thickness
+            .map(|mut c| {
+                c.aortic_thickness = None;
+                c.pulmonary_thickness = None;
+                c
+            })
+            .collect()
         } else {
             Vec::new()
         };
@@ -143,34 +156,37 @@ pub fn interpolate_contours(
 }
 
 /// Interpolate two aligned Vec<Contour> slices.
-fn interp_contour_list(
-    a: &[Contour],
-    b: &[Contour],
-    t: f64,
-) -> Vec<Contour> {
-    a.iter().zip(b)
-     .map(|(s, e)| Contour {
-         id: s.id,
-         points: s.points.iter()
-              .zip(&e.points)
-              .map(|(ps, pe)| ContourPoint {
-                  frame_index: ps.frame_index,
-                  point_index: ps.point_index,
-                  x: ps.x * (1.0 - t) + pe.x * t,
-                  y: ps.y * (1.0 - t) + pe.y * t,
-                  z: ps.z * (1.0 - t) + pe.z * t,
-                  aortic: ps.aortic,
-              })
-              .collect(),
-         centroid: (
-             s.centroid.0 * (1.0 - t) + e.centroid.0 * t,
-             s.centroid.1 * (1.0 - t) + e.centroid.1 * t,
-             s.centroid.2 * (1.0 - t) + e.centroid.2 * t,
-         ),
-         aortic_thickness: interpolate_thickness(&s.aortic_thickness, &e.aortic_thickness, t),
-         pulmonary_thickness: interpolate_thickness(&s.pulmonary_thickness, &e.pulmonary_thickness, t),
-     })
-     .collect()
+fn interp_contour_list(a: &[Contour], b: &[Contour], t: f64) -> Vec<Contour> {
+    a.iter()
+        .zip(b)
+        .map(|(s, e)| Contour {
+            id: s.id,
+            points: s
+                .points
+                .iter()
+                .zip(&e.points)
+                .map(|(ps, pe)| ContourPoint {
+                    frame_index: ps.frame_index,
+                    point_index: ps.point_index,
+                    x: ps.x * (1.0 - t) + pe.x * t,
+                    y: ps.y * (1.0 - t) + pe.y * t,
+                    z: ps.z * (1.0 - t) + pe.z * t,
+                    aortic: ps.aortic,
+                })
+                .collect(),
+            centroid: (
+                s.centroid.0 * (1.0 - t) + e.centroid.0 * t,
+                s.centroid.1 * (1.0 - t) + e.centroid.1 * t,
+                s.centroid.2 * (1.0 - t) + e.centroid.2 * t,
+            ),
+            aortic_thickness: interpolate_thickness(&s.aortic_thickness, &e.aortic_thickness, t),
+            pulmonary_thickness: interpolate_thickness(
+                &s.pulmonary_thickness,
+                &e.pulmonary_thickness,
+                t,
+            ),
+        })
+        .collect()
 }
 
 /// Helper function to interpolate Vec<Contour>

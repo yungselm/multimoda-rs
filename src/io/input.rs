@@ -308,7 +308,7 @@ impl ContourPoint {
                 Err(e) => eprintln!("Skipping invalid row: {:?}", e),
             }
         }
-        
+
         Ok(points)
     }
 
