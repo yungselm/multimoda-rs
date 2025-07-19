@@ -1,27 +1,63 @@
+# repos:
+#   - repo: local
+#     hooks:
+#       - id: rust-fmt
+#         name: Rust format (cargo fmt)
+#         entry: bash -lc 'cargo fmt'
+#         language: system
+#         types: [rust]
+
+#       - id: rust-test
+#         name: Rust unit tests
+#         entry: bash -lc 'cargo test --lib --quiet'
+#         language: system
+#         # only run when Rust files change
+#         files: \.rs$
+
+#       - id: local-black
+#         name: Black
+#         entry: bash -lc 'run black'
+#         language: system
+#         types: [python]
+
+#       - id: local-ruff
+#         name: Ruff
+#         entry: bash -lc 'ruff check --fix'
+#         language: system
+#         types: [python]
+
 repos:
   - repo: local
     hooks:
+      # Rust formatting - operates on whole project
       - id: rust-fmt
-        name: Rust format (cargo fmt)
-        entry: bash -lc 'cargo fmt'
+        name: Rust format
+        entry: cargo fmt --all
         language: system
         types: [rust]
+        pass_filenames: false  # Important for project-wide commands
 
+      # Rust tests - whole project
       - id: rust-test
         name: Rust unit tests
-        entry: bash -lc 'cargo test --lib --quiet'
+        entry: cargo test --lib --quiet
         language: system
-        # only run when Rust files change
-        files: \.rs$
+        types: [rust]
+        pass_filenames: false  # Important
 
-      - id: local-black
-        name: Black
-        entry: bash -lc 'run black'
+      # Python formatting
+      - id: python-black
+        name: Black formatting
+        entry: black
         language: system
         types: [python]
+        require_serial: true
+        args: [--quiet]
 
-      - id: local-ruff
-        name: Ruff
-        entry: bash -lc 'ruff check --fix'
+      # Python linting
+      - id: python-ruff
+        name: Ruff linting
+        entry: ruff
         language: system
         types: [python]
+        args: [--fix, --exit-non-zero-on-fix]
