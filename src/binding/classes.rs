@@ -1,8 +1,9 @@
 // File: src/python_bind.rs
-use crate::io::input::{Contour, ContourPoint, Record};
+use crate::io::input::{Contour, ContourPoint, Record, Centerline, CenterlinePoint};
 use crate::io::Geometry;
 use crate::processing::geometries::GeometryPair;
 use pyo3::prelude::*;
+use nalgebra::Vector3;
 
 /// Python representation of a 3D contour point
 ///
@@ -302,11 +303,92 @@ pub struct PyCenterlinePoint {
     pub normal: (f64, f64, f64),
 }
 
+#[pymethods]
+impl PyCenterlinePoint {
+    #[new]
+    fn new(contour_point: PyContourPoint, normal: (f64, f64, f64)) -> Self {
+        Self { contour_point, normal }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "CenterlinePoint(point={}, normal=({:.3}, {:.3}, {:.3}))",
+            self.contour_point.__repr__(),
+            self.normal.0,
+            self.normal.1,
+            self.normal.2
+        )
+    }
+
+    fn __str__(&self) -> String {
+        self.__repr__()
+    }
+}
+
+impl From<&CenterlinePoint> for PyCenterlinePoint {
+    fn from(p: &CenterlinePoint) -> Self {
+        PyCenterlinePoint {
+            contour_point: PyContourPoint::from(&p.contour_point),
+            normal: (p.normal[0], p.normal[1], p.normal[2]),
+        }
+    }
+}
+
+// Conversion from PyCenterlinePoint to Rust CenterlinePoint
+impl From<&PyCenterlinePoint> for CenterlinePoint {
+    fn from(p: &PyCenterlinePoint) -> Self {
+        CenterlinePoint {
+            contour_point: ContourPoint::from(&p.contour_point),
+            normal: Vector3::new(p.normal.0, p.normal.1, p.normal.2),
+        }
+    }
+}
+
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyCenterline {
     #[pyo3(get, set)]
     pub points: Vec<PyCenterlinePoint>,
+}
+
+#[pymethods]
+impl PyCenterline {
+    #[new]
+    fn new(points: Vec<PyCenterlinePoint>) -> Self {
+        Self { points }
+    }
+
+    fn __repr__(&self) -> String {
+        format!("Centerline(len={})", self.points.len())
+    }
+
+    fn __str__(&self) -> String {
+        self.__repr__()
+    }
+
+    fn points_as_tuples(&self) -> Vec<(f64, f64, f64)> {
+        self.points
+            .iter()
+            .map(|p| (p.contour_point.x, p.contour_point.y, p.contour_point.z))
+            .collect()
+    }
+}
+
+// Moved out of pymethods since it's for internal use
+impl PyCenterline {
+    pub fn to_rust_centerline(&self) -> Centerline {
+        Centerline {
+            points: self.points.iter().map(|p| p.into()).collect(),
+        }
+    }
+}
+
+// Conversion from Python to Rust for entire back-and-forth
+impl From<&Centerline> for PyCenterline {
+    fn from(cl: &Centerline) -> Self {
+        let points = cl.points.iter().map(|p| p.into()).collect();
+        PyCenterline { points }
+    }
 }
 
 /// Python wrapper for your Rust `Record`
