@@ -16,7 +16,6 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 license = "MIT"
-license-files = ["LICENSE"]
 
 [build-system]
 requires = ["maturin>=1.7,<2.0"]
@@ -34,8 +33,6 @@ docs = [
     "sphinx>=8.0",
     "sphinx-autobuild",
     "sphinx-rtd-theme",
-    "breathe",
-    "exhale",
 ]
 test = [
     "pytest>=8.0",

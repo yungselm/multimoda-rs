@@ -136,7 +136,7 @@ fn calculate_normal(points: &[ContourPoint], centroid: &(f64, f64, f64)) -> Vect
 
 /// Finds the optimal rotation angle by minimizing the distance between the closest opposite point
 /// and the reference coordinate.
-pub fn find_optimal_rotation(
+pub fn best_rotation_three_point(
     contour: &Contour,
     reference_point: &ContourPoint,
     aortic_ref_pt: (f64, f64, f64),
@@ -158,6 +158,7 @@ pub fn find_optimal_rotation(
         "---------------------Centerline alignment: Finding optimal rotation---------------------"
     );
     while angle < 6.283185 {
+        //aprox 360°
         // maybe better approach then bruteforce, fix later, still fast enough
         let mut temp_frame = contour.clone();
 
@@ -196,7 +197,7 @@ pub fn find_optimal_rotation(
         // Calculate sum of squared errors
         let total_error = d_aortic.powi(2) + d_upper.powi(2) + d_lower.powi(2);
 
-        println!("angle: {:?}, error: {:?}", angle, total_error);
+        // println!("angle: {:?}, error: {:?}", angle, total_error);
 
         if total_error < min_total_error {
             min_total_error = total_error;

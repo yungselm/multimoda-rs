@@ -1,6 +1,7 @@
 pub mod classes;
 pub mod entry_arr;
 pub mod entry_file;
+pub mod align;
 
 use crate::io::input::{Contour, ContourPoint, Record};
 use classes::{PyContour, PyContourPoint, PyGeometry, PyGeometryPair, PyRecord};

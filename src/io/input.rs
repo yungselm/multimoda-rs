@@ -480,36 +480,6 @@ impl Centerline {
     }
 }
 
-pub fn read_centerline_txt(path: &str) -> anyhow::Result<Vec<ContourPoint>> {
-    let file = File::open(path)?;
-    let mut rdr = csv::ReaderBuilder::new()
-        .has_headers(false)
-        .delimiter(b' ')
-        .from_reader(file);
-
-    let mut points = Vec::new();
-    for (i, result) in rdr.records().enumerate() {
-        match result {
-            Ok(record) => {
-                let mut iter = record.iter();
-                let x = iter.next().unwrap().parse::<f64>()?;
-                let y = iter.next().unwrap().parse::<f64>()?;
-                let z = iter.next().unwrap().parse::<f64>()?;
-                points.push(ContourPoint {
-                    frame_index: i as u32,
-                    point_index: i as u32,
-                    x,
-                    y,
-                    z,
-                    aortic: false,
-                });
-            }
-            Err(e) => eprintln!("Skipping invalid row: {:?}", e),
-        }
-    }
-    Ok(points)
-}
-
 #[cfg(test)]
 mod input_tests {
     use super::*;

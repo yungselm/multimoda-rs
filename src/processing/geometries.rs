@@ -6,7 +6,7 @@ use crate::processing::contours::hausdorff_distance;
 use super::contours::align_frames_in_geometry;
 use crate::io::input::{Contour, ContourPoint};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct GeometryPair {
     pub dia_geom: Geometry,
     pub sys_geom: Geometry,

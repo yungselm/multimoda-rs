@@ -1,5 +1,5 @@
 import numpy as np
-from multimodars import PyContour, PyContourPoint, PyGeometry, create_catheter_contours
+from multimodars import PyContour, PyContourPoint, PyGeometry, create_catheter_contours, PyCenterline
 
 def geometry_to_numpy(geom) -> np.ndarray:
     """
@@ -73,7 +73,7 @@ def numpy_to_geometry_layers(
     walls_arr : np.ndarray
         (Nw,4) array of wall points.
     reference_arr : np.ndarray
-        (1,4) or (Nr,4) array; only row 0 is read as the reference.
+        (1,4) or (Nr,4) array; only row 0 is read as the reference.
 
     Returns
     -------
@@ -127,3 +127,38 @@ def numpy_to_geometry(
     return numpy_to_geometry_layers(
         contours_arr, catheter_arr, walls_arr, reference_arr
     )
+
+
+def numpy_to_centerline(
+    arr: np.ndarray,
+    aortic: bool = False,
+) -> PyCenterline:
+    """
+    Build a PyCenterline from a numpy array of shape (N,3),
+    where each row is (x, y, z).
+
+    Args:
+        arr: np.ndarray of shape (N,3)
+        aortic: whether to mark each point as aortic
+
+    Returns:
+        PyCenterline
+    """
+    # sanity check
+    if arr.ndim != 2 or arr.shape[1] != 3:
+        raise ValueError("Input must be a (N,3) array")
+
+    pts = []
+    for i, (x, y, z) in enumerate(arr.tolist()):
+        # point_index here is meaningless for a centerline; set to 0
+        pts.append(PyContourPoint(
+            frame_index=i,
+            point_index=0,
+            x=float(x),
+            y=float(y),
+            z=float(z),
+            aortic=aortic,
+        ))
+
+    # Use your static constructor to build a PyCenterline
+    return PyCenterline.from_contour_points(pts)

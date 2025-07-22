@@ -43,6 +43,18 @@ pub struct PyContourPoint {
 
 #[pymethods]
 impl PyContourPoint {
+    #[new]
+    fn new(frame_index: u32, point_index: u32, x: f64, y: f64, z: f64, aortic: bool) -> Self {
+        Self {
+            frame_index,
+            point_index,
+            x,
+            y,
+            z,
+            aortic,
+        }
+    }
+
     // Add a __repr__ method
     fn __repr__(&self) -> String {
         format!(
@@ -88,6 +100,19 @@ impl From<&PyContourPoint> for ContourPoint {
     }
 }
 
+/// Python representation of a 3D contour
+///
+/// Attributes:
+///     id (int): Contour number in sequence
+///     points ([PyContourPoint]): Vector of ContourPoints
+///     centroid (float, float, float): Tuple containing x-, y-, z-coordinates
+///
+/// Example:
+///     >>> contour = PyContour(
+///     ...     id=0,
+///     ...     points=[point1, point2, ...],
+///     ...     centroid=(1.0, 1.0, 1.0)
+///     ... )
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyContour {
@@ -101,6 +126,12 @@ pub struct PyContour {
 
 #[pymethods]
 impl PyContour {
+    /// Creates a new PyContour instance
+    ///
+    /// Args:
+    ///     id (int): Contour identifier
+    ///     points (List[PyContourPoint]): List of contour points
+    ///     centroid (Tuple[float, float, float]): (x, y, z) centroid position
     #[new]
     fn new(id: u32, points: Vec<PyContourPoint>, centroid: (f64, f64, f64)) -> Self {
         Self {
@@ -110,7 +141,7 @@ impl PyContour {
         }
     }
 
-    // Add a __repr__ method
+    /// Returns human-readable representation of contour
     fn __repr__(&self) -> String {
         format!(
             "Contour(id={}, points={}, centroid=({:.2}, {:.2}, {:.2}))",
@@ -122,17 +153,34 @@ impl PyContour {
         )
     }
 
-    // Add method to get points as tuples
+    /// Returns contour points as list of (x, y, z) tuples
+    ///
+    /// Example:
+    ///     >>> contour.points_as_tuples()
+    ///     [(1.0, 2.0, 3.0), (4.0, 5.0, 6.0)]
     fn points_as_tuples(&self) -> Vec<(f64, f64, f64)> {
         self.points.iter().map(|p| (p.x, p.y, p.z)).collect()
     }
 
+    /// Finds the two farthest points in the contour
+    ///
+    /// Returns:
+    ///     Tuple[Tuple[PyContourPoint, PyContourPoint], float]:
+    ///         Pair of points and their Euclidean distance
+    ///
+    /// Example:
+    ///     >>> (p1, p2), distance = contour.find_farthest_points()
     pub fn find_farthest_points(&self) -> PyResult<((PyContourPoint, PyContourPoint), f64)> {
         let rust_contour = self.to_rust_contour()?;
         let ((p1, p2), distance) = rust_contour.find_farthest_points();
         Ok(((p1.into(), p2.into()), distance))
     }
 
+    /// Finds closest points on opposite sides of the contour
+    ///
+    /// Returns:
+    ///     Tuple[Tuple[PyContourPoint, PyContourPoint], float]:
+    ///         Pair of points and their Euclidean distance
     pub fn find_closest_opposite(&self) -> PyResult<((PyContourPoint, PyContourPoint), f64)> {
         let rust_contour = self.to_rust_contour()?;
         let ((p1, p2), distance) = rust_contour.find_closest_opposite();
@@ -161,6 +209,27 @@ impl From<&&ContourPoint> for PyContourPoint {
     }
 }
 
+/// Python representation of a full geometry set
+///
+/// Contains:
+///     - Vessel contours
+///     - Catheter points
+///     - Wall contours
+///     - Reference point
+///
+/// Attributes:
+///     contours (List[PyContour]): Vessel contours
+///     catheter (List[PyContour]): Catheter points
+///     walls (List[PyContour]): Wall contours
+///     reference_point (PyContourPoint): Reference position
+///
+/// Example:
+///     >>> geom = PyGeometry(
+///     ...     contours=[contour1, contour2],
+///     ...     catheter=[catheter_points],
+///     ...     walls=[wall1, wall2],
+///     ...     reference_point=ref_point
+///     ... )
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyGeometry {
@@ -176,6 +245,13 @@ pub struct PyGeometry {
 
 #[pymethods]
 impl PyGeometry {
+    /// Creates a new PyGeometry instance
+    ///
+    /// Args:
+    ///     contours (List[PyContour]): Vessel contours
+    ///     catheter (List[PyContour]): Catheter points
+    ///     walls (List[PyContour]): Wall contours
+    ///     reference_point (PyContourPoint): Reference position
     #[new]
     fn new(
         contours: Vec<PyContour>,
@@ -207,6 +283,16 @@ impl PyGeometry {
         self.__repr__()
     }
 
+    /// Applies smoothing to all contours using moving average
+    ///
+    /// Args:
+    ///     window_size (int): Number of points in smoothing window
+    ///
+    /// Note:
+    ///     Larger windows create smoother contours but may lose detail
+    ///
+    /// Example:
+    ///     >>> geom.smooth_contours(window_size=5)
     pub fn smooth_contours(&mut self, window_size: usize) {
         for contour in &mut self.contours {
             // Simple smoothing implementation
@@ -279,6 +365,17 @@ pub struct PyGeometryPair {
     pub sys_geom: PyGeometry,
 }
 
+/// Python representation of a diastolic/systolic geometry pair
+///
+/// Attributes:
+///     dia_geom (PyGeometry): Diastolic geometry
+///     sys_geom (PyGeometry): Systolic geometry
+///
+/// Example:
+///     >>> pair = PyGeometryPair(
+///     ...     dia_geom=diastole,
+///     ...     sys_geom=systole
+///     ... )
 #[pymethods]
 impl PyGeometryPair {
     #[new]
@@ -306,6 +403,28 @@ impl PyGeometryPair {
     }
 }
 
+impl PyGeometryPair {
+    pub fn to_rust_geometry_pair(&self) -> GeometryPair {
+        GeometryPair {
+            dia_geom: self.dia_geom.to_rust_geometry(),
+            sys_geom: self.sys_geom.to_rust_geometry(),
+        }
+    }
+}
+
+/// Python representation of a centerline point
+///
+/// Combines a contour point with its normal vector
+///
+/// Attributes:
+///     contour_point (PyContourPoint): Position in 3D space
+///     normal (Tuple[float, float, float]): Normal vector (nx, ny, nz)
+///
+/// Example:
+///     >>> cl_point = PyCenterlinePoint(
+///     ...     contour_point=point,
+///     ...     normal=(0.0, 1.0, 0.0)
+///     ... )
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyCenterlinePoint {
@@ -359,6 +478,13 @@ impl From<&PyCenterlinePoint> for CenterlinePoint {
     }
 }
 
+/// Python representation of a vessel centerline
+///
+/// Attributes:
+///     points (List[PyCenterlinePoint]): Ordered points along centerline
+///
+/// Example:
+///     >>> centerline = PyCenterline(points=[p1, p2, p3])
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyCenterline {
@@ -371,6 +497,32 @@ impl PyCenterline {
     #[new]
     fn new(points: Vec<PyCenterlinePoint>) -> Self {
         Self { points }
+    }
+
+    /// Build a Centerline from a flat list of PyContourPoint.
+    ///
+    /// Args:
+    ///     contour_points (List[PyContourPoint]): sequence of points in order.
+    ///
+    /// Returns:
+    ///     PyCenterline
+    ///
+    /// Example:
+    ///     >>> pts = [PyContourPoint(...), PyContourPoint(...), ...]
+    ///     >>> cl = PyCenterline.from_contour_points(pts)
+    #[staticmethod]
+    fn from_contour_points(contour_points: Vec<PyContourPoint>) -> PyResult<Self> {
+        // convert Python points → Rust ContourPoint
+        let rust_pts: Vec<ContourPoint> = contour_points
+            .iter()
+            .map(|p| p.into())
+            .collect();
+
+        // call your existing Rust constructor
+        let rust_cl = Centerline::from_contour_points(rust_pts);
+
+        // use your From<&Centerline> impl to go back into PyCenterline
+        Ok(PyCenterline::from(&rust_cl))
     }
 
     fn __repr__(&self) -> String {
@@ -420,6 +572,21 @@ pub struct PyRecord {
     pub measurement_2: Option<f64>,
 }
 
+/// Python representation of a measurement record
+///
+/// Attributes:
+///     frame (int): Frame number
+///     phase (str): Cardiac phase ('Diastole'/'Systole')
+///     measurement_1 (float, optional): Primary measurement
+///     measurement_2 (float, optional): Secondary measurement
+///
+/// Example:
+///     >>> record = PyRecord(
+///     ...     frame=5,
+///     ...     phase="Diastole",
+///     ...     measurement_1=42.0,
+///     ...     measurement_2=38.5
+///     ... )
 #[pymethods]
 impl PyRecord {
     /// Python constructor
