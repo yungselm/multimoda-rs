@@ -23,41 +23,16 @@ pub fn align_three_point_rs(
     write: bool,
     interpolation_steps: usize,
     output_dir: &str,
+    case_name: &str,
 ) -> GeometryPair {
-    let n = geometry_pair.dia_geom.contours.len() - 1;
-    println!("Frame {:?} before preparation: {:?}", &geometry_pair.dia_geom.contours[0].id, &geometry_pair.dia_geom.contours[0].centroid.2);
-    println!("Frame {:?} before preparation: {:?}", &geometry_pair.dia_geom.contours[n].id, &geometry_pair.dia_geom.contours[n].centroid.2);
-    println!("Reference {:?} before preparation: {:?}", &geometry_pair.dia_geom.reference_point.frame_index, &geometry_pair.dia_geom.reference_point.z);
-
     let mut geom = prepare_geometry_alignment(geometry_pair);
-
-    println!("Frame {:?} after preparation: {:?}", &geom.dia_geom.contours[0].id, &geom.dia_geom.contours[0].centroid.2);
-    println!("Frame {:?} after preparation: {:?}", &geom.dia_geom.contours[n].id, &geom.dia_geom.contours[n].centroid.2);
-    println!("Reference {:?} before preparation: {:?}", &geom.dia_geom.reference_point.frame_index, &geom.dia_geom.reference_point.z);
-
-    let n_cl = centerline.points.len() - 1;
-
-    println!("CL-point {:?} before descending: {:?}", &centerline.points[0].contour_point.frame_index, &centerline.points[0].contour_point.z);
-    println!("CL-point {:?} before descending: {:?}", &centerline.points[n_cl].contour_point.frame_index, &centerline.points[n_cl].contour_point.z);
-
     let mut cl = centerline.clone();
     ensure_descending_z(&mut cl);
 
-    println!("CL-point {:?} after preparation: {:?}", &cl.points[0].contour_point.frame_index, &cl.points[0].contour_point.z);
-    println!("CL-point {:?} after preparation: {:?}", &cl.points[n_cl].contour_point.frame_index, &cl.points[n_cl].contour_point.z);
-
-    let mut centerline = remove_leading_points_cl(centerline, &aortic_ref_pt);
+    let mut centerline = remove_leading_points_cl(cl, &aortic_ref_pt);
     ensure_descending_z(&mut centerline);
 
-    let n_cl = centerline.points.len() - 1;
-
-    println!("CL-point {:?} after remove leading: {:?}", &centerline.points[0].contour_point.frame_index, &centerline.points[0].contour_point.z);
-    println!("CL-point {:?} after remove leading: {:?}", &centerline.points[n_cl].contour_point.frame_index, &centerline.points[n_cl].contour_point.z);
-
     let resampled_centerline = resample_centerline_by_contours(&centerline, &geom.dia_geom);
-
-    println!("CL-point {:?} after resampling: {:?}", &resampled_centerline.points[0].contour_point.frame_index, &resampled_centerline.points[0].contour_point.z);
-    println!("CL-point {:?} after resampling: {:?}", &resampled_centerline.points[n_cl].contour_point.frame_index, &resampled_centerline.points[n_cl].contour_point.z);
 
     let best_rot = best_rotation_three_point(
         &geom.dia_geom.contours[0], 
@@ -73,20 +48,45 @@ pub fn align_three_point_rs(
     geom = apply_transformations(geom, &resampled_centerline);
 
     if write {
-        write_aligned_meshes(geom.clone(), interpolation_steps, output_dir).unwrap();
+        write_aligned_meshes(geom.clone(), interpolation_steps, output_dir, case_name).unwrap();
     }
     
     geom
 }
 
-// pub fn align_manual(
-//     centerline: Centerline,
-//     geometry: GeometryPair,
-//     rotation_angle: f64,
-//     start_point: usize,
-// ) -> GeometryPair {
-//     todo!()
-// }
+pub fn align_manual_rs(
+    centerline: Centerline,
+    geometry_pair: GeometryPair,
+    rotation_angle: f64,
+    start_point: usize,
+    write: bool,
+    interpolation_steps: usize,
+    output_dir: &str,
+    case_name: &str,
+) -> GeometryPair {
+    let mut geom = prepare_geometry_alignment(geometry_pair);
+    let mut cl = centerline.clone();
+    ensure_descending_z(&mut cl);
+
+    // maybe stupidly extensive, but can reuse remove_leading_points function
+    let ref_pt = centerline.points[start_point].contour_point;
+    let ref_coords = (ref_pt.x, ref_pt.y, ref_pt.z);
+    
+    let mut centerline = remove_leading_points_cl(cl, &ref_coords);
+    ensure_descending_z(&mut centerline);
+
+    let resampled_centerline = resample_centerline_by_contours(&centerline, &geom.dia_geom);
+
+    geom = rotate_by_best_rotation(geom, rotation_angle);
+
+    geom = apply_transformations(geom, &resampled_centerline);
+
+    if write {
+        write_aligned_meshes(geom.clone(), interpolation_steps, output_dir, case_name).unwrap();
+    }
+    
+    geom
+}
 
 // pub fn align_hausdorff() -> () {
 //     todo!()
@@ -173,15 +173,15 @@ fn apply_transformations(mut geom_pair: GeometryPair, centerline: &Centerline) -
     geom_pair
 }
 
-fn write_aligned_meshes(geom_pair: GeometryPair, interpolation_steps: usize, output_dir: &str) -> Result<(), Error> {
+fn write_aligned_meshes(geom_pair: GeometryPair, interpolation_steps: usize, output_dir: &str, case_name: &str) -> Result<(), Error> {
     let geometries = interpolate_contours(&geom_pair.dia_geom, &geom_pair.sys_geom, interpolation_steps)?;
 
     let (uv_coords_contours, uv_coords_catheter, uv_coords_walls) =
-        write_mtl_geometry(&geometries, output_dir, "None");
+        write_mtl_geometry(&geometries, output_dir, case_name);
     
     write_geometry_vec_to_obj(
         GeometryType::Contour,
-        "None",
+        case_name,
         output_dir,
         &geometries,
         &uv_coords_contours,
@@ -189,7 +189,7 @@ fn write_aligned_meshes(geom_pair: GeometryPair, interpolation_steps: usize, out
 
     write_geometry_vec_to_obj(
         GeometryType::Catheter,
-        "None",
+        case_name,
         output_dir,
         &geometries,
         &uv_coords_catheter,
@@ -197,7 +197,7 @@ fn write_aligned_meshes(geom_pair: GeometryPair, interpolation_steps: usize, out
 
     write_geometry_vec_to_obj(
         GeometryType::Wall,
-        "None",
+        case_name,
         output_dir,
         &geometries,
         &uv_coords_walls,

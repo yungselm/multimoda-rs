@@ -7,5 +7,6 @@ from ._converters import (
 )
 from ._wrappers import (
     from_file, 
-    from_array
+    from_array,
+    to_centerline,
 )

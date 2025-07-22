@@ -8,7 +8,7 @@ mod utils;
 
 use binding::classes::*;
 use binding::*;
-use binding::align::align_three_point;
+use binding::align::{align_three_point, align_manual};
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
 
@@ -30,7 +30,7 @@ fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<(
     m.add_function(wrap_pyfunction!(from_file_singlepair, m.clone())?)?;
     m.add_function(wrap_pyfunction!(from_file_single, m.clone())?)?;
     m.add_function(wrap_pyfunction!(align_three_point, m.clone())?)?;
-    // align manual missing
+    m.add_function(wrap_pyfunction!(align_manual, m.clone())?)?;
     // align hausdorff missing
     m.add_function(wrap_pyfunction!(create_catheter_contours, m.clone())?)?;
     m.add_function(wrap_pyfunction!(geometry_from_array, m.clone())?)?;

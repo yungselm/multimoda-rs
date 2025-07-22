@@ -13,6 +13,11 @@ from multimodars import (
     from_array_singlepair,
 )
 
+from multimodars import (
+    align_three_point,
+    align_manual,
+)
+
 from .multimodars import PyGeometry, PyGeometryPair
 
 Mode = Literal["full", "doublepair", "singlepair", "single"]
@@ -333,6 +338,94 @@ def from_array(
             args["sort"],
             args["write_obj"],
             args["output_path"],
+        )
+
+    else:
+        raise ValueError(f"Unsupported mode: {mode!r}")
+
+Mode_cl = Literal["three_pt", "manual"]
+
+def to_centerline(
+    mode: Mode_cl,
+    **kwargs: Any,
+) -> PyGeometryPair:
+    """
+    Unified entry for all to_centerline pipelines.
+
+    Supported modes
+    ---------------
+
+    ::
+      - "three_pt"      → align_three_point(centerline, geometry_pair, aortic_ref_pt, upper_ref_pt,
+                                       lower_ref_pt, angle_step, write, interpolation_steps,
+                                       output_dir, case_name)
+      - "manual"        → align_manual(centerline, geometry_pair, rotation_angle, start_point,
+                                             write, interpolation_steps, output_dir, case_name)
+
+    Parameters
+    ----------
+    mode : {"three_pt","manual"}
+        Which array-based pipeline to run (see “Supported modes” above).
+    **kwargs : dict
+        Keyword-only arguments required vary by mode (see above).
+
+    Returns
+    -------
+    PyGeometryPair
+        Depends on `mode`.
+
+    Raises
+    ------
+    ValueError
+        If an unsupported `mode` is passed.
+    """
+    defaults = {
+        "angle_step": 0.01745329, # approx 1° in radians
+        "write": False,
+        "interpolation_steps": 28,
+        "output_dir": "output/aligned",
+        "case_name": "None",
+    }
+    merged = {**defaults, **kwargs}
+
+    if mode == "three_pt":
+        required = (
+            "centerline", "geometry_pair",
+            "aortic_ref_pt", "upper_ref_pt",
+            "lower_ref_pt", "angle_step",
+            "write", "interpolation_steps",
+            "output_dir", "case_name",
+        )
+        args = {k: merged[k] for k in required}
+        return align_three_point(
+            args["centerline"],
+            args["geometry_pair"],
+            args["aortic_ref_pt"],
+            args["upper_ref_pt"],
+            args["lower_ref_pt"],
+            args["angle_step"],
+            args["write"],
+            args["interpolation_steps"],
+            args["output_dir"],
+            args["case_name"],
+        )
+
+    elif mode == "manual":
+        required = (
+            "centerline", "geometry_pair", "rotation_angle", 
+            "start_point", "write", "interpolation_steps",
+            "output_dir", "case_name",
+        )
+        args = {k: merged[k] for k in required}
+        return align_manual(
+            args["centerline"],
+            args["geometry_pair"],
+            args["rotation_angle"],
+            args["start_point"],
+            args["write"],
+            args["interpolation_steps"],
+            args["output_dir"],
+            args["case_name"],
         )
 
     else:
