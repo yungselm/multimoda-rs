@@ -107,7 +107,7 @@ pub fn geometry_from_array_rs(
     Ok(new_geometry)
 }
 
-fn refine_ordering(
+pub fn refine_ordering(
     mut geom: Geometry,
     delta: f64,
     max_rounds: usize,

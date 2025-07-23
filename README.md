@@ -20,11 +20,26 @@
 
 ---
 
-> A Rust‑powered cardiac imaging multi‑modality fusion package using parallelization.
+> A high‑performance, Rust‑accelerated toolkit for multi‑modality cardiac image fusion and registration.
 
 ---
-## Background
+# Overview
+`multimoda-rs` addresses the challenge of aligning and fusing diverse cardiac imaging modalities, such as CCTA, IVUS, OCT, and MRI—into a unified, high‑resolution 3D model. While CCTA provides comprehensive volumetric context, intravascular modalities (IVUS and OCT) offer sub‑millimeter resolution along the vessel lumen, and MRI (LGE) reveals tissue characteristics like scar and edema. This library leverages Rust for computationally intensive registration steps, delivering faster performance than pure Python implementations.
 
+## Key Features
+- IVUS/OCT Contours Registration
+  - Aligns pullback sequences (rest vs. stress, diastole vs. systole) using Hausdorff distance on vessel contours and catheter centroids.
+  - Supports four alignment modes:
+    - *Full*: register all four phases (rest‑dia, rest‑sys, stress‑dia, stress‑sys)
+    - *Double-pair*: two pairs (rest vs. stress).
+    - *Single-pair*: diastole vs. systole.
+    - *Single*: one phase only.
+- Centerline Alignment
+  - Align registered geometries onto a vessel centerline using three‑point or manual rotation methods.
+- Geometry Utilities
+  - Smooth contours, reorder frames to minimize spatial and index jumps, compute areas and elliptic ratios, find farthest/closest point pairs, and more.
+- MRI LGE Fusion (Planned)
+  - Integrate 2D LGE slices into the CCTA mesh to visualize scar/edema volumes.
 
 ## Installation
 
@@ -42,17 +57,206 @@ source .venv/bin/activate
 maturin develop
 ```
 
-## Example Workflow
+## Quickstart Example
 Run the script with the provided test cases, to ensure sufficient set up.
 ```python
 import multimodars as mm
 import numpy as np
 
-rest, stress, dia, sys = mm.from_file(mode="full", rest_input_path="data/ivus_rest", stress_input_path="data/ivus_stress")
+# IVUS pullbacks: full alignment of rest/stress & diastole/systole
+rest_dia, rest_sys, stress_dia, stress_sys = mm.from_file(
+    mode="full",
+    rest_input_path="data/ivus_rest",
+    stress_input_path="data/ivus_stress"
+)
 
+# Load raw centerline
 cl_raw = np.genfromtxt("data/centerline_raw.csv", delimiter=",")
-cl = mm.numpy_to_centerline(cl_raw)
+centerline = mm.numpy_to_centerline(cl_raw)
 
-aligned = mm.to_centerline(mode="three_pt", centerline=cl, geometry_pair=rest, aortic_ref_pt=(12.2605, -201.3643, 1751.0554), upper_ref_pt=(11.7567, -202.1920, 1754.7975), lower_ref_pt=(15.6605, -202.1920, 1749.9655))
+# Align geometry pair onto centerline
+aligned_pair = mm.to_centerline(
+    mode="three_pt",
+    centerline=centerline,
+    geometry_pair=rest_dia,                # e.g. Diastolic geometry
+    aortic_ref_pt=(12.26, -201.36, 1751.06),
+    upper_ref_pt=(11.76, -202.19, 1754.80),
+    lower_ref_pt=(15.66, -202.19, 1749.97)
+)
 ```
+## API Reference
+### `from_file(mode: str, **kwargs) -> Union[Tuple[PyGeometryPair, ...], PyGeometryPair, PyGeometry]`
+
+**Description**  
+Unified entrypoint for file‑based pullback registration of IVUS/OCT sequences.
+
+**Parameters**  
+- `mode` (`"full" | "doublepair" | "singlepair" | "single"`)  
+  - `"full"`: rest‑dia, rest‑sys, stress‑dia, stress‑sys phases  
+  - `"doublepair"`: rest vs. stress (dia + sys)  
+  - `"singlepair"`: diastole vs. systole  
+  - `"single"`: single‑phase contour  
+
+**Keyword Arguments**  
+- **Paths**  
+  - `rest_input_path`, `stress_input_path`, `input_path` (depending on mode)  
+  - `rest_output_path`, `stress_output_path`, `diastole_output_path`, `systole_output_path`, `output_path`  
+- **Alignment settings**  
+  - `steps_best_rotation` (default `300`)  
+  - `range_rotation_rad` (default `1.57`)  
+  - `interpolation_steps` (default `28`)  
+  - `image_center` (tuple `(x, y)`, default `(4.5, 4.5)`)  
+  - `radius` (default `0.5`)  
+  - `n_points` (default `20`)  
+- **Phase selector** (for `single` mode)  
+  - `diastole` (`bool`)  
+
+**Returns**  
+- `full` → `(rest_dia: PyGeometryPair, rest_sys: PyGeometryPair, stress_dia: PyGeometryPair, stress_sys: PyGeometryPair)`  
+- `doublepair` → `(rest: PyGeometryPair, stress: PyGeometryPair)`  
+- `singlepair` → `PyGeometryPair`  
+- `single` → `PyGeometry`  
+
+**Raises**  
+- `ValueError` if unsupported `mode`.  
+
+---
+
+### `from_array(mode: str, **kwargs) -> Union[Tuple[PyGeometryPair, ...], PyGeometryPair, PyGeometry]`
+
+**Description**  
+Entrypoint for array‑based pipelines; accepts in‑memory contour data or `PyGeometry` objects.
+
+**Parameters**  
+- `mode` (`"full" | "doublepair" | "singlepair" | "single"`): same definitions as `from_file`.
+
+**Keyword Arguments**  
+- **Geometry inputs**  
+  - `rest_geometry_dia`, `rest_geometry_sys`, `stress_geometry_dia`, `stress_geometry_sys`  
+  - `geometry_dia`, `geometry_sys`, or `geometry` (for `single` mode)  
+- **Output paths and settings**  
+  - Same defaults as `from_file`, plus:  
+    - `label`, `records`, `delta`, `max_rounds`, `sort`, `write_obj`  
+
+**Returns**  
+- Same shapes as `from_file` for corresponding modes.
+
+**Raises**  
+- `ValueError` if unsupported `mode`.  
+
+---
+
+### `to_centerline(mode: str, **kwargs) -> PyGeometryPair`
+
+**Description**  
+Aligns a `PyGeometryPair` onto a vessel centerline via anatomical landmarks or manual rotation.
+
+**Parameters**  
+- `mode` (`"three_pt" | "manual"`)  
+  - `"three_pt"`: use three reference points (`aortic_ref_pt`, `upper_ref_pt`, `lower_ref_pt`)  
+  - `"manual"`: use fixed `rotation_angle` and `start_point`  
+
+**Keyword Arguments**  
+- `centerline`: `PyCenterline` object  
+- `geometry_pair`: `PyGeometryPair` to align  
+- For `"three_pt"` mode:  
+  - `aortic_ref_pt`, `upper_ref_pt`, `lower_ref_pt` (tuples `(x, y, z)`)  
+- For `"manual"` mode:  
+  - `rotation_angle` (`float`, radians)  
+  - `start_point` (`int`, contour index)  
+- Common settings:  
+  - `angle_step` (default `0.01745` rad), `write`, `interpolation_steps`, `output_dir`, `case_name`
+
+**Returns**  
+- Aligned `PyGeometryPair`.
+
+**Raises**  
+- `ValueError` if unsupported `mode`.  
+
+---
+
+### Geometry & Contour Classes
+
+All core types (`PyContourPoint`, `PyContour`, `PyGeometry`, `PyGeometryPair`, `PyCenterline`, `PyRecord`) provide methods for:
+
+- **Spatial metrics**:  
+  - `.distance()`, `.get_area()`, `.get_elliptic_ratio()`,  
+  - `.find_farthest_points()`, `.find_closest_opposite()`
+
+- **Transformations**:  
+  - `.rotate(angle_deg)`, `.translate((dx, dy, dz))`
+
+- **Geometry utilities**:  
+  - `PyGeometry.smooth_contours(window_size)`  
+  - `PyGeometry.reorder(delta, max_rounds, steps, range)`
+
+For detailed signatures and usage examples, see the [online documentation](https://multimodars.readthedocs.io).  
+
+## License
+Distributed under the MIT License. See LICENSE.md for details.
+
+
+## Detailed Background
+This package aims to register different cardiac imaging modalities together, while coronary computed tomography angiography (CCTA) is the undisputed goldstandard for 3D information, it has several downsides, when trying to create patient-specific geometries.
+
+First, intravascular imaging (intravascular ultrasound (IVUS) and optical coherence tomography (OCT)) have a much higher image resolution. It would therefore desirable to replace the sections along the coronary artery depicted by the intravascular images with these high resolution images. Since this intravascular images are acquired during a pullback along a catheter with a certain shape in the 3D space, and the coronary vessel undergoes several motions (heartbeat breathing), are the images inside a pullback not perfectly aligned with each other. The first aim of this package is to register these images towards each other using Hausdorff distances of the vessel contours and the catheter position (center of the image). The full backend is written in Rust leveraging parallelization to achieve much faster results than using traditional python only.
+
+! Not implemented yet !
+Second, MRI has the potential to depict several tissue characteristics, most importantly scar tissue using LGE. Again only 2D images are acquired, in this case the 2D images should be placed at the correct position in the CCTA mesh and a 3D model should be created showing the volume of scar tissue (or edema) and it's corresponding region.
+
+### IVUS registration - gated images
+The initial idea for this package, was built with a focus on coronary artery anomalies, particularly anomalous aortic origin of a coronary artery (AAOCA). In these patients a dynamic stenosis is present, where the intramural section (inside of the aortic wall) undergoes a pulsatile lumen deformation during rest and stress with every heartbeat. Additionally undergoes the vessel a stress-induced lumen deformation from rest to stress for both diastole and systole. The `from_file()` and `from_array()` functions where both built having this four possible changes in mind.
+![Dynamic lumen changes](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/media/dynamic_lumen_changes.png)
+
+The options to display are therefore:
+
+*full*
+```text
+`Rest`:                             `Stress`:
+diastole  ---------------------->   diastole
+   |                                   |
+   |                                   |
+   v                                   v
+systole   ---------------------->   systole
+```
+
+*double pair*
+```text
+`Rest`:                             `Stress`:
+diastole                            diastole
+   |                                   |
+   |                                   |
+   v                                   v
+systole                             systole
+```
+
+*single pair*
+```text
+                 `Rest`/`Stress`:
+                    diastole
+                       |
+                       |
+                       v
+                    systole
+```
+
+*single*
+```text
+diastole rest / systole rest / diastole stress / systole stress
+```
+
+The expected input data for contours is the following for a csv file:
+```text
+ Expected format .csv file, e.g.:
+--------------------------------------------------------------------
+|      185     |       5.32     |      2.37       |        0.0     |
+|      ...     |       ...      |      ...        |        ...     |
+No headers -> frame index, x-coord [mm], y-coord [mm], z-coord [mm] 
+```
+The contours can also be in pixels, but results of the `.get_area()` function will be wrong.
+
+### IVUS registration - pre- and post-stenting
+IVUS registration works in the same way. An example is provided in `data/ivus_prestent` and `data/ivus_poststent`.
+
+### OCT registration
 

@@ -2,6 +2,7 @@
 use crate::io::input::{Centerline, CenterlinePoint, Contour, ContourPoint, Record};
 use crate::io::Geometry;
 use crate::processing::geometries::GeometryPair;
+use crate::entry_arr::refine_ordering;
 use nalgebra::Vector3;
 use pyo3::prelude::*;
 
@@ -69,6 +70,16 @@ impl PyContourPoint {
             "Point(f={}, p={}, x={:.2}, y={:.2}, z={:.2}, aortic={})",
             self.frame_index, self.point_index, self.x, self.y, self.z, self.aortic
         )
+    }
+
+    /// Euclidean distance to another PyContourPoint
+    ///
+    /// Example:
+    ///     >>> p1.distance(p2)
+    pub fn distance(&self, other: &PyContourPoint) -> f64 {
+        let p1: ContourPoint = ContourPoint::from(self);
+        let p2: ContourPoint = ContourPoint::from(other);
+        p1.distance_to(&p2)
     }
 }
 
@@ -233,6 +244,13 @@ impl PyContour {
         Ok(contour)
     }
 
+    /// translate a given contour by x, y, z coordinates
+    ///
+    /// Returns:
+    ///     PyContour:
+    ///         Original Contour translated to (x, y, z)
+    /// Example:
+    ///     contour = contour.translate((0.0, 1.0, 2.0))
     pub fn translate(&mut self, translation: (f64, f64, f64)) -> PyResult<PyContour> {
         let mut rust_contour = self.to_rust_contour()?;
         rust_contour.translate_contour(translation);
@@ -381,6 +399,22 @@ impl PyGeometry {
             }
             contour.points = smoothed;
         }
+    }
+
+    /// Re‑orders and realigns the sequence of contours to minimize a combined spatial + index‐jump cost.
+    ///
+    /// Args:
+    ///     delta (float): Jump penalty weight between contour IDs.
+    ///     max_rounds (int): Maximum refinement iterations.
+    ///     steps (int): Number of steps for frame alignment.
+    ///     range (float): Range parameter for frame alignment.
+    ///
+    /// Returns:
+    ///     PyGeometry: A new geometry with contours and catheter re‑ordered and aligned.
+    pub fn reorder(&mut self, delta: f64, max_rounds: usize, steps: usize, range:f64) -> PyGeometry {
+        let mut rust_geometry = self.to_rust_geometry();
+        rust_geometry = refine_ordering(rust_geometry, delta, max_rounds, steps, range);
+        rust_geometry.into()
     }
 }
 

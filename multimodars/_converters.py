@@ -1,5 +1,5 @@
 import numpy as np
-from multimodars import PyContour, PyContourPoint, PyGeometry, create_catheter_contours, PyCenterline
+from multimodars import PyContour, PyContourPoint, PyGeometry, PyCenterline
 
 def geometry_to_numpy(geom) -> np.ndarray:
     """

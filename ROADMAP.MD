@@ -9,10 +9,11 @@
 
 # Centerline alignment module
 - [x] Centerline resampling based on geometry
-- [] 3-Point alignment versus Hausdorff-alignment versus manual (degree/centerline point)
-(- [] Create Centerline directly from mesh)
+- [x] 3-Point alignment versus manual (degree/centerline point)
+- [] versus Hausdorff-alignment (v0.2.0)
+(- [] Create Centerline directly from mesh) (v0.2.0)
 
-# Mesh combination
+# Mesh combination (v0.2.0)
 - [] Read in CCTA mesh (STL/Obj)
 - [] Assign regions based on Centerlines (RCA, LCA, Aorta)
 - [] Shrink/Expand CCTA to best match Aortic wall and shrink/expand coronary to match iv images
@@ -28,6 +29,7 @@
 # Miscellaneous
 - [x] change hardcoded catheter settings
 - [x] better summarized print statement
+(- [] Bug in example prestent/poststent where rest not aligned with stress only in dia/sys)
 
 # Prepublish checklist:
 - [] tests/ with unit tests checking that importing and running every public function works
