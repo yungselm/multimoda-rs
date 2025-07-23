@@ -1,6 +1,6 @@
 [project]
 name = "multimodars"
-version = "0.0.2"
+version = "0.0.3"
 authors = [
     { name = "Anselm W. Stark"}
 ]
@@ -34,6 +34,7 @@ docs = [
     "sphinx-rtd-theme",
     "sphinx-autodoc-typehints",
     "myst-parser",
+    "maturin>=1.7,<2.0",
 ]
 test = [
     "pytest>=8.0",

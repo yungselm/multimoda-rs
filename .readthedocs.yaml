@@ -4,7 +4,7 @@ build:
   os: ubuntu-22.04
   tools:
     python: "3.12"
-    rust: latest
+    rust: latest  # Use latest stable Rust
 
 sphinx:
   configuration: docs/conf.py
@@ -16,4 +16,18 @@ python:
       path: .
       extra_requirements: [docs]
 
-  system_packages: true  # Needed for Rust dependencies
+  system_packages: true  # Required for Rust build dependencies
+
+# Add Rust-specific setup
+build:
+  jobs:
+    post_create_environment:
+      # Install Rust toolchain explicitly
+      - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+      - source "$HOME/.cargo/env"
+      
+    pre_build:
+      # Install maturin
+      - pip install maturin>=1.7,<2.0
+      # Build extension in-place
+      - maturin develop --release
