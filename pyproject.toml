@@ -31,8 +31,9 @@ Issues = "https://github.com/yungselm/multimoda-rs/issues"
 [project.optional-dependencies]
 docs = [
     "sphinx>=8.0",
-    "sphinx-autobuild",
     "sphinx-rtd-theme",
+    "sphinx-autodoc-typehints",
+    "myst-parser",
 ]
 test = [
     "pytest>=8.0",

@@ -1,15 +1,15 @@
-Python API Reference
-====================
+# Python API Reference
 
-Core Functions
---------------
+## Core Functions
+```{eval-rst}
 .. automodule:: multimodars
    :members:
    :undoc-members:
    :show-inheritance:
+```
 
-Geometry Classes
-----------------
+## Geometry Classes
+```{eval-rst}
 .. autoclass:: PyContourPoint
    :members:
    :noindex:
@@ -21,9 +21,10 @@ Geometry Classes
 .. autoclass:: PyGeometry
    :members:
    :noindex:
+```
 
-Processing Classes
------------------
+## Processing Classes
+```{eval-rst}
 .. autoclass:: PyGeometryPair
    :members:
    :noindex:
@@ -31,9 +32,10 @@ Processing Classes
 .. autoclass:: PyRecord
    :members:
    :noindex:
+```
 
-Utility Functions
------------------
+## Utility Functions
+```{eval-rst}
 .. autofunction:: centerline_align
 .. autofunction:: from_file_full
 .. autofunction:: from_file_doublepair
@@ -44,3 +46,4 @@ Utility Functions
 .. autofunction:: from_array_full
 .. autofunction:: from_array_doublepair
 .. autofunction:: from_array_singlepair
+```

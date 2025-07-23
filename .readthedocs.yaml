@@ -1,17 +1,19 @@
-# https://docs.readthedocs.io/en/stable/config-file/v2.html#supported-settings
-
 version: 2
 
-sphinx:
-  builder: html
-
 build:
-  os: "ubuntu-20.04"
+  os: ubuntu-22.04
   tools:
     python: "3.12"
-    rust: "1.87"
+    rust: latest
+
+sphinx:
+  configuration: docs/conf.py
+  fail_on_warning: true
 
 python:
   install:
     - method: pip
       path: .
+      extra_requirements: [docs]
+
+  system_packages: true  # Needed for Rust dependencies
