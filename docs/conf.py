@@ -1,5 +1,10 @@
 import os
 import sys
+try:
+    import multimodars
+except ImportError:
+    from unittest.mock import MagicMock
+    sys.modules["multimodars"] = MagicMock()
 
 # Add project to path
 sys.path.insert(0, os.path.abspath('..'))
