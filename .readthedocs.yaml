@@ -21,7 +21,7 @@ build:
 
     pre_build:
       - "maturin develop --release"
-      - "echo \"Python path: $(python -c 'import sys; print(sys.path)')\""
+      - 'python -c "import sys; print(\"Python path:\", sys.path)"'
 
 sphinx:
   configuration: docs/conf.py
