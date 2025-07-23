@@ -11,16 +11,15 @@ build:
 
   jobs:
     post_create_environment:
-      - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-          | sh -s -- -y --default-toolchain stable
-      - source "$HOME/.cargo/env"
-      - echo "Rust installed: $(rustc --version)"
+      - "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable"
+      - "source \"$HOME/.cargo/env\""
+      - "echo \"Rust installed: $(rustc --version)\""
 
     pre_build:
-      - pip install maturin>=1.7,<2.0
-      - cd $READTHEDOCS_PROJECT_DIRECTORY
-      - maturin develop --release
-      - echo "Python path: $(python -c 'import sys; print(sys.path)')"
+      - "pip install maturin>=1.7,<2.0"
+      - "cd $READTHEDOCS_PROJECT_DIRECTORY"
+      - "maturin develop --release"
+      - "echo \"Python path: $(python -c 'import sys; print(sys.path)')\""
 
 sphinx:
   configuration: docs/conf.py
