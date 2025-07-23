@@ -5,16 +5,22 @@ build:
   tools:
     python: "3.12"
     rust: latest
+  apt_packages:
+    - libssl-dev
+    - pkg-config
+
   jobs:
     post_create_environment:
-      - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+      - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+          | sh -s -- -y --default-toolchain stable
       - source "$HOME/.cargo/env"
-      - "echo \"Rust installed: $(rustc --version)\""  # Escaped version
+      - echo "Rust installed: $(rustc --version)"
+
     pre_build:
       - pip install maturin>=1.7,<2.0
       - cd $READTHEDOCS_PROJECT_DIRECTORY
       - maturin develop --release
-      - "echo \"Python path: $(python -c 'import sys; print(sys.path)')\""  # Escaped version
+      - echo "Python path: $(python -c 'import sys; print(sys.path)')"
 
 sphinx:
   configuration: docs/conf.py
@@ -25,4 +31,3 @@ python:
     - method: pip
       path: .
       extra_requirements: [docs]
-  system_packages: true
