@@ -1,3 +1,36 @@
+# version: 2
+
+# build:
+#   os: ubuntu-22.04
+#   tools:
+#     python: "3.12"
+#     rust: latest
+#   apt_packages:
+#     - libssl-dev
+#     - pkg-config
+
+#   jobs:
+#     post_create_environment:
+#       - "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable"
+#       - ". \"$HOME/.cargo/env\""
+#       - "echo \"Rust installed: $(rustc --version)\""
+
+#     pre_build:
+#       - "pip install maturin>=1.7,<2.0"
+#       - "cd $READTHEDOCS_PROJECT_DIRECTORY"
+#       - "maturin develop --release"
+#       - "echo \"Python path: $(python -c 'import sys; print(sys.path)')\""
+
+# sphinx:
+#   configuration: docs/conf.py
+#   fail_on_warning: true
+
+# python:
+#   install:
+#     - method: pip
+#       path: .
+#       extra_requirements: [docs]
+
 version: 2
 
 build:
@@ -16,7 +49,10 @@ build:
       - "echo \"Rust installed: $(rustc --version)\""
 
     pre_build:
-      - "pip install maturin>=1.7,<2.0"
+      - "python -m pip install --upgrade --no-cache-dir pip setuptools"
+      - "python -m pip install --upgrade --no-cache-dir sphinx"
+      - "python -m pip install --upgrade --upgrade-strategy only-if-needed --no-cache-dir .[docs]"
+      - "pip install maturin>=1.7"
       - "cd $READTHEDOCS_PROJECT_DIRECTORY"
       - "maturin develop --release"
       - "echo \"Python path: $(python -c 'import sys; print(sys.path)')\""
