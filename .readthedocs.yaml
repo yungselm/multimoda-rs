@@ -16,7 +16,7 @@ build:
       - "echo \"Rust installed: $(rustc --version)\""
       - ". \"$READTHEDOCS_VIRTUALENV_PATH/bin/activate\""
       - "echo \"Activated venv: $VIRTUAL_ENV\""
-      - "ln -s \"$READTHEDOCS_VIRTUALENV_PATH\" \"$READTHEDOCS_PROJECT_DIRECTORY/.venv\""
+      - "ln -s \"$READTHEDOCS_VIRTUALENV_PATH\" .venv"
       - "echo \"Symlinked .venv → $READTHEDOCS_VIRTUALENV_PATH\""
 
     pre_build:
