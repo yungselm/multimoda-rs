@@ -9,13 +9,12 @@ build:
     post_create_environment:
       - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
       - source "$HOME/.cargo/env"
-      - echo "Rust installed: $(rustc --version)"
+      - "echo \"Rust installed: $(rustc --version)\""  # Escaped version
     pre_build:
       - pip install maturin>=1.7,<2.0
-      # Navigate to project root explicitly
       - cd $READTHEDOCS_PROJECT_DIRECTORY
       - maturin develop --release
-      - echo "Python path: $(python -c 'import sys; print(sys.path)')"
+      - "echo \"Python path: $(python -c 'import sys; print(sys.path)')\""  # Escaped version
 
 sphinx:
   configuration: docs/conf.py
