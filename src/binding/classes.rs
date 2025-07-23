@@ -181,10 +181,63 @@ impl PyContour {
     /// Returns:
     ///     Tuple[Tuple[PyContourPoint, PyContourPoint], float]:
     ///         Pair of points and their Euclidean distance
+    /// Example:
+    ///     >>> (p1, p2), distance = contour.find_closest_opposite()
     pub fn find_closest_opposite(&self) -> PyResult<((PyContourPoint, PyContourPoint), f64)> {
         let rust_contour = self.to_rust_contour()?;
         let ((p1, p2), distance) = rust_contour.find_closest_opposite();
         Ok(((p1.into(), p2.into()), distance))
+    }
+
+    /// Get the elliptic ratio of the current contour
+    ///
+    /// Returns:
+    ///     float:
+    ///         Ratio of farthest points distance divided by closest
+    ///         opposite points distance.
+    /// Example:
+    ///     elliptic_ratio = contour.get_elliptic_ratio()
+    pub fn get_elliptic_ratio(&self) -> PyResult<f64> {
+        let rust_contour = self.to_rust_contour()?;
+        let elliptic_ratio = rust_contour.elliptic_ratio();
+        Ok(elliptic_ratio)
+    }
+
+    /// Get the area of the current contour
+    ///
+    /// Returns:
+    ///     float:
+    ///         Area of the current contour in the unit that the original
+    ///         contour data was provided (e.g. mm2).
+    /// Example:
+    ///     elliptic_ratio = contour.get_elliptic_ratio()    
+    pub fn get_area(&self) -> PyResult<f64> {
+        let rust_contour = self.to_rust_contour()?;
+        let area = rust_contour.area();
+        Ok(area)
+    }
+
+    /// Rotate a given contour around it's own centroid by an angle
+    /// in degrees.
+    ///
+    /// Returns:
+    ///     PyContour:
+    ///         Original Contour rotated around it's centroid
+    /// Example:
+    ///     contour = contour.rotate(20)
+    pub fn rotate(&mut self, angle_deg: f64) -> PyResult<PyContour> {
+        let angle_rad = angle_deg.to_radians();
+        let mut rust_contour = self.to_rust_contour()?;
+        rust_contour.rotate_contour(angle_rad);
+        let contour: PyContour = rust_contour.into();
+        Ok(contour)
+    }
+
+    pub fn translate(&mut self, translation: (f64, f64, f64)) -> PyResult<PyContour> {
+        let mut rust_contour = self.to_rust_contour()?;
+        rust_contour.translate_contour(translation);
+        let contour: PyContour = rust_contour.into();
+        Ok(contour)
     }
 }
 
@@ -648,6 +701,21 @@ impl From<&Geometry> for PyGeometry {
         }
     }
 }
+
+impl From<Contour> for PyContour {
+    fn from(contour: Contour) -> Self {
+        PyContour {
+            id: contour.id,
+            points: contour
+                .points
+                .into_iter()
+                .map(|p| PyContourPoint::from(&p))
+                .collect(),
+            centroid: contour.centroid,
+        }
+    }
+}
+
 
 impl From<&Contour> for PyContour {
     fn from(contour: &Contour) -> Self {

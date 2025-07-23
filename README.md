@@ -20,7 +20,7 @@
 
 ---
 
-> A Rust‑powered cardiac imaging multi‑modality fusion package.
+> A Rust‑powered cardiac imaging multi‑modality fusion package using parallelization.
 
 ---
 ## Background
@@ -42,15 +42,17 @@ source .venv/bin/activate
 maturin develop
 ```
 
-## Example Usage
+## Example Workflow
 Run the script with the provided test cases, to ensure sufficient set up.
 ```python
 import multimodars as mm
+import numpy as np
 
-# reads in ivus contours from .csv and aligns them
-rest, stress, dia, sys = mm.from_file_full("data/ivus_rest", "data/ivus_stress")
+rest, stress, dia, sys = mm.from_file(mode="full", rest_input_path="data/ivus_rest", stress_input_path="data/ivus_stress")
 
-# get the diastolic rest geometry and align with centerline
-geometry = rest.dia_geom
+cl_raw = np.genfromtxt("data/centerline_raw.csv", delimiter=",")
+cl = mm.numpy_to_centerline(cl_raw)
+
+aligned = mm.to_centerline(mode="three_pt", centerline=cl, geometry_pair=rest, aortic_ref_pt=(12.2605, -201.3643, 1751.0554), upper_ref_pt=(11.7567, -202.1920, 1754.7975), lower_ref_pt=(15.6605, -202.1920, 1749.9655))
 ```
 

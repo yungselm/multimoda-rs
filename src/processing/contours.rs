@@ -64,7 +64,7 @@ pub fn align_frames_in_geometry(geometry: Geometry, steps: usize, range: f64) ->
         }
     }
     println!("Processing Geometry: {}", &geometry.label);
-    println!("Reference angle to vertical: {:.1} (°) \n Rotating Reference by: {:.1} (°) \n Added additionall 180° rotation: {}", _line_angle.to_degrees(), rotation_to_y.to_degrees(), aortic_flag);
+    println!("Reference angle to vertical: {:.1} (°) \n Rotating Reference by: {:.1} (°) \n Added additional 180° rotation: {}", _line_angle.to_degrees(), rotation_to_y.to_degrees(), aortic_flag);
     // dump the collected logs as a table
     let logs = Arc::try_unwrap(logger)
         .expect("No other Arc references to logger exist")

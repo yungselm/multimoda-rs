@@ -8,7 +8,7 @@
     inside of a Geometry regardless of type, should solve the problem.
 
 # Centerline alignment module
-- [] Centerline resampling based on geometry
+- [x] Centerline resampling based on geometry
 - [] 3-Point alignment versus Hausdorff-alignment versus manual (degree/centerline point)
 (- [] Create Centerline directly from mesh)
 
