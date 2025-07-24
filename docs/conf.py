@@ -26,8 +26,10 @@ extensions = [
 ]
 
 # Templates and static files
-templates_path = ['_templates']
-html_static_path = ['_static']
+_here = os.path.abspath(os.path.dirname(__file__))
+
+templates_path = [os.path.join(_here, '_templates')]
+html_static_path = [os.path.join(_here, '_static')]
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
 # Theme
