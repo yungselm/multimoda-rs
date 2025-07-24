@@ -9,7 +9,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/multimodars.svg)](https://pypi.org/project/multimodars)
 [![License](https://img.shields.io/pypi/l/multimodars.svg)](LICENSE.md)
-[![Docs](https://img.shields.io/readthedocs/multimodars)](https://multimodars.readthedocs.io)
+[![Docs](https://img.shields.io/readthedocs/multimodars)](https://multimoda-rs.readthedocs.io)
 
 <figure class="epigraph" style="text-align: center; font-style: italic;">
   <blockquote>
@@ -85,7 +85,7 @@ aligned_pair = mm.to_centerline(
 )
 ```
 ## API Reference
-For detailed signatures and usage examples, see the [online documentation](https://multimodars.readthedocs.io).  
+For detailed signatures and usage examples, see the [online documentation](https://multimoda-rs.readthedocs.io).
 
 ## License
 Distributed under the MIT License. See LICENSE.md for details.

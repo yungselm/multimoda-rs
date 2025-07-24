@@ -36,7 +36,7 @@
 - [] Integrate coverage measurement (e.g. pytest-cov) and upload reports to Coverall or Codecov
 - [] Status badge for coverage to README
 - [] Add testing to the CI workflow
-- [] Auto-generated API docs
+- [x] Auto-generated API docs
 - [] High-level "Getting Started" guide
 - [] CONTRIBUTING.md
 
