@@ -9,7 +9,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/multimodars.svg)](https://pypi.org/project/multimodars)
 [![License](https://img.shields.io/pypi/l/multimodars.svg)](LICENSE.md)
-[![Docs](https://img.shields.io/readthedocs/multimodars)](https://multimoda-rs.readthedocs.io)
+[![Docs](https://img.shields.io/readthedocs/multimoda-rs)](https://multimoda-rs.readthedocs.io)
 
 <figure class="epigraph" style="text-align: center; font-style: italic;">
   <blockquote>
