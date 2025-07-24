@@ -25,6 +25,7 @@ build:
 
 sphinx:
   configuration: docs/conf.py
+  docs_dir: docs
   fail_on_warning: true
 
 python:

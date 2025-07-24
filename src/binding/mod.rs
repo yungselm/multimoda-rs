@@ -211,7 +211,7 @@ pub fn from_file_doublepair(
 }
 
 /// Processes two geometries (rest and stress) in parallel from an input CSV,
-/// returning a single `PyGeometryPair` for the chosen phase.
+/// returning a single ``PyGeometryPair`` for the chosen phase.
 ///
 /// .. code-block:: text
 ///
@@ -388,7 +388,7 @@ pub fn from_file_single(
 
 /// Generate circular catheter contour approximations from boundary points.
 ///
-/// Given a list of boundary `PyContourPoint`s, this function computes
+/// Given a list of boundary ``PyContourPoint``s, this function computes
 /// smoothed circular contours approximating the catheter wall around
 /// those points.
 ///
@@ -446,12 +446,12 @@ pub fn create_catheter_contours(
     Ok(py_contours)
 }
 
-/// Process an existing `PyGeometry` by optionally reordering, aligning,
+/// Process an existing ``PyGeometry`` by optionally reordering, aligning,
 /// and refining its contours, walls, and catheter data based on various criteria.
 ///
-/// This wraps the internal Rust function `geometry_from_array_rs`, which:
-/// 1. Builds catheter contours (if `n_points > 0`),  
-/// 2. Optionally reorders contours using provided `records` and z‑coordinate sorting,  
+/// This wraps the internal Rust function ``geometry_from_array_rs``, which:
+/// 1. Builds catheter contours (if ``n_points > 0``),  
+/// 2. Optionally reorders contours using provided ``records`` and z‑coordinate sorting,  
 /// 3. Aligns frames and refines the contour ordering via dynamic programming or 2‑opt,  
 /// 4. Smooths the final geometry,  
 /// 5. Optionally writes OBJ meshes.
@@ -463,15 +463,15 @@ pub fn create_catheter_contours(
 /// - ``steps_best_rotation`` (default: 300): Number of rotation steps for frame alignment.  
 /// - ``range_rotation_rad`` (default: 1.57): Angular range (in radians) for alignment.  
 /// - ``image_center`` (default: (4.5, 4.5)): Center (x, y) for catheter contour generation.  
-/// - ``radius`` (default: 0.5): Radius around `image_center` for catheter contours.  
+/// - ``radius`` (default: 0.5): Radius around ``image_center`` for catheter contours.  
 /// - ``n_points`` (default: 20): Number of points per catheter contour; set to 0 to skip.  
 /// - ``label`` (default: "None"): Label tag applied to the output geometry.  
 /// - ``records`` (default: None): Optional list of ``PyRecord`` entries; if provided, contours are reordered to match the chronological record order using z‑coordinates.  
 /// - ``delta`` (default: 0.1): Penalty weight for non‑sequential jumps when building the cost matrix.  
-/// - ``max_rounds`` (default: 5): Maximum iterations for the `refine_ordering` loop.  
+/// - ``max_rounds`` (default: 5): Maximum iterations for the ``refine_ordering`` loop.  
 /// - ``diastole`` (default: true): Phase flag used during initial reorder by `records`.  
-/// - ``sort`` (default: true): If true, applies `refine_ordering` after an initial alignment; otherwise only aligns once.  
-/// - ``write_obj`` (default: false): If true, exports OBJ meshes to `output_path`.  
+/// - ``sort`` (default: true): If true, applies ``refine_ordering`` after an initial alignment; otherwise only aligns once.  
+/// - ``write_obj`` (default: false): If true, exports OBJ meshes to ``output_path``.  
 /// - ``output_path`` (default: "output/single"): Directory path for OBJ exports (if enabled).
 ///
 /// Returns
@@ -490,7 +490,7 @@ pub fn create_catheter_contours(
 /// .. code-block:: python
 ///
 ///    import multimodars as mm
-///    # Suppose `geo` is an existing PyGeometry from earlier processing:
+///    # Suppose ``geo`` is an existing PyGeometry from earlier processing:
 ///    refined = mm.geometry_from_array(
 ///        geo,
 ///        steps_best_rotation=200,
@@ -576,7 +576,7 @@ pub fn geometry_from_array(
     Ok(py_geom)
 }
 
-/// Process four existing `PyGeometry` objects (rest‑dia, rest‑sys, stress‑dia, stress‑sys)
+/// Process four existing ``PyGeometry`` objects (rest‑dia, rest‑sys, stress‑dia, stress‑sys)
 /// in parallel, aligning and interpolating between phases.
 ///
 /// .. code-block:: text
@@ -781,8 +781,8 @@ pub fn from_array_doublepair(
     Ok((py_rest, py_stress))
 }
 
-/// Interpolate between two existing `PyGeometry` objects (diastole and systole)
-/// and return a `PyGeometryPair` containing both phases.
+/// Interpolate between two existing ``PyGeometry`` objects (diastole and systole)
+/// and return a ``PyGeometryPair`` containing both phases.
 ///
 /// .. code-block:: text
 ///
