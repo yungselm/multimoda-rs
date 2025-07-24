@@ -4,9 +4,9 @@
 ```{eval-rst}
 .. automodule:: multimodars
    :members:
-   :undoc-members:
    :imported-members:
    :show-inheritance:
+   :no-index:
 ```
 
 ## Geometry Classes
@@ -59,4 +59,18 @@
 .. autofunction:: from_array_full
 .. autofunction:: from_array_doublepair
 .. autofunction:: from_array_singlepair
+```
+
+## Converters
+```{eval-rst}
+.. automodule:: multimodars._converters
+   :members:
+   :no-index:
+```
+
+## Wrappers
+```{eval-rst}
+.. automodule:: multimodars._wrappers
+   :members:
+   :no-index:
 ```

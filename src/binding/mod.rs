@@ -40,7 +40,7 @@ use pyo3::prelude::*;
 ///
 /// CSV format:
 ///
-/// .. code-block:: csv
+/// .. code-block:: text
 ///
 ///    Frame Index, X-coord (mm), Y-coord (mm), Z-coord (mm)
 ///    185, 5.32, 2.37, 0.0
@@ -146,7 +146,7 @@ pub fn from_file_full(
 ///
 /// CSV format:
 ///
-/// .. code-block:: csv
+/// .. code-block:: text
 ///
 ///    Frame Index, X-coord (mm), Y-coord (mm), Z-coord (mm)
 ///    185, 5.32, 2.37, 0.0
@@ -238,7 +238,7 @@ pub fn from_file_doublepair(
 ///
 /// The CSV must have **no header**. Each row is:
 ///
-/// .. code-block:: csv
+/// .. code-block:: text
 ///
 ///    185, 5.32, 2.37, 0.0
 ///    ...
