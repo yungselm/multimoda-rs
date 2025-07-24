@@ -388,7 +388,7 @@ pub fn from_file_single(
 
 /// Generate circular catheter contour approximations from boundary points.
 ///
-/// Given a list of boundary ``PyContourPoint``s, this function computes
+/// Given a list of boundary ``PyContourPoint``, this function computes
 /// smoothed circular contours approximating the catheter wall around
 /// those points.
 ///
