@@ -5,6 +5,7 @@
 .. automodule:: multimodars
    :members:
    :undoc-members:
+   :imported-members:
    :show-inheritance:
 ```
 
@@ -34,9 +35,21 @@
    :noindex:
 ```
 
+## Centerline Classes
+```{eval-rst}
+.. autoclass:: PyCenterlinePoint
+   :members:
+   :noindex:
+
+.. autoclass:: PyCenterline
+   :members:
+   :noindex:
+```
+
 ## Utility Functions
 ```{eval-rst}
-.. autofunction:: centerline_align
+.. autofunction:: align_three_point
+.. autofunction:: align_manual
 .. autofunction:: from_file_full
 .. autofunction:: from_file_doublepair
 .. autofunction:: from_file_singlepair
