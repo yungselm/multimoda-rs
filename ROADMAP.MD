@@ -25,6 +25,7 @@
 - [] .frame_align / .frame_reorder -> initial alignment, without breathing correction, reorder, checks for better order then reruns
 - [] .to_centerline(mode = {three_point, hausdorff, manual}) -> if three point provide three tuples, hausdorff nothing, manual provide centerline point and rotation
 - [] .get_array()
+- [] .to_array() for all datatypes (GeometryPair, Geometry, Contour, Point)
 
 # Miscellaneous
 - [x] change hardcoded catheter settings

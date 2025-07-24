@@ -1,7 +1,10 @@
 import numpy as np
 from multimodars import PyContour, PyContourPoint, PyGeometry, PyCenterline
 
-def geometry_to_numpy(geom) -> np.ndarray:
+def to_array(generic) -> np.ndarray:
+    pass
+
+def _geometry_to_numpy(geom) -> np.ndarray:
     """
     Flatten all contours + catheter + walls + reference point
     into a single array of shape (N, 4, 4), where::
