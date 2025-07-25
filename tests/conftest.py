@@ -1,7 +1,7 @@
 # tests/conftest.py
 import pytest
 import numpy as np
-from multimodars import PyContour, PyContourPoint, PyGeometry
+from multimodars import PyContour, PyContourPoint, PyGeometry, numpy_to_geometry
 
 def _create_round_contour(
     contour_id: int,
@@ -93,3 +93,23 @@ def sample_array_data():
         [[0, 1.0, 2.0, 3.0], [0, 4.0, 5.0, 6.0], [0, 0.0, 0.0, 0.0], [0, 0.0, 0.0, 0.0]],
         [[1, 7.0, 8.0, 9.0], [1, 10.0, 11.0, 12.0], [0, 0.0, 0.0, 0.0], [0, 0.0, 0.0, 0.0]]
     ], dtype=float)
+
+@pytest.fixture
+def sample_rest_dia_arr():
+    rest_dia = np.load("data/fixtures/dia_rest.npy")
+    return numpy_to_geometry(rest_dia)
+
+@pytest.fixture
+def sample_rest_sys_arr():
+    rest_sys = np.load("data/fixtures/sys_rest.npy")
+    return numpy_to_geometry(rest_sys)
+
+@pytest.fixture
+def sample_stress_dia_arr():
+    stress_dia = np.load("data/fixtures/dia_stress.npy")
+    return numpy_to_geometry(stress_dia)
+
+@pytest.fixture
+def sample_stress_sys_arr():
+    stress_sys = np.load("data/fixtures/sys_stress.npy")
+    return numpy_to_geometry(stress_sys)

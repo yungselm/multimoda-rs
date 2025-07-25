@@ -109,7 +109,7 @@ def numpy_to_geometry_layers(
     """
     Build a PyGeometry from four (M, 4) NumPy arrays or structured arrays, one per layer, grouping by frame_index.
 
-    Each row in the *_arr is [frame_index, x, y, z].
+    Each row in the ``*_arr`` is [frame_index, x, y, z].
 
     Returns a PyGeometry containing:
       - contours: list of PyContour (one per frame in contours_arr)

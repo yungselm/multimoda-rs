@@ -54,7 +54,7 @@
 .. autofunction:: from_file_doublepair
 .. autofunction:: from_file_singlepair
 .. autofunction:: from_file_single
-.. autofunction:: create_catheter_contours
+.. autofunction:: create_catheter_geometry
 .. autofunction:: geometry_from_array
 .. autofunction:: from_array_full
 .. autofunction:: from_array_doublepair
