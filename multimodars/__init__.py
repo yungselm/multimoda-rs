@@ -1,6 +1,6 @@
 from .multimodars import *
 from ._converters import (
-    geometry_to_numpy, 
+    to_array, 
     numpy_to_geometry_layers, 
     numpy_to_geometry,
     numpy_to_centerline
