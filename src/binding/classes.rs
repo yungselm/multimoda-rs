@@ -137,19 +137,20 @@ pub struct PyContour {
 
 #[pymethods]
 impl PyContour {
-    /// Creates a new PyContour instance
+    /// Creates a new PyContour instance, automatically calculates centroid
     ///
     /// Args:
     ///     id (int): Contour identifier
     ///     points (List[PyContourPoint]): List of contour points
-    ///     centroid (Tuple[float, float, float]): (x, y, z) centroid position
     #[new]
-    fn new(id: u32, points: Vec<PyContourPoint>, centroid: (f64, f64, f64)) -> Self {
-        Self {
+    fn new(id: u32, points: Vec<PyContourPoint>) -> Self {
+        let mut contour = Self {
             id,
             points,
-            centroid,
-        }
+            centroid: (0.0, 0.0, 0.0),
+        };
+        contour.compute_centroid();
+        contour
     }
 
     /// Returns human-readable representation of contour
@@ -162,6 +163,29 @@ impl PyContour {
             self.centroid.1,
             self.centroid.2
         )
+    }
+
+    /// Returns the len of points
+    fn __len__(&self) -> usize {
+        self.points.len()
+    }
+
+    /// Calculates the contours centroid by averaging over all coordinates
+    /// 
+    /// Example:
+    ///     >>> contour.compute_centroid()
+    pub fn compute_centroid(&mut self) {
+        if self.points.is_empty() {
+            self.centroid = (0.0, 0.0, 0.0);
+            return;
+        }
+
+        let (sum_x, sum_y, sum_z) = self.points.iter().fold((0.0, 0.0, 0.0), |(sx, sy, sz), p| {
+            (sx + p.x, sy + p.y, sz + p.z)
+        });
+
+        let n = self.points.len() as f64;
+        self.centroid = (sum_x / n, sum_y / n, sum_z / n);
     }
 
     /// Returns contour points as list of (x, y, z) tuples
@@ -214,7 +238,7 @@ impl PyContour {
         Ok(elliptic_ratio)
     }
 
-    /// Get the area of the current contour
+    /// Get the area of the current contour using shoelace formula
     ///
     /// Returns:
     ///     float:
@@ -354,6 +378,98 @@ impl PyGeometry {
         self.__repr__()
     }
 
+    /// Rotate all contours/walls/catheters of a given geometry 
+    /// around it's own centroid by an angle in degrees. Catheters are rotated
+    /// around the same centroid as contour.
+    /// 
+    /// Returns:
+    ///     PyGeometry:
+    ///         Original Geometry rotated around it's centroid
+    /// Example:
+    ///     geometry = geometry.rotate(20)
+    pub fn rotate(&self, angle_deg: f64) -> PyGeometry {
+        let angle_rad = angle_deg.to_radians();
+        let mut rust_geometry = self.to_rust_geometry();
+
+        let mut python_contours = Vec::with_capacity(rust_geometry.contours.len());
+        let mut python_catheters = Vec::with_capacity(rust_geometry.catheter.len());
+
+        // Rotate contours and corresponding catheter around contour centroid
+        for (i, mut contour) in rust_geometry.contours.into_iter().enumerate() {
+            let centroid = contour.centroid;
+            contour.rotate_contour(angle_rad);
+
+            let py_contour = PyContour::from(&contour);
+            python_contours.push(py_contour);
+
+            // If catheter exists for this contour, rotate it too
+            if let Some(catheter) = rust_geometry.catheter.get_mut(i) {
+                catheter.rotate_contour_around_point(angle_rad, (centroid.0, centroid.1)); // only in x-, y-plane
+                python_catheters.push(PyContour::from(&*catheter));
+            }
+        }
+
+        // Rotate walls normally around their own centroids
+        let python_walls: Vec<PyContour> = rust_geometry.walls
+            .into_iter()
+            .map(|mut wall| {
+                wall.rotate_contour(angle_rad);
+                PyContour::from(wall)
+            })
+            .collect();
+
+        PyGeometry {
+            contours: python_contours,
+            catheter: python_catheters,
+            walls: python_walls,
+            reference_point: self.reference_point.clone(),
+        }
+    }
+
+    /// Translates all contours, walls, and catheters in a geometry by (dx, dy, dz).
+    /// 
+    /// Arguments:
+    ///     - dx: translation in x-direction
+    ///     - dy: translation in y-direction
+    ///     - dz: translation in z-direction
+    ///
+    /// Returns:
+    ///     A new PyGeometry with all elements translated.
+    pub fn translate(&mut self, dx: f64, dy: f64, dz: f64) -> PyGeometry {
+        let rust_geometry = self.to_rust_geometry();
+        let translation = (dx, dy, dz);
+
+        let mut python_contours: Vec<PyContour> = Vec::new();
+        for mut contour in rust_geometry.contours {
+            contour.translate_contour(translation);
+            python_contours.push(PyContour::from(contour));
+        }
+
+        let mut python_walls: Vec<PyContour> = Vec::new();
+        for mut wall in rust_geometry.walls {
+            wall.translate_contour(translation);
+            python_walls.push(PyContour::from(wall));
+        }
+
+        let mut python_catheters: Vec<PyContour> = Vec::new();
+        for mut cath in rust_geometry.catheter {
+            cath.translate_contour(translation);
+            python_catheters.push(PyContour::from(cath));
+        }
+
+        PyGeometry {
+            contours: python_contours,
+            walls: python_walls,
+            catheter: python_catheters,
+            reference_point: PyContourPoint {
+                x: self.reference_point.x + dx,
+                y: self.reference_point.y + dy,
+                z: self.reference_point.z + dz,
+                ..self.reference_point.clone()
+            },
+        }
+    }
+
     /// Applies smoothing to all contours using moving average
     ///
     /// Args:
@@ -364,41 +480,11 @@ impl PyGeometry {
     ///
     /// Example:
     ///     >>> geom.smooth_contours(window_size=5)
-    pub fn smooth_contours(&mut self, window_size: usize) {
-        for contour in &mut self.contours {
-            // Simple smoothing implementation
-            let n = contour.points.len();
-            if window_size == 0 || n < window_size {
-                continue;
-            }
-
-            let mut smoothed = Vec::with_capacity(n);
-            for i in 0..n {
-                let start = i.saturating_sub(window_size / 2);
-                let end = (i + window_size / 2 + 1).min(n);
-
-                let mut sum_x = 0.0;
-                let mut sum_y = 0.0;
-                let mut sum_z = 0.0;
-                let count = (end - start) as f64;
-
-                for j in start..end {
-                    sum_x += contour.points[j].x;
-                    sum_y += contour.points[j].y;
-                    sum_z += contour.points[j].z;
-                }
-
-                smoothed.push(PyContourPoint {
-                    frame_index: contour.points[i].frame_index,
-                    point_index: contour.points[i].point_index,
-                    x: sum_x / count,
-                    y: sum_y / count,
-                    z: sum_z / count,
-                    aortic: contour.points[i].aortic,
-                });
-            }
-            contour.points = smoothed;
-        }
+    pub fn smooth_contours(&self) -> PyGeometry {
+        // take &self, build the Rust Geometry, run smoothing, convert back
+        let geometry = self.to_rust_geometry();
+        let smoothed = geometry.smooth_contours();
+        smoothed.into()
     }
 
     /// Re‑orders and realigns the sequence of contours to minimize a combined spatial + index‐jump cost.
@@ -411,9 +497,9 @@ impl PyGeometry {
     ///
     /// Returns:
     ///     PyGeometry: A new geometry with contours and catheter re‑ordered and aligned.
-    pub fn reorder(&mut self, delta: f64, max_rounds: usize, steps: usize, range:f64) -> PyGeometry {
+    pub fn reorder(&mut self, delta: f64, max_rounds: usize) -> PyGeometry {
         let mut rust_geometry = self.to_rust_geometry();
-        rust_geometry = refine_ordering(rust_geometry, delta, max_rounds, steps, range);
+        rust_geometry = refine_ordering(rust_geometry, delta, max_rounds);
         rust_geometry.into()
     }
 }
@@ -443,15 +529,6 @@ impl PyGeometry {
     }
 }
 
-#[pyclass]
-#[derive(Debug, Clone)]
-pub struct PyGeometryPair {
-    #[pyo3(get, set)]
-    pub dia_geom: PyGeometry,
-    #[pyo3(get, set)]
-    pub sys_geom: PyGeometry,
-}
-
 /// Python representation of a diastolic/systolic geometry pair
 ///
 /// Attributes:
@@ -463,6 +540,15 @@ pub struct PyGeometryPair {
 ///     ...     dia_geom=diastole,
 ///     ...     sys_geom=systole
 ///     ... )
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct PyGeometryPair {
+    #[pyo3(get, set)]
+    pub dia_geom: PyGeometry,
+    #[pyo3(get, set)]
+    pub sys_geom: PyGeometry,
+}
+
 #[pymethods]
 impl PyGeometryPair {
     #[new]
@@ -544,6 +630,7 @@ impl PyCenterlinePoint {
     fn __str__(&self) -> String {
         self.__repr__()
     }
+
 }
 
 impl From<&CenterlinePoint> for PyCenterlinePoint {
@@ -618,6 +705,10 @@ impl PyCenterline {
 
     fn __str__(&self) -> String {
         self.__repr__()
+    }
+
+    fn __len__(&self) -> usize {
+        self.points.len()
     }
 
     fn points_as_tuples(&self) -> Vec<(f64, f64, f64)> {
@@ -749,7 +840,6 @@ impl From<Contour> for PyContour {
         }
     }
 }
-
 
 impl From<&Contour> for PyContour {
     fn from(contour: &Contour) -> Self {

@@ -188,11 +188,14 @@ impl Contour {
     }
 
     pub fn area(&self) -> f64 {
-        let major_length = self.find_farthest_points().1;
-        let minor_length = self.find_closest_opposite().1;
-        let a = major_length / 2.0;
-        let b = minor_length / 2.0;
-        std::f64::consts::PI * a * b
+        let n = self.points.len();
+        let mut area = 0.0;
+        for i in 0..n {
+            let p1 = &self.points[i];
+            let p2 = &self.points[(i + 1) % n];
+            area += p1.x * p2.y - p2.x * p1.y;
+        }
+        0.5 * area.abs()
     }
 
     /// Angle in radians

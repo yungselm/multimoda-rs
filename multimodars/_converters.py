@@ -89,7 +89,12 @@ def _geometry_to_numpy(geom) -> np.ndarray:
     max_len = max(len(lst) for lst in layers.values())
     arr = np.zeros((4, max_len, 4), dtype=float)
     for i, key in enumerate(["contours", "catheter", "walls", "reference"]):
-        pts = np.array(layers[key], dtype=float)
+        pts_list = layers[key]
+        if len(pts_list) == 0:
+            # make an empty (0,4) array so broadcasting works
+            pts = np.empty((0, 4), dtype=float)
+        else:
+            pts = np.array(pts_list, dtype=float).reshape(-1, 4)
         arr[i, : pts.shape[0], :] = pts
     # transpose to (max_len, 4 layers, 4 coords)
     return arr.transpose(1, 0, 2)
@@ -102,52 +107,63 @@ def numpy_to_geometry_layers(
     reference_arr: np.ndarray,
 ) -> PyGeometry:
     """
-    Build a PyGeometry from four (M, 4) NumPy arrays, one per layer, where::
+    Build a PyGeometry from four (M, 4) NumPy arrays or structured arrays, one per layer, grouping by frame_index.
 
-      - each row: [frame_index, x, y, z]
-      - contours_arr, catheter_arr, walls_arr: shape (Nc,4), (Ncat,4), (Nw,4)
-      - reference_arr: shape (1,4); only the first row is used
+    Each row in the *_arr is [frame_index, x, y, z].
 
-    Parameters
-    ----------
-    contours_arr : np.ndarray
-        (Nc,4) array of contour points.
-    catheter_arr : np.ndarray
-        (Ncat,4) array of catheter points.
-    walls_arr : np.ndarray
-        (Nw,4) array of wall points.
-    reference_arr : np.ndarray
-        (1,4) or (Nr,4) array; only row 0 is read as the reference.
-
-    Returns
-    -------
-    PyGeometry
+    Returns a PyGeometry containing:
+      - contours: list of PyContour (one per frame in contours_arr)
+      - catheter: list of PyContour (one per frame in catheter_arr)
+      - walls:    list of PyContour (one per frame in walls_arr)
+      - reference: single PyContourPoint from reference_arr[0]
     """
-    from multimodars import PyContourPoint, PyContour, PyGeometry
+    from multimodars import PyContour, PyContourPoint
 
-    def build_contour(points_arr: np.ndarray, contour_id: int) -> PyContour:
-        pts = [
-            PyContourPoint(
-                frame_index=int(fr), point_index=i,  # random point index setting, gets corrected later
-                x=float(x), y=float(y), z=float(z),
-                aortic=False  # also gets set later
-            )
-            for i, (fr, x, y, z) in enumerate(points_arr)
-        ]
-        centroid = (
-            pts[0].x if pts else 0.0,
-            pts[0].y if pts else 0.0,
-            pts[0].z if pts else 0.0,
-        )
-        return PyContour(contour_id, pts, centroid)
+    def _to_numeric_array(arr: np.ndarray, layer_name: str) -> np.ndarray:
+        # Handle structured arrays (e.g. from np.genfromtxt with names)
+        if arr.ndim == 1 and arr.dtype.names:
+            try:
+                arr = np.vstack([arr[name] for name in arr.dtype.names]).T
+            except Exception:
+                raise ValueError(f"Could not convert structured array for {layer_name}")
+        arr = np.asarray(arr, dtype=float)
+        return arr
 
-    # In this simplest version, we treat each entire layer as a single contour.
-    contours = [build_contour(contours_arr, 0)]
-    catheter = [build_contour(catheter_arr, 0)]
-    walls    = [build_contour(walls_arr,    0)]
+    def build_layer(arr: np.ndarray, layer_name: str) -> list[PyContour]:
+        arr = _to_numeric_array(arr, layer_name)
+        if arr.size == 0:
+            return []
+        if arr.ndim != 2 or arr.shape[1] < 4:
+            raise ValueError(f"{layer_name} must be (N,4)-like, got shape {arr.shape}")
+        frames = np.unique(arr[:, 0].astype(int))
+        contours = []
+        for frame in frames:
+            pts_arr = arr[arr[:, 0].astype(int) == frame]
+            pts = [
+                PyContourPoint(
+                    frame_index=int(fr), point_index=i,
+                    x=float(x), y=float(y), z=float(z),
+                    aortic=False
+                )
+                for i, (fr, x, y, z) in enumerate(pts_arr)
+            ]
+            contours.append(PyContour(frame, pts))
+        return contours
 
-    # Reference point should be only one with the current setup
-    fr, x, y, z = reference_arr[0]
+    contours = build_layer(contours_arr, "contours_arr")
+    catheter = build_layer(catheter_arr, "catheter_arr")
+    walls    = build_layer(walls_arr,    "walls_arr")
+
+    # Reference: structured or numeric
+    if reference_arr.dtype.names and reference_arr.ndim == 1:
+        ref0 = reference_arr[0]
+        fr, x, y, z = (float(ref0[name]) for name in reference_arr.dtype.names[:4])
+    else:
+        ref_flat = np.asarray(reference_arr, dtype=float).flatten()
+        if ref_flat.size < 4:
+            raise ValueError(f"reference_arr must contain at least 4 values, got {ref_flat.size}")
+        fr, x, y, z = ref_flat[:4]
+
     reference = PyContourPoint(
         frame_index=int(fr), point_index=0,
         x=float(x), y=float(y), z=float(z),

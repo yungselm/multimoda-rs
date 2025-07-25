@@ -4,7 +4,7 @@ pub mod entry_file;
 pub mod align;
 
 use crate::io::input::{Contour, ContourPoint, Record};
-use classes::{PyContour, PyContourPoint, PyGeometry, PyGeometryPair, PyRecord};
+use classes::{PyContour, PyGeometry, PyGeometryPair, PyRecord};
 use entry_arr::*;
 use entry_file::{
     from_file_doublepair_rs, from_file_full_rs, from_file_single_rs, from_file_singlepair_rs,
@@ -386,64 +386,60 @@ pub fn from_file_single(
     Ok(py_geom)
 }
 
-/// Generate circular catheter contour approximations from boundary points.
+/// Generate catheter contours and return a new PyGeometry with them filled in.
 ///
-/// Given a list of boundary ``PyContourPoint``, this function computes
-/// smoothed circular contours approximating the catheter wall around
-/// those points.
-///
-/// .. code-block:: text
-///
-///    Input: list of (x, y) points around catheter boundary
-///    Output: list of closed contours at evenly spaced angles
+/// This function takes an existing PyGeometry, extracts all its contour points,
+/// computes catheter contours around those points, and returns a new PyGeometry
+/// with the catheter field populated.
 ///
 /// Arguments
 /// ---------
-///
-/// - ``points``: Vector of ``PyContourPoint`` defining the catheter outline.  
-/// - ``image_center`` (default: (4.5, 4.5)): Center of the image (x, y).  
-/// - ``radius`` (default: 0.5): Approximation radius around each point.  
-/// - ``n_points`` (default: 20): Number of points per generated contour.  
+/// - ``geometry``: The original geometry with contours but no catheters.
+/// - ``image_center``: Center of the image (default = (4.5, 4.5)).
+/// - ``radius``: Radius of the generated catheter contours (default = 0.5).
+/// - ``n_points``: Number of points per catheter contour (default = 20).
 ///
 /// Returns
 /// -------
-///
-/// A ``Vec[PyContour]`` containing the generated closed contours.
-///
-/// Raises
-/// ------
-///
-/// ``RuntimeError`` if contour generation fails in Rust.
-///
-/// Example
-/// -------
-///
-/// .. code-block:: python
-///
-///    import multimodars as mm
-///    points = [mm.PyContourPoint(x, y, z) for x, y, z in data]
-///    contours = mm.create_catheter_contours(points, image_center=(4.5,4.5))
-///
+/// A new ``PyGeometry`` with the same data but `catheter` field filled.
+/// 
 #[pyfunction]
-#[pyo3(signature = (points, image_center = (4.5f64, 4.5f64), radius = 0.5f64, n_points = 20u32))]
-pub fn create_catheter_contours(
-    points: Vec<PyContourPoint>,
+#[pyo3(signature = (geometry, image_center = (4.5, 4.5), radius = 0.5, n_points = 20))]
+pub fn create_catheter_geometry(
+    geometry: PyGeometry,
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
-) -> PyResult<Vec<PyContour>> {
-    // 1) Convert Vec<PyContourPoint> → Vec<ContourPoint> using your &PyContourPoint → ContourPoint impl
-    let rust_pts: Vec<ContourPoint> = points.iter().map(ContourPoint::from).collect();
+) -> PyResult<PyGeometry> {
+    // 1. Extract all contour points
+    let all_points: Vec<ContourPoint> = geometry
+        .contours
+        .iter()
+        .flat_map(|contour| contour.points.iter().map(ContourPoint::from))
+        .collect();
 
-    // 2) Call the Rust-level function
-    let rust_contours: Vec<Contour> =
-        Contour::create_catheter_contours(&rust_pts, image_center, radius, n_points)
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    // 2. Generate catheter contours
+    let rust_catheters: Vec<Contour> = Contour::create_catheter_contours(
+        &all_points,
+        image_center,
+        radius,
+        n_points,
+    )
+    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
-    // 3) Convert Vec<Contour> → Vec<PyContour> using your &Contour → PyContour impl
-    let py_contours: Vec<PyContour> = rust_contours.iter().map(PyContour::from).collect();
+    // 3. Convert to Python-compatible PyContour
+    let py_catheters: Vec<PyContour> = rust_catheters
+        .into_iter()
+        .map(PyContour::from)
+        .collect();
 
-    Ok(py_contours)
+    // 4. Return a new PyGeometry with the catheter field filled
+    Ok(PyGeometry {
+        contours: geometry.contours,
+        catheter: py_catheters,
+        walls: geometry.walls,
+        reference_point: geometry.reference_point,
+    })
 }
 
 /// Process an existing ``PyGeometry`` by optionally reordering, aligning,

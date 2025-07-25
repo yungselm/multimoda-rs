@@ -3,16 +3,80 @@ import pytest
 import numpy as np
 from multimodars import PyContour, PyContourPoint, PyGeometry
 
+def _create_round_contour(
+    contour_id: int,
+    center: tuple = (0.0, 0.0, 3.0),
+    radius: float = 4.0,
+    num_points: int = 20,
+    aortic: bool = True
+) -> PyContour:
+    """
+    Generate a circular contour in the XY plane with fixed Z.
+    """
+    cx, cy, cz = center
+    angles = np.linspace(0, 2 * np.pi, num_points, endpoint=False)
+    points = []
+    for idx, theta in enumerate(angles):
+        x = cx + radius * np.cos(theta)
+        y = cy + radius * np.sin(theta)
+        pt = PyContourPoint(0, idx, x, y, cz, aortic)
+        points.append(pt)
+    contour = PyContour(contour_id, points)
+    return contour
+
+
+def _create_elliptic_contour(
+    contour_id: int,
+    center: tuple = (2.0, 2.0, 3.0),
+    major_radius: float = 5.0,
+    minor_radius: float = 3.0,
+    num_points: int = 20,
+    aortic: bool = False
+) -> PyContour:
+    """
+    Generate an elliptical contour in the XY plane with fixed Z.
+    """
+    cx, cy, cz = center
+    angles = np.linspace(0, 2 * np.pi, num_points, endpoint=False)
+    points = []
+    for idx, theta in enumerate(angles):
+        x = cx + major_radius * np.cos(theta)
+        y = cy + minor_radius * np.sin(theta)
+        pt = PyContourPoint(0, idx, x, y, cz, aortic)
+        points.append(pt)
+    contour = PyContour(contour_id, points)
+    return contour
+
+
 @pytest.fixture
 def sample_contour_points():
     return [
-        PyContourPoint(0, 0, 1.0, 2.0, 3.0, False),
-        PyContourPoint(0, 1, 4.0, 5.0, 6.0, True)
+        PyContourPoint(0, 0, 0.0, 4.0, 3.0, False),
+        PyContourPoint(0, 1, 0.0, 0.0, 3.0, False),
+        PyContourPoint(0, 2, 4.0, 0.0, 3.0, True),
+        PyContourPoint(0, 3, 4.0, 4.0, 3.0, True),        
     ]
 
 @pytest.fixture
 def sample_contour(sample_contour_points):
-    return PyContour(0, sample_contour_points, (2.5, 3.5, 4.5))
+    contour = PyContour(0, sample_contour_points)
+    # Check centroid is as expected
+    assert contour.centroid == (2.0, 2.0, 3.0)
+    return contour
+
+@pytest.fixture
+def sample_contour_round():
+    """Synthetic circular contour with 20 points"""
+    contour = _create_round_contour(contour_id=1)
+    assert pytest.approx(contour.centroid, rel=1e-6) == (0.0, 0.0, 3.0)
+    return contour
+
+@pytest.fixture
+def sample_contour_elliptic():
+    """Synthetic elliptical contour with 20 points"""
+    contour = _create_elliptic_contour(contour_id=2)
+    assert pytest.approx(contour.centroid, rel=1e-6) == (2.0, 2.0, 3.0)
+    return contour
 
 @pytest.fixture
 def sample_geometry(sample_contour):

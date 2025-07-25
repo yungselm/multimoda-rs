@@ -23,14 +23,13 @@
 - [x] .from_file(mode = {full, single}, "rest dir", "stress dir", "dia dir", "sys dir")
 - [x] .from_array(rest, stress, dia, sys)
 - [] .frame_align / .frame_reorder -> initial alignment, without breathing correction, reorder, checks for better order then reruns
-- [] .to_centerline(mode = {three_point, hausdorff, manual}) -> if three point provide three tuples, hausdorff nothing, manual provide centerline point and rotation
+- [x] .to_centerline(mode = {three_point, hausdorff, manual}) -> if three point provide three tuples, hausdorff nothing, manual provide centerline point and rotation (v0.0.2 for hausdorff)
 - [] .get_array()
-- [] .to_array() for all datatypes (GeometryPair, Geometry, Contour, Point)
+- [x] .to_array() for all datatypes (GeometryPair, Geometry, Contour, Point)
 
 # Miscellaneous
 - [x] change hardcoded catheter settings
 - [x] better summarized print statement
-(- [] Bug in example prestent/poststent where rest not aligned with stress only in dia/sys)
 
 # Prepublish checklist:
 - [] tests/ with unit tests checking that importing and running every public function works

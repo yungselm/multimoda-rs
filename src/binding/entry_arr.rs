@@ -80,7 +80,8 @@ pub fn geometry_from_array_rs(
     // Optionally align and refine ordering
     if sort {
         let aligned = align_frames_in_geometry(geometry, steps, range);
-        geometry = refine_ordering(aligned, delta, max_rounds, steps, range);
+        geometry = refine_ordering(aligned, delta, max_rounds);
+        geometry = align_frames_in_geometry(geometry, steps, range);
     } else {
         geometry = align_frames_in_geometry(geometry, steps, range);
     }
@@ -111,24 +112,20 @@ pub fn refine_ordering(
     mut geom: Geometry,
     delta: f64,
     max_rounds: usize,
-    steps: usize,
-    range: f64,
 ) -> Geometry {
     let mut last_order = Vec::new();
     for _round in 0..max_rounds {
         let cost = build_cost_matrix(&geom.contours, delta);
-        // Choose DP or heuristic based on geom.contours.len()
         let order = if geom.contours.len() <= 15 {
             held_karp(&cost)
         } else {
             two_opt(&cost, 500)
         };
         if order == last_order {
-            break; // converged
+            break;
         }
         last_order = order.clone();
         geom = reorder_geometry(geom, &order);
-        geom = align_frames_in_geometry(geom, steps, range)
     }
     geom
 }
