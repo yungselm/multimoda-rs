@@ -1,7 +1,6 @@
 from .multimodars import *
 from ._converters import (
-    to_array, 
-    numpy_to_geometry_layers, 
+    to_array,
     numpy_to_geometry,
     numpy_to_centerline
 )
@@ -27,7 +26,6 @@ __all__ = [
     "from_array_singlepair",
     # converters
     "to_array",
-    "numpy_to_geometry_layers",
     "numpy_to_geometry",
     "numpy_to_centerline",
     # wrappers

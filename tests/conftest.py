@@ -96,20 +96,48 @@ def sample_array_data():
 
 @pytest.fixture
 def sample_rest_dia_arr():
-    rest_dia = np.load("data/fixtures/dia_rest.npy")
-    return numpy_to_geometry(rest_dia)
+    contour = np.load("data/fixtures/dia_rest_contours.npy")
+    catheter = np.load("data/fixtures/dia_rest_catheter.npy")
+    wall = np.load("data/fixtures/dia_rest_walls.npy")
+    reference = np.load("data/fixtures/dia_rest_ref_pt.npy")
+    return numpy_to_geometry(
+        contours_arr=contour,
+        catheter_arr=catheter,
+        walls_arr=wall,
+        reference_arr=reference)
 
 @pytest.fixture
 def sample_rest_sys_arr():
-    rest_sys = np.load("data/fixtures/sys_rest.npy")
-    return numpy_to_geometry(rest_sys)
+    contour = np.load("data/fixtures/sys_rest_contours.npy")
+    catheter = np.load("data/fixtures/sys_rest_catheter.npy")
+    wall = np.load("data/fixtures/sys_rest_walls.npy")
+    reference = np.load("data/fixtures/sys_rest_ref_pt.npy")
+    return numpy_to_geometry(
+        contours_arr=contour,
+        catheter_arr=catheter,
+        walls_arr=wall,
+        reference_arr=reference)
 
 @pytest.fixture
 def sample_stress_dia_arr():
-    stress_dia = np.load("data/fixtures/dia_stress.npy")
-    return numpy_to_geometry(stress_dia)
+    contour = np.load("data/fixtures/dia_stress_contours.npy")
+    catheter = np.load("data/fixtures/dia_stress_catheter.npy")
+    wall = np.load("data/fixtures/dia_stress_walls.npy")
+    reference = np.load("data/fixtures/dia_stress_ref_pt.npy")
+    return numpy_to_geometry(
+        contours_arr=contour,
+        catheter_arr=catheter,
+        walls_arr=wall,
+        reference_arr=reference)
 
 @pytest.fixture
 def sample_stress_sys_arr():
-    stress_sys = np.load("data/fixtures/sys_stress.npy")
-    return numpy_to_geometry(stress_sys)
+    contour = np.load("data/fixtures/sys_stress_contours.npy")
+    catheter = np.load("data/fixtures/sys_stress_catheter.npy")
+    wall = np.load("data/fixtures/sys_stress_walls.npy")
+    reference = np.load("data/fixtures/sys_stress_ref_pt.npy")
+    return numpy_to_geometry(
+        contours_arr=contour,
+        catheter_arr=catheter,
+        walls_arr=wall,
+        reference_arr=reference)

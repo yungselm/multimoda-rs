@@ -59,6 +59,7 @@
 .. autofunction:: from_array_full
 .. autofunction:: from_array_doublepair
 .. autofunction:: from_array_singlepair
+.. autofunction:: to_obj
 ```
 
 ## Converters

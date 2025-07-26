@@ -2,22 +2,36 @@ import numpy as np
 from typing import Union, Tuple
 from multimodars import PyGeometry, PyCenterline
 
-def to_array(generic) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
+def to_array(generic) -> Union[np.ndarray, dict, Tuple[dict, dict]]:
     """
-    Convert various Py* objects into numpy arrays.
+    Convert various multimodars Py* objects into numpy array(s) or dictionaries of arrays.
 
-    - PyContour: returns array of shape (N, 4) as (frame_index, x, y, z)
-    - PyCenterline: returns array of shape (N, 4) as (frame_index, x, y, z)
-    - PyGeometry: returns array of shape (max_len, 4, 4) [contours, catheter, walls, reference]
-    - PyGeometryPair: returns tuple of two arrays, each as PyGeometry
+    Parameters
+    ----------
+    generic : PyContour, PyCenterline, PyGeometry, or PyGeometryPair
+        The object to be converted to numpy representation.
 
     Returns
     -------
     np.ndarray
-        A 3D array of shape (max_len, 4 layers, 4 coords) for PyGeometry
-        A 3D array of shape (frame_index, x, y, z) for PyContour, PyCenterline
-    Tuple[np.ndarray, np.ndarray]
-        Two A 3D arrays of shape (max_len, 4 layers, 4 coords) for PyGeometryPair
+        For PyContour or PyCenterline:
+        A 2D array of shape (N, 4), where each row is (frame_index, x, y, z).
+    
+    dict[str, np.ndarray]
+        For PyGeometry:
+        A dictionary with keys ["contours", "catheter", "walls", "reference"], 
+        each containing a 2D array of shape (M, 4), where M is the number of points in that layer.
+        "reference" is a (1, 4) array or (0, 4) if missing.
+
+    Tuple[dict[str, np.ndarray], dict[str, np.ndarray]]
+        For PyGeometryPair:
+        A tuple of two dictionaries (one for diastolic, one for systolic), each in the same format
+        as returned for a single PyGeometry.
+
+    Raises
+    ------
+    TypeError
+        If the input type is not one of the supported multimodars types.
     """
     # Import here to avoid circular imports
     from multimodars import PyContour, PyCenterline, PyGeometry, PyGeometryPair
@@ -43,64 +57,41 @@ def to_array(generic) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
 
     # Geometry Pair: two geometries
     if isinstance(generic, PyGeometryPair):
-        dia_arr = _geometry_to_numpy(generic.dia_geom)
-        sys_arr = _geometry_to_numpy(generic.sys_geom)
-        return dia_arr, sys_arr
+        dia_dict = _geometry_to_numpy(generic.dia_geom)
+        sys_dict = _geometry_to_numpy(generic.sys_geom)
+        return dia_dict, sys_dict
 
     raise TypeError(f"Unsupported type for to_array: {type(generic)}")
 
 
-def _geometry_to_numpy(geom) -> np.ndarray:
-    """
-    Flatten all contours + catheter + walls + reference point
-    into a single array of shape (max_len, 4, 4), where:
+def _geometry_to_numpy(geom) -> dict[str, np.ndarray]:
+    def extract_points(items, label: str) -> np.ndarray:
+        result = []
+        for obj in items:
+            pts = [(p.frame_index, p.x, p.y, p.z) for p in obj.points]
+            result.extend(pts)
+        return np.array(result, dtype=float) if result else np.zeros((0, 4), dtype=float)
 
-      - axis 1 layers: contours, catheter, walls, reference
-      - axis 2 coords: [frame_index, x, y, z]
+    contours = extract_points(geom.contours, "contours")
+    catheter = extract_points(geom.catheter, "catheter")
+    walls    = extract_points(geom.walls,    "walls")
 
-    Returns
-    -------
-    np.ndarray
-        A 3D array of shape (max_len, 4 layers, 4 coords) ready for downstream processing.
-    """
-    layers = {
-        "contours": [
-            (pt.frame_index, pt.x, pt.y, pt.z)
-            for contour in geom.contours
-            for pt in contour.points
-        ],
-        "catheter": [
-            (pt.frame_index, pt.x, pt.y, pt.z)
-            for contour in geom.catheter
-            for pt in contour.points
-        ],
-        "walls": [
-            (pt.frame_index, pt.x, pt.y, pt.z)
-            for contour in geom.walls
-            for pt in contour.points
-        ],
-        "reference": [
-            (geom.reference_point.frame_index,
-             geom.reference_point.x,
-             geom.reference_point.y,
-             geom.reference_point.z)
-        ]
+    reference = np.array([[
+        geom.reference_point.frame_index,
+        geom.reference_point.x,
+        geom.reference_point.y,
+        geom.reference_point.z,
+    ]], dtype=float)
+
+    return {
+        "contours": contours,           # (N1, 4)
+        "catheter": catheter,           # (N2, 4)
+        "walls": walls,                 # (N3, 4)
+        "reference": reference          # (1, 4)
     }
-    max_len = max(len(lst) for lst in layers.values())
-    arr = np.zeros((4, max_len, 4), dtype=float)
-    for i, key in enumerate(["contours", "catheter", "walls", "reference"]):
-        pts_list = layers[key]
-        if len(pts_list) == 0:
-            # make an empty (0,4) array so broadcasting works
-            pts = np.empty((0, 4), dtype=float)
-        else:
-            pts = np.array(pts_list, dtype=float).reshape(-1, 4)
-        arr[i, : pts.shape[0], :] = pts
-    # transpose to (max_len, 4 layers, 4 coords)
-    return arr.transpose(1, 0, 2)
 
 
-def numpy_to_geometry_layers(
+def numpy_to_geometry(
     contours_arr: np.ndarray,
     catheter_arr: np.ndarray,
     walls_arr: np.ndarray,
@@ -138,7 +129,8 @@ def numpy_to_geometry_layers(
         frames = np.unique(arr[:, 0].astype(int))
         contours = []
         for frame in frames:
-            pts_arr = arr[arr[:, 0].astype(int) == frame]
+            mask = arr[:, 0].astype(int) == frame
+            pts_arr = arr[mask]
             pts = [
                 PyContourPoint(
                     frame_index=int(fr), point_index=i,
@@ -155,14 +147,12 @@ def numpy_to_geometry_layers(
     walls    = build_layer(walls_arr,    "walls_arr")
 
     # Reference: structured or numeric
-    if reference_arr.dtype.names and reference_arr.ndim == 1:
-        ref0 = reference_arr[0]
-        fr, x, y, z = (float(ref0[name]) for name in reference_arr.dtype.names[:4])
+    non_zero_mask = np.any(reference_arr != 0, axis=1)
+    if np.any(non_zero_mask):
+        ref_row = reference_arr[non_zero_mask][0]  # First non-zero row
+        fr, x, y, z = ref_row[:4]
     else:
-        ref_flat = np.asarray(reference_arr, dtype=float).flatten()
-        if ref_flat.size < 4:
-            raise ValueError(f"reference_arr must contain at least 4 values, got {ref_flat.size}")
-        fr, x, y, z = ref_flat[:4]
+        fr, x, y, z = 0, 0, 0, 0
 
     reference = PyContourPoint(
         frame_index=int(fr), point_index=0,
@@ -171,26 +161,6 @@ def numpy_to_geometry_layers(
     )
 
     return PyGeometry(contours, catheter, walls, reference)
-
-
-def numpy_to_geometry(
-    arr: np.ndarray,
-    layer_names=("contours","catheter","walls","reference")
-) -> PyGeometry:
-    """
-    Build a PyGeometry from a single array of shape (N,4,4), where:
-      - arr[:,i,:] is the (M,4) block for layer layer_names[i]
-    """
-    from multimodars import PyGeometry
-
-    contours_arr  = arr[:, layer_names.index("contours"), :]
-    catheter_arr  = arr[:, layer_names.index("catheter"), :]
-    walls_arr     = arr[:, layer_names.index("walls"), :]
-    reference_arr = arr[:, layer_names.index("reference"), :]
-
-    return numpy_to_geometry_layers(
-        contours_arr, catheter_arr, walls_arr, reference_arr
-    )
 
 
 def numpy_to_centerline(
