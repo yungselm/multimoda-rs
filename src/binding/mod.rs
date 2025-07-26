@@ -3,7 +3,7 @@ pub mod entry_arr;
 pub mod entry_file;
 pub mod align;
 
-use crate::io::input::{Contour, ContourPoint, Record};
+use crate::io::{input::{Contour, ContourPoint, Record}, output::write_obj_mesh_without_uv};
 use classes::{PyContour, PyGeometry, PyGeometryPair, PyRecord};
 use entry_arr::*;
 use entry_file::{
@@ -850,4 +850,93 @@ pub fn from_array_singlepair(
     let py_pair = pair.into();
 
     Ok(py_pair)
+}
+
+/// Convert a ``PyGeometry`` object into one or more OBJ files and write them to disk.
+///
+/// This function takes a Python-exposed geometry (``PyGeometry``), converts it into the
+/// corresponding Rust geometry, and writes the specified components (contours, walls,
+/// catheter) as OBJ meshes without UV coordinates. Each component is written to its own
+/// file, with a corresponding MTL material file.
+///
+/// # Arguments
+///
+/// * ``geometry`` - Input ``PyGeometry`` instance containing the mesh data.
+/// * ``output_path`` - Directory path where the OBJ and MTL files will be written.
+/// * ``contours`` - Whether to export the contour mesh (default: ``true``).
+/// * ``walls`` - Whether to export the wall mesh (default: ``true``).
+/// * ``catheter`` - Whether to export the catheter mesh (default: ``true``).
+/// * ``filename_contours`` - Filename for the contour OBJ (default: "contours.obj").
+/// * ``material_contours`` - Filename for the contour MTL (default: "contours.mtl").
+/// * ``filename_catheter`` - Filename for the catheter OBJ (default: "catheter.obj").
+/// * ``material_catheter`` - Filename for the catheter MTL (default: "catheter.mtl").
+/// * ``filename_walls`` - Filename for the walls OBJ (default: "walls.obj").
+/// * ``material_walls`` - Filename for the walls MTL (default: "walls.mtl").
+///
+/// # Errors
+///
+/// Returns a `PyRuntimeError` if any of the underlying file writes fail.
+#[pyfunction(
+    signature = (
+        geometry,
+        output_path,
+        contours = true,
+        walls = true,
+        catheter = true,
+        filename_contours = "contours.obj",
+        material_contours = "contours.mtl",
+        filename_catheter = "catheter.obj",
+        material_catheter = "catheter.mtl",
+        filename_walls = "walls.obj",
+        material_walls = "walls.mtl",
+    )
+)]
+pub fn to_obj(
+    geometry: PyGeometry,
+    output_path: &str,
+    contours: bool,
+    walls: bool,
+    catheter: bool,
+    filename_contours: &str,
+    material_contours: &str,
+    filename_catheter: &str,
+    material_catheter: &str,
+    filename_walls: &str,
+    material_walls: &str,
+) -> PyResult<()> {
+    // Convert the Python geometry to Rust representation
+    let geometry_rs = geometry.to_rust_geometry();
+
+    // Ensure output directory exists
+    std::fs::create_dir_all(output_path)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+            format!("Could not create output directory '{}': {}", output_path, e)
+        ))?;
+
+    // Write each component if requested
+    if contours {
+        write_obj_mesh_without_uv(&geometry_rs.contours,
+                                   &format!("{}/{}", output_path, filename_contours),
+                                   material_contours)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                format!("Failed to write contours OBJ: {}", e)
+            ))?;
+    }
+    if catheter {
+        write_obj_mesh_without_uv(&geometry_rs.catheter,
+                                   &format!("{}/{}", output_path, filename_catheter),
+                                   material_catheter)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                format!("Failed to write catheter OBJ: {}", e)
+            ))?;
+    }
+    if walls {
+        write_obj_mesh_without_uv(&geometry_rs.walls,
+                                   &format!("{}/{}", output_path, filename_walls),
+                                   material_walls)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                format!("Failed to write walls OBJ: {}", e)
+            ))?;
+    }
+    Ok(())
 }

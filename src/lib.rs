@@ -37,6 +37,7 @@ fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<(
     m.add_function(wrap_pyfunction!(from_array_full, m.clone())?)?;
     m.add_function(wrap_pyfunction!(from_array_doublepair, m.clone())?)?;
     m.add_function(wrap_pyfunction!(from_array_singlepair, m.clone())?)?;
+    m.add_function(wrap_pyfunction!(to_obj, m.clone())?)?;
 
     // Updated class registration
     m.add_class::<PyContourPoint>()?;

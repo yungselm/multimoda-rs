@@ -34,4 +34,5 @@ __all__ = [
     "from_file",
     "from_array",
     "to_centerline",
+    "to_obj",
 ]

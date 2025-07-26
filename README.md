@@ -64,7 +64,7 @@ import multimodars as mm
 import numpy as np
 
 # IVUS pullbacks: full alignment of rest/stress & diastole/systole
-rest_dia, rest_sys, stress_dia, stress_sys = mm.from_file(
+rest, stress, dia, sys = mm.from_file(
     mode="full",
     rest_input_path="data/ivus_rest",
     stress_input_path="data/ivus_stress"
@@ -78,7 +78,7 @@ centerline = mm.numpy_to_centerline(cl_raw)
 aligned_pair = mm.to_centerline(
     mode="three_pt",
     centerline=centerline,
-    geometry_pair=rest_dia,                # e.g. Diastolic geometry
+    geometry_pair=rest,                # e.g. Rest geometry (dia/sys)
     aortic_ref_pt=(12.26, -201.36, 1751.06),
     upper_ref_pt=(11.76, -202.19, 1754.80),
     lower_ref_pt=(15.66, -202.19, 1749.97)
@@ -86,6 +86,7 @@ aligned_pair = mm.to_centerline(
 ```
 ## API Reference
 For detailed signatures and usage examples, see the [online documentation](https://multimoda-rs.readthedocs.io).
+The intended usage of the package with examples for every case are provided under examples with Jupyter Notebooks to follow along.
 
 ## License
 Distributed under the MIT License. See LICENSE.md for details.

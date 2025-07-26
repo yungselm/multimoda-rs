@@ -174,32 +174,55 @@ impl GeometryPair {
     }
 
     pub fn trim_geometries_same_length(mut self) -> GeometryPair {
-        let dia_len = self.dia_geom.contours.len();
-        let sys_len = self.sys_geom.contours.len();
-        let min_len = std::cmp::min(dia_len, sys_len);
+        // Process contours
+        let min_contours = std::cmp::min(self.dia_geom.contours.len(), self.sys_geom.contours.len());
 
-        if dia_len > min_len {
-            self.dia_geom.contours.drain(0..(dia_len - min_len));
+        if self.dia_geom.contours.len() > min_contours {
+            let remove_count = self.dia_geom.contours.len() - min_contours;
+            self.dia_geom.contours.drain(0..remove_count);
+            for contour in self.dia_geom.contours.iter_mut() {
+                contour.id -= remove_count as u32;
+                for point in contour.points.iter_mut() {
+                    point.frame_index -= remove_count as u32;
+                }
+            }
         }
-        if sys_len > min_len {
-            self.sys_geom.contours.drain(0..(sys_len - min_len));
+        
+        if self.sys_geom.contours.len() > min_contours {
+            let remove_count = self.sys_geom.contours.len() - min_contours;
+            self.sys_geom.contours.drain(0..remove_count);
+            for contour in self.sys_geom.contours.iter_mut() {
+                contour.id -= remove_count as u32;
+                for point in contour.points.iter_mut() {
+                    point.frame_index -= remove_count as u32;
+                }
+            }
         }
 
-        let dia_catheter_len = self.dia_geom.catheter.len();
-        let sys_catheter_len = self.sys_geom.catheter.len();
-        let min_catheter_len = std::cmp::min(dia_catheter_len, sys_catheter_len);
-
-        if dia_catheter_len > min_catheter_len {
-            self.dia_geom
-                .catheter
-                .drain(0..(dia_catheter_len - min_catheter_len));
+        // Process catheter points
+        let min_catheter = std::cmp::min(self.dia_geom.catheter.len(), self.sys_geom.catheter.len());
+        
+        if self.dia_geom.catheter.len() > min_catheter {
+            let remove_count = self.dia_geom.catheter.len() - min_catheter;
+            self.dia_geom.catheter.drain(0..remove_count);
+            for catheter in self.dia_geom.catheter.iter_mut() {
+                catheter.id -= remove_count as u32;
+                for point in catheter.points.iter_mut() {
+                    point.frame_index -= remove_count as u32;
+                }
+            }
         }
-        if sys_catheter_len > min_catheter_len {
-            self.sys_geom
-                .catheter
-                .drain(0..(sys_catheter_len - min_catheter_len));
+        
+        if self.sys_geom.catheter.len() > min_catheter {
+            let remove_count = self.sys_geom.catheter.len() - min_catheter;
+            self.sys_geom.catheter.drain(0..remove_count);
+            for catheter in self.sys_geom.catheter.iter_mut() {
+                catheter.id -= remove_count as u32;
+                for point in catheter.points.iter_mut() {
+                    point.frame_index -= remove_count as u32;
+                }
+            }
         }
-
         self
     }
 
@@ -250,7 +273,7 @@ pub fn find_best_rotation_all(
     steps: usize,
     range: f64,
 ) -> f64 {
-    println!("---------------------Finding optimal rotation Diastole/Systole---------------------");
+    println!("---------------------Finding optimal rotation {:?}/{:?}---------------------", &diastole.label, &systole.label);
     let increment = (2.0 * range) / steps as f64;
 
     let results: Vec<(f64, f64)> = (0..=steps)
@@ -408,14 +431,28 @@ mod geometry_pair_tests {
             dia_geom: simple_geometry((0.0, 0.0), 0.0, (None, None)),
             sys_geom: simple_geometry((0.0, 0.0), 0.0, (None, None)),
         };
+        
+        // Clear initial contours from simple_geometry
+        gp.dia_geom.contours.clear();
+        gp.dia_geom.catheter.clear();
+        gp.sys_geom.contours.clear();
+        gp.sys_geom.catheter.clear();
+        
+        // Create contours with increasing IDs starting from 0
+        gp.dia_geom.contours.push(new_dummy_contour(0));
         gp.dia_geom.contours.push(new_dummy_contour(1));
-        gp.sys_geom.contours.push(new_dummy_contour(1));
         gp.dia_geom.contours.push(new_dummy_contour(2));
         gp.dia_geom.catheter.push(new_dummy_contour(0));
+        gp.dia_geom.catheter.push(new_dummy_contour(1));
+        gp.dia_geom.catheter.push(new_dummy_contour(2));
+        gp.sys_geom.contours.push(new_dummy_contour(0));
+        gp.sys_geom.contours.push(new_dummy_contour(1));
         gp.sys_geom.catheter.push(new_dummy_contour(0));
         gp.sys_geom.catheter.push(new_dummy_contour(1));
-
+        
+        println!("Contours dia geom: {:?}", gp.dia_geom.contours);
         let trimmed = gp.trim_geometries_same_length();
+        
         assert_eq!(
             trimmed.dia_geom.contours.len(),
             trimmed.sys_geom.contours.len()
@@ -424,6 +461,20 @@ mod geometry_pair_tests {
             trimmed.dia_geom.catheter.len(),
             trimmed.sys_geom.catheter.len()
         );
+        
+        // Verify IDs start at 0 and are consecutive
+        for (i, contour) in trimmed.dia_geom.contours.iter().enumerate() {
+            assert_eq!(contour.id, i as u32);
+        }
+        for (i, contour) in trimmed.sys_geom.contours.iter().enumerate() {
+            assert_eq!(contour.id, i as u32);
+        }
+        for (i, catheter) in trimmed.dia_geom.catheter.iter().enumerate() {
+            assert_eq!(catheter.id, i as u32);
+        }
+        for (i, catheter) in trimmed.sys_geom.catheter.iter().enumerate() {
+            assert_eq!(catheter.id, i as u32);
+        }
     }
 
     #[test]

@@ -26,10 +26,12 @@
 - [x] .to_centerline(mode = {three_point, hausdorff, manual}) -> if three point provide three tuples, hausdorff nothing, manual provide centerline point and rotation (v0.0.2 for hausdorff)
 - [] .get_array()
 - [x] .to_array() for all datatypes (GeometryPair, Geometry, Contour, Point)
+- [] .to_obj() writes contours/catheters/walls to .obj file
 
 # Miscellaneous
 - [x] change hardcoded catheter settings
 - [x] better summarized print statement
+- [] use i32 instead of u32 for things like id etc.
 
 # Prepublish checklist:
 - [] tests/ with unit tests checking that importing and running every public function works
