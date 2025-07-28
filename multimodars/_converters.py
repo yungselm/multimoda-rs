@@ -146,10 +146,14 @@ def numpy_to_geometry(
     catheter = build_layer(catheter_arr, "catheter_arr")
     walls    = build_layer(walls_arr,    "walls_arr")
 
-    # Reference: structured or numeric
+    reference_arr = _to_numeric_array(reference_arr, "reference_arr")
+    # if there's exactly one point, make it into a (1,4) row
+    if reference_arr.ndim == 1:
+        reference_arr = reference_arr[np.newaxis, :]
+    # find the first non-zero point
     non_zero_mask = np.any(reference_arr != 0, axis=1)
     if np.any(non_zero_mask):
-        ref_row = reference_arr[non_zero_mask][0]  # First non-zero row
+        ref_row = reference_arr[non_zero_mask][0]
         fr, x, y, z = ref_row[:4]
     else:
         fr, x, y, z = 0, 0, 0, 0

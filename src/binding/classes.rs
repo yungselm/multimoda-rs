@@ -281,6 +281,21 @@ impl PyContour {
         let contour: PyContour = rust_contour.into();
         Ok(contour)
     }
+
+    /// Sort points within a contour, so highest y-coord point
+    /// has index 0 and all the others are sorted counterclockwise
+    ///
+    /// Returns:
+    ///     PyContour:
+    ///         Original Contour rearranged points.point_idx
+    /// Example:
+    ///     contour = contour.sort_contour_points()
+    pub fn sort_contour_points(&mut self) -> PyResult<PyContour> {
+        let mut rust_contour = self.to_rust_contour()?;
+        rust_contour.sort_contour_points();
+        let contour: PyContour = rust_contour.into();
+        Ok(contour)
+    }
 }
 
 impl PyContour {

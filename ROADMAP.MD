@@ -22,7 +22,7 @@
 # v0.1.0 desired functionality:
 - [x] .from_file(mode = {full, single}, "rest dir", "stress dir", "dia dir", "sys dir")
 - [x] .from_array(rest, stress, dia, sys)
-- [] .frame_align / .frame_reorder -> initial alignment, without breathing correction, reorder, checks for better order then reruns
+- [x] .reorder -> initial alignment, without breathing correction, reorder, checks for better order then reruns
 - [x] .to_centerline(mode = {three_point, hausdorff, manual}) -> if three point provide three tuples, hausdorff nothing, manual provide centerline point and rotation (v0.0.2 for hausdorff)
 - [] .get_array()
 - [x] .to_array() for all datatypes (GeometryPair, Geometry, Contour, Point)
@@ -31,7 +31,7 @@
 # Miscellaneous
 - [x] change hardcoded catheter settings
 - [x] better summarized print statement
-- [] use i32 instead of u32 for things like id etc.
+- [x] use i32 instead of u32 for things like id etc.
 - [] for fixture use a idealized geometry to check functionality
 
 # Prepublish checklist:

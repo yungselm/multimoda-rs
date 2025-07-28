@@ -5,7 +5,35 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::path::Path;
+
+/// Utility: detect whether the file uses comma or tab as delimiter.
+fn detect_delimiter<P: AsRef<Path>>(path: P) -> Result<u8> {
+    let file = File::open(&path)
+        .with_context(|| format!("failed to open file for delimiter sniffing: {:?}", path.as_ref()))?;
+    let mut reader = BufReader::new(file);
+    let mut first_line = String::new();
+    reader
+        .read_line(&mut first_line)
+        .with_context(|| "failed to read first line for delimiter detection")?;
+
+    // Count occurrences
+    let tabs = first_line.matches('\t').count();
+    let commas = first_line.matches(',').count();
+
+    if tabs > commas {
+        println!("Using tabs as delimiter");
+        Ok(b'\t')
+    } else if commas > tabs {
+        println!("Using commas as delimiter");
+        Ok(b',')
+    } else {
+        // default to comma
+        println!("Using the default");
+        Ok(b',')
+    }
+}
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct Contour {
@@ -295,10 +323,11 @@ impl ContourPoint {
     pub fn read_contour_data<P: AsRef<Path> + std::fmt::Debug + Clone>(
         path: P,
     ) -> anyhow::Result<Vec<ContourPoint>> {
+        let delim = detect_delimiter(&path)?;
         let file = File::open(path)?;
         let mut rdr = csv::ReaderBuilder::new()
             .has_headers(false)
-            .delimiter(b'\t')
+            .delimiter(delim)
             .from_reader(file);
 
         let mut points = Vec::new();
@@ -316,14 +345,15 @@ impl ContourPoint {
     }
 
     pub fn read_reference_point<P: AsRef<Path>>(path: P) -> Result<ContourPoint> {
-        // 1) Open the file, with context on failure
+        let delim = detect_delimiter(&path)?;
+        // 1) Open the file, with context on failur
         let file = File::open(&path)
             .with_context(|| format!("failed to open reference-point file {:?}", path.as_ref()))?;
 
         // 2) Build a TSV reader
         let mut rdr = ReaderBuilder::new()
             .has_headers(false)
-            .delimiter(b'\t')
+            .delimiter(delim)
             .from_reader(file);
 
         // 3) Grab the first record (if any)…
@@ -425,9 +455,10 @@ pub struct Record {
 }
 
 pub fn read_records<P: AsRef<Path>>(path: P) -> anyhow::Result<Vec<Record>> {
+    let delim = detect_delimiter(&path)?;
     let file = File::open(path)?;
     let mut reader = ReaderBuilder::new()
-        .delimiter(b',')
+        .delimiter(delim)
         .has_headers(true)
         .from_reader(file);
 
