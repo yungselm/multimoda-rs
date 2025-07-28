@@ -23,7 +23,7 @@ impl Geometry {
         diastole: bool,
         image_center: (f64, f64),
         radius: f64,
-        n_points: u32,
+        n_points: i32,
     ) -> anyhow::Result<Self> {
         let label = if diastole {
             format!("{}_diastole", label)
@@ -153,7 +153,7 @@ impl Geometry {
         contours.sort_by_key(|c| {
             filtered
                 .iter()
-                .position(|&f| f == c.id)
+                .position(|&f| f == c.id as u32)
                 .unwrap_or(usize::MAX)
         });
 
@@ -168,9 +168,9 @@ impl Geometry {
 
         // Reassign indices for contours and update their points' frame_index accordingly.
         for (new_id, contour) in contours.iter_mut().enumerate() {
-            contour.id = new_id as u32;
+            contour.id = new_id as i32;
             for pt in contour.points.iter_mut() {
-                pt.frame_index = new_id as u32;
+                pt.frame_index = new_id as i32;
             }
         } // new order has now highest index for the ostium
     }
@@ -326,9 +326,9 @@ mod geometry_tests {
         );
         let n = geometry.contours.len() as u32;
 
-        let expected_indices: Vec<u32> = (0..=(n - 1)).collect();
+        let expected_indices: Vec<i32> = (0..=(n - 1) as i32).collect();
 
-        let actual_indices: Vec<u32> = geometry.contours.iter().map(|c| c.id).collect();
+        let actual_indices: Vec<i32> = geometry.contours.iter().map(|c| c.id).collect();
 
         assert_eq!(
             actual_indices, expected_indices,

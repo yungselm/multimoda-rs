@@ -9,6 +9,7 @@ readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
     "numpy>=2.0.0,<3.0.0",
+    "numpy-stl>=3.2.0",
 ]
 classifiers = [
     "Programming Language :: Rust",

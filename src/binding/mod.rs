@@ -73,7 +73,7 @@ use pyo3::prelude::*;
         interpolation_steps = 28usize,
         image_center = (4.5f64, 4.5f64),
         radius = 0.5f64,
-        n_points = 20u32,
+        n_points = 20i32,
     )
 )]
 pub fn from_file_full(
@@ -88,7 +88,7 @@ pub fn from_file_full(
     interpolation_steps: usize,
     image_center: (f64, f64),
     radius: f64,
-    n_points: u32,
+    n_points: i32,
 ) -> PyResult<(
     PyGeometryPair,
     PyGeometryPair,
@@ -176,7 +176,7 @@ pub fn from_file_full(
     interpolation_steps = 28usize,
     image_center = (4.5f64, 4.5f64),
     radius = 0.5f64,
-    n_points = 20u32,
+    n_points = 20i32,
 ))]
 pub fn from_file_doublepair(
     rest_input_path: &str,
@@ -188,7 +188,7 @@ pub fn from_file_doublepair(
     interpolation_steps: usize,
     image_center: (f64, f64),
     radius: f64,
-    n_points: u32,
+    n_points: i32,
 ) -> PyResult<(PyGeometryPair, PyGeometryPair)> {
     let (rest_pair, stress_pair) = from_file_doublepair_rs(
         rest_input_path,
@@ -275,7 +275,7 @@ pub fn from_file_doublepair(
     interpolation_steps = 28usize,
     image_center = (4.5f64, 4.5f64),
     radius = 0.5f64,
-    n_points = 20u32,
+    n_points = 20i32,
 ))]
 pub fn from_file_singlepair(
     input_path: &str,
@@ -285,7 +285,7 @@ pub fn from_file_singlepair(
     interpolation_steps: usize,
     image_center: (f64, f64),
     radius: f64,
-    n_points: u32,
+    n_points: i32,
 ) -> PyResult<PyGeometryPair> {
     let geom_pair = from_file_singlepair_rs(
         input_path,
@@ -357,7 +357,7 @@ pub fn from_file_singlepair(
     diastole = true,
     image_center = (4.5f64, 4.5f64),
     radius = 0.5f64,
-    n_points = 20u32,
+    n_points = 20i32,
 ))]
 pub fn from_file_single(
     input_path: &str,
@@ -367,7 +367,7 @@ pub fn from_file_single(
     diastole: bool,
     image_center: (f64, f64),
     radius: f64,
-    n_points: u32,
+    n_points: i32,
 ) -> PyResult<PyGeometry> {
     let geom = from_file_single_rs(
         input_path,
@@ -409,7 +409,7 @@ pub fn create_catheter_geometry(
     geometry: PyGeometry,
     image_center: (f64, f64),
     radius: f64,
-    n_points: u32,
+    n_points: i32,
 ) -> PyResult<PyGeometry> {
     // 1. Extract all contour points
     let all_points: Vec<ContourPoint> = geometry
@@ -506,7 +506,7 @@ pub fn create_catheter_geometry(
     range_rotation_rad = 1.57f64,
     image_center = (4.5f64, 4.5f64),
     radius = 0.5f64,
-    n_points = 20u32,
+    n_points = 20i32,
     label = "None",
     records = None,
     delta = 0.1f64,
@@ -522,7 +522,7 @@ pub fn geometry_from_array(
     range_rotation_rad: f64,
     image_center: (f64, f64),
     radius: f64,
-    n_points: u32,
+    n_points: i32,
     label: &str,
     records: Option<Vec<PyRecord>>,
     delta: f64,

@@ -18,7 +18,7 @@ pub fn geometry_from_array_rs(
     range: f64,
     image_center: (f64, f64),
     radius: f64,
-    n_points: u32,
+    n_points: i32,
     label: &str,
     records: Option<Vec<Record>>,
     delta: f64,

@@ -9,8 +9,8 @@ use crate::io::Geometry;
 
 #[derive(Debug)]
 struct AlignLog {
-    contour_id: u32,
-    matched_to: u32,
+    contour_id: i32,
+    matched_to: i32,
     best_rot_deg: f64,
     tx: f64,
     ty: f64,
@@ -75,7 +75,7 @@ pub fn align_frames_in_geometry(geometry: Geometry, steps: usize, range: f64) ->
     geometry
 }
 
-fn prep_data_geometry(mut geometry: Geometry) -> (Geometry, u32, usize, Contour) {
+fn prep_data_geometry(mut geometry: Geometry) -> (Geometry, i32, usize, Contour) {
     geometry.contours.sort_by_key(|contour| contour.id);
 
     for contour in &mut geometry.contours {
@@ -196,14 +196,14 @@ fn rotate_reference_contour(
 
 fn align_remaining_contours(
     mut geometry: Geometry,
-    ref_idx: u32,
+    ref_idx: i32,
     ref_contour: Contour,
     rot: f64,
     steps: usize,
     range: f64,
     logger: Arc<Mutex<Vec<AlignLog>>>,
-) -> (Geometry, Vec<(u32, (f64, f64, f64), f64, (f64, f64))>) {
-    let mut processed_refs: HashMap<u32, (Vec<ContourPoint>, (f64, f64, f64))> =
+) -> (Geometry, Vec<(i32, (f64, f64, f64), f64, (f64, f64))>) {
+    let mut processed_refs: HashMap<i32, (Vec<ContourPoint>, (f64, f64, f64))> =
         std::collections::HashMap::new();
     let mut id_translation = Vec::new();
 

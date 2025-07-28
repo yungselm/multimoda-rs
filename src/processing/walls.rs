@@ -57,7 +57,7 @@ pub fn offset_contour(
 
         let do_offset = point_range
             .as_ref()
-            .map(|r| r.contains(&pt.point_index))
+            .map(|r| r.contains(&(pt.point_index as u32)))
             .unwrap_or(true);
 
         if do_offset {

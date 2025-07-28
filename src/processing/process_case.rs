@@ -14,7 +14,7 @@ pub fn create_geometry_pair(
     range_rotation_rad: f64,
     image_center: (f64, f64),
     radius: f64,
-    n_points: u32,
+    n_points: i32,
     align_inside: bool,
 ) -> anyhow::Result<GeometryPair> {
     let geometries =

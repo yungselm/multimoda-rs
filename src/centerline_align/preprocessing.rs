@@ -54,8 +54,8 @@ pub fn remove_leading_points_cl(
 
     // Reindex starting from 0
     for (i, pt) in remaining.iter_mut().enumerate() {
-        pt.contour_point.frame_index = i as u32;
-        pt.contour_point.point_index = i as u32;
+        pt.contour_point.frame_index = i as i32;
+        pt.contour_point.point_index = i as i32;
     }
 
     Centerline { points: remaining }
@@ -117,8 +117,8 @@ pub fn resample_centerline_by_contours(centerline: &Centerline, ref_mesh: &Geome
             
             new_points.push(CenterlinePoint {
                 contour_point: ContourPoint {
-                    frame_index: new_points.len() as u32,
-                    point_index: new_points.len() as u32,
+                    frame_index: new_points.len() as i32,
+                    point_index: new_points.len() as i32,
                     x,
                     y,
                     z: z_target,
@@ -137,30 +137,30 @@ pub fn prepare_geometry_alignment(mut geom_pair: GeometryPair) -> GeometryPair {
     fn align_geometry(mut geom: Geometry) -> Geometry {
         geom.contours.reverse();
         for (index, contour) in geom.contours.iter_mut().enumerate() {
-            contour.id = index as u32;
+            contour.id = index as i32;
             for point in &mut contour.points {
-                point.frame_index = index as u32;
+                point.frame_index = index as i32;
             }
         }
 
         geom.catheter.reverse();
         for (index, catheter) in geom.catheter.iter_mut().enumerate() {
-            catheter.id = index as u32;
+            catheter.id = index as i32;
             for point in &mut catheter.points {
-                point.frame_index = index as u32;
+                point.frame_index = index as i32;
             }
         }
 
         geom.walls.reverse();
         for (index, contour) in geom.walls.iter_mut().enumerate() {
-            contour.id = index as u32;
+            contour.id = index as i32;
             for point in &mut contour.points {
-                point.frame_index = index as u32;
+                point.frame_index = index as i32;
             }
         }
 
         geom.reference_point.frame_index = (geom.contours.len() - 1)
-            .saturating_sub(geom.reference_point.frame_index as usize) as u32; // correct method?
+            .saturating_sub(geom.reference_point.frame_index as usize) as i32; // correct method?
 
         geom
     }

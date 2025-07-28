@@ -8,7 +8,7 @@ pub fn generate_ellipse_points(
     num_points: usize,
     rotation: f64,
     translation: (f64, f64),
-    frame_idx: u32,
+    frame_idx: i32,
 ) -> Vec<ContourPoint> {
     let mut points = Vec::with_capacity(num_points);
     for i in 0..num_points {
@@ -18,7 +18,7 @@ pub fn generate_ellipse_points(
         let (x_rot, y_rot) = rotate_point((x, y), rotation);
         points.push(ContourPoint {
             frame_index: frame_idx,
-            point_index: i as u32,
+            point_index: i as i32,
             x: x_rot + translation.0,
             y: y_rot + translation.1,
             z: 0.0,
@@ -37,7 +37,7 @@ pub fn rotate_point(point: (f64, f64), angle: f64) -> (f64, f64) {
 }
 
 /// Creates a dummy Contour with given id
-pub fn new_dummy_contour(id: u32) -> Contour {
+pub fn new_dummy_contour(id: i32) -> Contour {
     Contour {
         id,
         points: Vec::new(),

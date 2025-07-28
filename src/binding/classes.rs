@@ -29,9 +29,9 @@ use pyo3::prelude::*;
 #[derive(Debug, Clone)]
 pub struct PyContourPoint {
     #[pyo3(get, set)]
-    pub frame_index: u32,
+    pub frame_index: i32,
     #[pyo3(get, set)]
-    pub point_index: u32,
+    pub point_index: i32,
     #[pyo3(get, set)]
     pub x: f64,
     #[pyo3(get, set)]
@@ -45,7 +45,7 @@ pub struct PyContourPoint {
 #[pymethods]
 impl PyContourPoint {
     #[new]
-    fn new(frame_index: u32, point_index: u32, x: f64, y: f64, z: f64, aortic: bool) -> Self {
+    fn new(frame_index: i32, point_index: i32, x: f64, y: f64, z: f64, aortic: bool) -> Self {
         Self {
             frame_index,
             point_index,
@@ -128,7 +128,7 @@ impl From<&PyContourPoint> for ContourPoint {
 #[derive(Debug, Clone)]
 pub struct PyContour {
     #[pyo3(get, set)]
-    pub id: u32,
+    pub id: i32,
     #[pyo3(get, set)]
     pub points: Vec<PyContourPoint>,
     #[pyo3(get, set)]
@@ -143,7 +143,7 @@ impl PyContour {
     ///     id (int): Contour identifier
     ///     points (List[PyContourPoint]): List of contour points
     #[new]
-    fn new(id: u32, points: Vec<PyContourPoint>) -> Self {
+    fn new(id: i32, points: Vec<PyContourPoint>) -> Self {
         let mut contour = Self {
             id,
             points,
