@@ -17,7 +17,7 @@ struct AlignLog {
     centroid: (f64, f64),
 }
 
-pub fn align_frames_in_geometry(geometry: Geometry, steps: usize, range: f64) -> Geometry {
+pub fn align_frames_in_geometry(geometry: Geometry, steps: usize, range_deg: f64) -> Geometry {
     let (mut geometry, reference_index, reference_pos, ref_contour) = prep_data_geometry(geometry);
 
     let (p1, p2, updated_ref) = assign_aortic(ref_contour.clone(), &geometry);
@@ -49,7 +49,7 @@ pub fn align_frames_in_geometry(geometry: Geometry, steps: usize, range: f64) ->
         rotated_ref,
         rotation_to_y,
         steps,
-        range,
+        range_deg,
         Arc::clone(&logger),
     );
 
@@ -200,7 +200,7 @@ fn align_remaining_contours(
     ref_contour: Contour,
     rot: f64,
     steps: usize,
-    range: f64,
+    range_deg: f64,
     logger: Arc<Mutex<Vec<AlignLog>>>,
 ) -> (Geometry, Vec<(i32, (f64, f64, f64), f64, (f64, f64))>) {
     let mut processed_refs: HashMap<i32, (Vec<ContourPoint>, (f64, f64, f64))> =
@@ -245,7 +245,7 @@ fn align_remaining_contours(
         };
 
         // Optimize rotation
-        let best_rot = find_best_rotation(&ref_points, &target, steps, range, &contour.centroid);
+        let best_rot = find_best_rotation(&ref_points, &target, steps, range_deg, &contour.centroid);
 
         // Apply final rotation
         let total_rotation = rot + best_rot;
@@ -287,9 +287,10 @@ pub fn find_best_rotation(
     reference: &[ContourPoint],
     target: &[ContourPoint],
     steps: usize,
-    range: f64,
+    range_deg: f64,
     centroid: &(f64, f64, f64),
 ) -> f64 {
+    let range = range_deg.to_radians();
     let increment = (2.0 * range) / (steps as f64);
 
     (0..=steps)

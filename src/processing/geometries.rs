@@ -40,16 +40,16 @@ impl GeometryPair {
     pub fn process_geometry_pair(
         self,
         steps_best_rotation: usize,
-        range_rotation_rad: f64,
+        range_rotation_deg: f64,
         align_inside: bool,
     ) -> GeometryPair {
         let diastole = if align_inside {
-            align_frames_in_geometry(self.dia_geom, steps_best_rotation, range_rotation_rad)
+            align_frames_in_geometry(self.dia_geom, steps_best_rotation, range_rotation_deg)
         } else {
             self.dia_geom
         };
         let mut systole = if align_inside {
-            align_frames_in_geometry(self.sys_geom, steps_best_rotation, range_rotation_rad)
+            align_frames_in_geometry(self.sys_geom, steps_best_rotation, range_rotation_deg)
         } else {
             self.sys_geom
         };
@@ -63,7 +63,7 @@ impl GeometryPair {
             &diastole,
             &systole,
             steps_best_rotation, // number of candidate steps (e.g. 200 or 400)
-            range_rotation_rad,  // rotation range (e.g. 1.05 for ~±60°)
+            range_rotation_deg,  // rotation range (e.g. 1.05 for ~±60°)
         );
 
         for ref mut contour in systole
@@ -271,9 +271,10 @@ pub fn find_best_rotation_all(
     diastole: &Geometry,
     systole: &Geometry,
     steps: usize,
-    range: f64,
+    range_deg: f64,
 ) -> f64 {
     println!("---------------------Finding optimal rotation {:?}/{:?}---------------------", &diastole.label, &systole.label);
+    let range = range_deg.to_radians();
     let increment = (2.0 * range) / steps as f64;
 
     let results: Vec<(f64, f64)> = (0..=steps)

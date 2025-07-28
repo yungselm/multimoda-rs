@@ -15,7 +15,7 @@ pub fn geometry_from_array_rs(
     walls: Vec<Contour>,
     reference_point: ContourPoint,
     steps: usize,
-    range: f64,
+    range_deg: f64,
     image_center: (f64, f64),
     radius: f64,
     n_points: i32,
@@ -79,11 +79,11 @@ pub fn geometry_from_array_rs(
 
     // Optionally align and refine ordering
     if sort {
-        let aligned = align_frames_in_geometry(geometry, steps, range);
+        let aligned = align_frames_in_geometry(geometry, steps, range_deg);
         geometry = refine_ordering(aligned, delta, max_rounds);
-        geometry = align_frames_in_geometry(geometry, steps, range);
+        geometry = align_frames_in_geometry(geometry, steps, range_deg);
     } else {
-        geometry = align_frames_in_geometry(geometry, steps, range);
+        geometry = align_frames_in_geometry(geometry, steps, range_deg);
     }
 
     let new_geometry = geometry.smooth_contours();
@@ -248,16 +248,16 @@ fn geometry_pair_from_array_rs(
     geometry_dia: Geometry,
     geometry_sys: Geometry,
     steps_best_rotation: usize,
-    range_rotation_rad: f64,
+    range_rotation_deg: f64,
 ) -> anyhow::Result<GeometryPair> {
     let geometries = GeometryPair {
         dia_geom: geometry_dia,
         sys_geom: geometry_sys,
     };
     let mut geometries =
-        geometries.process_geometry_pair(steps_best_rotation, range_rotation_rad, false);
+        geometries.process_geometry_pair(steps_best_rotation, range_rotation_deg, false);
 
-    geometries = geometries.process_geometry_pair(steps_best_rotation, range_rotation_rad, false);
+    geometries = geometries.process_geometry_pair(steps_best_rotation, range_rotation_deg, false);
     geometries = geometries.trim_geometries_same_length();
     geometries = geometries.thickness_adjustment();
 
@@ -278,7 +278,7 @@ pub fn from_array_full_rs(
     stress_geometry_dia: Geometry,
     stress_geometry_sys: Geometry,
     steps_best_rotation: usize,
-    range_rotation_rad: f64,
+    range_rotation_deg: f64,
     interpolation_steps: usize,
     rest_output_path: &str,
     stress_output_path: &str,
@@ -293,7 +293,7 @@ pub fn from_array_full_rs(
                     rest_geometry_dia,
                     rest_geometry_sys,
                     steps_best_rotation,
-                    range_rotation_rad,
+                    range_rotation_deg,
                 )
                 .context("create_geometry_pair(rest) failed")?;
                 process_case("rest", geom, rest_output_path, interpolation_steps)
@@ -306,7 +306,7 @@ pub fn from_array_full_rs(
                     stress_geometry_dia,
                     stress_geometry_sys,
                     steps_best_rotation,
-                    range_rotation_rad,
+                    range_rotation_deg,
                 )
                 .context("create_geometry_pair(stress) failed")?;
                 process_case("stress", geom, stress_output_path, interpolation_steps)
@@ -363,7 +363,7 @@ pub fn from_array_doublepair_rs(
     stress_geometry_dia: Geometry,
     stress_geometry_sys: Geometry,
     steps_best_rotation: usize,
-    range_rotation_rad: f64,
+    range_rotation_deg: f64,
     interpolation_steps: usize,
     rest_output_path: &str,
     stress_output_path: &str,
@@ -375,7 +375,7 @@ pub fn from_array_doublepair_rs(
                 rest_geometry_dia,
                 rest_geometry_sys,
                 steps_best_rotation,
-                range_rotation_rad,
+                range_rotation_deg,
             )
             .context("create_geometry_pair(rest) failed")?;
 
@@ -392,7 +392,7 @@ pub fn from_array_doublepair_rs(
                 stress_geometry_dia,
                 stress_geometry_sys,
                 steps_best_rotation,
-                range_rotation_rad,
+                range_rotation_deg,
             )
             .context("create_geometry_pair(stress) failed")?;
 
@@ -425,7 +425,7 @@ pub fn from_array_singlepair_rs(
     rest_geometry_sys: Geometry,
     output_path: &str,
     steps_best_rotation: usize,
-    range_rotation_rad: f64,
+    range_rotation_deg: f64,
     interpolation_steps: usize,
 ) -> Result<GeometryPair> {
     // Build the raw pair
@@ -433,7 +433,7 @@ pub fn from_array_singlepair_rs(
         rest_geometry_dia,
         rest_geometry_sys,
         steps_best_rotation,
-        range_rotation_rad,
+        range_rotation_deg,
     )
     .context("create_geometry_pair(single) failed")?;
 

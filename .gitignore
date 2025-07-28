@@ -2,6 +2,7 @@
 /output
 /data/output
 /paper
+/performance
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

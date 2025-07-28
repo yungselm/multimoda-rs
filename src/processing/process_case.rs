@@ -11,7 +11,7 @@ pub fn create_geometry_pair(
     case_name: String,
     input_dir: &str,
     steps_best_rotation: usize,
-    range_rotation_rad: f64,
+    range_rotation_deg: f64,
     image_center: (f64, f64),
     radius: f64,
     n_points: i32,
@@ -22,7 +22,7 @@ pub fn create_geometry_pair(
     let mut geometries = geometries.adjust_z_coordinates();
 
     geometries =
-        geometries.process_geometry_pair(steps_best_rotation, range_rotation_rad, align_inside);
+        geometries.process_geometry_pair(steps_best_rotation, range_rotation_deg, align_inside);
     geometries = geometries.trim_geometries_same_length();
     geometries = geometries.thickness_adjustment();
 

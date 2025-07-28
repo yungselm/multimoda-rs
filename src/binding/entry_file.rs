@@ -12,7 +12,7 @@ use crate::io::Geometry;
 pub fn from_file_full_rs(
     rest_input_path: &str,
     steps_best_rotation: usize,
-    range_rotation_rad: f64,
+    range_rotation_deg: f64,
     rest_output_path: &str,
     interpolation_steps: usize,
     stress_input_path: &str,
@@ -31,7 +31,7 @@ pub fn from_file_full_rs(
                     "rest".to_string(),
                     rest_input_path,
                     steps_best_rotation,
-                    range_rotation_rad,
+                    range_rotation_deg,
                     image_center,
                     radius,
                     n_points,
@@ -48,7 +48,7 @@ pub fn from_file_full_rs(
                     "stress".to_string(),
                     stress_input_path,
                     steps_best_rotation,
-                    range_rotation_rad,
+                    range_rotation_deg,
                     image_center,
                     radius,
                     n_points,
@@ -108,7 +108,7 @@ pub fn from_file_full_rs(
 pub fn from_file_doublepair_rs(
     rest_input_path: &str,
     steps_best_rotation: usize,
-    range_rotation_rad: f64,
+    range_rotation_deg: f64,
     rest_output_path: &str,
     interpolation_steps: usize,
     stress_input_path: &str,
@@ -124,7 +124,7 @@ pub fn from_file_doublepair_rs(
                 "rest".to_string(),
                 rest_input_path,
                 steps_best_rotation,
-                range_rotation_rad,
+                range_rotation_deg,
                 image_center,
                 radius,
                 n_points,
@@ -145,7 +145,7 @@ pub fn from_file_doublepair_rs(
                 "stress".to_string(),
                 stress_input_path,
                 steps_best_rotation,
-                range_rotation_rad,
+                range_rotation_deg,
                 image_center,
                 radius,
                 n_points,
@@ -180,7 +180,7 @@ pub fn from_file_doublepair_rs(
 pub fn from_file_singlepair_rs(
     input_path: &str,
     steps_best_rotation: usize,
-    range_rotation_rad: f64,
+    range_rotation_deg: f64,
     output_path: &str,
     interpolation_steps: usize,
     image_center: (f64, f64),
@@ -192,7 +192,7 @@ pub fn from_file_singlepair_rs(
         "single".to_string(),
         input_path,
         steps_best_rotation,
-        range_rotation_rad,
+        range_rotation_deg,
         image_center,
         radius,
         n_points,
@@ -210,7 +210,7 @@ pub fn from_file_singlepair_rs(
 pub fn from_file_single_rs(
     input_path: &str,
     steps_best_rotation: usize,
-    range_rotation_rad: f64,
+    range_rotation_deg: f64,
     output_path: &str,
     diastole: bool,
     image_center: (f64, f64),
@@ -226,7 +226,7 @@ pub fn from_file_single_rs(
         n_points,
     )?;
 
-    geom = align_frames_in_geometry(geom, steps_best_rotation, range_rotation_rad);
+    geom = align_frames_in_geometry(geom, steps_best_rotation, range_rotation_deg);
 
     let filename = format!("{}/mesh_000_single.obj", output_path);
 
