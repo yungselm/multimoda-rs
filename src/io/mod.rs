@@ -2,7 +2,7 @@ pub mod input;
 pub mod load_geometry;
 pub mod output;
 
-use anyhow::{bail, Context};
+use anyhow::Context;
 use input::{read_records, Contour, ContourPoint, Record};
 use std::path::Path;
 
@@ -45,16 +45,6 @@ impl Geometry {
             )
         };
 
-        // Load core components, hard error checking since essential for program
-        let mut contours = Self::load_contours(&contour_path, &records_path)
-            .with_context(|| format!("Failed to load contours from {}", contour_path.display()))?;
-        if contours.is_empty() {
-            bail!(
-                "Contour file {} was empty — this data is required",
-                contour_path.display()
-            );
-        }
-
         let reference_point = Self::load_reference_point(&reference_path).with_context(|| {
             format!(
                 "Failed to load reference point from {}",
@@ -62,9 +52,46 @@ impl Geometry {
             )
         })?;
 
-        let records = Self::load_results(&records_path)
-            .with_context(|| format!("Failed to load records from {}", records_path.display()))?;
+        // Load records; if none exist, build a default one-per-contour with the correct phase
+        let raw_records = match Self::load_results(&records_path) {
+            Ok(v) => v,
+            Err(_) => Vec::new(), // silent fallback, ok here since program still runs
+        };
+        println!("Raw records: {:?}", &raw_records);
+        let records = if !raw_records.is_empty() {
+            raw_records
+        } else {
+            Vec::new()
+        };
 
+        let raw_points = ContourPoint::read_contour_data(&contour_path)?;
+        let inferred_records = if records.is_empty() {
+            let phase = if diastole { "D" } else { "S" }.to_string();
+            // infer default records from raw_points
+            let mut seen = std::collections::HashSet::new();
+            raw_points
+                .iter()
+                .filter_map(|p| {
+                    if seen.insert(p.frame_index) {
+                        Some(Record {
+                            frame: p.frame_index as u32,
+                            phase: phase.clone(),
+                            measurement_1: None,
+                            measurement_2: None,
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        } else {
+            records
+        };
+
+        // finally build contours
+        let mut contours = Contour::create_contours(raw_points, inferred_records.clone())
+            .with_context(|| format!("Failed to build contours from {}", contour_path.display()))?;
+        println!("Records: {:?}", &inferred_records);
         // since reordeing the frames, destroys the z-coordinates of everyframe they need to be stored here
         // and then be reused after reordering them
         let mut z_coords = Vec::new();
@@ -75,10 +102,9 @@ impl Geometry {
         // order z_coords by f64 ascending
         z_coords.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
-        Self::reorder_contours(&mut contours, &records, diastole, &z_coords);
+        Self::reorder_contours(&mut contours, &inferred_records, diastole, &z_coords);
 
         let mut catheter = if n_points == 0 {
-            // no points → empty vector
             Vec::new()
         } else {
             // build your catheter contours and return
@@ -98,7 +124,7 @@ impl Geometry {
 
         let contours_loaded = !contours.is_empty();
         let reference_loaded = !Some(reference_point).is_none();
-        let records_loaded = !records.is_empty();
+        let records_loaded = !inferred_records.is_empty();
 
         println!("Generating geometry for {:?}", input_dir);
         println!("{:<50} {}", "file/path", "loaded");
@@ -117,14 +143,6 @@ impl Geometry {
         })
     }
 
-    fn load_contours(contour_path: &Path, records_path: &Path) -> anyhow::Result<Vec<Contour>> {
-        let raw_points = ContourPoint::read_contour_data(contour_path)?;
-        let results = read_records(records_path)?;
-
-        // Create validated contours with measurements
-        Contour::create_contours(raw_points, results)
-    }
-
     fn load_reference_point(reference_path: &Path) -> anyhow::Result<ContourPoint> {
         ContourPoint::read_reference_point(reference_path)
     }
@@ -140,6 +158,10 @@ impl Geometry {
         diastole: bool,
         z_coords: &[f64],
     ) {
+        if records.is_empty() {
+            return;
+        }
+
         // reorder contours by records frame order, first filter only phase == 'D' if diastole true
         // otherwise only phase == 'S'
         let phase = if diastole { "D" } else { "S" };

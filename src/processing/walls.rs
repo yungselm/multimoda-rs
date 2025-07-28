@@ -160,7 +160,11 @@ fn create_aortic_wall(contour: &Contour) -> Contour {
 
     // Create the contour points
     let mut left_wall = offset_contour(contour, 1.0, Some(0..=half as u32)).points;
-    left_wall.truncate(half + 1); // + 1 for uneven numbers of points
+    if left_wall.len() % 2 != 0 {
+        left_wall.truncate(half + 1); // + 1 for uneven numbers of points
+    } else {
+        left_wall.truncate(half)
+    };
     let left_len = left_wall.len();
 
     let mut right_wall = Vec::with_capacity(half);

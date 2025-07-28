@@ -522,7 +522,8 @@ mod geometry_pair_tests {
             z: 2.0,
             aortic: false,
         };
-        let angle = -PI / 2.0;
+        let mut angle = -PI / 2.0;
+        angle = angle;
         let rotate = |p: ContourPoint| ContourPoint {
             x: p.x * angle.cos() - p.y * angle.sin(),
             y: p.x * angle.sin() + p.y * angle.cos(),
@@ -544,7 +545,7 @@ mod geometry_pair_tests {
             label: "".into(),
         };
 
-        let best = find_best_rotation_all(&dia, &sys, 4, PI);
+        let best = find_best_rotation_all(&dia, &sys, 4, PI.to_degrees());
         let expected = PI / 2.0;
         assert_relative_eq!(best.rem_euclid(2.0 * PI), expected, epsilon = 0.4);
     }
