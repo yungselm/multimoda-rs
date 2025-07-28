@@ -345,14 +345,14 @@ fn directed_hausdorff(contour_a: &[ContourPoint], contour_b: &[ContourPoint]) ->
 
 fn dump_table(logs: &[AlignLog]) {
     // 1) Decide on column headers and collect rows as strings
-    let headers = ["Contour", "Matched To", "ΔRot (°)", "Tx", "Ty", "Centroid"];
+    let headers = ["Contour", "Matched To", " Rotation (°)", "Tx", "Ty", "Centroid"];
     let rows: Vec<[String; 6]> = logs
         .iter()
         .map(|e| {
             [
                 e.contour_id.to_string(),
                 e.matched_to.to_string(),
-                format!("{:.1}", e.best_rot_deg),
+                format!("{:.2} ", e.best_rot_deg),
                 format!("{:.2}", e.tx),
                 format!("{:.2}", e.ty),
                 format!("({:.2},{:.2})", e.centroid.0, e.centroid.1),
