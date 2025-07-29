@@ -1,6 +1,13 @@
 repos:
   - repo: local
     hooks:
+      - id: pytest
+        name: Run pytest
+        entry: pytest
+        language: system
+        types: [python]
+        pass_filenames: false
+        
       - id: rust-fmt
         name: Rust format
         entry: cargo fmt --all
