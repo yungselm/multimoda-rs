@@ -245,7 +245,8 @@ fn align_remaining_contours(
         };
 
         // Optimize rotation
-        let best_rot = find_best_rotation(&ref_points, &target, steps, range_deg, &contour.centroid);
+        let best_rot =
+            find_best_rotation(&ref_points, &target, steps, range_deg, &contour.centroid);
 
         // Apply final rotation
         let total_rotation = rot + best_rot;
@@ -345,7 +346,14 @@ fn directed_hausdorff(contour_a: &[ContourPoint], contour_b: &[ContourPoint]) ->
 
 fn dump_table(logs: &[AlignLog]) {
     // 1) Decide on column headers and collect rows as strings
-    let headers = ["Contour", "Matched To", " Rotation (°)", "Tx", "Ty", "Centroid"];
+    let headers = [
+        "Contour",
+        "Matched To",
+        " Rotation (°)",
+        "Tx",
+        "Ty",
+        "Centroid",
+    ];
     let rows: Vec<[String; 6]> = logs
         .iter()
         .map(|e| {

@@ -2,7 +2,7 @@ use pyo3::prelude::*;
 
 use crate::{
     binding::classes::{PyCenterline, PyGeometryPair},
-    centerline_align::{align_three_point_rs, align_manual_rs},
+    centerline_align::{align_manual_rs, align_three_point_rs},
 };
 
 /// Creates centerline-aligned meshes for diastolic and systolic geometries

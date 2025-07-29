@@ -10,8 +10,12 @@ use std::path::Path;
 
 /// Utility: detect whether the file uses comma or tab as delimiter.
 fn detect_delimiter<P: AsRef<Path>>(path: P) -> Result<u8> {
-    let file = File::open(&path)
-        .with_context(|| format!("failed to open file for delimiter sniffing: {:?}", path.as_ref()))?;
+    let file = File::open(&path).with_context(|| {
+        format!(
+            "failed to open file for delimiter sniffing: {:?}",
+            path.as_ref()
+        )
+    })?;
     let mut reader = BufReader::new(file);
     let mut first_line = String::new();
     reader

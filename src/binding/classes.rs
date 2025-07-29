@@ -1,8 +1,8 @@
 // File: src/python_bind.rs
+use crate::entry_arr::refine_ordering;
 use crate::io::input::{Centerline, CenterlinePoint, Contour, ContourPoint, Record};
 use crate::io::Geometry;
 use crate::processing::geometries::GeometryPair;
-use crate::entry_arr::refine_ordering;
 use nalgebra::Vector3;
 use pyo3::prelude::*;
 
@@ -171,7 +171,7 @@ impl PyContour {
     }
 
     /// Calculates the contours centroid by averaging over all coordinates
-    /// 
+    ///
     /// Example:
     ///     >>> contour.compute_centroid()
     pub fn compute_centroid(&mut self) {
@@ -393,10 +393,10 @@ impl PyGeometry {
         self.__repr__()
     }
 
-    /// Rotate all contours/walls/catheters of a given geometry 
+    /// Rotate all contours/walls/catheters of a given geometry
     /// around it's own centroid by an angle in degrees. Catheters are rotated
     /// around the same centroid as contour.
-    /// 
+    ///
     /// Returns:
     ///     PyGeometry:
     ///         Original Geometry rotated around it's centroid
@@ -425,7 +425,8 @@ impl PyGeometry {
         }
 
         // Rotate walls normally around their own centroids
-        let python_walls: Vec<PyContour> = rust_geometry.walls
+        let python_walls: Vec<PyContour> = rust_geometry
+            .walls
             .into_iter()
             .map(|mut wall| {
                 wall.rotate_contour(angle_rad);
@@ -442,7 +443,7 @@ impl PyGeometry {
     }
 
     /// Translates all contours, walls, and catheters in a geometry by (dx, dy, dz).
-    /// 
+    ///
     /// Arguments:
     ///     - dx: translation in x-direction
     ///     - dy: translation in y-direction
@@ -645,7 +646,6 @@ impl PyCenterlinePoint {
     fn __str__(&self) -> String {
         self.__repr__()
     }
-
 }
 
 impl From<&CenterlinePoint> for PyCenterlinePoint {
@@ -702,10 +702,7 @@ impl PyCenterline {
     #[staticmethod]
     fn from_contour_points(contour_points: Vec<PyContourPoint>) -> PyResult<Self> {
         // convert Python points → Rust ContourPoint
-        let rust_pts: Vec<ContourPoint> = contour_points
-            .iter()
-            .map(|p| p.into())
-            .collect();
+        let rust_pts: Vec<ContourPoint> = contour_points.iter().map(|p| p.into()).collect();
 
         // call your existing Rust constructor
         let rust_cl = Centerline::from_contour_points(rust_pts);

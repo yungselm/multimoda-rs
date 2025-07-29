@@ -108,11 +108,7 @@ pub fn geometry_from_array_rs(
     Ok(new_geometry)
 }
 
-pub fn refine_ordering(
-    mut geom: Geometry,
-    delta: f64,
-    max_rounds: usize,
-) -> Geometry {
+pub fn refine_ordering(mut geom: Geometry, delta: f64, max_rounds: usize) -> Geometry {
     let mut last_order = Vec::new();
     for _round in 0..max_rounds {
         let cost = build_cost_matrix(&geom.contours, delta);

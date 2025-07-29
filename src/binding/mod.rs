@@ -1,9 +1,12 @@
+pub mod align;
 pub mod classes;
 pub mod entry_arr;
 pub mod entry_file;
-pub mod align;
 
-use crate::io::{input::{Contour, ContourPoint, Record}, output::write_obj_mesh_without_uv};
+use crate::io::{
+    input::{Contour, ContourPoint, Record},
+    output::write_obj_mesh_without_uv,
+};
 use classes::{PyContour, PyGeometry, PyGeometryPair, PyRecord};
 use entry_arr::*;
 use entry_file::{
@@ -402,7 +405,7 @@ pub fn from_file_single(
 /// Returns
 /// -------
 /// A new ``PyGeometry`` with the same data but `catheter` field filled.
-/// 
+///
 #[pyfunction]
 #[pyo3(signature = (geometry, image_center = (4.5, 4.5), radius = 0.5, n_points = 20))]
 pub fn create_catheter_geometry(
@@ -419,19 +422,12 @@ pub fn create_catheter_geometry(
         .collect();
 
     // 2. Generate catheter contours
-    let rust_catheters: Vec<Contour> = Contour::create_catheter_contours(
-        &all_points,
-        image_center,
-        radius,
-        n_points,
-    )
-    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    let rust_catheters: Vec<Contour> =
+        Contour::create_catheter_contours(&all_points, image_center, radius, n_points)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
     // 3. Convert to Python-compatible PyContour
-    let py_catheters: Vec<PyContour> = rust_catheters
-        .into_iter()
-        .map(PyContour::from)
-        .collect();
+    let py_catheters: Vec<PyContour> = rust_catheters.into_iter().map(PyContour::from).collect();
 
     // 4. Return a new PyGeometry with the catheter field filled
     Ok(PyGeometry {
@@ -908,35 +904,52 @@ pub fn to_obj(
     let geometry_rs = geometry.to_rust_geometry();
 
     // Ensure output directory exists
-    std::fs::create_dir_all(output_path)
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-            format!("Could not create output directory '{}': {}", output_path, e)
-        ))?;
+    std::fs::create_dir_all(output_path).map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+            "Could not create output directory '{}': {}",
+            output_path, e
+        ))
+    })?;
 
     // Write each component if requested
     if contours {
-        write_obj_mesh_without_uv(&geometry_rs.contours,
-                                   &format!("{}/{}", output_path, filename_contours),
-                                   material_contours)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                format!("Failed to write contours OBJ: {}", e)
-            ))?;
+        write_obj_mesh_without_uv(
+            &geometry_rs.contours,
+            &format!("{}/{}", output_path, filename_contours),
+            material_contours,
+        )
+        .map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "Failed to write contours OBJ: {}",
+                e
+            ))
+        })?;
     }
     if catheter {
-        write_obj_mesh_without_uv(&geometry_rs.catheter,
-                                   &format!("{}/{}", output_path, filename_catheter),
-                                   material_catheter)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                format!("Failed to write catheter OBJ: {}", e)
-            ))?;
+        write_obj_mesh_without_uv(
+            &geometry_rs.catheter,
+            &format!("{}/{}", output_path, filename_catheter),
+            material_catheter,
+        )
+        .map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "Failed to write catheter OBJ: {}",
+                e
+            ))
+        })?;
     }
     if walls {
-        write_obj_mesh_without_uv(&geometry_rs.walls,
-                                   &format!("{}/{}", output_path, filename_walls),
-                                   material_walls)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                format!("Failed to write walls OBJ: {}", e)
-            ))?;
+        write_obj_mesh_without_uv(
+            &geometry_rs.walls,
+            &format!("{}/{}", output_path, filename_walls),
+            material_walls,
+        )
+        .map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "Failed to write walls OBJ: {}",
+                e
+            ))
+        })?;
     }
     Ok(())
 }

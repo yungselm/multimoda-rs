@@ -18,12 +18,10 @@ pub fn remove_leading_points_cl(
     mut centerline: Centerline,
     reference_point: &(f64, f64, f64),
 ) -> Centerline {
-    centerline.points.retain(|p| 
-        !p.contour_point.x.is_nan() && 
-        !p.contour_point.y.is_nan() && 
-        !p.contour_point.z.is_nan()
-    );
-    
+    centerline.points.retain(|p| {
+        !p.contour_point.x.is_nan() && !p.contour_point.y.is_nan() && !p.contour_point.z.is_nan()
+    });
+
     if centerline.points.is_empty() {
         return centerline;
     }
@@ -40,7 +38,10 @@ pub fn remove_leading_points_cl(
         .unwrap();
     let start_frame = closest_pt.contour_point.frame_index;
 
-    println!("Index of closest point: {:?}", closest_pt.contour_point.frame_index);
+    println!(
+        "Index of closest point: {:?}",
+        closest_pt.contour_point.frame_index
+    );
 
     // Remove points before closest point
     let mut remaining: Vec<_> = centerline
@@ -81,7 +82,7 @@ pub fn resample_centerline_by_contours(centerline: &Centerline, ref_mesh: &Geome
 
     let min_z = centerline.points.last().unwrap().contour_point.z;
     let max_z = centerline.points[0].contour_point.z;
-    
+
     // Filter z_refs within centerline's z-range
     let z_refs: Vec<f64> = z_refs
         .into_iter()
@@ -114,7 +115,7 @@ pub fn resample_centerline_by_contours(centerline: &Centerline, ref_mesh: &Geome
             let t = (p0_z - z_target) / (p0_z - p1_z);
             let x = p0.contour_point.x + t * (p1.contour_point.x - p0.contour_point.x);
             let y = p0.contour_point.y + t * (p1.contour_point.y - p0.contour_point.y);
-            
+
             new_points.push(CenterlinePoint {
                 contour_point: ContourPoint {
                     frame_index: new_points.len() as i32,
@@ -160,7 +161,8 @@ pub fn prepare_geometry_alignment(mut geom_pair: GeometryPair) -> GeometryPair {
         }
 
         geom.reference_point.frame_index = (geom.contours.len() - 1)
-            .saturating_sub(geom.reference_point.frame_index as usize) as i32; // correct method?
+            .saturating_sub(geom.reference_point.frame_index as usize)
+            as i32; // correct method?
 
         geom
     }

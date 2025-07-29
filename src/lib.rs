@@ -6,9 +6,9 @@ mod processing;
 mod texture;
 mod utils;
 
+use binding::align::{align_manual, align_three_point};
 use binding::classes::*;
 use binding::*;
-use binding::align::{align_three_point, align_manual};
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
 
