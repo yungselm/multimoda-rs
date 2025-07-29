@@ -36,6 +36,7 @@ docs = [
     "sphinx-autodoc-typehints",
     "myst-parser",
     "maturin>=1.7,<2.0",
+    "furo",
 ]
 test = [
     "pytest>=8.0",

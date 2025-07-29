@@ -55,3 +55,5 @@ except ImportError:
     from unittest.mock import MagicMock
     sys.modules["multimodars"] = MagicMock()
     print("Warning: multimodars module not found, using mocks for documentation")
+
+html_theme = "furo"

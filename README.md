@@ -20,10 +20,10 @@
 
 ---
 
-> A high‑performance, Rust‑accelerated toolkit for multi‑modality cardiac image fusion and registration.
+> A high‑performance, Rust‑accelerated toolkit for multi‑modality cardiac image fusion and registration ﮩ٨ـﮩﮩ٨ـ♡ﮩ٨ـﮩﮩ٨ـ.
 
 ---
-# Overview
+# Overview 
 `multimoda-rs` addresses the challenge of aligning and fusing diverse cardiac imaging modalities, such as CCTA, IVUS, OCT, and MRI—into a unified, high‑resolution 3D model. While CCTA provides comprehensive volumetric context, intravascular modalities (IVUS and OCT) offer sub‑millimeter resolution along the vessel lumen, and MRI (LGE) reveals tissue characteristics like scar and edema. This library leverages Rust for computationally intensive registration steps, delivering faster performance than pure Python implementations.
 
 ## Key Features

@@ -23,14 +23,11 @@ fn detect_delimiter<P: AsRef<Path>>(path: P) -> Result<u8> {
     let commas = first_line.matches(',').count();
 
     if tabs > commas {
-        println!("Using tabs as delimiter");
         Ok(b'\t')
     } else if commas > tabs {
-        println!("Using commas as delimiter");
         Ok(b',')
     } else {
         // default to comma
-        println!("Using the default");
         Ok(b',')
     }
 }

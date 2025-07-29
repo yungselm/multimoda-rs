@@ -57,7 +57,7 @@ impl Geometry {
             Ok(v) => v,
             Err(_) => Vec::new(), // silent fallback, ok here since program still runs
         };
-        println!("Raw records: {:?}", &raw_records);
+
         let records = if !raw_records.is_empty() {
             raw_records
         } else {
@@ -91,7 +91,7 @@ impl Geometry {
         // finally build contours
         let mut contours = Contour::create_contours(raw_points, inferred_records.clone())
             .with_context(|| format!("Failed to build contours from {}", contour_path.display()))?;
-        println!("Records: {:?}", &inferred_records);
+
         // since reordeing the frames, destroys the z-coordinates of everyframe they need to be stored here
         // and then be reused after reordering them
         let mut z_coords = Vec::new();
