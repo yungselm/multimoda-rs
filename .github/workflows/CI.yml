@@ -27,37 +27,38 @@ jobs:
           - runner: ubuntu-latest
             target: x86_64
           - runner: ubuntu-latest
-            target: x86
-          - runner: ubuntu-latest
             target: aarch64
-          - runner: ubuntu-latest
-            target: armv7
-          - runner: ubuntu-latest
-            target: s390x
-          - runner: ubuntu-latest
-            target: ppc64le
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
+
       - name: Install Python deps
         run: |
           python -m pip install --upgrade pip
           pip install -e .[test,docs,maturin]
+
       - name: run Python tests
         run: pytest
+
       - name: Format Python code
         run: black .
-      - name: Build wheels
+
+      - name: Build wheels (without sscache)
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
-          sccache: 'true'
+          sccache: 'false'
           manylinux: auto
+
       - name: Run Rust tests
+        env:
+          RUSTC_WRAPPER: ""
         run: cargo test --all --release --verbose
+
       - name: Run Rust format
         run: cargo fmt --all --check
       - name: Upload wheels
@@ -97,7 +98,7 @@ jobs:
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
-          sccache: 'true'
+          sccache: 'false'
           manylinux: musllinux_1_2
       - name: Run Rust tests
         run: cargo test --all --release --verbose
@@ -137,7 +138,7 @@ jobs:
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
-          sccache: 'true'
+          sccache: 'false'
       - name: Run Rust tests
         run: cargo test --all --release --verbose
       - name: Run Rust format
@@ -176,7 +177,7 @@ jobs:
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
-          sccache: 'true'
+          sccache: 'false'
       - name: Run Rust tests
         run: cargo test --all --release --verbose
       - name: Run Rust format
