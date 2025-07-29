@@ -18,7 +18,7 @@ impl GeometryPair {
         label: String,
         image_center: (f64, f64),
         radius: f64,
-        n_points: i32,
+        n_points: u32,
     ) -> anyhow::Result<GeometryPair> {
         let dia_geom = Geometry::new(
             input_dir,
@@ -182,9 +182,9 @@ impl GeometryPair {
             let remove_count = self.dia_geom.contours.len() - min_contours;
             self.dia_geom.contours.drain(0..remove_count);
             for contour in self.dia_geom.contours.iter_mut() {
-                contour.id -= remove_count as i32;
+                contour.id -= remove_count as u32;
                 for point in contour.points.iter_mut() {
-                    point.frame_index -= remove_count as i32;
+                    point.frame_index -= remove_count as u32;
                 }
             }
         }
@@ -193,9 +193,9 @@ impl GeometryPair {
             let remove_count = self.sys_geom.contours.len() - min_contours;
             self.sys_geom.contours.drain(0..remove_count);
             for contour in self.sys_geom.contours.iter_mut() {
-                contour.id -= remove_count as i32;
+                contour.id -= remove_count as u32;
                 for point in contour.points.iter_mut() {
-                    point.frame_index -= remove_count as i32;
+                    point.frame_index -= remove_count as u32;
                 }
             }
         }
@@ -208,9 +208,9 @@ impl GeometryPair {
             let remove_count = self.dia_geom.catheter.len() - min_catheter;
             self.dia_geom.catheter.drain(0..remove_count);
             for catheter in self.dia_geom.catheter.iter_mut() {
-                catheter.id -= remove_count as i32;
+                catheter.id -= remove_count as u32;
                 for point in catheter.points.iter_mut() {
-                    point.frame_index -= remove_count as i32;
+                    point.frame_index -= remove_count as u32;
                 }
             }
         }
@@ -219,9 +219,9 @@ impl GeometryPair {
             let remove_count = self.sys_geom.catheter.len() - min_catheter;
             self.sys_geom.catheter.drain(0..remove_count);
             for catheter in self.sys_geom.catheter.iter_mut() {
-                catheter.id -= remove_count as i32;
+                catheter.id -= remove_count as u32;
                 for point in catheter.points.iter_mut() {
-                    point.frame_index -= remove_count as i32;
+                    point.frame_index -= remove_count as u32;
                 }
             }
         }
@@ -470,16 +470,16 @@ mod geometry_pair_tests {
 
         // Verify IDs start at 0 and are consecutive
         for (i, contour) in trimmed.dia_geom.contours.iter().enumerate() {
-            assert_eq!(contour.id, i as i32);
+            assert_eq!(contour.id, i as u32);
         }
         for (i, contour) in trimmed.sys_geom.contours.iter().enumerate() {
-            assert_eq!(contour.id, i as i32);
+            assert_eq!(contour.id, i as u32);
         }
         for (i, catheter) in trimmed.dia_geom.catheter.iter().enumerate() {
-            assert_eq!(catheter.id, i as i32);
+            assert_eq!(catheter.id, i as u32);
         }
         for (i, catheter) in trimmed.sys_geom.catheter.iter().enumerate() {
-            assert_eq!(catheter.id, i as i32);
+            assert_eq!(catheter.id, i as u32);
         }
     }
 

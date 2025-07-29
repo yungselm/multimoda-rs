@@ -31,7 +31,6 @@
 # Miscellaneous
 - [x] change hardcoded catheter settings
 - [x] better summarized print statement
-- [x] use i32 instead of u32 for things like id etc.
 - [] for fixture use a idealized geometry to check functionality
 
 # Prepublish checklist:
@@ -41,7 +40,7 @@
 - [] Add testing to the CI workflow
 - [x] Auto-generated API docs
 - [] High-level "Getting Started" guide
-- [] CONTRIBUTING.md
+- [x] CONTRIBUTING.md
 
 - [] Example scripts Jupyter notebook?
 - [] mypy in pre-commit hooks

@@ -77,7 +77,7 @@ fn resample_to_reference_z(
         let mut interp_points: Vec<ContourPoint> = Vec::with_capacity(pts0.len());
         for (p0, p1) in pts0.iter().zip(pts1.iter()) {
             interp_points.push(ContourPoint {
-                frame_index: idx as i32,
+                frame_index: idx as u32,
                 point_index: p0.point_index,
                 x: p0.x * (1.0 - t) + p1.x * t,
                 y: p0.y * (1.0 - t) + p1.y * t,
@@ -88,7 +88,7 @@ fn resample_to_reference_z(
 
         let centroid = Contour::compute_centroid(&interp_points);
         let new_cont = Contour {
-            id: idx as i32,
+            id: idx as u32,
             points: interp_points,
             centroid,
             aortic_thickness: None,
@@ -121,7 +121,7 @@ fn resample_to_reference_z(
             let mut interp_pts = Vec::with_capacity(pts0.len());
             for (p0, p1) in pts0.iter().zip(pts1.iter()) {
                 interp_pts.push(ContourPoint {
-                    frame_index: idx as i32,
+                    frame_index: idx as u32,
                     point_index: p0.point_index,
                     x: p0.x * (1.0 - t) + p1.x * t,
                     y: p0.y * (1.0 - t) + p1.y * t,
@@ -131,7 +131,7 @@ fn resample_to_reference_z(
             }
             let centroid = Contour::compute_centroid(&interp_pts);
             new_cat.push(Contour {
-                id: idx as i32,
+                id: idx as u32,
                 points: interp_pts,
                 centroid,
                 aortic_thickness: None,

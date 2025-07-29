@@ -38,7 +38,7 @@ fn detect_delimiter<P: AsRef<Path>>(path: P) -> Result<u8> {
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct Contour {
-    pub id: i32,
+    pub id: u32,
     pub points: Vec<ContourPoint>,
     pub centroid: (f64, f64, f64),
     pub aortic_thickness: Option<f64>,
@@ -50,7 +50,7 @@ impl Contour {
         points: Vec<ContourPoint>,
         result: Vec<Record>,
     ) -> anyhow::Result<Vec<Contour>> {
-        let mut groups: HashMap<i32, Vec<ContourPoint>> = HashMap::new();
+        let mut groups: HashMap<u32, Vec<ContourPoint>> = HashMap::new();
         for p in points {
             groups.entry(p.frame_index).or_default().push(p);
         }
@@ -78,7 +78,7 @@ impl Contour {
 
             for contour in &mut contours {
                 for (i, point) in contour.points.iter_mut().enumerate() {
-                    point.point_index = i as i32;
+                    point.point_index = i as u32;
                 }
             }
         }
@@ -89,12 +89,12 @@ impl Contour {
         points: &Vec<ContourPoint>,
         image_center: (f64, f64),
         radius: f64,
-        n_points: i32,
+        n_points: u32,
     ) -> anyhow::Result<Vec<Contour>> {
         let catheter_points =
             ContourPoint::create_catheter_points(&points, image_center, radius, n_points);
 
-        let mut groups: HashMap<i32, Vec<ContourPoint>> = HashMap::new();
+        let mut groups: HashMap<u32, Vec<ContourPoint>> = HashMap::new();
         for p in catheter_points {
             groups.entry(p.frame_index).or_default().push(p);
         }
@@ -287,7 +287,7 @@ impl Contour {
 
         // 4) Re-index in array order
         for (i, pt) in self.points.iter_mut().enumerate() {
-            pt.point_index = i as i32;
+            pt.point_index = i as u32;
         }
     }
 
@@ -306,10 +306,10 @@ impl Contour {
 
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq)]
 pub struct ContourPoint {
-    pub frame_index: i32,
+    pub frame_index: u32,
 
     #[serde(default, skip_deserializing)]
-    pub point_index: i32,
+    pub point_index: u32,
 
     pub x: f64,
     pub y: f64,
@@ -379,10 +379,10 @@ impl ContourPoint {
         points: &Vec<ContourPoint>,
         image_center: (f64, f64),
         radius: f64,
-        n_points: i32,
+        n_points: u32,
     ) -> Vec<ContourPoint> {
         // Map to store unique frame indices and one associated z coordinate per frame.
-        let mut frame_z: HashMap<i32, f64> = HashMap::new();
+        let mut frame_z: HashMap<u32, f64> = HashMap::new();
         for point in points {
             // Use the first encountered z-coordinate for each frame index.
             frame_z.entry(point.frame_index).or_insert(point.z);
@@ -390,7 +390,7 @@ impl ContourPoint {
 
         let mut catheter_points = Vec::new();
         // Sort the frame indices to ensure a predictable order.
-        let mut frames: Vec<i32> = frame_z.keys().cloned().collect();
+        let mut frames: Vec<u32> = frame_z.keys().cloned().collect();
         frames.sort();
 
         // Parameters for the catheter circle.
@@ -508,7 +508,7 @@ impl Centerline {
     }
 
     /// Retrieves a centerline point by matching frame index.
-    pub fn get_by_frame(&self, frame_index: i32) -> Option<&CenterlinePoint> {
+    pub fn get_by_frame(&self, frame_index: u32) -> Option<&CenterlinePoint> {
         self.points
             .iter()
             .find(|p| p.contour_point.frame_index == frame_index)

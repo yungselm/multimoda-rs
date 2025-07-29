@@ -5,7 +5,7 @@ use nalgebra::{Point3, Rotation3, Unit, Vector3};
 
 #[derive(Debug, Clone, Copy)]
 pub struct FrameTransformation {
-    pub frame_index: i32,
+    pub frame_index: u32,
     pub translation: Vector3<f64>,
     pub rotation: Rotation3<f64>,
     pub pivot: Point3<f64>,
@@ -167,7 +167,7 @@ pub fn best_rotation_three_point(
         align_frame(&mut temp_frame, centerline_point);
         let temp_contour = &temp_frame.points;
 
-        let n_points = temp_contour.len() as i32;
+        let n_points = temp_contour.len() as u32;
 
         let p_aortic = temp_contour
             .iter()

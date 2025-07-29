@@ -21,7 +21,7 @@ pub fn from_file_full_rs(
     systole_output_path: &str,
     image_center: (f64, f64),
     radius: f64,
-    n_points: i32,
+    n_points: u32,
 ) -> Result<(GeometryPair, GeometryPair, GeometryPair, GeometryPair)> {
     let result = thread::scope(
         |s| -> Result<(GeometryPair, GeometryPair, GeometryPair, GeometryPair)> {
@@ -115,7 +115,7 @@ pub fn from_file_doublepair_rs(
     stress_output_path: &str,
     image_center: (f64, f64),
     radius: f64,
-    n_points: i32,
+    n_points: u32,
 ) -> Result<(GeometryPair, GeometryPair)> {
     let result = thread::scope(|s| -> Result<(GeometryPair, GeometryPair)> {
         // REST thread
@@ -185,7 +185,7 @@ pub fn from_file_singlepair_rs(
     interpolation_steps: usize,
     image_center: (f64, f64),
     radius: f64,
-    n_points: i32,
+    n_points: u32,
 ) -> Result<GeometryPair> {
     // Build the raw pair
     let geom_pair = create_geometry_pair(
@@ -215,7 +215,7 @@ pub fn from_file_single_rs(
     diastole: bool,
     image_center: (f64, f64),
     radius: f64,
-    n_points: i32,
+    n_points: u32,
 ) -> Result<Geometry> {
     let mut geom = Geometry::new(
         input_path,
