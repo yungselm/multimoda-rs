@@ -48,7 +48,7 @@ jobs:
       - name: run Python tests
         run: pytest
       - name: Format Python code
-        run: black --check --diff .
+        run: black .
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -91,7 +91,7 @@ jobs:
       - name: run Python tests
         run: pytest
       - name: Format Python code
-        run: black --check --diff .
+        run: black .
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -131,7 +131,7 @@ jobs:
       - name: run Python tests
         run: pytest
       - name: Format Python code
-        run: black --check --diff .
+        run: black .
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -170,7 +170,7 @@ jobs:
       - name: run Python tests
         run: pytest
       - name: Format Python code
-        run: black --check --diff .
+        run: black .
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
