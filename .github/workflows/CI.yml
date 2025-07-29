@@ -41,6 +41,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[docs,maturin]
+      - name: run Python tests
+        run: pytest
+      - name: Format Python code
+        run: black --check --diff .
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -48,6 +56,10 @@ jobs:
           args: --release --out dist --find-interpreter
           sccache: 'true'
           manylinux: auto
+      - name: Run Rust tests
+        run: cargo test --all --release --verbose
+      - name: Run Rust format
+        run: cargo fmt --all --check
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -72,6 +84,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[docs,maturin]
+      - name: run Python tests
+        run: pytest
+      - name: Format Python code
+        run: black --check --diff .
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -79,6 +99,10 @@ jobs:
           args: --release --out dist --find-interpreter
           sccache: 'true'
           manylinux: musllinux_1_2
+      - name: Run Rust tests
+        run: cargo test --all --release --verbose
+      - name: Run Rust format
+        run: cargo fmt --all --check
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -100,12 +124,24 @@ jobs:
         with:
           python-version: 3.x
           architecture: ${{ matrix.platform.target }}
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[docs,maturin]
+      - name: run Python tests
+        run: pytest
+      - name: Format Python code
+        run: black --check --diff .
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
           sccache: 'true'
+      - name: Run Rust tests
+        run: cargo test --all --release --verbose
+      - name: Run Rust format
+        run: cargo fmt --all --check
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -127,12 +163,24 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[docs,maturin]
+      - name: run Python tests
+        run: pytest
+      - name: Format Python code
+        run: black --check --diff .
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
           sccache: 'true'
+      - name: Run Rust tests
+        run: cargo test --all --release --verbose
+      - name: Run Rust format
+        run: cargo fmt --all --check
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
