@@ -175,7 +175,8 @@ impl GeometryPair {
 
     pub fn trim_geometries_same_length(mut self) -> GeometryPair {
         // Process contours
-        let min_contours = std::cmp::min(self.dia_geom.contours.len(), self.sys_geom.contours.len());
+        let min_contours =
+            std::cmp::min(self.dia_geom.contours.len(), self.sys_geom.contours.len());
 
         if self.dia_geom.contours.len() > min_contours {
             let remove_count = self.dia_geom.contours.len() - min_contours;
@@ -187,7 +188,7 @@ impl GeometryPair {
                 }
             }
         }
-        
+
         if self.sys_geom.contours.len() > min_contours {
             let remove_count = self.sys_geom.contours.len() - min_contours;
             self.sys_geom.contours.drain(0..remove_count);
@@ -200,8 +201,9 @@ impl GeometryPair {
         }
 
         // Process catheter points
-        let min_catheter = std::cmp::min(self.dia_geom.catheter.len(), self.sys_geom.catheter.len());
-        
+        let min_catheter =
+            std::cmp::min(self.dia_geom.catheter.len(), self.sys_geom.catheter.len());
+
         if self.dia_geom.catheter.len() > min_catheter {
             let remove_count = self.dia_geom.catheter.len() - min_catheter;
             self.dia_geom.catheter.drain(0..remove_count);
@@ -212,7 +214,7 @@ impl GeometryPair {
                 }
             }
         }
-        
+
         if self.sys_geom.catheter.len() > min_catheter {
             let remove_count = self.sys_geom.catheter.len() - min_catheter;
             self.sys_geom.catheter.drain(0..remove_count);
@@ -273,7 +275,10 @@ pub fn find_best_rotation_all(
     steps: usize,
     range_deg: f64,
 ) -> f64 {
-    println!("---------------------Finding optimal rotation {:?}/{:?}---------------------", &diastole.label, &systole.label);
+    println!(
+        "---------------------Finding optimal rotation {:?}/{:?}---------------------",
+        &diastole.label, &systole.label
+    );
     let range = range_deg.to_radians();
     let increment = (2.0 * range) / steps as f64;
 
@@ -432,13 +437,13 @@ mod geometry_pair_tests {
             dia_geom: simple_geometry((0.0, 0.0), 0.0, (None, None)),
             sys_geom: simple_geometry((0.0, 0.0), 0.0, (None, None)),
         };
-        
+
         // Clear initial contours from simple_geometry
         gp.dia_geom.contours.clear();
         gp.dia_geom.catheter.clear();
         gp.sys_geom.contours.clear();
         gp.sys_geom.catheter.clear();
-        
+
         // Create contours with increasing IDs starting from 0
         gp.dia_geom.contours.push(new_dummy_contour(0));
         gp.dia_geom.contours.push(new_dummy_contour(1));
@@ -450,10 +455,10 @@ mod geometry_pair_tests {
         gp.sys_geom.contours.push(new_dummy_contour(1));
         gp.sys_geom.catheter.push(new_dummy_contour(0));
         gp.sys_geom.catheter.push(new_dummy_contour(1));
-        
+
         println!("Contours dia geom: {:?}", gp.dia_geom.contours);
         let trimmed = gp.trim_geometries_same_length();
-        
+
         assert_eq!(
             trimmed.dia_geom.contours.len(),
             trimmed.sys_geom.contours.len()
@@ -462,7 +467,7 @@ mod geometry_pair_tests {
             trimmed.dia_geom.catheter.len(),
             trimmed.sys_geom.catheter.len()
         );
-        
+
         // Verify IDs start at 0 and are consecutive
         for (i, contour) in trimmed.dia_geom.contours.iter().enumerate() {
             assert_eq!(contour.id, i as i32);
