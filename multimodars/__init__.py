@@ -24,6 +24,26 @@ __all__ = [
     "from_array_full",
     "from_array_doublepair",
     "from_array_singlepair",
+    # rust class bound methods
+    ## PyContourPoint
+    "distance",
+    ## PyContour
+    "compute_centroid",
+    "points_as_tuples",
+    "find_farthest_points",
+    "find_closest_opposite",
+    "get_elliptic_ratio",
+    "get_area",
+    "rotate",
+    "translate",
+    "sort_contour_points",
+    ## PyGeometry
+    "rotate",
+    "translate",
+    "smooth_contours",
+    "reorder",
+    ## PyCenterline
+    "from_contour_points",
     # converters
     "to_array",
     "numpy_to_geometry",
