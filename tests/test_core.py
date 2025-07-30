@@ -135,15 +135,15 @@ def test_create_catheter_geometry():
     ref_point = PyContourPoint(0, 0, 0.0, 0.0, 0.0, False)
     geom = PyGeometry(
         contours=contours,
-        catheter=[],
+        catheters=[],
         walls=[],
         reference_point=ref_point,
     )
 
     new_geom = create_catheter_geometry(geom, image_center=(0.0, 0.0), radius=0.5, n_points=10)
 
-    assert len(new_geom.catheter) > 0
-    for catheter in new_geom.catheter:
+    assert len(new_geom.catheters) > 0
+    for catheter in new_geom.catheters:
         assert isinstance(catheter, PyContour)
         assert len(catheter.points) == 10
         for pt in catheter.points:
@@ -168,7 +168,7 @@ def test_reorder_by_shape_similarity():
     ref = PyContourPoint(0, 0, 0.0, 0.0, 0.0, False)
     geom = PyGeometry(
         contours=[very, rnd, slight],
-        catheter=[cat_very, cat_rnd, cat_slight],
+        catheters=[cat_very, cat_rnd, cat_slight],
         walls=[],
         reference_point=ref
     )

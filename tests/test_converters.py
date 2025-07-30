@@ -55,7 +55,7 @@ def test_to_array_and_back_contour():
     # Use the arrays directly in numpy_to_geometry
     rebuilt = numpy_to_geometry(
         contours_arr=arr,
-        catheter_arr=np.zeros((0, 4)),
+        catheters_arr=np.zeros((0, 4)),
         walls_arr=np.zeros((0, 4)),
         reference_arr=np.array([[0.0, 0.0, 0.0, 0.0]])
     )
@@ -90,7 +90,7 @@ def test_to_array_and_back_geometry_roundtrip():
     ref = PyContourPoint(0, 0, 100.0, 101.0, 102.0, False)
     geom = PyGeometry(
         contours=[c0, c1],
-        catheter=[cat],
+        catheters=[cat],
         walls=[wall],
         reference_point=ref
     )
@@ -98,19 +98,19 @@ def test_to_array_and_back_geometry_roundtrip():
     # Convert to dictionary of arrays
     arr_dict = to_array(geom)
     assert isinstance(arr_dict, dict)
-    assert set(arr_dict.keys()) == {"contours", "catheter", "walls", "reference"}
+    assert set(arr_dict.keys()) == {"contours", "catheters", "walls", "reference"}
     
     # Round-trip using numpy_to_geometry
     geom2 = numpy_to_geometry(
         contours_arr=arr_dict["contours"],
-        catheter_arr=arr_dict["catheter"],
+        catheters_arr=arr_dict["catheters"],
         walls_arr=arr_dict["walls"],
         reference_arr=arr_dict["reference"]
     )
     
     # Validate geometry structure
     assert len(geom2.contours) == 2
-    assert len(geom2.catheter) == 1
+    assert len(geom2.catheters) == 1
     assert len(geom2.walls) == 1
     assert pytest.approx(geom2.reference_point.x) == ref.x
     assert pytest.approx(geom2.reference_point.y) == ref.y
@@ -126,9 +126,9 @@ def test_to_array_and_back_geometry_roundtrip():
 
 
 def test_to_array_geometry_pair():
-    g1 = PyGeometry(contours=[_make_simple_contour(0,n=1)], catheter=[], walls=[],
+    g1 = PyGeometry(contours=[_make_simple_contour(0,n=1)], catheters=[], walls=[],
                     reference_point=PyContourPoint(0,0,0,0,0,False))
-    g2 = PyGeometry(contours=[_make_simple_contour(1,n=2)], catheter=[], walls=[],
+    g2 = PyGeometry(contours=[_make_simple_contour(1,n=2)], catheters=[], walls=[],
                     reference_point=PyContourPoint(0,0,1,1,1,False))
     pair = PyGeometryPair(dia_geom=g1, sys_geom=g2)
     

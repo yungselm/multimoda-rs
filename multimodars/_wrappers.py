@@ -40,17 +40,17 @@ def from_file(
           - "full"       → needs rest_input_path, stress_input_path,
                             rest_output_path, stress_output_path,
                             diastole_output_path, systole_output_path,
-                            steps_best_rotation, range_rotation_rad,
+                            steps_best_rotation, range_rotation_deg,
                             interpolation_steps, image_center, radius, n_points
           - "doublepair" → needs rest_input_path, stress_input_path,
                             rest_output_path, stress_output_path,
-                            steps_best_rotation, range_rotation_rad,
+                            steps_best_rotation, range_rotation_deg,
                             interpolation_steps, image_center, radius, n_points
           - "singlepair" → needs input_path, output_path,
-                            steps_best_rotation, range_rotation_rad,
+                            steps_best_rotation, range_rotation_deg,
                             interpolation_steps, image_center, radius, n_points
           - "single"     → needs input_path, output_path,
-                            steps_best_rotation, range_rotation_rad,
+                            steps_best_rotation, range_rotation_deg,
                             diastole, image_center, radius, n_points
 
     Other Parameters
@@ -74,8 +74,8 @@ def from_file(
         If an unsupported `mode` is passed.
     """
     defaults = {
-        "steps_best_rotation": 300,
-        "range_rotation_rad": 1.57,
+        "steps_best_rotation": 270,
+        "range_rotation_deg": 90,
         "rest_output_path": "output/rest",
         "stress_output_path": "output/stress",
         "diastole_output_path": "output/diastole",
@@ -90,7 +90,7 @@ def from_file(
     if mode == "full":
         required = (
             "rest_input_path", "stress_input_path",
-            "steps_best_rotation", "range_rotation_rad",
+            "steps_best_rotation", "range_rotation_deg",
             "rest_output_path", "stress_output_path",
             "diastole_output_path", "systole_output_path",
             "interpolation_steps", "image_center",
@@ -101,7 +101,7 @@ def from_file(
             args["rest_input_path"],
             args["stress_input_path"],
             args["steps_best_rotation"],
-            args["range_rotation_rad"],
+            args["range_rotation_deg"],
             args["rest_output_path"],
             args["stress_output_path"],
             args["diastole_output_path"],
@@ -115,7 +115,7 @@ def from_file(
     elif mode == "doublepair":
         required = (
             "rest_input_path", "stress_input_path",
-            "steps_best_rotation", "range_rotation_rad",
+            "steps_best_rotation", "range_rotation_deg",
             "rest_output_path", "stress_output_path",
             "interpolation_steps", "image_center",
             "radius", "n_points"
@@ -125,7 +125,7 @@ def from_file(
             args["rest_input_path"],
             args["stress_input_path"],
             args["steps_best_rotation"],
-            args["range_rotation_rad"],
+            args["range_rotation_deg"],
             args["rest_output_path"],
             args["stress_output_path"],
             args["interpolation_steps"],
@@ -137,7 +137,7 @@ def from_file(
     elif mode == "singlepair":
         required = (
             "input_path", "output_path",
-            "steps_best_rotation", "range_rotation_rad",
+            "steps_best_rotation", "range_rotation_deg",
             "interpolation_steps", "image_center",
             "radius", "n_points"
         )
@@ -146,7 +146,7 @@ def from_file(
             args["input_path"],
             args["output_path"],
             args["steps_best_rotation"],
-            args["range_rotation_rad"],
+            args["range_rotation_deg"],
             args["interpolation_steps"],
             args["image_center"],
             args["radius"],
@@ -156,7 +156,7 @@ def from_file(
     elif mode == "single":
         required = (
             "input_path", "output_path",
-            "steps_best_rotation", "range_rotation_rad",
+            "steps_best_rotation", "range_rotation_deg",
             "diastole", "image_center", "radius", "n_points",
         )
         args = {k: merged[k] for k in required}
@@ -164,7 +164,7 @@ def from_file(
             args["input_path"],
             args["output_path"],
             args["steps_best_rotation"],
-            args["range_rotation_rad"],
+            args["range_rotation_deg"],
             args["diastole"],
             args["image_center"],
             args["radius"],
@@ -192,17 +192,17 @@ def from_array(
 
     ::
       - "full"       → from_array_full(rest_dia, rest_sys, stress_dia, stress_sys,
-                                       steps_best_rotation, range_rotation_rad,
+                                       steps_best_rotation, range_rotation_deg,
                                        interpolation_steps,
                                        rest_output_path, stress_output_path,
                                        diastole_output_path, systole_output_path)
       - "doublepair" → from_array_doublepair(rest_dia, rest_sys, stress_dia, stress_sys,
-                                             steps_best_rotation, range_rotation_rad,
+                                             steps_best_rotation, range_rotation_deg,
                                              interpolation_steps,
                                              rest_output_path, stress_output_path)
       - "singlepair" → from_array_singlepair(rest_dia, rest_sys,
                                              output_path,
-                                             steps_best_rotation, range_rotation_rad,
+                                             steps_best_rotation, range_rotation_deg,
                                              interpolation_steps)
       - "single"     → geometry_from_array(contours, walls, reference_point,
                                            steps, range, image_center, radius, n_points,
@@ -232,8 +232,8 @@ def from_array(
         If an unsupported `mode` is passed.
     """
     defaults = {
-        "steps_best_rotation": 300,
-        "range_rotation_rad": 1.57,
+        "steps_best_rotation": 270,
+        "range_rotation_deg": 90,
         "interpolation_steps": 28,
         "image_center": (4.5, 4.5),
         "radius": 0.5,
@@ -260,7 +260,7 @@ def from_array(
         required = (
             "rest_geometry_dia", "rest_geometry_sys",
             "stress_geometry_dia", "stress_geometry_sys",
-            "steps_best_rotation", "range_rotation_rad", "interpolation_steps",
+            "steps_best_rotation", "range_rotation_deg", "interpolation_steps",
             "rest_output_path", "stress_output_path",
             "diastole_output_path", "systole_output_path",
         )
@@ -271,7 +271,7 @@ def from_array(
             args["stress_geometry_dia"],
             args["stress_geometry_sys"],
             args["steps_best_rotation"],
-            args["range_rotation_rad"],
+            args["range_rotation_deg"],
             args["interpolation_steps"],
             args["rest_output_path"],
             args["stress_output_path"],
@@ -283,7 +283,7 @@ def from_array(
         required = (
             "rest_geometry_dia", "rest_geometry_sys",
             "stress_geometry_dia", "stress_geometry_sys",
-            "steps_best_rotation", "range_rotation_rad", "interpolation_steps",
+            "steps_best_rotation", "range_rotation_deg", "interpolation_steps",
             "rest_output_path", "stress_output_path",
         )
         args = {k: merged[k] for k in required}
@@ -293,7 +293,7 @@ def from_array(
             args["stress_geometry_dia"],
             args["stress_geometry_sys"],
             args["steps_best_rotation"],
-            args["range_rotation_rad"],
+            args["range_rotation_deg"],
             args["interpolation_steps"],
             args["rest_output_path"],
             args["stress_output_path"],
@@ -303,7 +303,7 @@ def from_array(
         required = (
             "geometry_dia", "geometry_sys",
             "output_path",
-            "steps_best_rotation", "range_rotation_rad", "interpolation_steps",
+            "steps_best_rotation", "range_rotation_deg", "interpolation_steps",
         )
         args = {k: merged[k] for k in required}
         return from_array_singlepair(
@@ -311,14 +311,14 @@ def from_array(
             args["geometry_sys"],
             args["output_path"],
             args["steps_best_rotation"],
-            args["range_rotation_rad"],
+            args["range_rotation_deg"],
             args["interpolation_steps"],
         )
 
     elif mode == "single":
         required = (
             "geometry",
-            "steps_best_rotation", "range_rotation_rad", "image_center", "radius", "n_points",
+            "steps_best_rotation", "range_rotation_deg", "image_center", "radius", "n_points",
             "label", "records", "delta", "max_rounds",
             "diastole", "sort", "write_obj", "output_path",
         )
@@ -326,7 +326,7 @@ def from_array(
         return geometry_from_array(
             args["geometry"],
             args["steps_best_rotation"],
-            args["range_rotation_rad"],
+            args["range_rotation_deg"],
             args["image_center"],
             args["radius"],
             args["n_points"],

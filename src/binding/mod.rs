@@ -432,7 +432,7 @@ pub fn create_catheter_geometry(
     // 4. Return a new PyGeometry with the catheter field filled
     Ok(PyGeometry {
         contours: geometry.contours,
-        catheter: py_catheters,
+        catheters: py_catheters,
         walls: geometry.walls,
         reference_point: geometry.reference_point,
     })

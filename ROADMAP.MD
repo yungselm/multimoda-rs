@@ -32,6 +32,7 @@
 - [x] change hardcoded catheter settings
 - [x] better summarized print statement
 - [] for fixture use a idealized geometry to check functionality
+- [] reference point is not rotated and translated
 
 # Prepublish checklist:
 - [] tests/ with unit tests checking that importing and running every public function works

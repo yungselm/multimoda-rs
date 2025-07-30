@@ -4,7 +4,7 @@ First off, thank you for considering contributing! **ദ്ദി(˵ •̀ ᴗ -
 Whether you’re filing a bug, proposing a new feature, improving documentation, or refactoring code, your help makes this project better for you and the whole community.
 
 ## Code of Conduct
-This project adheres to the Contributor [Covenant v2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).  
+This project adheres to the [Contributor Covenant v2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).  
 By participating, you agree to respect everyone in this community. **˗ˏˋ ♡ ˎˊ˗**
 
 ## Table of Contents
@@ -56,4 +56,6 @@ If you find a bug, please help us fix it by opening a [a new issue](https://gith
     - Python version
     - OS and architecture
 
-ฅ^>⩊<^ ฅ
+
+**ฅ^>⩊<^ ฅ**
+------------------------------------------------------------------------------------

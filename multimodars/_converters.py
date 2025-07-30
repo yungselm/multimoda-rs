@@ -19,7 +19,7 @@ def to_array(generic) -> Union[np.ndarray, dict, Tuple[dict, dict]]:
     
     dict[str, np.ndarray]
         For PyGeometry:
-        A dictionary with keys ["contours", "catheter", "walls", "reference"], 
+        A dictionary with keys ["contours", "catheters", "walls", "reference"], 
         each containing a 2D array of shape (M, 4), where M is the number of points in that layer.
         "reference" is a (1, 4) array or (0, 4) if missing.
 
@@ -73,7 +73,7 @@ def _geometry_to_numpy(geom) -> dict[str, np.ndarray]:
         return np.array(result, dtype=float) if result else np.zeros((0, 4), dtype=float)
 
     contours = extract_points(geom.contours, "contours")
-    catheter = extract_points(geom.catheter, "catheter")
+    catheters = extract_points(geom.catheters, "catheters")
     walls    = extract_points(geom.walls,    "walls")
 
     reference = np.array([[
@@ -85,7 +85,7 @@ def _geometry_to_numpy(geom) -> dict[str, np.ndarray]:
 
     return {
         "contours": contours,           # (N1, 4)
-        "catheter": catheter,           # (N2, 4)
+        "catheters": catheters,           # (N2, 4)
         "walls": walls,                 # (N3, 4)
         "reference": reference          # (1, 4)
     }
@@ -93,7 +93,7 @@ def _geometry_to_numpy(geom) -> dict[str, np.ndarray]:
 
 def numpy_to_geometry(
     contours_arr: np.ndarray,
-    catheter_arr: np.ndarray,
+    catheters_arr: np.ndarray,
     walls_arr: np.ndarray,
     reference_arr: np.ndarray,
 ) -> PyGeometry:
@@ -104,7 +104,7 @@ def numpy_to_geometry(
 
     Returns a PyGeometry containing:
       - contours: list of PyContour (one per frame in contours_arr)
-      - catheter: list of PyContour (one per frame in catheter_arr)
+      - catheters: list of PyContour (one per frame in catheters_arr)
       - walls:    list of PyContour (one per frame in walls_arr)
       - reference: single PyContourPoint from reference_arr[0]
     """
@@ -143,14 +143,13 @@ def numpy_to_geometry(
         return contours
 
     contours = build_layer(contours_arr, "contours_arr")
-    catheter = build_layer(catheter_arr, "catheter_arr")
+    catheters = build_layer(catheters_arr, "catheters_arr")
     walls    = build_layer(walls_arr,    "walls_arr")
 
     reference_arr = _to_numeric_array(reference_arr, "reference_arr")
     # if there's exactly one point, make it into a (1,4) row
     if reference_arr.ndim == 1:
         reference_arr = reference_arr[np.newaxis, :]
-    # find the first non-zero point
     non_zero_mask = np.any(reference_arr != 0, axis=1)
     if np.any(non_zero_mask):
         ref_row = reference_arr[non_zero_mask][0]
@@ -164,7 +163,7 @@ def numpy_to_geometry(
         aortic=False
     )
 
-    return PyGeometry(contours, catheter, walls, reference)
+    return PyGeometry(contours, catheters, walls, reference)
 
 
 def numpy_to_centerline(

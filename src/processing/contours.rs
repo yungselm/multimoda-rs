@@ -11,7 +11,8 @@ use crate::io::Geometry;
 struct AlignLog {
     contour_id: u32,
     matched_to: u32,
-    best_rot_deg: f64,
+    rel_rot_deg: f64,
+    total_rot_deg: f64,
     tx: f64,
     ty: f64,
     centroid: (f64, f64),
@@ -186,6 +187,8 @@ fn rotate_reference_contour(
 
     if aortic_pt.x < non_aortic_pt.x {
         rotation_to_y += PI;
+        // re-normalize into [0, 2π) to never exceed 360°
+        rotation_to_y = rotation_to_y.rem_euclid(2.0 * PI);
         rotated_ref.rotate_contour(PI);
         rotated_ref.sort_contour_points();
         aortic_flag = true;
@@ -206,6 +209,9 @@ fn align_remaining_contours(
     let mut processed_refs: HashMap<u32, (Vec<ContourPoint>, (f64, f64, f64))> =
         std::collections::HashMap::new();
     let mut id_translation = Vec::new();
+    // this tracks a general rotation over a pullback
+    // while frames are aligned based on local rotation
+    let mut cum_rot = rot;
 
     // Process contours in reverse order (highest ID first)
     for contour in geometry.contours.iter_mut().rev() {
@@ -225,7 +231,7 @@ fn align_remaining_contours(
             ref_points.extend_from_slice(&cat.points);
         }
 
-        contour.rotate_contour(rot);
+        contour.rotate_contour(cum_rot);
 
         // Calculate translation
         let tx = contour.centroid.0 - ref_centroid.0;
@@ -245,26 +251,27 @@ fn align_remaining_contours(
         };
 
         // Optimize rotation
-        let best_rot =
+        let best_rel_rot =
             find_best_rotation(&ref_points, &target, steps, range_deg, &contour.centroid);
 
-        // Apply final rotation
-        let total_rotation = rot + best_rot;
-        contour.rotate_contour(best_rot);
+        contour.rotate_contour(best_rel_rot);
         contour.sort_contour_points();
+
+        cum_rot += best_rel_rot;
 
         // Store transformation data for later use (speed up)
         id_translation.push((
             contour.id,
             (tx, ty, 0.0),
-            total_rotation,
+            cum_rot,
             (contour.centroid.0, contour.centroid.1),
         ));
 
         let entry = AlignLog {
             contour_id: contour.id,
             matched_to: contour.id + 1,
-            best_rot_deg: best_rot.to_degrees(),
+            rel_rot_deg: best_rel_rot.to_degrees(),
+            total_rot_deg: cum_rot.to_degrees(),
             tx,
             ty,
             centroid: (contour.centroid.0, contour.centroid.1),
@@ -349,18 +356,20 @@ fn dump_table(logs: &[AlignLog]) {
     let headers = [
         "Contour",
         "Matched To",
-        " Rotation (°)",
+        "Relative Rot (°)",
+        "Total Rot (°)",
         "Tx",
         "Ty",
         "Centroid",
     ];
-    let rows: Vec<[String; 6]> = logs
+    let rows: Vec<[String; 7]> = logs
         .iter()
         .map(|e| {
             [
                 e.contour_id.to_string(),
                 e.matched_to.to_string(),
-                format!("{:.2} ", e.best_rot_deg),
+                format!("{:.2}", e.rel_rot_deg),
+                format!("{:.2}", e.total_rot_deg),
                 format!("{:.2}", e.tx),
                 format!("{:.2}", e.ty),
                 format!("({:.2},{:.2})", e.centroid.0, e.centroid.1),
@@ -368,8 +377,8 @@ fn dump_table(logs: &[AlignLog]) {
         })
         .collect();
 
-    // 2) Compute max width for each of the 6 columns
-    let mut widths = [0usize; 6];
+    // 2) Compute max width for each of the 7 columns
+    let mut widths = [0usize; 7];
     for (i, &h) in headers.iter().enumerate() {
         widths[i] = h.len();
     }

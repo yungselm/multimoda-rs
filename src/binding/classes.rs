@@ -260,6 +260,7 @@ impl PyContour {
     ///         Original Contour rotated around it's centroid
     /// Example:
     ///     contour = contour.rotate(20)
+    #[pyo3(signature = (angle_deg))]
     pub fn rotate(&mut self, angle_deg: f64) -> PyResult<PyContour> {
         let angle_rad = angle_deg.to_radians();
         let mut rust_contour = self.to_rust_contour()?;
@@ -275,7 +276,9 @@ impl PyContour {
     ///         Original Contour translated to (x, y, z)
     /// Example:
     ///     contour = contour.translate((0.0, 1.0, 2.0))
-    pub fn translate(&mut self, translation: (f64, f64, f64)) -> PyResult<PyContour> {
+    #[pyo3(signature = (dx, dy, dz))]
+    pub fn translate(&mut self, dx: f64, dy: f64, dz: f64) -> PyResult<PyContour> {
+        let translation = (dx, dy, dz);
         let mut rust_contour = self.to_rust_contour()?;
         rust_contour.translate_contour(translation);
         let contour: PyContour = rust_contour.into();
@@ -346,7 +349,7 @@ pub struct PyGeometry {
     #[pyo3(get, set)]
     pub contours: Vec<PyContour>,
     #[pyo3(get, set)]
-    pub catheter: Vec<PyContour>,
+    pub catheters: Vec<PyContour>,
     #[pyo3(get, set)]
     pub walls: Vec<PyContour>,
     #[pyo3(get, set)]
@@ -365,13 +368,13 @@ impl PyGeometry {
     #[new]
     fn new(
         contours: Vec<PyContour>,
-        catheter: Vec<PyContour>,
+        catheters: Vec<PyContour>,
         walls: Vec<PyContour>,
         reference_point: PyContourPoint,
     ) -> Self {
         Self {
             contours,
-            catheter,
+            catheters,
             walls,
             reference_point,
         }
@@ -383,7 +386,7 @@ impl PyGeometry {
             "Geometry({} contours, {} walls), Catheter({} catheter), Reference Point: {}",
             self.contours.len(),
             self.walls.len(),
-            self.catheter.len(),
+            self.catheters.len(),
             self.reference_point.__repr__()
         )
     }
@@ -391,6 +394,45 @@ impl PyGeometry {
     // Add a __str__ method for human-readable output
     fn __str__(&self) -> String {
         self.__repr__()
+    }
+
+    /// Replace the contour at `idx` (can be negative).
+    #[pyo3(signature = (idx, contour))]
+    fn set_contour(&mut self, idx: isize, contour: PyContour) -> PyResult<()> {
+        let len = self.contours.len() as isize;
+        let i = if idx < 0 { len + idx } else { idx };
+        if i < 0 || i >= len {
+            Err(pyo3::exceptions::PyIndexError::new_err("index out of range"))
+        } else {
+            self.contours[i as usize] = contour;
+            Ok(())
+        }
+    }
+
+    /// Replace the contour at `idx` (can be negative).
+    #[pyo3(signature = (idx, wall))]
+    fn set_wall(&mut self, idx: isize, wall: PyContour) -> PyResult<()> {
+        let len = self.walls.len() as isize;
+        let i = if idx < 0 { len + idx } else { idx };
+        if i < 0 || i >= len {
+            Err(pyo3::exceptions::PyIndexError::new_err("index out of range"))
+        } else {
+            self.walls[i as usize] = wall;
+            Ok(())
+        }
+    }    
+
+    /// Replace the contour at `idx` (can be negative).
+    #[pyo3(signature = (idx, catheter))]
+    fn set_catheter(&mut self, idx: isize, catheter: PyContour) -> PyResult<()> {
+        let len = self.catheters.len() as isize;
+        let i = if idx < 0 { len + idx } else { idx };
+        if i < 0 || i >= len {
+            Err(pyo3::exceptions::PyIndexError::new_err("index out of range"))
+        } else {
+            self.catheters[i as usize] = catheter;
+            Ok(())
+        }
     }
 
     /// Rotate all contours/walls/catheters of a given geometry
@@ -402,6 +444,7 @@ impl PyGeometry {
     ///         Original Geometry rotated around it's centroid
     /// Example:
     ///     geometry = geometry.rotate(20)
+    #[pyo3(signature = (angle_deg))]
     pub fn rotate(&self, angle_deg: f64) -> PyGeometry {
         let angle_rad = angle_deg.to_radians();
         let mut rust_geometry = self.to_rust_geometry();
@@ -436,7 +479,7 @@ impl PyGeometry {
 
         PyGeometry {
             contours: python_contours,
-            catheter: python_catheters,
+            catheters: python_catheters,
             walls: python_walls,
             reference_point: self.reference_point.clone(),
         }
@@ -451,6 +494,7 @@ impl PyGeometry {
     ///
     /// Returns:
     ///     A new PyGeometry with all elements translated.
+    #[pyo3(signature = (dx, dy, dz))]
     pub fn translate(&mut self, dx: f64, dy: f64, dz: f64) -> PyGeometry {
         let rust_geometry = self.to_rust_geometry();
         let translation = (dx, dy, dz);
@@ -476,7 +520,7 @@ impl PyGeometry {
         PyGeometry {
             contours: python_contours,
             walls: python_walls,
-            catheter: python_catheters,
+            catheters: python_catheters,
             reference_point: PyContourPoint {
                 x: self.reference_point.x + dx,
                 y: self.reference_point.y + dy,
@@ -513,6 +557,7 @@ impl PyGeometry {
     ///
     /// Returns:
     ///     PyGeometry: A new geometry with contours and catheter re‑ordered and aligned.
+    #[pyo3(signature = (delta, max_rounds))]
     pub fn reorder(&mut self, delta: f64, max_rounds: usize) -> PyGeometry {
         let mut rust_geometry = self.to_rust_geometry();
         rust_geometry = refine_ordering(rust_geometry, delta, max_rounds);
@@ -530,7 +575,7 @@ impl PyGeometry {
                 .map(|c| c.to_rust_contour().unwrap())
                 .collect(),
             catheter: self
-                .catheter
+                .catheters
                 .iter()
                 .map(|c| c.to_rust_contour().unwrap())
                 .collect(),
@@ -578,10 +623,10 @@ impl PyGeometryPair {
             "Diastolic Geometry({} contours), ({} catheter), Reference Point: {} \n\
             Systolic Geometry({} contours), ({} catheter), Reference Point: {}",
             self.dia_geom.contours.len(),
-            self.dia_geom.catheter.len(),
+            self.dia_geom.catheters.len(),
             self.dia_geom.reference_point.__repr__(),
             self.sys_geom.contours.len(),
-            self.sys_geom.catheter.len(),
+            self.sys_geom.catheters.len(),
             self.sys_geom.reference_point.__repr__()
         )
     }
@@ -832,7 +877,7 @@ impl From<&Geometry> for PyGeometry {
     fn from(geom: &Geometry) -> Self {
         PyGeometry {
             contours: geom.contours.iter().map(|c| c.into()).collect(),
-            catheter: geom.catheter.iter().map(|c| c.into()).collect(),
+            catheters: geom.catheter.iter().map(|c| c.into()).collect(),
             walls: geom.walls.iter().map(|c| c.into()).collect(),
             reference_point: PyContourPoint::from(&geom.reference_point),
         }
@@ -867,7 +912,7 @@ impl From<Geometry> for PyGeometry {
     fn from(geom: Geometry) -> Self {
         PyGeometry {
             contours: geom.contours.iter().map(|c| c.into()).collect(),
-            catheter: geom.catheter.iter().map(|c| c.into()).collect(),
+            catheters: geom.catheter.iter().map(|c| c.into()).collect(),
             walls: geom.walls.iter().map(|c| c.into()).collect(),
             reference_point: PyContourPoint::from(&geom.reference_point),
         }
