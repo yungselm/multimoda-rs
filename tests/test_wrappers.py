@@ -56,7 +56,7 @@ def test_full_file_arr_consistency(
     # test consistency between the two
     assert len(rest_f.dia_geom.contours) == len(rest_a.dia_geom.contours)
     assert len(rest_f.sys_geom.contours) == len(rest_a.sys_geom.contours)
-    assert len(rest_f.dia_geom.cathetesr) == len(rest_a.dia_geom.catheters)
+    assert len(rest_f.dia_geom.catheters) == len(rest_a.dia_geom.catheters)
     assert len(rest_f.sys_geom.catheters) == len(rest_a.sys_geom.catheters)
     assert len(rest_f.dia_geom.walls) == len(rest_a.dia_geom.walls)
     assert len(rest_f.sys_geom.walls) == len(rest_a.sys_geom.walls)

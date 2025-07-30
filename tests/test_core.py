@@ -65,7 +65,7 @@ def test_translation_contour(sample_contour, sample_contour_elliptic):
     p0_sq_before = _find_point(sample_contour, 0)
     assert (p0_sq_before.x, p0_sq_before.y) == pytest.approx((0.0, 4.0))
 
-    translated_sq = sample_contour.translate((1.0, -2.0, 0.0))
+    translated_sq = sample_contour.translate(1.0, -2.0, 0.0)
     p0_sq_after = _find_point(translated_sq, 0)
     # (0+1, 4-2) → (1, 2)
     assert (p0_sq_after.x, p0_sq_after.y) == pytest.approx((1.0, 2.0))
@@ -74,7 +74,7 @@ def test_translation_contour(sample_contour, sample_contour_elliptic):
     p0_el_before = _find_point(sample_contour_elliptic, 0)
     assert (p0_el_before.x, p0_el_before.y) == pytest.approx((7.0, 2.0))
 
-    translated_el = sample_contour_elliptic.translate((-2.0, 3.0, 0.0))
+    translated_el = sample_contour_elliptic.translate(-2.0, 3.0, 0.0)
     p0_el_after = _find_point(translated_el, 0)
     # (7-2, 2+3) → (5, 5)
     assert (p0_el_after.x, p0_el_after.y) == pytest.approx((5.0, 5.0))
@@ -90,7 +90,7 @@ def test_smooth_contours_temporal():
     ref = PyContourPoint(0, 0, 0.0, 0.0, 0.0, False)
     geom = PyGeometry(
         contours=[c1, c2, c3],
-        catheter=[],
+        catheters=[],
         walls=[],
         reference_point=ref
     )

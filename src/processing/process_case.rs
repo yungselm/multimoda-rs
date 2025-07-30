@@ -6,6 +6,7 @@ use crate::io::Geometry;
 use crate::processing::geometries::GeometryPair;
 use crate::processing::walls::create_wall_geometry;
 use crate::texture::write_mtl_geometry;
+use crate::processing::contours::AlignLog;
 
 pub fn create_geometry_pair(
     case_name: String,
@@ -16,12 +17,12 @@ pub fn create_geometry_pair(
     radius: f64,
     n_points: u32,
     align_inside: bool,
-) -> anyhow::Result<GeometryPair> {
-    let geometries =
+) -> anyhow::Result<(GeometryPair, (Vec<AlignLog>, Vec<AlignLog>))> {
+    let mut geometries =
         GeometryPair::new(input_dir, case_name.clone(), image_center, radius, n_points)?;
-    let mut geometries = geometries.adjust_z_coordinates();
+    geometries = geometries.adjust_z_coordinates();
 
-    geometries =
+    let (mut geometries, (dia_logs, sys_logs)) =
         geometries.process_geometry_pair(steps_best_rotation, range_rotation_deg, align_inside);
     geometries = geometries.trim_geometries_same_length();
     geometries = geometries.thickness_adjustment();
@@ -31,10 +32,10 @@ pub fn create_geometry_pair(
     let sys_geom = geometries.sys_geom;
     let sys_geom = sys_geom.smooth_contours();
 
-    Ok(GeometryPair {
+    Ok((GeometryPair {
         dia_geom: dia_geom,
         sys_geom: sys_geom,
-    })
+    }, (dia_logs, sys_logs)))
 }
 
 /// Processes a given case by reading diastolic and systolic contours, aligning them,

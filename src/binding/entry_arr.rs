@@ -4,7 +4,7 @@ use crossbeam::thread;
 use crate::io::input::{Contour, ContourPoint, Record};
 use crate::io::Geometry;
 use crate::processing::comparison::prepare_geometries_comparison;
-use crate::processing::contours::{align_frames_in_geometry, hausdorff_distance};
+use crate::processing::contours::{align_frames_in_geometry, hausdorff_distance, AlignLog};
 use crate::processing::geometries::GeometryPair;
 use crate::processing::process_case::process_case;
 
@@ -27,7 +27,7 @@ pub fn geometry_from_array_rs(
     sort: bool,
     write_obj: bool,
     output_path: &str,
-) -> Result<Geometry, Box<dyn std::error::Error>> {
+) -> Result<(Geometry, Vec<AlignLog>), Box<dyn std::error::Error>> {
     let mut contours = contours;
     let label = label.to_string();
 
@@ -78,14 +78,15 @@ pub fn geometry_from_array_rs(
     };
 
     // Optionally align and refine ordering
-    if sort {
-        let aligned = align_frames_in_geometry(geometry, steps, range_deg);
-        geometry = refine_ordering(aligned, delta, max_rounds);
-        geometry = align_frames_in_geometry(geometry, steps, range_deg);
+    let (geometry, logs) = if sort {
+        let (interim, _) = align_frames_in_geometry(geometry, steps, range_deg);
+        let refined = refine_ordering(interim, delta, max_rounds);
+        align_frames_in_geometry(refined, steps, range_deg)
     } else {
-        geometry = align_frames_in_geometry(geometry, steps, range_deg);
-    }
+        align_frames_in_geometry(geometry, steps, range_deg)
+    };
 
+    // smooth as before
     let new_geometry = geometry.smooth_contours();
 
     if write_obj {
@@ -105,7 +106,7 @@ pub fn geometry_from_array_rs(
         )?;
     }
 
-    Ok(new_geometry)
+    Ok((new_geometry, logs))
 }
 
 pub fn refine_ordering(mut geom: Geometry, delta: f64, max_rounds: usize) -> Geometry {
@@ -245,15 +246,13 @@ fn geometry_pair_from_array_rs(
     geometry_sys: Geometry,
     steps_best_rotation: usize,
     range_rotation_deg: f64,
-) -> anyhow::Result<GeometryPair> {
+) -> anyhow::Result<(GeometryPair, (Vec<AlignLog>, Vec<AlignLog>))> {
     let geometries = GeometryPair {
         dia_geom: geometry_dia,
         sys_geom: geometry_sys,
     };
-    let mut geometries =
+    let (mut geometries, (dia_logs, sys_logs)) =
         geometries.process_geometry_pair(steps_best_rotation, range_rotation_deg, false);
-
-    geometries = geometries.process_geometry_pair(steps_best_rotation, range_rotation_deg, false);
     geometries = geometries.trim_geometries_same_length();
     geometries = geometries.thickness_adjustment();
 
@@ -262,10 +261,10 @@ fn geometry_pair_from_array_rs(
     let sys_geom = geometries.sys_geom;
     let sys_geom = sys_geom.smooth_contours();
 
-    Ok(GeometryPair {
+    Ok((GeometryPair {
         dia_geom: dia_geom,
         sys_geom: sys_geom,
-    })
+    }, (dia_logs, sys_logs)))
 }
 
 pub fn from_array_full_rs(
@@ -280,38 +279,42 @@ pub fn from_array_full_rs(
     stress_output_path: &str,
     diastole_output_path: &str,
     systole_output_path: &str,
-) -> anyhow::Result<(GeometryPair, GeometryPair, GeometryPair, GeometryPair)> {
+) -> anyhow::Result<(
+    (GeometryPair, GeometryPair, GeometryPair, GeometryPair), 
+    (Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>))> {
     let result = thread::scope(
-        |s| -> Result<(GeometryPair, GeometryPair, GeometryPair, GeometryPair)> {
+        |s| -> Result<(GeometryPair, GeometryPair, GeometryPair, GeometryPair, Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>)> {
             // REST thread
-            let rest_handle = s.spawn(|_| {
-                let geom = geometry_pair_from_array_rs(
+            let rest_handle = s.spawn(|_| -> anyhow::Result<_> {
+                let (mut geom, (dia_logs, sys_logs)) = geometry_pair_from_array_rs(
                     rest_geometry_dia,
                     rest_geometry_sys,
                     steps_best_rotation,
                     range_rotation_deg,
                 )
                 .context("create_geometry_pair(rest) failed")?;
-                process_case("rest", geom, rest_output_path, interpolation_steps)
-                    .context("process_case(rest) failed")
+                geom = process_case("rest", geom, rest_output_path, interpolation_steps)
+                    .context("process_case(rest) failed")?;
+                Ok((geom, dia_logs, sys_logs))
             });
 
             // STRESS thread
-            let stress_handle = s.spawn(|_| {
-                let geom = geometry_pair_from_array_rs(
+            let stress_handle = s.spawn(|_| -> anyhow::Result<_> {
+                let (mut geom, (dia_logs_stress, sys_logs_stress)) = geometry_pair_from_array_rs(
                     stress_geometry_dia,
                     stress_geometry_sys,
                     steps_best_rotation,
                     range_rotation_deg,
                 )
                 .context("create_geometry_pair(stress) failed")?;
-                process_case("stress", geom, stress_output_path, interpolation_steps)
-                    .context("process_case(stress) failed")
+                geom = process_case("stress", geom, stress_output_path, interpolation_steps)
+                    .context("process_case(stress) failed")?;
+                Ok((geom, dia_logs_stress, sys_logs_stress))
             });
 
             // Join REST & STRESS
-            let rest_pair = rest_handle.join().unwrap()?;
-            let stress_pair = stress_handle.join().unwrap()?;
+            let (rest_pair, dia_logs, sys_logs) = rest_handle.join().unwrap()?;
+            let (stress_pair, dia_logs_stress, sys_logs_stress) = stress_handle.join().unwrap()?;
 
             // Prepare diastolic & systolic geometry pairs
             let (dia_pair, sys_pair) =
@@ -343,14 +346,14 @@ pub fn from_array_full_rs(
             let dia_geom = dia_handle.join().unwrap()?;
             let sys_geom = sys_handle.join().unwrap()?;
 
-            Ok((rest_pair, stress_pair, dia_geom, sys_geom))
+            Ok((rest_pair, stress_pair, dia_geom, sys_geom, dia_logs, sys_logs, dia_logs_stress, sys_logs_stress))
         },
     )
     .map_err(|panic| anyhow!("Parallel processing threads panicked: {:?}", panic))?;
 
-    let (rest_geom, stress_geom, dia_geom, sys_geom) = result?;
+    let (rest_geom, stress_geom, dia_geom, sys_geom, dia_logs, sys_logs, dia_logs_stress, sys_logs_stress) = result?;
 
-    Ok((rest_geom, stress_geom, dia_geom, sys_geom))
+    Ok(((rest_geom, stress_geom, dia_geom, sys_geom), (dia_logs, sys_logs, dia_logs_stress, sys_logs_stress)))
 }
 
 pub fn from_array_doublepair_rs(
@@ -363,11 +366,11 @@ pub fn from_array_doublepair_rs(
     interpolation_steps: usize,
     rest_output_path: &str,
     stress_output_path: &str,
-) -> Result<(GeometryPair, GeometryPair)> {
-    let result = thread::scope(|s| -> Result<(GeometryPair, GeometryPair)> {
+) -> Result<((GeometryPair, GeometryPair), (Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>))> {
+    let result = thread::scope(|s| -> Result<(GeometryPair, GeometryPair, Vec<AlignLog>, Vec<AlignLog>,  Vec<AlignLog>, Vec<AlignLog>)> {
         // REST thread
-        let rest_handle = s.spawn(|_| -> Result<_> {
-            let geom_rest = geometry_pair_from_array_rs(
+        let rest_handle = s.spawn(|_| -> anyhow::Result<_> {
+            let (geom_rest, (dia_log, sys_log)) = geometry_pair_from_array_rs(
                 rest_geometry_dia,
                 rest_geometry_sys,
                 steps_best_rotation,
@@ -379,12 +382,12 @@ pub fn from_array_doublepair_rs(
                 process_case("rest", geom_rest, rest_output_path, interpolation_steps)
                     .context("process_case(rest) failed")?;
 
-            Ok(processed_rest)
+            Ok((processed_rest, dia_log, sys_log))
         });
 
         // STRESS thread
-        let stress_handle = s.spawn(|_| -> Result<_> {
-            let geom_stress = geometry_pair_from_array_rs(
+        let stress_handle = s.spawn(|_| -> anyhow::Result<_> {
+            let (geom_stress, (dia_logs_stress, sys_logs_stress)) = geometry_pair_from_array_rs(
                 stress_geometry_dia,
                 stress_geometry_sys,
                 steps_best_rotation,
@@ -400,20 +403,20 @@ pub fn from_array_doublepair_rs(
             )
             .context("process_case(stress) failed")?;
 
-            Ok(processed_stress)
+            Ok((processed_stress, dia_logs_stress, sys_logs_stress))
         });
         // Join threads & propagate any processing errors
-        let rest_geom_pair = rest_handle.join().unwrap()?;
-        let stress_geom_pair = stress_handle.join().unwrap()?;
+        let (rest_geom_pair, dia_logs, sys_logs) = rest_handle.join().unwrap()?;
+        let (stress_geom_pair, dia_logs_stress, sys_logs_stress) = stress_handle.join().unwrap()?;
 
-        Ok((rest_geom_pair, stress_geom_pair))
+        Ok((rest_geom_pair, stress_geom_pair, dia_logs, sys_logs, dia_logs_stress, sys_logs_stress))
     })
     .map_err(|panic_payload| {
         anyhow!("Parallel processing threads panicked: {:?}", panic_payload)
     })?;
 
-    let (rest_geom, stress_geom) = result?;
-    Ok((rest_geom, stress_geom))
+    let (rest_geom, stress_geom, dia_logs, sys_logs, dia_logs_stress, sys_logs_stress) = result?;
+    Ok(((rest_geom, stress_geom), (dia_logs, sys_logs, dia_logs_stress, sys_logs_stress)))
 }
 
 pub fn from_array_singlepair_rs(
@@ -423,9 +426,9 @@ pub fn from_array_singlepair_rs(
     steps_best_rotation: usize,
     range_rotation_deg: f64,
     interpolation_steps: usize,
-) -> Result<GeometryPair> {
+) -> Result<(GeometryPair, (Vec<AlignLog>, Vec<AlignLog>))> {
     // Build the raw pair
-    let geom_pair = geometry_pair_from_array_rs(
+    let (geom_pair, (dia_logs, sys_logs)) = geometry_pair_from_array_rs(
         rest_geometry_dia,
         rest_geometry_sys,
         steps_best_rotation,
@@ -437,5 +440,5 @@ pub fn from_array_singlepair_rs(
     let processed_pair = process_case("single", geom_pair, output_path, interpolation_steps)
         .context("process_case(single) failed")?;
 
-    Ok(processed_pair)
+    Ok((processed_pair, (dia_logs, sys_logs)))
 }

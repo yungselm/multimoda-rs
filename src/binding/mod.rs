@@ -7,12 +7,30 @@ use crate::io::{
     input::{Contour, ContourPoint, Record},
     output::write_obj_mesh_without_uv,
 };
+use crate::processing::contours::AlignLog;
 use classes::{PyContour, PyGeometry, PyGeometryPair, PyRecord};
 use entry_arr::*;
 use entry_file::{
     from_file_doublepair_rs, from_file_full_rs, from_file_single_rs, from_file_singlepair_rs,
 };
 use pyo3::prelude::*;
+
+fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<(u32,u32,f64,f64,f64,f64,f64,f64)> {
+    logs.into_iter()
+        .map(|l| {
+            (
+                l.contour_id,
+                l.matched_to,
+                l.rel_rot_deg,
+                l.total_rot_deg,
+                l.tx,
+                l.ty,
+                l.centroid.0,
+                l.centroid.1,
+            )
+        })
+        .collect()
+}
 
 /// Processes four geometries in parallel.
 ///
@@ -51,14 +69,16 @@ use pyo3::prelude::*;
 ///
 /// Returns:
 ///
-/// A 4‑tuple of ``PyGeometryPair`` for (rest, stress, diastole, systole).
+/// A ``PyGeometryPair`` for rest, stress, diastole, systole.
+/// A 4-tuple of ``Vec<id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y>``
+/// for (diastole logs, systole logs, diastole stress logs, systole stress logs). 
 ///
 /// Example:
 ///
 /// .. code-block:: python
 ///
 ///    import multimodars as mm
-///    rest, stress, dia, sys = mm.from_file_full(
+///    rest, stress, dia, sys, _ = mm.from_file_full(
 ///        "data/ivus_rest", "data/ivus_stress"
 ///    )
 #[pyfunction]
@@ -97,8 +117,13 @@ pub fn from_file_full(
     PyGeometryPair,
     PyGeometryPair,
     PyGeometryPair,
+    (Vec<(u32,u32,f64,f64,f64,f64,f64,f64)>,
+    Vec<(u32,u32,f64,f64,f64,f64,f64,f64)>,
+    Vec<(u32,u32,f64,f64,f64,f64,f64,f64)>,
+    Vec<(u32,u32,f64,f64,f64,f64,f64,f64)>),
 )> {
-    let (rest_pair, stress_pair, dia_pair, sys_pair) = from_file_full_rs(
+    let ((rest_pair, stress_pair, dia_pair, sys_pair), 
+        (dia_logs, sys_logs, dia_logs_stress, sys_logs_stress)) = from_file_full_rs(
         rest_input_path,
         steps_best_rotation,
         range_rotation_rad,
@@ -118,8 +143,11 @@ pub fn from_file_full(
     let py_stress = stress_pair.into();
     let py_dia = dia_pair.into();
     let py_sys = sys_pair.into();
-
-    Ok((py_rest, py_stress, py_dia, py_sys))
+    let py_dia_log = logs_to_tuples(dia_logs);
+    let py_sys_log = logs_to_tuples(sys_logs);
+    let py_dia_log_stress = logs_to_tuples(dia_logs_stress);
+    let py_sys_log_stress = logs_to_tuples(sys_logs_stress);    
+    Ok((py_rest, py_stress, py_dia, py_sys, (py_dia_log, py_sys_log, py_dia_log_stress, py_sys_log_stress)))
 }
 
 /// Processes two geometries in parallel.
@@ -157,14 +185,16 @@ pub fn from_file_full(
 ///
 /// Returns:
 ///
-/// A 2‑tuple of ``PyGeometryPair`` for (rest, stress).
+/// A ``PyGeometryPair`` for rest, stress.
+/// A 4-tuple of ``Vec<id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y>``
+/// for (diastole logs, systole logs, diastole stress logs, systole stress logs). 
 ///
 /// Example:
 ///
 /// .. code-block:: python
 ///
 ///    import multimodars as mm
-///    rest, stress, dia, sys = mm.from_file_full(
+///    rest, stress, _ = mm.from_file_doublepair(
 ///        "data/ivus_rest", "data/ivus_stress"
 ///    )
 #[pyfunction]
@@ -192,8 +222,14 @@ pub fn from_file_doublepair(
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
-) -> PyResult<(PyGeometryPair, PyGeometryPair)> {
-    let (rest_pair, stress_pair) = from_file_doublepair_rs(
+) -> PyResult<(PyGeometryPair, PyGeometryPair,
+    (Vec<(u32,u32,f64,f64,f64,f64,f64,f64)>,
+    Vec<(u32,u32,f64,f64,f64,f64,f64,f64)>,
+    Vec<(u32,u32,f64,f64,f64,f64,f64,f64)>,
+    Vec<(u32,u32,f64,f64,f64,f64,f64,f64)>),
+)> {
+    let ((rest_pair, stress_pair), 
+        (dia_logs, sys_logs, dia_logs_stress, sys_logs_stress)) = from_file_doublepair_rs(
         rest_input_path,
         steps_best_rotation,
         range_rotation_deg,
@@ -209,8 +245,12 @@ pub fn from_file_doublepair(
 
     let py_rest = rest_pair.into();
     let py_stress = stress_pair.into();
+    let py_dia_log = logs_to_tuples(dia_logs);
+    let py_sys_log = logs_to_tuples(sys_logs);
+    let py_dia_log_stress = logs_to_tuples(dia_logs_stress);
+    let py_sys_log_stress = logs_to_tuples(sys_logs_stress);    
 
-    Ok((py_rest, py_stress))
+    Ok((py_rest, py_stress, (py_dia_log, py_sys_log, py_dia_log_stress, py_sys_log_stress)))
 }
 
 /// Processes two geometries (rest and stress) in parallel from an input CSV,
@@ -250,6 +290,8 @@ pub fn from_file_doublepair(
 /// -------
 ///
 /// A single ``PyGeometryPair`` for (rest or stress) geometry.
+/// A 2-tuple of ``Vec<id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y>``
+/// for (diastole logs, systole logs). 
 ///
 /// Raises
 /// ------
@@ -262,7 +304,7 @@ pub fn from_file_doublepair(
 /// .. code-block:: python
 ///
 ///    import multimodars as mm
-///    pair = mm.from_file_singlepair(
+///    pair, _ = mm.from_file_singlepair(
 ///        "data/ivus_rest.csv",
 ///        "output/rest"
 ///    )
@@ -289,8 +331,10 @@ pub fn from_file_singlepair(
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
-) -> PyResult<PyGeometryPair> {
-    let geom_pair = from_file_singlepair_rs(
+) -> PyResult<(PyGeometryPair,
+    (Vec<(u32,u32,f64,f64,f64,f64,f64,f64)>,
+    Vec<(u32,u32,f64,f64,f64,f64,f64,f64)>))> {
+    let (geom_pair, (dia_logs, sys_logs)) = from_file_singlepair_rs(
         input_path,
         steps_best_rotation,
         range_rotation_deg,
@@ -303,8 +347,9 @@ pub fn from_file_singlepair(
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
     let py_pair = geom_pair.into();
-
-    Ok(py_pair)
+    let py_dia_log = logs_to_tuples(dia_logs);
+    let py_sys_log = logs_to_tuples(sys_logs);
+    Ok((py_pair, (py_dia_log, py_sys_log)))
 }
 
 /// Processes a single geometry (either diastole or systole) from an IVUS CSV file.
@@ -330,6 +375,7 @@ pub fn from_file_singlepair(
 /// -------
 ///
 /// A ``PyGeometry`` containing the processed contour for the chosen phase.
+/// A ``Vec<id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y>``.
 ///
 /// Raises
 /// ------
@@ -342,7 +388,7 @@ pub fn from_file_singlepair(
 /// .. code-block:: python
 ///
 ///    import multimodars as mm
-///    geom = mm.from_file_single(
+///    geom, _ = mm.from_file_single(
 ///        "data/ivus.csv",
 ///        steps_best_rotation=300,
 ///        range_rotation_rad=1.57,
@@ -371,8 +417,8 @@ pub fn from_file_single(
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
-) -> PyResult<PyGeometry> {
-    let geom = from_file_single_rs(
+) -> PyResult<(PyGeometry, Vec<(u32,u32,f64,f64,f64,f64,f64,f64)>)> {
+    let (geom, logs) = from_file_single_rs(
         input_path,
         steps_best_rotation,
         range_rotation_deg,
@@ -385,8 +431,9 @@ pub fn from_file_single(
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
     let py_geom = geom.into();
+    let py_logs = logs_to_tuples(logs);
 
-    Ok(py_geom)
+    Ok((py_geom, py_logs))
 }
 
 /// Generate catheter contours and return a new PyGeometry with them filled in.
@@ -470,6 +517,7 @@ pub fn create_catheter_geometry(
 /// -------
 ///
 /// A new ``PyGeometry`` instance containing reordered, aligned, and smoothed contours.
+/// A ``Vec<id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y>``.
 ///
 /// Raises
 /// ------
@@ -483,7 +531,7 @@ pub fn create_catheter_geometry(
 ///
 ///    import multimodars as mm
 ///    # Suppose ``geo`` is an existing PyGeometry from earlier processing:
-///    refined = mm.geometry_from_array(
+///    refined, _ = mm.geometry_from_array(
 ///        geo,
 ///        steps_best_rotation=200,
 ///        range_rotation_rad=1.0,
@@ -527,7 +575,7 @@ pub fn geometry_from_array(
     sort: bool,
     write_obj: bool,
     output_path: &str,
-) -> PyResult<PyGeometry> {
+) -> PyResult<(PyGeometry, Vec<(u32,u32,f64,f64,f64,f64,f64,f64)>)> {
     let contours_rs: Vec<Contour> = geometry
         .contours
         .iter()
@@ -545,7 +593,7 @@ pub fn geometry_from_array(
     let records_rs: Option<Vec<Record>> =
         records.map(|vec_py| vec_py.into_iter().map(|py| py.to_rust_record()).collect());
 
-    let geom_rs = geometry_from_array_rs(
+    let (geom_rs, logs) = geometry_from_array_rs(
         contours_rs,
         walls_rs,
         reference_point_rs,
@@ -565,7 +613,8 @@ pub fn geometry_from_array(
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
     let py_geom = PyGeometry::from(geom_rs);
-    Ok(py_geom)
+    let py_logs = logs_to_tuples(logs);
+    Ok((py_geom, py_logs))
 }
 
 /// Process four existing ``PyGeometry`` objects (rest‑dia, rest‑sys, stress‑dia, stress‑sys)
@@ -597,8 +646,9 @@ pub fn geometry_from_array(
 /// Returns
 /// -------
 ///
-/// A 4‑tuple of ``PyGeometryPair`` corresponding to  
-/// (rest, stress, diastole, systole) geometries.
+/// A ``PyGeometryPair`` for rest, stress, diastole, systole.
+/// A 4-tuple of ``Vec<id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y>``
+/// for (diastole logs, systole logs, diastole stress logs, systole stress logs). 
 ///
 /// Raises
 /// ------
@@ -612,7 +662,7 @@ pub fn geometry_from_array(
 ///
 ///    import multimodars as mm
 ///    # Assume you have four PyGeometry objects from earlier:
-///    full = mm.from_array_full(
+///    rest, stress, dia, sys, _ = mm.from_array_full(
 ///        rest_dia, rest_sys, stress_dia, stress_sys,
 ///        steps_best_rotation=200,
 ///        interpolation_steps=32,
@@ -654,8 +704,13 @@ pub fn from_array_full(
     PyGeometryPair,
     PyGeometryPair,
     PyGeometryPair,
+    (Vec<(u32,u32,f64,f64,f64,f64,f64,f64)>,
+    Vec<(u32,u32,f64,f64,f64,f64,f64,f64)>,
+    Vec<(u32,u32,f64,f64,f64,f64,f64,f64)>,
+    Vec<(u32,u32,f64,f64,f64,f64,f64,f64)>),
 )> {
-    let (rest_pair, stress_pair, dia_pair, sys_pair) = from_array_full_rs(
+    let ((rest_pair, stress_pair, dia_pair, sys_pair), 
+        (dia_logs, sys_logs, dia_logs_stress,sys_logs_stress)) = from_array_full_rs(
         rest_geometry_dia.to_rust_geometry(),
         rest_geometry_sys.to_rust_geometry(),
         stress_geometry_dia.to_rust_geometry(),
@@ -674,8 +729,11 @@ pub fn from_array_full(
     let py_stress = stress_pair.into();
     let py_dia = dia_pair.into();
     let py_sys = sys_pair.into();
-
-    Ok((py_rest, py_stress, py_dia, py_sys))
+    let py_dia_log = logs_to_tuples(dia_logs);
+    let py_sys_log = logs_to_tuples(sys_logs);
+    let py_dia_log_stress = logs_to_tuples(dia_logs_stress);
+    let py_sys_log_stress = logs_to_tuples(sys_logs_stress);    
+    Ok((py_rest, py_stress, py_dia, py_sys, (py_dia_log, py_sys_log, py_dia_log_stress, py_sys_log_stress)))
 }
 
 /// Processes two geometries in parallel.
@@ -708,7 +766,9 @@ pub fn from_array_full(
 ///
 /// A tuple ``(rest_pair, stress_pair)`` of type ``(PyGeometryPair, PyGeometryPair)``,
 /// containing the interpolated diastole/systole geometries for REST and STRESS.
-///
+/// A 4-tuple of ``Vec<id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y>``
+/// for (diastole logs, systole logs, diastole stress logs, systole stress logs).
+/// 
 /// Raises
 /// ------
 ///
@@ -720,7 +780,7 @@ pub fn from_array_full(
 /// .. code-block:: python
 ///
 ///    import multimodars as mm
-///    rest_pair, stress_pair = mm.from_array_doublepair(
+///    rest_pair, stress_pair, _ = mm.from_array_doublepair(
 ///        rest_dia, rest_sys,
 ///        stress_dia, stress_sys,
 ///        steps_best_rotation=250,
@@ -753,8 +813,14 @@ pub fn from_array_doublepair(
     interpolation_steps: usize,
     rest_output_path: &str,
     stress_output_path: &str,
-) -> PyResult<(PyGeometryPair, PyGeometryPair)> {
-    let (rest_pair, stress_pair) = from_array_doublepair_rs(
+) -> PyResult<(PyGeometryPair, PyGeometryPair,
+    (Vec<(u32,u32,f64,f64,f64,f64,f64,f64)>,
+    Vec<(u32,u32,f64,f64,f64,f64,f64,f64)>,
+    Vec<(u32,u32,f64,f64,f64,f64,f64,f64)>,
+    Vec<(u32,u32,f64,f64,f64,f64,f64,f64)>),
+)> {
+    let ((rest_pair, stress_pair), 
+        (dia_logs, sys_logs, dia_logs_stress, sys_logs_stress)) = from_array_doublepair_rs(
         rest_geometry_dia.to_rust_geometry(),
         rest_geometry_sys.to_rust_geometry(),
         stress_geometry_dia.to_rust_geometry(),
@@ -769,8 +835,12 @@ pub fn from_array_doublepair(
 
     let py_rest = rest_pair.into();
     let py_stress = stress_pair.into();
+    let py_dia_log = logs_to_tuples(dia_logs);
+    let py_sys_log = logs_to_tuples(sys_logs);
+    let py_dia_log_stress = logs_to_tuples(dia_logs_stress);
+    let py_sys_log_stress = logs_to_tuples(sys_logs_stress);    
 
-    Ok((py_rest, py_stress))
+    Ok((py_rest, py_stress, (py_dia_log, py_sys_log, py_dia_log_stress, py_sys_log_stress)))
 }
 
 /// Interpolate between two existing ``PyGeometry`` objects (diastole and systole)
@@ -795,7 +865,9 @@ pub fn from_array_doublepair(
 /// -------
 ///
 /// A ``PyGeometryPair`` tuple containing the diastole and systole geometries with interpolation applied.
-///
+/// A 2-tuple of ``Vec<id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y>``
+/// for (diastole logs, systole logs). 
+/// 
 /// Raises
 /// ------
 ///
@@ -807,7 +879,7 @@ pub fn from_array_doublepair(
 /// .. code-block:: python
 ///
 ///    import multimodars as mm
-///    pair = mm.from_array_singlepair(
+///    pair, _ = mm.from_array_singlepair(
 ///        rest_dia, rest_sys,
 ///        output_path="out/single",
 ///        steps_best_rotation=250,
@@ -832,8 +904,10 @@ pub fn from_array_singlepair(
     steps_best_rotation: usize,
     range_rotation_deg: f64,
     interpolation_steps: usize,
-) -> PyResult<PyGeometryPair> {
-    let pair = from_array_singlepair_rs(
+) -> PyResult<(PyGeometryPair,
+    (Vec<(u32,u32,f64,f64,f64,f64,f64,f64)>,
+    Vec<(u32,u32,f64,f64,f64,f64,f64,f64)>))> {
+    let (pair, (dia_logs, sys_logs)) = from_array_singlepair_rs(
         geometry_dia.to_rust_geometry(),
         geometry_sys.to_rust_geometry(),
         output_path,
@@ -844,8 +918,9 @@ pub fn from_array_singlepair(
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
     let py_pair = pair.into();
-
-    Ok(py_pair)
+    let py_dia_log = logs_to_tuples(dia_logs);
+    let py_sys_log = logs_to_tuples(sys_logs);
+    Ok((py_pair, (py_dia_log, py_sys_log)))
 }
 
 /// Convert a ``PyGeometry`` object into one or more OBJ files and write them to disk.

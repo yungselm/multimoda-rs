@@ -8,17 +8,17 @@ use crate::io::input::{Contour, ContourPoint};
 use crate::io::Geometry;
 
 #[derive(Debug)]
-struct AlignLog {
-    contour_id: u32,
-    matched_to: u32,
-    rel_rot_deg: f64,
-    total_rot_deg: f64,
-    tx: f64,
-    ty: f64,
-    centroid: (f64, f64),
+pub struct AlignLog {
+    pub contour_id: u32,
+    pub matched_to: u32,
+    pub rel_rot_deg: f64,
+    pub total_rot_deg: f64,
+    pub tx: f64,
+    pub ty: f64,
+    pub centroid: (f64, f64),
 }
 
-pub fn align_frames_in_geometry(geometry: Geometry, steps: usize, range_deg: f64) -> Geometry {
+pub fn align_frames_in_geometry(geometry: Geometry, steps: usize, range_deg: f64) -> (Geometry, Vec<AlignLog>) {
     let (mut geometry, reference_index, reference_pos, ref_contour) = prep_data_geometry(geometry);
 
     let (p1, p2, updated_ref) = assign_aortic(ref_contour.clone(), &geometry);
@@ -73,7 +73,7 @@ pub fn align_frames_in_geometry(geometry: Geometry, steps: usize, range_deg: f64
         .expect("Logger mutex was poisoned");
     dump_table(&logs);
 
-    geometry
+    (geometry, logs)
 }
 
 fn prep_data_geometry(mut geometry: Geometry) -> (Geometry, u32, usize, Contour) {
@@ -609,7 +609,7 @@ mod contour_tests {
             label: "test".to_string(),
         };
 
-        let aligned_geometry = align_frames_in_geometry(geometry, 100, PI);
+        let (aligned_geometry, _) = align_frames_in_geometry(geometry, 100, PI);
 
         // Check centroids are aligned to reference (0,0)
         for contour in aligned_geometry.contours {
@@ -675,7 +675,7 @@ mod contour_tests {
             label: "test".to_string(),
         };
         let geom_old = geometry.clone();
-        let aligned = align_frames_in_geometry(geometry, 100, PI);
+        let (aligned, _) = align_frames_in_geometry(geometry, 100, PI);
 
         for contour in &aligned.catheter {
             // skip the reference if you like, but we’ll test all three

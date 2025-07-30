@@ -25,10 +25,28 @@ Mode = Literal["full", "doublepair", "singlepair", "single"]
 def from_file(
     mode: Mode,
     **kwargs: Any,
-) -> Union[Tuple[PyGeometryPair, PyGeometryPair, PyGeometryPair, PyGeometryPair],
-           Tuple[PyGeometryPair, PyGeometryPair],
-           PyGeometryPair,
-           PyGeometry]:
+) -> Union[
+    # full now returns 4 geometry pairs *and* 4 log-lists
+    Tuple[
+      PyGeometryPair, PyGeometryPair, PyGeometryPair, PyGeometryPair,
+      list, list, list, list,
+    ],
+    # doublepair returns 2 geom + 4 log-lists
+    Tuple[
+      PyGeometryPair, PyGeometryPair,
+      list, list, list, list,
+    ],
+    # singlepair returns 1 geom‐pair + 2 log-lists
+    Tuple[
+      PyGeometryPair, PyGeometryPair,
+      list, list,
+    ],
+    # single returns 1 geom + 1 log-list
+    Tuple[
+      PyGeometryPair,
+      list,
+    ],
+]:
     """
     A unified entrypoint for all `from_file_*` variants.
 
@@ -61,11 +79,27 @@ def from_file(
     Returns
     -------
     Union[
-      Tuple[PyGeometryPair,PyGeometryPair,PyGeometryPair,PyGeometryPair],
-      Tuple[PyGeometryPair,PyGeometryPair],
-      PyGeometryPair,
-      PyGeometry
-    ]
+        # full now returns 4 geometry pairs *and* 4 log-lists
+        Tuple[
+        PyGeometryPair, PyGeometryPair, PyGeometryPair, PyGeometryPair,
+        list, list, list, list,
+        ],
+        # doublepair returns 2 geom + 4 log-lists
+        Tuple[
+        PyGeometryPair, PyGeometryPair,
+        list, list, list, list,
+        ],
+        # singlepair returns 1 geom-pair + 2 log-lists
+        Tuple[
+        PyGeometryPair, PyGeometryPair,
+        list, list,
+        ],
+        # single returns 1 geom + 1 log-list
+        Tuple[
+        PyGeometryPair,
+        list,
+        ],
+    ]:
         The exact return shape depends on `mode`.
 
     Raises
@@ -179,10 +213,26 @@ def from_array(
     mode: Mode,
     **kwargs: Any,
 ) -> Union[
-    Tuple[PyGeometryPair, PyGeometryPair, PyGeometryPair, PyGeometryPair],
-    Tuple[PyGeometryPair, PyGeometryPair],
-    PyGeometryPair,
-    PyGeometry,
+    # full → 4 geometries + 4 log‐lists
+    Tuple[
+        PyGeometryPair, PyGeometryPair, PyGeometryPair, PyGeometryPair,
+        list, list, list, list
+        ],
+    # doublepair → 2 geometries + 4 log‐lists
+    Tuple[
+        PyGeometryPair, PyGeometryPair,
+        list, list, list, list
+        ],
+    # singlepair → 1 pair + 2 log‐lists
+    Tuple[
+        PyGeometryPair, PyGeometryPair,
+        list, list
+        ],
+    # single → 1 geometry + 1 log‐list
+    Tuple[
+        PyGeometry,
+        list,
+        ],
 ]:
     """
     Unified entry for all array-based pipelines.
@@ -219,10 +269,26 @@ def from_array(
     Returns
     -------
     Union[
-      Tuple[PyGeometryPair,PyGeometryPair,PyGeometryPair,PyGeometryPair],
-      Tuple[PyGeometryPair,PyGeometryPair],
-      PyGeometryPair,
-      PyGeometry
+        # full → 4 geometries + 4 log-lists
+        Tuple[
+            PyGeometryPair, PyGeometryPair, PyGeometryPair, PyGeometryPair,
+            list, list, list, list
+        ]
+        # doublepair → 2 geometries + 4 log-lists
+        Tuple[
+            PyGeometryPair, PyGeometryPair,
+            list, list, list, list
+        ]
+        # singlepair → 1 pair + 2 log-lists
+        Tuple[
+            PyGeometryPair, PyGeometryPair,
+            list, list
+        ]
+        # single → 1 geometry + 1 log-list
+        Tuple[
+            PyGeometry,
+            list,
+        ]
     ]
         Depends on `mode`.
 

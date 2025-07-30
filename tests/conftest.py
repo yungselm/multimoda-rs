@@ -82,7 +82,7 @@ def sample_contour_elliptic():
 def sample_geometry(sample_contour):
     return PyGeometry(
         contours=[sample_contour],
-        catheter=[sample_contour],
+        catheters=[sample_contour],
         walls=[sample_contour],
         reference_point=PyContourPoint(0, 0, 0.0, 0.0, 0.0, False)
     )
@@ -97,47 +97,47 @@ def sample_array_data():
 @pytest.fixture
 def sample_rest_dia_arr():
     contour = np.load("data/fixtures/dia_rest_contours.npy")
-    catheter = np.load("data/fixtures/dia_rest_catheter.npy")
+    catheters = np.load("data/fixtures/dia_rest_catheter.npy")
     wall = np.load("data/fixtures/dia_rest_walls.npy")
     reference = np.load("data/fixtures/dia_rest_ref_pt.npy")
     return numpy_to_geometry(
         contours_arr=contour,
-        catheter_arr=catheter,
+        catheters_arr=catheters,
         walls_arr=wall,
         reference_arr=reference)
 
 @pytest.fixture
 def sample_rest_sys_arr():
     contour = np.load("data/fixtures/sys_rest_contours.npy")
-    catheter = np.load("data/fixtures/sys_rest_catheter.npy")
+    catheters = np.load("data/fixtures/sys_rest_catheter.npy")
     wall = np.load("data/fixtures/sys_rest_walls.npy")
     reference = np.load("data/fixtures/sys_rest_ref_pt.npy")
     return numpy_to_geometry(
         contours_arr=contour,
-        catheter_arr=catheter,
+        catheters_arr=catheters,
         walls_arr=wall,
         reference_arr=reference)
 
 @pytest.fixture
 def sample_stress_dia_arr():
     contour = np.load("data/fixtures/dia_stress_contours.npy")
-    catheter = np.load("data/fixtures/dia_stress_catheter.npy")
+    catheters = np.load("data/fixtures/dia_stress_catheter.npy")
     wall = np.load("data/fixtures/dia_stress_walls.npy")
     reference = np.load("data/fixtures/dia_stress_ref_pt.npy")
     return numpy_to_geometry(
         contours_arr=contour,
-        catheter_arr=catheter,
+        catheters_arr=catheters,
         walls_arr=wall,
         reference_arr=reference)
 
 @pytest.fixture
 def sample_stress_sys_arr():
     contour = np.load("data/fixtures/sys_stress_contours.npy")
-    catheter = np.load("data/fixtures/sys_stress_catheter.npy")
+    catheters = np.load("data/fixtures/sys_stress_catheter.npy")
     wall = np.load("data/fixtures/sys_stress_walls.npy")
     reference = np.load("data/fixtures/sys_stress_ref_pt.npy")
     return numpy_to_geometry(
         contours_arr=contour,
-        catheter_arr=catheter,
+        catheters_arr=catheters,
         walls_arr=wall,
         reference_arr=reference)

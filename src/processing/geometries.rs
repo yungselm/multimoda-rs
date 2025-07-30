@@ -5,6 +5,7 @@ use crate::processing::contours::hausdorff_distance;
 
 use super::contours::align_frames_in_geometry;
 use crate::io::input::{Contour, ContourPoint};
+use crate::processing::contours::AlignLog;
 
 #[derive(Clone, Debug)]
 pub struct GeometryPair {
@@ -42,16 +43,16 @@ impl GeometryPair {
         steps_best_rotation: usize,
         range_rotation_deg: f64,
         align_inside: bool,
-    ) -> GeometryPair {
-        let diastole = if align_inside {
+    ) -> (GeometryPair, (Vec<AlignLog>, Vec<AlignLog>)) {
+        let (diastole, dia_logs) = if align_inside {
             align_frames_in_geometry(self.dia_geom, steps_best_rotation, range_rotation_deg)
         } else {
-            self.dia_geom
+            (self.dia_geom, Vec::new())
         };
-        let mut systole = if align_inside {
+        let (mut systole, sys_logs) = if align_inside {
             align_frames_in_geometry(self.sys_geom, steps_best_rotation, range_rotation_deg)
         } else {
-            self.sys_geom
+            (self.sys_geom, Vec::new())
         };
 
         Self::translate_contours_to_match(&diastole, &mut systole);
@@ -73,10 +74,11 @@ impl GeometryPair {
         {
             contour.rotate_contour(best_rotation_angle);
         }
-        GeometryPair {
+        (GeometryPair {
             dia_geom: diastole,
             sys_geom: systole,
-        }
+        },
+        (dia_logs, sys_logs))
     }
 
     fn translate_contours_to_match(dia: &Geometry, sys: &mut Geometry) {
@@ -406,7 +408,7 @@ mod geometry_pair_tests {
             dia_geom: simple_geometry((5.0, 5.0), 0.0, (None, None)),
             sys_geom: simple_geometry((0.0, 0.0), 0.0, (None, None)),
         };
-        gp = gp.process_geometry_pair(1, 0.0, true);
+        (gp, _) = gp.process_geometry_pair(1, 0.0, true);
         let dia_centroid = gp.dia_geom.contours[0].centroid;
         let sys_centroid = gp.sys_geom.contours[0].centroid;
         assert_relative_eq!(dia_centroid.0, sys_centroid.0, epsilon = 1e-6);
@@ -420,9 +422,9 @@ mod geometry_pair_tests {
             dia_geom: dia.clone(),
             sys_geom: simple_geometry((0.0, 0.0), 2.0, (None, None)),
         };
-        gp = gp
-            .process_geometry_pair(1, 0.0, true)
-            .adjust_z_coordinates();
+        (gp, _) = gp
+            .process_geometry_pair(1, 0.0, true);
+        gp= gp.adjust_z_coordinates();
         for contour in gp.dia_geom.contours.iter() {
             assert!(contour.centroid.2.is_finite());
         }
