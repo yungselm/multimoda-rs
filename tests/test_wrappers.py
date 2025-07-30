@@ -22,7 +22,7 @@ def test_full_file_arr_consistency(
     sample_stress_sys_arr,
 ):
     """from_array(…, mode=…) should match the corresponding Rust-backed function."""
-    rest_f, stress_f, dia_f, sys_f = from_array(
+    rest_f, stress_f, dia_f, sys_f, (dia_logs_f, sys_logs_f, dia_logs_stress_f, sys_logs_stress_f) = from_array(
         mode="full",
         rest_geometry_dia=sample_rest_dia_arr,
         rest_geometry_sys=sample_rest_sys_arr,
@@ -37,7 +37,7 @@ def test_full_file_arr_consistency(
         systole_output_path="output/systole",
     )
     # call the Rust-backed function directly
-    rest_a, stress_a, dia_a, sys_a = from_file(
+    rest_a, stress_a, dia_a, sys_a, (dia_logs_a, sys_logs_a, dia_logs_stress_a, sys_logs_stress_a) = from_file(
         mode="full",
         rest_input_path="data/fixtures/rest_csv_files",
         stress_input_path="data/fixtures/stress_csv_files",
@@ -80,8 +80,8 @@ def test_full_file_arr_consistency(
     assert len(sys_f.sys_geom.walls) == len(sys_a.sys_geom.walls)
 
     # random contour check all points the same
-    contour_f = rest_f.dia_geom.contours[len(rest_f.dia_geom.contours) - 1]
-    contour_a = rest_a.dia_geom.contours[len(rest_f.dia_geom.contours) - 1]
+    contour_f = rest_f.dia_geom.contours[-1]
+    contour_a = rest_a.dia_geom.contours[-1]
 
     for pf, pa in zip(contour_f.points, contour_a.points):
         # exact integer checks
@@ -103,13 +103,9 @@ def test_full_file_arr_consistency(
             f"Z coord mismatch: {pf.z} != {pa.z}"
         )
 
-        # current example has not exactly the same reference point
-        # # boolean check
-        # assert pf.aortic == pa.aortic, (
-        #     f"Aortic flag mismatch: {pf.aortic} != {pa.aortic}"
-        # )
-
-    # test that the result is as expected
+    # check logs
+    assert dia_logs_f == dia_logs_a, "Diastole logs mismatch"
+    assert sys_logs_f == sys_logs_a, "Systole logs mismatch"
 
 # def test_from_file_and_from_array_pairwise(tmp_path, sample_rest_dia_arr, sample_rest_sys_arr):
 #     """from_file should mirror from_array for single array inputs."""

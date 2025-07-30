@@ -92,7 +92,7 @@ def from_file(
         # singlepair returns 1 geom-pair + 2 log-lists
         Tuple[
         PyGeometryPair, PyGeometryPair,
-        list, list,
+        list,list,
         ],
         # single returns 1 geom + 1 log-list
         Tuple[
