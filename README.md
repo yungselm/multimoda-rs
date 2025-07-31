@@ -39,8 +39,6 @@
   - Align registered geometries onto a vessel centerline using three‑point or manual rotation methods.
 - Geometry Utilities
   - Smooth contours, reorder frames to minimize spatial and index jumps, compute areas and elliptic ratios, find farthest/closest point pairs, and more.
-- MRI LGE Fusion (Planned)
-  - Integrate 2D LGE slices into the CCTA mesh to visualize scar/edema volumes.
 
 ## Installation
 
