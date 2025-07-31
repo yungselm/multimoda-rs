@@ -1,11 +1,7 @@
 from .multimodars import *
-from ._converters import (
-    to_array,
-    numpy_to_geometry,
-    numpy_to_centerline
-)
+from ._converters import to_array, numpy_to_geometry, numpy_to_centerline
 from ._wrappers import (
-    from_file, 
+    from_file,
     from_array,
     to_centerline,
 )

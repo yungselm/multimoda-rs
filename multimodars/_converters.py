@@ -2,6 +2,7 @@ import numpy as np
 from typing import Union, Tuple
 from multimodars import PyGeometry, PyCenterline
 
+
 def to_array(generic) -> Union[np.ndarray, dict, Tuple[dict, dict]]:
     """
     Convert various multimodars Py* objects into numpy array(s) or dictionaries of arrays.
@@ -16,10 +17,10 @@ def to_array(generic) -> Union[np.ndarray, dict, Tuple[dict, dict]]:
     np.ndarray
         For PyContour or PyCenterline:
         A 2D array of shape (N, 4), where each row is (frame_index, x, y, z).
-    
+
     dict[str, np.ndarray]
         For PyGeometry:
-        A dictionary with keys ["contours", "catheters", "walls", "reference"], 
+        A dictionary with keys ["contours", "catheters", "walls", "reference"],
         each containing a 2D array of shape (M, 4), where M is the number of points in that layer.
         "reference" is a (1, 4) array or (0, 4) if missing.
 
@@ -43,12 +44,15 @@ def to_array(generic) -> Union[np.ndarray, dict, Tuple[dict, dict]]:
 
     # Centerline: use contour_point attrs
     if isinstance(generic, PyCenterline):
-        pts = [(
-            p.contour_point.frame_index,
-            p.contour_point.x,
-            p.contour_point.y,
-            p.contour_point.z
-        ) for p in generic.points]
+        pts = [
+            (
+                p.contour_point.frame_index,
+                p.contour_point.x,
+                p.contour_point.y,
+                p.contour_point.z,
+            )
+            for p in generic.points
+        ]
         return np.array(pts, dtype=float)
 
     # Geometry: use helper
@@ -70,24 +74,31 @@ def _geometry_to_numpy(geom) -> dict[str, np.ndarray]:
         for obj in items:
             pts = [(p.frame_index, p.x, p.y, p.z) for p in obj.points]
             result.extend(pts)
-        return np.array(result, dtype=float) if result else np.zeros((0, 4), dtype=float)
+        return (
+            np.array(result, dtype=float) if result else np.zeros((0, 4), dtype=float)
+        )
 
     contours = extract_points(geom.contours, "contours")
     catheters = extract_points(geom.catheters, "catheters")
-    walls    = extract_points(geom.walls,    "walls")
+    walls = extract_points(geom.walls, "walls")
 
-    reference = np.array([[
-        geom.reference_point.frame_index,
-        geom.reference_point.x,
-        geom.reference_point.y,
-        geom.reference_point.z,
-    ]], dtype=float)
+    reference = np.array(
+        [
+            [
+                geom.reference_point.frame_index,
+                geom.reference_point.x,
+                geom.reference_point.y,
+                geom.reference_point.z,
+            ]
+        ],
+        dtype=float,
+    )
 
     return {
-        "contours": contours,           # (N1, 4)
-        "catheters": catheters,           # (N2, 4)
-        "walls": walls,                 # (N3, 4)
-        "reference": reference          # (1, 4)
+        "contours": contours,  # (N1, 4)
+        "catheters": catheters,  # (N2, 4)
+        "walls": walls,  # (N3, 4)
+        "reference": reference,  # (1, 4)
     }
 
 
@@ -133,9 +144,12 @@ def numpy_to_geometry(
             pts_arr = arr[mask]
             pts = [
                 PyContourPoint(
-                    frame_index=int(fr), point_index=i,
-                    x=float(x), y=float(y), z=float(z),
-                    aortic=False
+                    frame_index=int(fr),
+                    point_index=i,
+                    x=float(x),
+                    y=float(y),
+                    z=float(z),
+                    aortic=False,
                 )
                 for i, (fr, x, y, z) in enumerate(pts_arr)
             ]
@@ -144,7 +158,7 @@ def numpy_to_geometry(
 
     contours = build_layer(contours_arr, "contours_arr")
     catheters = build_layer(catheters_arr, "catheters_arr")
-    walls    = build_layer(walls_arr,    "walls_arr")
+    walls = build_layer(walls_arr, "walls_arr")
 
     reference_arr = _to_numeric_array(reference_arr, "reference_arr")
     # if there's exactly one point, make it into a (1,4) row
@@ -158,9 +172,12 @@ def numpy_to_geometry(
         fr, x, y, z = 0, 0, 0, 0
 
     reference = PyContourPoint(
-        frame_index=int(fr), point_index=0,
-        x=float(x), y=float(y), z=float(z),
-        aortic=False
+        frame_index=int(fr),
+        point_index=0,
+        x=float(x),
+        y=float(y),
+        z=float(z),
+        aortic=False,
     )
 
     return PyGeometry(contours, catheters, walls, reference)
@@ -182,6 +199,7 @@ def numpy_to_centerline(
         PyCenterline
     """
     from multimodars import PyContourPoint, PyCenterline
+
     # sanity check
     if arr.ndim != 2 or arr.shape[1] != 3:
         raise ValueError("Input must be a (N,3) array")
@@ -189,14 +207,16 @@ def numpy_to_centerline(
     pts = []
     for i, (x, y, z) in enumerate(arr.tolist()):
         # point_index here is meaningless for a centerline; set to 0
-        pts.append(PyContourPoint(
-            frame_index=i,
-            point_index=0,
-            x=float(x),
-            y=float(y),
-            z=float(z),
-            aortic=aortic,
-        ))
+        pts.append(
+            PyContourPoint(
+                frame_index=i,
+                point_index=0,
+                x=float(x),
+                y=float(y),
+                z=float(z),
+                aortic=aortic,
+            )
+        )
 
     # Use your static constructor to build a PyCenterline
     return PyCenterline.from_contour_points(pts)

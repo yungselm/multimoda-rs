@@ -51,13 +51,13 @@ def test_to_array_and_back_contour():
     arr = to_array(c)
     assert isinstance(arr, np.ndarray)
     assert arr.shape == (3, 4)
-    
+
     # Use the arrays directly in numpy_to_geometry
     rebuilt = numpy_to_geometry(
         contours_arr=arr,
         catheters_arr=np.zeros((0, 4)),
         walls_arr=np.zeros((0, 4)),
-        reference_arr=np.array([[0.0, 0.0, 0.0, 0.0]])
+        reference_arr=np.array([[0.0, 0.0, 0.0, 0.0]]),
     )
     assert len(rebuilt.contours) == 1
     pts = rebuilt.contours[0].points
@@ -73,10 +73,10 @@ def test_to_array_centerline_and_back():
     arr = to_array(cl)
     assert isinstance(arr, np.ndarray)
     assert arr.shape == (4, 4)
-    
+
     new_cl = numpy_to_centerline(arr[:, 1:4])  # expects (N,3)
     assert isinstance(new_cl, PyCenterline)
-    
+
     arr2 = to_array(new_cl)
     assert arr2.shape == arr.shape
     np.testing.assert_allclose(arr2[:, 1:4], arr[:, 1:4], rtol=1e-6, atol=0)
@@ -89,25 +89,22 @@ def test_to_array_and_back_geometry_roundtrip():
     wall = _make_simple_contour(0, n=4, offset=2.0)
     ref = PyContourPoint(0, 0, 100.0, 101.0, 102.0, False)
     geom = PyGeometry(
-        contours=[c0, c1],
-        catheters=[cat],
-        walls=[wall],
-        reference_point=ref
+        contours=[c0, c1], catheters=[cat], walls=[wall], reference_point=ref
     )
 
     # Convert to dictionary of arrays
     arr_dict = to_array(geom)
     assert isinstance(arr_dict, dict)
     assert set(arr_dict.keys()) == {"contours", "catheters", "walls", "reference"}
-    
+
     # Round-trip using numpy_to_geometry
     geom2 = numpy_to_geometry(
         contours_arr=arr_dict["contours"],
         catheters_arr=arr_dict["catheters"],
         walls_arr=arr_dict["walls"],
-        reference_arr=arr_dict["reference"]
+        reference_arr=arr_dict["reference"],
     )
-    
+
     # Validate geometry structure
     assert len(geom2.contours) == 2
     assert len(geom2.catheters) == 1
@@ -126,15 +123,23 @@ def test_to_array_and_back_geometry_roundtrip():
 
 
 def test_to_array_geometry_pair():
-    g1 = PyGeometry(contours=[_make_simple_contour(0,n=1)], catheters=[], walls=[],
-                    reference_point=PyContourPoint(0,0,0,0,0,False))
-    g2 = PyGeometry(contours=[_make_simple_contour(1,n=2)], catheters=[], walls=[],
-                    reference_point=PyContourPoint(0,0,1,1,1,False))
+    g1 = PyGeometry(
+        contours=[_make_simple_contour(0, n=1)],
+        catheters=[],
+        walls=[],
+        reference_point=PyContourPoint(0, 0, 0, 0, 0, False),
+    )
+    g2 = PyGeometry(
+        contours=[_make_simple_contour(1, n=2)],
+        catheters=[],
+        walls=[],
+        reference_point=PyContourPoint(0, 0, 1, 1, 1, False),
+    )
     pair = PyGeometryPair(dia_geom=g1, sys_geom=g2)
-    
+
     # Convert to tuple of dictionaries
     dia_dict, sys_dict = to_array(pair)
-    
+
     assert isinstance(dia_dict, dict) and isinstance(sys_dict, dict)
     assert dia_dict["contours"].shape == (1, 4)
     assert sys_dict["contours"].shape == (2, 4)

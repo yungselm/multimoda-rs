@@ -9,11 +9,8 @@ from multimodars import (
     from_array_singlepair,
     geometry_from_array,
 )
-from multimodars import (
-    PyGeometry, 
-    PyGeometryPair, 
-    PyCenterline
-)
+from multimodars import PyGeometry, PyGeometryPair, PyCenterline
+
 
 def test_full_file_arr_consistency(
     sample_rest_dia_arr,
@@ -23,14 +20,18 @@ def test_full_file_arr_consistency(
     tmp_path,
 ):
     # create subdirs under tmp_path
-    rest_out     = tmp_path / "output" / "rest"
-    stress_out   = tmp_path / "output" / "stress"
-    dia_out      = tmp_path / "output" / "diastole"
-    sys_out      = tmp_path / "output" / "systole"
+    rest_out = tmp_path / "output" / "rest"
+    stress_out = tmp_path / "output" / "stress"
+    dia_out = tmp_path / "output" / "diastole"
+    sys_out = tmp_path / "output" / "systole"
     # pytest will automatically mkdir when you write files into it
 
-    rest_f, stress_f, dia_f, sys_f, (
-        dia_logs_f, sys_logs_f, dia_logs_stress_f, sys_logs_stress_f
+    (
+        rest_f,
+        stress_f,
+        dia_f,
+        sys_f,
+        (dia_logs_f, sys_logs_f, dia_logs_stress_f, sys_logs_stress_f),
     ) = from_array(
         mode="full",
         rest_geometry_dia=sample_rest_dia_arr,
@@ -49,8 +50,12 @@ def test_full_file_arr_consistency(
         n_points=20,
     )
 
-    rest_a, stress_a, dia_a, sys_a, (
-        dia_logs_a, sys_logs_a, dia_logs_stress_a, sys_logs_stress_a
+    (
+        rest_a,
+        stress_a,
+        dia_a,
+        sys_a,
+        (dia_logs_a, sys_logs_a, dia_logs_stress_a, sys_logs_stress_a),
     ) = from_file(
         mode="full",
         rest_input_path="data/fixtures/idealized_geometry",
@@ -99,29 +104,30 @@ def test_full_file_arr_consistency(
 
     for pf, pa in zip(contour_f.points, contour_a.points):
         # exact integer checks
-        assert pf.frame_index == pa.frame_index, (
-            f"Frame index mismatch: {pf.frame_index} != {pa.frame_index}"
-        )
-        assert pf.point_index == pa.point_index, (
-            f"Point index mismatch: {pf.point_index} != {pa.point_index}"
-        )
+        assert (
+            pf.frame_index == pa.frame_index
+        ), f"Frame index mismatch: {pf.frame_index} != {pa.frame_index}"
+        assert (
+            pf.point_index == pa.point_index
+        ), f"Point index mismatch: {pf.point_index} != {pa.point_index}"
 
         # floating‐point checks with pytest.approx
-        assert pf.x == pytest.approx(pa.x, abs=0.01), (
-            f"X coord mismatch: {pf.x} != {pa.x}"
-        )
-        assert pf.y == pytest.approx(pa.y, abs=0.01), (
-            f"Y coord mismatch: {pf.y} != {pa.y}"
-        )
-        assert pf.z == pytest.approx(pa.z, abs=0.01), (
-            f"Z coord mismatch: {pf.z} != {pa.z}"
-        )
+        assert pf.x == pytest.approx(
+            pa.x, abs=0.01
+        ), f"X coord mismatch: {pf.x} != {pa.x}"
+        assert pf.y == pytest.approx(
+            pa.y, abs=0.01
+        ), f"Y coord mismatch: {pf.y} != {pa.y}"
+        assert pf.z == pytest.approx(
+            pa.z, abs=0.01
+        ), f"Z coord mismatch: {pf.z} != {pa.z}"
 
     # check logs
     assert dia_logs_f == dia_logs_a, "Diastole logs mismatch"
     assert sys_logs_f == sys_logs_a, "Systole logs mismatch"
     assert dia_logs_stress_f == dia_logs_stress_a, "Diastole stress logs mismatch"
     assert sys_logs_stress_f == sys_logs_stress_a, "Systole stress logs mismatch"
+
 
 def test_doublepair_file_arr_consistency(
     sample_rest_dia_arr,
@@ -131,12 +137,14 @@ def test_doublepair_file_arr_consistency(
     tmp_path,
 ):
     # create subdirs under tmp_path
-    rest_out     = tmp_path / "output" / "rest"
-    stress_out   = tmp_path / "output" / "stress"
+    rest_out = tmp_path / "output" / "rest"
+    stress_out = tmp_path / "output" / "stress"
     # pytest will automatically mkdir when you write files into it
 
-    rest_f, stress_f, (
-        dia_logs_f, sys_logs_f, dia_logs_stress_f, sys_logs_stress_f
+    (
+        rest_f,
+        stress_f,
+        (dia_logs_f, sys_logs_f, dia_logs_stress_f, sys_logs_stress_f),
     ) = from_array(
         mode="doublepair",
         rest_geometry_dia=sample_rest_dia_arr,
@@ -153,8 +161,10 @@ def test_doublepair_file_arr_consistency(
         n_points=20,
     )
 
-    rest_a, stress_a, (
-        dia_logs_a, sys_logs_a, dia_logs_stress_a, sys_logs_stress_a
+    (
+        rest_a,
+        stress_a,
+        (dia_logs_a, sys_logs_a, dia_logs_stress_a, sys_logs_stress_a),
     ) = from_file(
         mode="doublepair",
         rest_input_path="data/fixtures/idealized_geometry",
@@ -189,29 +199,30 @@ def test_doublepair_file_arr_consistency(
 
     for pf, pa in zip(contour_f.points, contour_a.points):
         # exact integer checks
-        assert pf.frame_index == pa.frame_index, (
-            f"Frame index mismatch: {pf.frame_index} != {pa.frame_index}"
-        )
-        assert pf.point_index == pa.point_index, (
-            f"Point index mismatch: {pf.point_index} != {pa.point_index}"
-        )
+        assert (
+            pf.frame_index == pa.frame_index
+        ), f"Frame index mismatch: {pf.frame_index} != {pa.frame_index}"
+        assert (
+            pf.point_index == pa.point_index
+        ), f"Point index mismatch: {pf.point_index} != {pa.point_index}"
 
         # floating‐point checks with pytest.approx
-        assert pf.x == pytest.approx(pa.x, abs=0.01), (
-            f"X coord mismatch: {pf.x} != {pa.x}"
-        )
-        assert pf.y == pytest.approx(pa.y, abs=0.01), (
-            f"Y coord mismatch: {pf.y} != {pa.y}"
-        )
-        assert pf.z == pytest.approx(pa.z, abs=0.01), (
-            f"Z coord mismatch: {pf.z} != {pa.z}"
-        )
+        assert pf.x == pytest.approx(
+            pa.x, abs=0.01
+        ), f"X coord mismatch: {pf.x} != {pa.x}"
+        assert pf.y == pytest.approx(
+            pa.y, abs=0.01
+        ), f"Y coord mismatch: {pf.y} != {pa.y}"
+        assert pf.z == pytest.approx(
+            pa.z, abs=0.01
+        ), f"Z coord mismatch: {pf.z} != {pa.z}"
 
     # check logs
     assert dia_logs_f == dia_logs_a, "Diastole logs mismatch"
     assert sys_logs_f == sys_logs_a, "Systole logs mismatch"
     assert dia_logs_stress_f == dia_logs_stress_a, "Diastole stress logs mismatch"
     assert sys_logs_stress_f == sys_logs_stress_a, "Systole stress logs mismatch"
+
 
 # def test_from_file_and_from_array_pairwise(tmp_path, sample_rest_dia_arr, sample_rest_sys_arr):
 #     """from_file should mirror from_array for single array inputs."""
@@ -231,7 +242,7 @@ def test_doublepair_file_arr_consistency(
 #     """to_centerline should return a PyCenterline with sorted points along the curve."""
 #     # to_centerline wraps a single PyContour into a PyCenterline
 #     cl: PyCenterline = to_centerline(sample_contour_round)
-    
+
 #     # must be the correct type
 #     assert isinstance(cl, PyCenterline)
 #     # should have exactly as many points as the contour
