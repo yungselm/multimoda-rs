@@ -10,6 +10,7 @@
 [![PyPI](https://img.shields.io/pypi/v/multimodars.svg)](https://pypi.org/project/multimodars)
 [![License](https://img.shields.io/pypi/l/multimodars.svg)](LICENSE.md)
 [![Docs](https://img.shields.io/readthedocs/multimoda-rs)](https://multimoda-rs.readthedocs.io)
+[![Tests and Build](https://github.com/yungselm/multimoda-rs/actions/workflows/CI.yml/badge.svg)](https://github.com/yungselm/multimoda-rs/actions/workflows/CI.yml)
 
 <figure class="epigraph" style="text-align: center; font-style: italic;">
   <blockquote>
