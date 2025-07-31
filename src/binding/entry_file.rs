@@ -285,6 +285,13 @@ pub fn from_file_single_rs(
     )?;
 
     let (geom, logs) = align_frames_in_geometry(geom, steps_best_rotation, range_rotation_deg);
+    let mut geom = if geom.walls.is_empty() {
+        crate::processing::walls::create_wall_geometry(&geom, /*with_pulmonary=*/ false)
+    } else {
+        geom
+    };
+
+    geom = geom.smooth_contours();
 
     let filename = format!("{}/mesh_000_single.obj", output_path);
 

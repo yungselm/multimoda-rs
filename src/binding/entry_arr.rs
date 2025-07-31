@@ -47,7 +47,7 @@ pub fn geometry_from_array_rs(
     };
 
     // Initial geometry setup, possibly reordering by records
-    let mut geometry = if let Some(recs) = records.as_ref() {
+    let geometry = if let Some(recs) = records.as_ref() {
         let mut z_coords: Vec<f64> = contours.iter().map(|c| c.centroid.2).collect();
         z_coords.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
@@ -71,42 +71,41 @@ pub fn geometry_from_array_rs(
         }
     };
 
-    geometry = if geometry.walls.is_empty() {
-        crate::processing::walls::create_wall_geometry(&geometry, false)
-    } else {
-        geometry
-    };
-
     // Optionally align and refine ordering
-    let (geometry, logs) = if sort {
+    let (mut geometry, logs) = if sort {
         let (interim, _) = align_frames_in_geometry(geometry, steps, range_deg);
         let refined = refine_ordering(interim, delta, max_rounds);
         align_frames_in_geometry(refined, steps, range_deg)
     } else {
         align_frames_in_geometry(geometry, steps, range_deg)
     };
+    
+    geometry = if geometry.walls.is_empty() {
+        crate::processing::walls::create_wall_geometry(&geometry, false)
+    } else {
+        geometry
+    };
 
-    // smooth as before
-    let new_geometry = geometry.smooth_contours();
+    geometry = geometry.smooth_contours();
 
     if write_obj {
         let filename_cont = format!("{}/mesh_000_single.obj", output_path);
         let filename_walls = format!("{}/wall_000_single.obj", output_path);
         let filename_cath = format!("{}/catheter_000_single.obj", output_path);
         write_obj_mesh_without_uv(
-            &new_geometry.contours,
+            &geometry.contours,
             &filename_cont,
             "mesh_000_single.mtl",
         )?;
-        write_obj_mesh_without_uv(&new_geometry.walls, &filename_walls, "wall_000_single.mtl")?;
+        write_obj_mesh_without_uv(&geometry.walls, &filename_walls, "wall_000_single.mtl")?;
         write_obj_mesh_without_uv(
-            &new_geometry.catheter,
+            &geometry.catheter,
             &filename_cath,
             "catheter_000_single.mtl",
         )?;
     }
 
-    Ok((new_geometry, logs))
+    Ok((geometry, logs))
 }
 
 pub fn refine_ordering(mut geom: Geometry, delta: f64, max_rounds: usize) -> Geometry {

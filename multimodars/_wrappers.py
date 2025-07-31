@@ -218,9 +218,9 @@ def from_file(
     elif mode == "single":
         required = (
             "input_path",
-            "output_path",
             "steps_best_rotation",
             "range_rotation_deg",
+            "output_path",
             "diastole",
             "image_center",
             "radius",
@@ -229,9 +229,9 @@ def from_file(
         args = {k: merged[k] for k in required}
         return from_file_single(
             args["input_path"],
-            args["output_path"],
             args["steps_best_rotation"],
             args["range_rotation_deg"],
+            args["output_path"],
             args["diastole"],
             args["image_center"],
             args["radius"],
