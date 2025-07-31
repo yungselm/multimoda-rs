@@ -20,9 +20,18 @@ def test_full_file_arr_consistency(
     sample_rest_sys_arr,
     sample_stress_dia_arr,
     sample_stress_sys_arr,
+    tmp_path,
 ):
-    """from_array(…, mode=…) should match the corresponding Rust-backed function."""
-    rest_f, stress_f, dia_f, sys_f, (dia_logs_f, sys_logs_f, dia_logs_stress_f, sys_logs_stress_f) = from_array(
+    # create subdirs under tmp_path
+    rest_out     = tmp_path / "output" / "rest"
+    stress_out   = tmp_path / "output" / "stress"
+    dia_out      = tmp_path / "output" / "diastole"
+    sys_out      = tmp_path / "output" / "systole"
+    # pytest will automatically mkdir when you write files into it
+
+    rest_f, stress_f, dia_f, sys_f, (
+        dia_logs_f, sys_logs_f, dia_logs_stress_f, sys_logs_stress_f
+    ) = from_array(
         mode="full",
         rest_geometry_dia=sample_rest_dia_arr,
         rest_geometry_sys=sample_rest_sys_arr,
@@ -31,22 +40,27 @@ def test_full_file_arr_consistency(
         steps_best_rotation=270,
         range_rotation_rad=90,
         interpolation_steps=0,
-        rest_output_path="output/rest",
-        stress_output_path="output/stress",
-        diastole_output_path="output/diastole",
-        systole_output_path="output/systole",
+        rest_output_path=str(rest_out),
+        stress_output_path=str(stress_out),
+        diastole_output_path=str(dia_out),
+        systole_output_path=str(sys_out),
+        image_center=(4.5, 4.5),
+        radius=0.5,
+        n_points=20,
     )
-    # call the Rust-backed function directly
-    rest_a, stress_a, dia_a, sys_a, (dia_logs_a, sys_logs_a, dia_logs_stress_a, sys_logs_stress_a) = from_file(
+
+    rest_a, stress_a, dia_a, sys_a, (
+        dia_logs_a, sys_logs_a, dia_logs_stress_a, sys_logs_stress_a
+    ) = from_file(
         mode="full",
-        rest_input_path="data/fixtures/rest_csv_files",
-        stress_input_path="data/fixtures/stress_csv_files",
+        rest_input_path="data/fixtures/idealized_geometry",
+        stress_input_path="data/fixtures/idealized_geometry",
         steps_best_rotation=270,
         range_rotation_rad=90,
-        rest_output_path="output/rest",
-        stress_output_path="output/stress",
-        diastole_output_path="output/diastole",
-        systole_output_path="output/systole",
+        rest_output_path=str(rest_out),
+        stress_output_path=str(stress_out),
+        diastole_output_path=str(dia_out),
+        systole_output_path=str(sys_out),
         interpolation_steps=0,
         image_center=(4.5, 4.5),
         radius=0.5,
@@ -106,6 +120,98 @@ def test_full_file_arr_consistency(
     # check logs
     assert dia_logs_f == dia_logs_a, "Diastole logs mismatch"
     assert sys_logs_f == sys_logs_a, "Systole logs mismatch"
+    assert dia_logs_stress_f == dia_logs_stress_a, "Diastole stress logs mismatch"
+    assert sys_logs_stress_f == sys_logs_stress_a, "Systole stress logs mismatch"
+
+def test_doublepair_file_arr_consistency(
+    sample_rest_dia_arr,
+    sample_rest_sys_arr,
+    sample_stress_dia_arr,
+    sample_stress_sys_arr,
+    tmp_path,
+):
+    # create subdirs under tmp_path
+    rest_out     = tmp_path / "output" / "rest"
+    stress_out   = tmp_path / "output" / "stress"
+    # pytest will automatically mkdir when you write files into it
+
+    rest_f, stress_f, (
+        dia_logs_f, sys_logs_f, dia_logs_stress_f, sys_logs_stress_f
+    ) = from_array(
+        mode="doublepair",
+        rest_geometry_dia=sample_rest_dia_arr,
+        rest_geometry_sys=sample_rest_sys_arr,
+        stress_geometry_dia=sample_stress_dia_arr,
+        stress_geometry_sys=sample_stress_sys_arr,
+        steps_best_rotation=270,
+        range_rotation_rad=90,
+        interpolation_steps=0,
+        rest_output_path=str(rest_out),
+        stress_output_path=str(stress_out),
+        image_center=(4.5, 4.5),
+        radius=0.5,
+        n_points=20,
+    )
+
+    rest_a, stress_a, (
+        dia_logs_a, sys_logs_a, dia_logs_stress_a, sys_logs_stress_a
+    ) = from_file(
+        mode="doublepair",
+        rest_input_path="data/fixtures/idealized_geometry",
+        stress_input_path="data/fixtures/idealized_geometry",
+        steps_best_rotation=270,
+        range_rotation_rad=90,
+        rest_output_path=str(rest_out),
+        stress_output_path=str(stress_out),
+        interpolation_steps=0,
+        image_center=(4.5, 4.5),
+        radius=0.5,
+        n_points=20,
+    )
+
+    # test consistency between the two
+    assert len(rest_f.dia_geom.contours) == len(rest_a.dia_geom.contours)
+    assert len(rest_f.sys_geom.contours) == len(rest_a.sys_geom.contours)
+    assert len(rest_f.dia_geom.catheters) == len(rest_a.dia_geom.catheters)
+    assert len(rest_f.sys_geom.catheters) == len(rest_a.sys_geom.catheters)
+    assert len(rest_f.dia_geom.walls) == len(rest_a.dia_geom.walls)
+    assert len(rest_f.sys_geom.walls) == len(rest_a.sys_geom.walls)
+    assert len(stress_f.dia_geom.contours) == len(stress_a.dia_geom.contours)
+    assert len(stress_f.sys_geom.contours) == len(stress_a.sys_geom.contours)
+    assert len(stress_f.dia_geom.catheters) == len(stress_a.dia_geom.catheters)
+    assert len(stress_f.sys_geom.catheters) == len(stress_a.sys_geom.catheters)
+    assert len(stress_f.dia_geom.walls) == len(stress_a.dia_geom.walls)
+    assert len(stress_f.sys_geom.walls) == len(stress_a.sys_geom.walls)
+
+    # random contour check all points the same
+    contour_f = rest_f.dia_geom.contours[-1]
+    contour_a = rest_a.dia_geom.contours[-1]
+
+    for pf, pa in zip(contour_f.points, contour_a.points):
+        # exact integer checks
+        assert pf.frame_index == pa.frame_index, (
+            f"Frame index mismatch: {pf.frame_index} != {pa.frame_index}"
+        )
+        assert pf.point_index == pa.point_index, (
+            f"Point index mismatch: {pf.point_index} != {pa.point_index}"
+        )
+
+        # floating‐point checks with pytest.approx
+        assert pf.x == pytest.approx(pa.x, abs=0.01), (
+            f"X coord mismatch: {pf.x} != {pa.x}"
+        )
+        assert pf.y == pytest.approx(pa.y, abs=0.01), (
+            f"Y coord mismatch: {pf.y} != {pa.y}"
+        )
+        assert pf.z == pytest.approx(pa.z, abs=0.01), (
+            f"Z coord mismatch: {pf.z} != {pa.z}"
+        )
+
+    # check logs
+    assert dia_logs_f == dia_logs_a, "Diastole logs mismatch"
+    assert sys_logs_f == sys_logs_a, "Systole logs mismatch"
+    assert dia_logs_stress_f == dia_logs_stress_a, "Diastole stress logs mismatch"
+    assert sys_logs_stress_f == sys_logs_stress_a, "Systole stress logs mismatch"
 
 # def test_from_file_and_from_array_pairwise(tmp_path, sample_rest_dia_arr, sample_rest_sys_arr):
 #     """from_file should mirror from_array for single array inputs."""

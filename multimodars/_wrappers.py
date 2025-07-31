@@ -329,6 +329,7 @@ def from_array(
             "steps_best_rotation", "range_rotation_deg", "interpolation_steps",
             "rest_output_path", "stress_output_path",
             "diastole_output_path", "systole_output_path",
+            "image_center", "radius", "n_points",
         )
         args = {k: merged[k] for k in required}
         return from_array_full(
@@ -343,6 +344,9 @@ def from_array(
             args["stress_output_path"],
             args["diastole_output_path"],
             args["systole_output_path"],
+            args["image_center"],
+            args["radius"],
+            args["n_points"],
         )
 
     elif mode == "doublepair":
@@ -351,6 +355,7 @@ def from_array(
             "stress_geometry_dia", "stress_geometry_sys",
             "steps_best_rotation", "range_rotation_deg", "interpolation_steps",
             "rest_output_path", "stress_output_path",
+            "image_center", "radius", "n_points",
         )
         args = {k: merged[k] for k in required}
         return from_array_doublepair(
@@ -363,6 +368,9 @@ def from_array(
             args["interpolation_steps"],
             args["rest_output_path"],
             args["stress_output_path"],
+            args["image_center"],
+            args["radius"],
+            args["n_points"],
         )
 
     elif mode == "singlepair":
@@ -370,6 +378,7 @@ def from_array(
             "geometry_dia", "geometry_sys",
             "output_path",
             "steps_best_rotation", "range_rotation_deg", "interpolation_steps",
+            "image_center", "radius", "n_points",
         )
         args = {k: merged[k] for k in required}
         return from_array_singlepair(
@@ -379,6 +388,9 @@ def from_array(
             args["steps_best_rotation"],
             args["range_rotation_deg"],
             args["interpolation_steps"],
+            args["image_center"],
+            args["radius"],
+            args["n_points"],
         )
 
     elif mode == "single":

@@ -685,6 +685,9 @@ pub fn geometry_from_array(
         stress_output_path = "output/stress",
         diastole_output_path = "output/diastole",
         systole_output_path = "output/systole",
+        image_center = (4.5f64, 4.5f64),
+        radius = 0.5f64,
+        n_points = 20u32,
     )
 )]
 pub fn from_array_full(
@@ -699,6 +702,9 @@ pub fn from_array_full(
     stress_output_path: &str,
     diastole_output_path: &str,
     systole_output_path: &str,
+    image_center: (f64, f64),
+    radius: f64,
+    n_points: u32,
 ) -> PyResult<(
     PyGeometryPair,
     PyGeometryPair,
@@ -722,6 +728,9 @@ pub fn from_array_full(
         stress_output_path,
         diastole_output_path,
         systole_output_path,
+        image_center,
+        radius,
+        n_points,
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
@@ -801,6 +810,9 @@ pub fn from_array_full(
         interpolation_steps = 28usize,
         rest_output_path = "output/rest",
         stress_output_path = "output/stress",
+        image_center = (4.5f64, 4.5f64),
+        radius = 0.5f64,
+        n_points = 20u32,
     )
 )]
 pub fn from_array_doublepair(
@@ -813,6 +825,9 @@ pub fn from_array_doublepair(
     interpolation_steps: usize,
     rest_output_path: &str,
     stress_output_path: &str,
+    image_center: (f64, f64),
+    radius: f64,
+    n_points: u32,
 ) -> PyResult<(PyGeometryPair, PyGeometryPair,
     (Vec<(u32,u32,f64,f64,f64,f64,f64,f64)>,
     Vec<(u32,u32,f64,f64,f64,f64,f64,f64)>,
@@ -830,6 +845,9 @@ pub fn from_array_doublepair(
         interpolation_steps,
         rest_output_path,
         stress_output_path,
+        image_center,
+        radius,
+        n_points,
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
@@ -895,6 +913,9 @@ pub fn from_array_doublepair(
         steps_best_rotation = 270usize,
         range_rotation_deg = 90.0f64,
         interpolation_steps = 28usize,
+        image_center = (4.5f64, 4.5f64),
+        radius = 0.5f64,
+        n_points = 20u32,
     )
 )]
 pub fn from_array_singlepair(
@@ -904,6 +925,9 @@ pub fn from_array_singlepair(
     steps_best_rotation: usize,
     range_rotation_deg: f64,
     interpolation_steps: usize,
+    image_center: (f64, f64),
+    radius: f64,
+    n_points: u32,
 ) -> PyResult<(PyGeometryPair,
     (Vec<(u32,u32,f64,f64,f64,f64,f64,f64)>,
     Vec<(u32,u32,f64,f64,f64,f64,f64,f64)>))> {
@@ -914,6 +938,9 @@ pub fn from_array_singlepair(
         steps_best_rotation,
         range_rotation_deg,
         interpolation_steps,
+        image_center,
+        radius,
+        n_points,
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 

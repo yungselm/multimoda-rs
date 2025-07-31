@@ -246,13 +246,63 @@ fn geometry_pair_from_array_rs(
     geometry_sys: Geometry,
     steps_best_rotation: usize,
     range_rotation_deg: f64,
+    image_center: (f64, f64),
+    radius: f64,
+    n_points: u32,
 ) -> anyhow::Result<(GeometryPair, (Vec<AlignLog>, Vec<AlignLog>))> {
-    let geometries = GeometryPair {
+    let mut catheters_dia = if geometry_dia.catheter.is_empty() {
+        Contour::create_catheter_contours(
+            &geometry_dia.contours
+                .iter()
+                .flat_map(|c| c.points.clone())
+                .collect::<Vec<_>>(),
+            image_center, 
+            radius, 
+            n_points)?
+    } else {
+        geometry_dia.catheter.clone()
+    };
+    let mut catheters_sys = if geometry_dia.catheter.is_empty() {
+        Contour::create_catheter_contours(
+            &geometry_sys.contours
+                .iter()
+                .flat_map(|c| c.points.clone())
+                .collect::<Vec<_>>(),
+            image_center, 
+            radius, 
+            n_points)?
+    } else {
+        geometry_sys.catheter.clone()
+    };
+
+    // Ensure catheter contour are sorted by ID in same manner as contours
+    catheters_dia.sort_by_key(|c| c.id);
+    catheters_sys.sort_by_key(|c| c.id);
+
+    // Insert in Geometry
+    let geometry_dia = Geometry {
+        contours: geometry_dia.contours,
+        catheter: catheters_dia,
+        walls: geometry_dia.walls,
+        reference_point: geometry_dia.reference_point,
+        label: "Diastole".to_string(),
+    };
+    let geometry_sys = Geometry {
+        contours: geometry_sys.contours,
+        catheter: catheters_sys,
+        walls: geometry_sys.walls,
+        reference_point: geometry_sys.reference_point,
+        label: "Systole".to_string(),
+    };
+
+    let mut geometries = GeometryPair {
         dia_geom: geometry_dia,
         sys_geom: geometry_sys,
     };
+    geometries = geometries.adjust_z_coordinates();
+
     let (mut geometries, (dia_logs, sys_logs)) =
-        geometries.process_geometry_pair(steps_best_rotation, range_rotation_deg, false);
+        geometries.process_geometry_pair(steps_best_rotation, range_rotation_deg, true);
     geometries = geometries.trim_geometries_same_length();
     geometries = geometries.thickness_adjustment();
 
@@ -279,6 +329,9 @@ pub fn from_array_full_rs(
     stress_output_path: &str,
     diastole_output_path: &str,
     systole_output_path: &str,
+    image_center: (f64, f64),
+    radius: f64,
+    n_points: u32,
 ) -> anyhow::Result<(
     (GeometryPair, GeometryPair, GeometryPair, GeometryPair), 
     (Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>))> {
@@ -291,6 +344,9 @@ pub fn from_array_full_rs(
                     rest_geometry_sys,
                     steps_best_rotation,
                     range_rotation_deg,
+                    image_center,
+                    radius,
+                    n_points,
                 )
                 .context("create_geometry_pair(rest) failed")?;
                 geom = process_case("rest", geom, rest_output_path, interpolation_steps)
@@ -305,6 +361,9 @@ pub fn from_array_full_rs(
                     stress_geometry_sys,
                     steps_best_rotation,
                     range_rotation_deg,
+                    image_center,
+                    radius,
+                    n_points,
                 )
                 .context("create_geometry_pair(stress) failed")?;
                 geom = process_case("stress", geom, stress_output_path, interpolation_steps)
@@ -366,6 +425,9 @@ pub fn from_array_doublepair_rs(
     interpolation_steps: usize,
     rest_output_path: &str,
     stress_output_path: &str,
+    image_center: (f64, f64),
+    radius: f64,
+    n_points: u32,
 ) -> Result<((GeometryPair, GeometryPair), (Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>))> {
     let result = thread::scope(|s| -> Result<(GeometryPair, GeometryPair, Vec<AlignLog>, Vec<AlignLog>,  Vec<AlignLog>, Vec<AlignLog>)> {
         // REST thread
@@ -375,6 +437,9 @@ pub fn from_array_doublepair_rs(
                 rest_geometry_sys,
                 steps_best_rotation,
                 range_rotation_deg,
+                image_center,
+                radius,
+                n_points,
             )
             .context("create_geometry_pair(rest) failed")?;
 
@@ -392,6 +457,9 @@ pub fn from_array_doublepair_rs(
                 stress_geometry_sys,
                 steps_best_rotation,
                 range_rotation_deg,
+                image_center,
+                radius,
+                n_points,
             )
             .context("create_geometry_pair(stress) failed")?;
 
@@ -426,6 +494,9 @@ pub fn from_array_singlepair_rs(
     steps_best_rotation: usize,
     range_rotation_deg: f64,
     interpolation_steps: usize,
+    image_center: (f64, f64),
+    radius: f64,
+    n_points: u32,
 ) -> Result<(GeometryPair, (Vec<AlignLog>, Vec<AlignLog>))> {
     // Build the raw pair
     let (geom_pair, (dia_logs, sys_logs)) = geometry_pair_from_array_rs(
@@ -433,6 +504,9 @@ pub fn from_array_singlepair_rs(
         rest_geometry_sys,
         steps_best_rotation,
         range_rotation_deg,
+        image_center,
+        radius,
+        n_points,
     )
     .context("create_geometry_pair(single) failed")?;
 

@@ -96,48 +96,40 @@ def sample_array_data():
 
 @pytest.fixture
 def sample_rest_dia_arr():
-    contour = np.load("data/fixtures/dia_rest_contours.npy")
-    catheters = np.load("data/fixtures/dia_rest_catheter.npy")
-    wall = np.load("data/fixtures/dia_rest_walls.npy")
-    reference = np.load("data/fixtures/dia_rest_ref_pt.npy")
+    raw = np.genfromtxt("data/fixtures/idealized_geometry/diastolic_contours.csv", delimiter=',')
+    ref = np.genfromtxt("data/fixtures/idealized_geometry/diastolic_reference_points.csv", delimiter=',')
     return numpy_to_geometry(
-        contours_arr=contour,
-        catheters_arr=catheters,
-        walls_arr=wall,
-        reference_arr=reference)
+        contours_arr=raw,
+        catheters_arr=np.array([]),
+        walls_arr=np.array([]),
+        reference_arr=ref)
 
 @pytest.fixture
 def sample_rest_sys_arr():
-    contour = np.load("data/fixtures/sys_rest_contours.npy")
-    catheters = np.load("data/fixtures/sys_rest_catheter.npy")
-    wall = np.load("data/fixtures/sys_rest_walls.npy")
-    reference = np.load("data/fixtures/sys_rest_ref_pt.npy")
+    raw = np.genfromtxt("data/fixtures/idealized_geometry/systolic_contours.csv", delimiter=',')
+    ref = np.genfromtxt("data/fixtures/idealized_geometry/systolic_reference_points.csv", delimiter=',')
     return numpy_to_geometry(
-        contours_arr=contour,
-        catheters_arr=catheters,
-        walls_arr=wall,
-        reference_arr=reference)
+        contours_arr=raw,
+        catheters_arr=np.array([]),
+        walls_arr=np.array([]),
+        reference_arr=ref)
 
 @pytest.fixture
 def sample_stress_dia_arr():
-    contour = np.load("data/fixtures/dia_stress_contours.npy")
-    catheters = np.load("data/fixtures/dia_stress_catheter.npy")
-    wall = np.load("data/fixtures/dia_stress_walls.npy")
-    reference = np.load("data/fixtures/dia_stress_ref_pt.npy")
+    raw = np.genfromtxt("data/fixtures/idealized_geometry/diastolic_contours.csv", delimiter=',')
+    ref = np.genfromtxt("data/fixtures/idealized_geometry/diastolic_reference_points.csv", delimiter=',')
     return numpy_to_geometry(
-        contours_arr=contour,
-        catheters_arr=catheters,
-        walls_arr=wall,
-        reference_arr=reference)
+        contours_arr=raw,
+        catheters_arr=np.array([]),
+        walls_arr=np.array([]),
+        reference_arr=ref)
 
 @pytest.fixture
 def sample_stress_sys_arr():
-    contour = np.load("data/fixtures/sys_stress_contours.npy")
-    catheters = np.load("data/fixtures/sys_stress_catheter.npy")
-    wall = np.load("data/fixtures/sys_stress_walls.npy")
-    reference = np.load("data/fixtures/sys_stress_ref_pt.npy")
+    raw = np.genfromtxt("data/fixtures/idealized_geometry/systolic_contours.csv", delimiter=',')
+    ref = np.genfromtxt("data/fixtures/idealized_geometry/systolic_reference_points.csv", delimiter=',')
     return numpy_to_geometry(
-        contours_arr=contour,
-        catheters_arr=catheters,
-        walls_arr=wall,
-        reference_arr=reference)
+        contours_arr=raw,
+        catheters_arr=np.array([]),
+        walls_arr=np.array([]),
+        reference_arr=ref)
