@@ -3,10 +3,10 @@ use anyhow::bail;
 use crate::io::input::{Contour, ContourPoint};
 use crate::io::output::{write_geometry_vec_to_obj, GeometryType};
 use crate::io::Geometry;
+use crate::processing::contours::AlignLog;
 use crate::processing::geometries::GeometryPair;
 use crate::processing::walls::create_wall_geometry;
 use crate::texture::write_mtl_geometry;
-use crate::processing::contours::AlignLog;
 
 pub fn create_geometry_pair(
     case_name: String,
@@ -32,10 +32,13 @@ pub fn create_geometry_pair(
     let sys_geom = geometries.sys_geom;
     let sys_geom = sys_geom.smooth_contours();
 
-    Ok((GeometryPair {
-        dia_geom: dia_geom,
-        sys_geom: sys_geom,
-    }, (dia_logs, sys_logs)))
+    Ok((
+        GeometryPair {
+            dia_geom: dia_geom,
+            sys_geom: sys_geom,
+        },
+        (dia_logs, sys_logs),
+    ))
 }
 
 /// Processes a given case by reading diastolic and systolic contours, aligning them,

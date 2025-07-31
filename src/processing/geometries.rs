@@ -74,11 +74,13 @@ impl GeometryPair {
         {
             contour.rotate_contour(best_rotation_angle);
         }
-        (GeometryPair {
-            dia_geom: diastole,
-            sys_geom: systole,
-        },
-        (dia_logs, sys_logs))
+        (
+            GeometryPair {
+                dia_geom: diastole,
+                sys_geom: systole,
+            },
+            (dia_logs, sys_logs),
+        )
     }
 
     fn translate_contours_to_match(dia: &Geometry, sys: &mut Geometry) {
@@ -422,9 +424,8 @@ mod geometry_pair_tests {
             dia_geom: dia.clone(),
             sys_geom: simple_geometry((0.0, 0.0), 2.0, (None, None)),
         };
-        (gp, _) = gp
-            .process_geometry_pair(1, 0.0, true);
-        gp= gp.adjust_z_coordinates();
+        (gp, _) = gp.process_geometry_pair(1, 0.0, true);
+        gp = gp.adjust_z_coordinates();
         for contour in gp.dia_geom.contours.iter() {
             assert!(contour.centroid.2.is_finite());
         }

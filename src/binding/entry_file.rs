@@ -23,10 +23,20 @@ pub fn from_file_full_rs(
     radius: f64,
     n_points: u32,
 ) -> anyhow::Result<(
-    (GeometryPair, GeometryPair, GeometryPair, GeometryPair), 
-    (Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>))> {
+    (GeometryPair, GeometryPair, GeometryPair, GeometryPair),
+    (Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>),
+)> {
     let result = thread::scope(
-        |s| -> Result<(GeometryPair, GeometryPair, GeometryPair, GeometryPair, Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>)> {
+        |s| -> Result<(
+            GeometryPair,
+            GeometryPair,
+            GeometryPair,
+            GeometryPair,
+            Vec<AlignLog>,
+            Vec<AlignLog>,
+            Vec<AlignLog>,
+            Vec<AlignLog>,
+        )> {
             // REST thread
             let rest_handle = s.spawn(|_| -> anyhow::Result<_> {
                 let (mut geom, (dia_logs, sys_logs)) = create_geometry_pair(
@@ -97,14 +107,35 @@ pub fn from_file_full_rs(
             let dia_geom = dia_handle.join().unwrap()?;
             let sys_geom = sys_handle.join().unwrap()?;
 
-            Ok((rest_pair, stress_pair, dia_geom, sys_geom, dia_logs, sys_logs, dia_logs_stress, sys_logs_stress))
+            Ok((
+                rest_pair,
+                stress_pair,
+                dia_geom,
+                sys_geom,
+                dia_logs,
+                sys_logs,
+                dia_logs_stress,
+                sys_logs_stress,
+            ))
         },
     )
     .map_err(|panic| anyhow!("Parallel processing threads panicked: {:?}", panic))?;
 
-    let (rest_geom, stress_geom, dia_geom, sys_geom, dia_logs, sys_logs, dia_logs_stress, sys_logs_stress) = result?;
+    let (
+        rest_geom,
+        stress_geom,
+        dia_geom,
+        sys_geom,
+        dia_logs,
+        sys_logs,
+        dia_logs_stress,
+        sys_logs_stress,
+    ) = result?;
 
-    Ok(((rest_geom, stress_geom, dia_geom, sys_geom), (dia_logs, sys_logs, dia_logs_stress, sys_logs_stress)))
+    Ok((
+        (rest_geom, stress_geom, dia_geom, sys_geom),
+        (dia_logs, sys_logs, dia_logs_stress, sys_logs_stress),
+    ))
 }
 
 /// Only run the REST & STRESS threads and write their outputs.
@@ -120,65 +151,88 @@ pub fn from_file_doublepair_rs(
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
-) -> anyhow::Result<((GeometryPair, GeometryPair), (Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>))> {
-    let result = thread::scope(|s| -> anyhow::Result<(GeometryPair, GeometryPair, Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>)> {
-        // REST thread
-        let rest_handle = s.spawn(|_| -> anyhow::Result<_> {
-            let (geom_rest, (dia_logs, sys_logs)) = create_geometry_pair(
-                "rest".to_string(),
-                rest_input_path,
-                steps_best_rotation,
-                range_rotation_deg,
-                image_center,
-                radius,
-                n_points,
-                true, //hardcoded here, since only for from array can preprocess
-            )
-            .context("create_geometry_pair(rest) failed")?;
+) -> anyhow::Result<(
+    (GeometryPair, GeometryPair),
+    (Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>),
+)> {
+    let result = thread::scope(
+        |s| -> anyhow::Result<(
+            GeometryPair,
+            GeometryPair,
+            Vec<AlignLog>,
+            Vec<AlignLog>,
+            Vec<AlignLog>,
+            Vec<AlignLog>,
+        )> {
+            // REST thread
+            let rest_handle = s.spawn(|_| -> anyhow::Result<_> {
+                let (geom_rest, (dia_logs, sys_logs)) = create_geometry_pair(
+                    "rest".to_string(),
+                    rest_input_path,
+                    steps_best_rotation,
+                    range_rotation_deg,
+                    image_center,
+                    radius,
+                    n_points,
+                    true, //hardcoded here, since only for from array can preprocess
+                )
+                .context("create_geometry_pair(rest) failed")?;
 
-            let processed_rest =
-                process_case("rest", geom_rest, rest_output_path, interpolation_steps)
-                    .context("process_case(rest) failed")?;
+                let processed_rest =
+                    process_case("rest", geom_rest, rest_output_path, interpolation_steps)
+                        .context("process_case(rest) failed")?;
 
-            Ok((processed_rest, dia_logs, sys_logs))
-        });
+                Ok((processed_rest, dia_logs, sys_logs))
+            });
 
-        // STRESS thread
-        let stress_handle = s.spawn(|_| -> anyhow::Result<_> {
-            let (geom_stress, (dia_logs_stress, sys_logs_stress)) = create_geometry_pair(
-                "stress".to_string(),
-                stress_input_path,
-                steps_best_rotation,
-                range_rotation_deg,
-                image_center,
-                radius,
-                n_points,
-                true, //hardcoded here, since only for from array can preprocess
-            )
-            .context("create_geometry_pair(stress) failed")?;
+            // STRESS thread
+            let stress_handle = s.spawn(|_| -> anyhow::Result<_> {
+                let (geom_stress, (dia_logs_stress, sys_logs_stress)) = create_geometry_pair(
+                    "stress".to_string(),
+                    stress_input_path,
+                    steps_best_rotation,
+                    range_rotation_deg,
+                    image_center,
+                    radius,
+                    n_points,
+                    true, //hardcoded here, since only for from array can preprocess
+                )
+                .context("create_geometry_pair(stress) failed")?;
 
-            let processed_stress = process_case(
-                "stress",
-                geom_stress,
-                stress_output_path,
-                interpolation_steps,
-            )
-            .context("process_case(stress) failed")?;
+                let processed_stress = process_case(
+                    "stress",
+                    geom_stress,
+                    stress_output_path,
+                    interpolation_steps,
+                )
+                .context("process_case(stress) failed")?;
 
-            Ok((processed_stress, dia_logs_stress, sys_logs_stress))
-        });
-        // Join threads & propagate any processing errors
-        let (rest_geom_pair, dia_logs, sys_logs) = rest_handle.join().unwrap()?;
-        let (stress_geom_pair, dia_logs_stress, sys_logs_stress) = stress_handle.join().unwrap()?;
+                Ok((processed_stress, dia_logs_stress, sys_logs_stress))
+            });
+            // Join threads & propagate any processing errors
+            let (rest_geom_pair, dia_logs, sys_logs) = rest_handle.join().unwrap()?;
+            let (stress_geom_pair, dia_logs_stress, sys_logs_stress) =
+                stress_handle.join().unwrap()?;
 
-        Ok((rest_geom_pair, stress_geom_pair, dia_logs, sys_logs, dia_logs_stress, sys_logs_stress))
-    })
+            Ok((
+                rest_geom_pair,
+                stress_geom_pair,
+                dia_logs,
+                sys_logs,
+                dia_logs_stress,
+                sys_logs_stress,
+            ))
+        },
+    )
     .map_err(|panic_payload| {
         anyhow!("Parallel processing threads panicked: {:?}", panic_payload)
     })?;
 
     let (rest_geom, stress_geom, dia_logs, sys_logs, dia_logs_stress, sys_logs_stress) = result?;
-    Ok(((rest_geom, stress_geom), (dia_logs, sys_logs, dia_logs_stress, sys_logs_stress)))
+    Ok((
+        (rest_geom, stress_geom),
+        (dia_logs, sys_logs, dia_logs_stress, sys_logs_stress),
+    ))
 }
 
 pub fn from_file_singlepair_rs(

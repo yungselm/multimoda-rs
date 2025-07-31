@@ -18,7 +18,11 @@ pub struct AlignLog {
     pub centroid: (f64, f64),
 }
 
-pub fn align_frames_in_geometry(geometry: Geometry, steps: usize, range_deg: f64) -> (Geometry, Vec<AlignLog>) {
+pub fn align_frames_in_geometry(
+    geometry: Geometry,
+    steps: usize,
+    range_deg: f64,
+) -> (Geometry, Vec<AlignLog>) {
     let (mut geometry, reference_index, reference_pos, ref_contour) = prep_data_geometry(geometry);
 
     let (p1, p2, updated_ref) = assign_aortic(ref_contour.clone(), &geometry);

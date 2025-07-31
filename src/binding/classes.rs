@@ -402,7 +402,9 @@ impl PyGeometry {
         let len = self.contours.len() as isize;
         let i = if idx < 0 { len + idx } else { idx };
         if i < 0 || i >= len {
-            Err(pyo3::exceptions::PyIndexError::new_err("index out of range"))
+            Err(pyo3::exceptions::PyIndexError::new_err(
+                "index out of range",
+            ))
         } else {
             self.contours[i as usize] = contour;
             Ok(())
@@ -415,12 +417,14 @@ impl PyGeometry {
         let len = self.walls.len() as isize;
         let i = if idx < 0 { len + idx } else { idx };
         if i < 0 || i >= len {
-            Err(pyo3::exceptions::PyIndexError::new_err("index out of range"))
+            Err(pyo3::exceptions::PyIndexError::new_err(
+                "index out of range",
+            ))
         } else {
             self.walls[i as usize] = wall;
             Ok(())
         }
-    }    
+    }
 
     /// Replace the contour at `idx` (can be negative).
     #[pyo3(signature = (idx, catheter))]
@@ -428,7 +432,9 @@ impl PyGeometry {
         let len = self.catheters.len() as isize;
         let i = if idx < 0 { len + idx } else { idx };
         if i < 0 || i >= len {
-            Err(pyo3::exceptions::PyIndexError::new_err("index out of range"))
+            Err(pyo3::exceptions::PyIndexError::new_err(
+                "index out of range",
+            ))
         } else {
             self.catheters[i as usize] = catheter;
             Ok(())
