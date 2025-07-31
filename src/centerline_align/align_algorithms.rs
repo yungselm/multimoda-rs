@@ -55,11 +55,6 @@ fn align_frame(frame: &mut Contour, cl_point: &CenterlinePoint) -> FrameTransfor
         );
     }
 
-    println!(
-        "aligning frame {:?} with centerline point {:?}",
-        &frame.id, &cl_point.contour_point.frame_index
-    );
-
     // === Translation Step ===
     // Compute the translation vector to bring the frame's centroid to the centerline point.
     let translation_vec = Vector3::new(

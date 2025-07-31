@@ -40,7 +40,7 @@ use crate::{
         aortic_ref_pt,
         upper_ref_pt,
         lower_ref_pt,
-        angle_step=0.01745329,
+        angle_step_deg=1.0,
         write=false,
         interpolation_steps=28usize,
         output_dir="output/aligned",
@@ -53,7 +53,7 @@ pub fn align_three_point(
     aortic_ref_pt: (f64, f64, f64),
     upper_ref_pt: (f64, f64, f64),
     lower_ref_pt: (f64, f64, f64),
-    angle_step: f64,
+    angle_step_deg: f64,
     write: bool,
     interpolation_steps: usize,
     output_dir: &str,
@@ -61,6 +61,7 @@ pub fn align_three_point(
 ) -> PyResult<PyGeometryPair> {
     let cl_rs = centerline.to_rust_centerline();
     let geom_pair_rs = geometry_pair.to_rust_geometry_pair();
+    let angle_step = angle_step_deg.to_radians();
 
     let geom_pair = align_three_point_rs(
         cl_rs,
