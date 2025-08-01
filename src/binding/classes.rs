@@ -2,7 +2,7 @@
 use crate::entry_arr::refine_ordering;
 use crate::io::input::{Centerline, CenterlinePoint, Contour, ContourPoint, Record};
 use crate::io::Geometry;
-use crate::processing::geometries::GeometryPair;
+use crate::processing::align_between::GeometryPair;
 use nalgebra::Vector3;
 use pyo3::prelude::*;
 

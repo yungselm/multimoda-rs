@@ -3,8 +3,8 @@ use anyhow::bail;
 use crate::io::input::{Contour, ContourPoint};
 use crate::io::output::{write_geometry_vec_to_obj, GeometryType};
 use crate::io::Geometry;
-use crate::processing::contours::AlignLog;
-use crate::processing::geometries::GeometryPair;
+use crate::processing::align_within::AlignLog;
+use crate::processing::align_between::GeometryPair;
 use crate::processing::walls::create_wall_geometry;
 use crate::texture::write_mtl_geometry;
 

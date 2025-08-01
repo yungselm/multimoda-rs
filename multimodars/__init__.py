@@ -8,7 +8,7 @@ from ._wrappers import (
 
 __all__ = [
     # rust‑backend functions
-    # (fill these in manually, or use `multimodars = dir()` hack to auto‑generate)
+    # or use `multimodars = dir()` for autogeneration
     "align_three_point",
     "align_manual",
     "from_file_full",

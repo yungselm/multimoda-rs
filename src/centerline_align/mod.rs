@@ -9,7 +9,7 @@ use crate::io::{
     input::{Centerline, Contour},
     Geometry,
 };
-use crate::processing::geometries::GeometryPair;
+use crate::processing::align_between::GeometryPair;
 use anyhow::Error;
 
 use crate::io::output::{write_geometry_vec_to_obj, GeometryType};

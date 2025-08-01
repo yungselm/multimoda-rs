@@ -1,11 +1,11 @@
 use rayon::prelude::*;
 
 use crate::io::Geometry;
-use crate::processing::contours::hausdorff_distance;
+use crate::processing::align_within::hausdorff_distance;
 
-use super::contours::align_frames_in_geometry;
+use super::align_within::align_frames_in_geometry;
 use crate::io::input::{Contour, ContourPoint};
-use crate::processing::contours::AlignLog;
+use crate::processing::align_within::AlignLog;
 
 #[derive(Clone, Debug)]
 pub struct GeometryPair {

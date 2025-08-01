@@ -6,7 +6,7 @@ mod processing;
 mod texture;
 mod utils;
 
-use binding::align::{align_manual, align_three_point};
+use binding::centerline_align::{align_manual, align_three_point};
 use binding::classes::*;
 use binding::*;
 use pyo3::prelude::*;

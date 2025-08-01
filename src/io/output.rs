@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 
 use crate::io::input::Contour;
-use crate::io::Geometry;
+use crate::io::{Geometry, ContourKind, ContourGroup};
 use rayon::prelude::*;
 use std::path::Path;
 
@@ -121,22 +121,31 @@ pub enum GeometryType {
 }
 
 impl GeometryType {
-    // Get the contour data from a Geometry based on the enum variant
-    pub fn get_contours<'a>(&self, geometry: &'a Geometry) -> &'a Vec<Contour> {
-        match self {
-            GeometryType::Contour => &geometry.contours,
-            GeometryType::Catheter => &geometry.catheter,
-            GeometryType::Wall => &geometry.walls,
-        }
-    }
-
-    // Get the object string for filenames
     pub fn as_str(&self) -> &'static str {
         match self {
             GeometryType::Contour => "mesh",
             GeometryType::Catheter => "catheter",
             GeometryType::Wall => "wall",
         }
+    }
+
+    /// Returns the relevant ContourKind, or None for types not stored in `groups`
+    fn to_kind(&self) -> Option<ContourKind> {
+        match self {
+            GeometryType::Contour => Some(ContourKind::Lumen),
+            GeometryType::Catheter => Some(ContourKind::Catheter),
+            GeometryType::Wall => Some(ContourKind::Wall),
+        }
+    }
+
+    /// Returns all contours for this type, or an empty Vec if kind not found.
+    pub fn get_contours<'a>(&self, geometry: &'a Geometry) -> Vec<&'a Contour> {
+        if let Some(kind) = self.to_kind() {
+            if let Some(group) = geometry.groups.get(&kind) {
+                return group.contours.iter().collect();
+            }
+        }
+        vec![]
     }
 }
 
@@ -147,8 +156,7 @@ pub fn write_geometry_vec_to_obj(
     geometries: &[Geometry],
     uv_coords: &[Vec<(f64, f64)>],
 ) -> anyhow::Result<()> {
-    // Create owned versions for thread-safe capture
-    let output_dir = output_dir.as_ref(); // Get &Path reference
+    let output_dir = output_dir.as_ref();
     std::fs::create_dir_all(output_dir).context(format!(
         "Could not create output directory: {:?}",
         output_dir
@@ -166,13 +174,13 @@ pub fn write_geometry_vec_to_obj(
             let mtl_name = format!("{}_{:03}_{}.mtl", geometry_type.as_str(), i, case_name);
 
             let obj_path = output_dir.join(&obj_name);
-
             let obj_path_str = obj_path
                 .to_str()
                 .ok_or_else(|| anyhow!("Invalid path for OBJ file"))?;
 
-            let contours = geometry_type.get_contours(geometry);
-            write_obj_mesh(contours, mesh_uv, obj_path_str, &mtl_name)
+            let contours_ref = geometry_type.get_contours(geometry);
+            let contours: Vec<Contour> = contours_ref.into_iter().cloned().collect();
+            write_obj_mesh(&contours, mesh_uv, obj_path_str, &mtl_name)
                 .map_err(|e| anyhow!("Failed [{}]: {}", obj_name, e))
         })
         .collect();
@@ -192,7 +200,6 @@ pub fn write_geometry_vec_to_obj(
         }
     );
 
-    // If any failed, return an Err with all messages joined
     if fail_count > 0 {
         let errors = results
             .into_iter()

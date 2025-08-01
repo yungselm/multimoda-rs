@@ -5,7 +5,7 @@ use std::f64::consts::PI;
 use std::sync::{Arc, Mutex};
 
 use crate::io::input::{Contour, ContourPoint};
-use crate::io::Geometry;
+use crate::io::{Geometry, ContourGroup, ContourKind};
 
 #[derive(Debug)]
 pub struct AlignLog {
@@ -23,27 +23,28 @@ pub fn align_frames_in_geometry(
     steps: usize,
     range_deg: f64,
 ) -> (Geometry, Vec<AlignLog>) {
-    let (mut geometry, reference_index, reference_pos, ref_contour) = prep_data_geometry(geometry);
+    let (mut geometry, reference_index, ref_contour) = prep_data_geometry(geometry);
 
-    let (p1, p2, updated_ref) = assign_aortic(ref_contour.clone(), &geometry);
+    let ref_point = ref_contour.reference_point.expect("Reference point not set for contour");
+    let (p1, p2, updated_ref) = assign_aortic(ref_contour.clone(), ref_point);
     let ref_contour = updated_ref.clone();
 
     let (_line_angle, rotation_to_y, rotated_ref, aortic_flag) =
         rotate_reference_contour(p1, p2, ref_contour.clone());
 
     // Update the reference contour in geometry with rotated version
-    geometry.contours.insert(reference_pos, rotated_ref.clone());
+    let lumen_group = geometry.groups.get_mut(&ContourKind::Lumen).unwrap();
+    if let Some(contour) = lumen_group.contours.iter_mut().find(|c| c.id == reference_index) {
+        *contour = rotated_ref.clone();
 
     // prepare reference catheter
-    for catheter in geometry.catheter.iter_mut() {
-        if catheter.id == reference_index {
-            catheter.rotate_contour_around_point(
-                rotation_to_y,
-                (ref_contour.centroid.0, ref_contour.centroid.1),
-            );
-            catheter.sort_contour_points();
-            break;
-        }
+    let catheter_group = geometry.groups.get_mut(&ContourKind::Catheter).unwrap();
+    if let Some(catheter) = catheter_group.contours.iter_mut().find(|c| c.id == reference_index) {
+        catheter.rotate_contour_around_point(
+            rotation_to_y,
+            (ref_contour.centroid.0, ref_contour.centroid.1),
+        );
+        catheter.sort_contour_points();
     }
 
     let logger = Arc::new(Mutex::new(Vec::<AlignLog>::new()));
@@ -80,42 +81,22 @@ pub fn align_frames_in_geometry(
     (geometry, logs)
 }
 
-fn prep_data_geometry(mut geometry: Geometry) -> (Geometry, u32, usize, Contour) {
-    geometry.contours.sort_by_key(|contour| contour.id);
+fn prep_data_geometry(mut geometry: Geometry) -> (Geometry, u32, Contour) {
+    geometry.sort_all_points();
 
-    for contour in &mut geometry.contours {
-        contour.sort_contour_points();
-    }
+    let lumen_group = geometry.groups.get_mut(&ContourKind::Lumen).unwrap();
+    let reference_index = lumen_group.contours.iter().map(|c| c.id).max().unwrap();
+    let ref_contour = lumen_group.contours.iter()
+        .find(|c| c.id == reference_index)
+        .unwrap()
+        .clone();
 
-    for catheter in &mut geometry.catheter {
-        catheter.sort_contour_points();
-    }
-
-    // Use the contour with the highest frame index as reference.
-    let reference_index = geometry
-        .contours
-        .iter()
-        .map(|contour| contour.id)
-        .max()
-        .unwrap();
-    let reference_pos = geometry
-        .contours
-        .iter()
-        .position(|contour| contour.id == reference_index)
-        .expect("Reference contour not found");
-    let ref_contour = &mut geometry.contours.remove(reference_pos);
-
-    (
-        geometry,
-        reference_index,
-        reference_pos,
-        ref_contour.clone(),
-    )
+    (geometry, reference_index, ref_contour)
 }
 
 /// expects: a reference Contour and the Geometry the Contour is derived from
 /// returns: farthest points and Contour with assigned aortic bool
-fn assign_aortic(contour: Contour, geometry: &Geometry) -> (ContourPoint, ContourPoint, Contour) {
+fn assign_aortic(contour: Contour, ref_point: ContourPoint) -> (ContourPoint, ContourPoint, Contour) {
     let ((p1, p2), _dist) = contour.find_farthest_points();
 
     let p1_pos = contour.points.iter().position(|pt| pt == p1).unwrap();
@@ -140,12 +121,12 @@ fn assign_aortic(contour: Contour, geometry: &Geometry) -> (ContourPoint, Contou
     // Compute distances first — no borrows beyond this point
     let dist_first = first_half_indices
         .iter()
-        .map(|&i| contour.points[i].distance_to(&geometry.reference_point))
+        .map(|&i| contour.points[i].distance_to(&ref_point))
         .sum::<f64>();
 
     let dist_second = second_half_indices
         .iter()
-        .map(|&i| contour.points[i].distance_to(&geometry.reference_point))
+        .map(|&i| contour.points[i].distance_to(&ref_point))
         .sum::<f64>();
 
     let use_first = dist_first < dist_second;

@@ -1,9 +1,9 @@
 use anyhow::{anyhow, Context, Result};
 use crossbeam::thread;
 
-use crate::processing::comparison::prepare_geometries_comparison;
-use crate::processing::contours::{align_frames_in_geometry, AlignLog};
-use crate::processing::geometries::GeometryPair;
+use crate::processing::resampling::prepare_geometries_comparison;
+use crate::processing::align_within::{align_frames_in_geometry, AlignLog};
+use crate::processing::align_between::GeometryPair;
 use crate::processing::process_case::{create_geometry_pair, process_case};
 
 use crate::io::output::write_obj_mesh_without_uv;

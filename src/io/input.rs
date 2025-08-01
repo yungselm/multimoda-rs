@@ -41,6 +41,7 @@ pub struct Contour {
     pub id: u32,
     pub points: Vec<ContourPoint>,
     pub centroid: (f64, f64, f64),
+    pub reference_point: Option<ContourPoint>,
     pub aortic_thickness: Option<f64>,
     pub pulmonary_thickness: Option<f64>,
 }
@@ -49,41 +50,47 @@ impl Contour {
     pub fn create_contours(
         points: Vec<ContourPoint>,
         result: Vec<Record>,
+        reference_points: &[ContourPoint],
     ) -> anyhow::Result<Vec<Contour>> {
         let mut groups: HashMap<u32, Vec<ContourPoint>> = HashMap::new();
         for p in points {
             groups.entry(p.frame_index).or_default().push(p);
         }
 
-        let mut contours = Vec::new();
-        for (frame_index, group_points) in groups {
-            let centroid = Self::compute_centroid(&group_points);
+        let mut contours = Vec::with_capacity(groups.len());
+        for (frame_index, mut pts) in groups {
+            // index points
+            for (i, pt) in pts.iter_mut().enumerate() {
+                pt.point_index = i as u32;
+            }
+            let centroid = Self::compute_centroid(&pts);
+            let ref_pt = reference_points
+                .iter()
+                .find(|rp| rp.frame_index == frame_index)
+                .copied();
+
             let aortic_thickness = result
                 .iter()
-                .find(|r| r.frame == frame_index as u32)
+                .find(|r| r.frame == frame_index)
                 .and_then(|r| r.measurement_1);
 
             let pulmonary_thickness = result
                 .iter()
-                .find(|r| r.frame == frame_index as u32)
+                .find(|r| r.frame == frame_index)
                 .and_then(|r| r.measurement_2);
 
             contours.push(Contour {
                 id: frame_index,
-                points: group_points,
+                points: pts,
                 centroid,
-                aortic_thickness: aortic_thickness,
-                pulmonary_thickness: pulmonary_thickness,
+                reference_point: ref_pt,
+                aortic_thickness,
+                pulmonary_thickness,
             });
-
-            for contour in &mut contours {
-                for (i, point) in contour.points.iter_mut().enumerate() {
-                    point.point_index = i as u32;
-                }
-            }
         }
         Ok(contours)
     }
+
 
     pub fn create_catheter_contours(
         points: &Vec<ContourPoint>,
@@ -109,6 +116,7 @@ impl Contour {
                 id: frame_index,
                 points: group_points,
                 centroid,
+                reference_point: None,
                 aortic_thickness: aortic_thickness,
                 pulmonary_thickness: pulmonary_thickness,
             });
@@ -299,6 +307,11 @@ impl Contour {
             p.y += dy;
             p.z += dz;
         }
+        if let Some(ref mut p) = self.reference_point {
+            p.x += dx;
+            p.y += dy;
+            p.z += dz;
+        }
         // Recalculate the centroid
         self.centroid = Self::compute_centroid(&self.points);
     }
@@ -345,7 +358,7 @@ impl ContourPoint {
         Ok(points)
     }
 
-    pub fn read_reference_point<P: AsRef<Path>>(path: P) -> Result<ContourPoint> {
+    pub fn read_reference_points<P: AsRef<Path>>(path: P) -> anyhow::Result<Vec<ContourPoint>> {
         let delim = detect_delimiter(&path)?;
         // 1) Open the file, with context on failur
         let file = File::open(&path)
@@ -357,22 +370,22 @@ impl ContourPoint {
             .delimiter(delim)
             .from_reader(file);
 
-        // 3) Grab the first record (if any)…
-        let first = rdr
-            .deserialize()
-            .next()
-            // if there was literally no row at all:
-            .ok_or_else(|| {
-                anyhow!(
-                    "reference-point file {:?} was empty — this data is required",
-                    path.as_ref()
-                )
-            })?;
+        let mut points = Vec::new();
+        for result in rdr.deserialize() {
+            let point: ContourPoint = result
+                .with_context(|| "failed to deserialize a reference-point record")?;
+            points.push(point);
+        }
 
-        // 4) And now propagate any parse / I/O error with its own context:
-        let point: ContourPoint =
-            first.with_context(|| "failed to deserialize first reference-point record")?;
-        Ok(point)
+        if points.is_empty() {
+            return Err(anyhow!(
+                "reference-point file {:?} was empty — this data is required",
+                path.as_ref()
+            ));
+        }
+
+        // Change 4: Return the vector of points
+        Ok(points)
     }
 
     pub fn create_catheter_points(
@@ -598,6 +611,7 @@ mod input_tests {
                 },
             ],
             centroid: (1.0, 1.0, 0.0),
+            reference_point: None,
             aortic_thickness: None,
             pulmonary_thickness: None,
         };
@@ -681,6 +695,7 @@ mod input_tests {
                     aortic: false,
                 },
             ]),
+            reference_point: None,
             aortic_thickness: None,
             pulmonary_thickness: None,
         };
@@ -730,6 +745,7 @@ mod input_tests {
                 },
             ],
             centroid: (1.0, 1.0, 0.0),
+            reference_point: None,
             aortic_thickness: None,
             pulmonary_thickness: None,
         };
@@ -814,6 +830,7 @@ mod input_tests {
                 },
             ],
             centroid: (0.0, 0.0, 0.0),
+            reference_point: None,
             aortic_thickness: None,
             pulmonary_thickness: None,
         };
@@ -958,6 +975,7 @@ mod input_tests {
                 },
             ],
             centroid: (0.0, 0.0, 0.0),
+            reference_point: None,
             aortic_thickness: None,
             pulmonary_thickness: None,
         };
@@ -1025,6 +1043,7 @@ mod input_tests {
                 },
             ],
             centroid: (1.0, 1.0, 0.0),
+            reference_point: None,
             aortic_thickness: None,
             pulmonary_thickness: None,
         };

@@ -1,4 +1,4 @@
-pub mod align;
+pub mod centerline_align;
 pub mod classes;
 pub mod entry_arr;
 pub mod entry_file;
@@ -7,7 +7,7 @@ use crate::io::{
     input::{Contour, ContourPoint, Record},
     output::write_obj_mesh_without_uv,
 };
-use crate::processing::contours::AlignLog;
+use crate::processing::align_within::AlignLog;
 use classes::{PyContour, PyGeometry, PyGeometryPair, PyRecord};
 use entry_arr::*;
 use entry_file::{
