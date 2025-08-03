@@ -15,8 +15,10 @@ classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
+    "License :: OSI Approved :: MIT License",
 ]
-license = "LICENSE"
+license = "MIT"
+license-files = ["LICENSE"]
 
 [build-system]
 requires = ["maturin>=1.7,<2.0"]
