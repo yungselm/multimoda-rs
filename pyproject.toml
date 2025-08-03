@@ -16,7 +16,7 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
-license = "LICENSE.md"
+license = "LICENSE"
 
 [build-system]
 requires = ["maturin>=1.7,<2.0"]
