@@ -2,7 +2,7 @@ use nalgebra::Vector3;
 
 use crate::io::input::{Centerline, CenterlinePoint, ContourPoint};
 use crate::io::Geometry;
-use crate::processing::geometries::GeometryPair;
+use crate::processing::align_between::GeometryPair;
 
 pub fn ensure_descending_z(centerline: &mut Centerline) {
     if !centerline.points.is_empty() {

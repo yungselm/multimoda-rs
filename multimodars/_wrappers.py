@@ -123,14 +123,15 @@ def from_file(
     defaults = {
         "steps_best_rotation": 270,
         "range_rotation_deg": 90,
+        "image_center": (4.5, 4.5),
+        "radius": 0.5,
+        "n_points": 20,
+        "write_obj": True,
         "rest_output_path": "output/rest",
         "stress_output_path": "output/stress",
         "diastole_output_path": "output/diastole",
         "systole_output_path": "output/systole",
         "interpolation_steps": 28,
-        "image_center": (4.5, 4.5),
-        "radius": 0.5,
-        "n_points": 20,
     }
     merged = {**defaults, **kwargs}
 
@@ -140,14 +141,15 @@ def from_file(
             "stress_input_path",
             "steps_best_rotation",
             "range_rotation_deg",
+            "image_center",
+            "radius",
+            "n_points",
+            "write_obj",
             "rest_output_path",
             "stress_output_path",
             "diastole_output_path",
             "systole_output_path",
             "interpolation_steps",
-            "image_center",
-            "radius",
-            "n_points",
         )
         args = {k: merged[k] for k in required}
         return from_file_full(
@@ -155,14 +157,15 @@ def from_file(
             args["stress_input_path"],
             args["steps_best_rotation"],
             args["range_rotation_deg"],
+            args["image_center"],
+            args["radius"],
+            args["n_points"],
+            args["write_obj"],
             args["rest_output_path"],
             args["stress_output_path"],
             args["diastole_output_path"],
             args["systole_output_path"],
             args["interpolation_steps"],
-            args["image_center"],
-            args["radius"],
-            args["n_points"],
         )
 
     elif mode == "doublepair":
@@ -171,12 +174,13 @@ def from_file(
             "stress_input_path",
             "steps_best_rotation",
             "range_rotation_deg",
-            "rest_output_path",
-            "stress_output_path",
-            "interpolation_steps",
             "image_center",
             "radius",
             "n_points",
+            "write_obj",
+            "rest_output_path",
+            "stress_output_path",
+            "interpolation_steps",
         )
         args = {k: merged[k] for k in required}
         return from_file_doublepair(
@@ -184,35 +188,38 @@ def from_file(
             args["stress_input_path"],
             args["steps_best_rotation"],
             args["range_rotation_deg"],
-            args["rest_output_path"],
-            args["stress_output_path"],
-            args["interpolation_steps"],
             args["image_center"],
             args["radius"],
             args["n_points"],
+            args["write_obj"],
+            args["rest_output_path"],
+            args["stress_output_path"],
+            args["interpolation_steps"],
         )
 
     elif mode == "singlepair":
         required = (
             "input_path",
-            "output_path",
             "steps_best_rotation",
             "range_rotation_deg",
-            "interpolation_steps",
             "image_center",
             "radius",
             "n_points",
+            "write_obj",
+            "output_path",
+            "interpolation_steps",
         )
         args = {k: merged[k] for k in required}
         return from_file_singlepair(
             args["input_path"],
-            args["output_path"],
             args["steps_best_rotation"],
             args["range_rotation_deg"],
-            args["interpolation_steps"],
             args["image_center"],
             args["radius"],
             args["n_points"],
+            args["write_obj"],
+            args["output_path"],
+            args["interpolation_steps"],
         )
 
     elif mode == "single":
@@ -220,22 +227,24 @@ def from_file(
             "input_path",
             "steps_best_rotation",
             "range_rotation_deg",
-            "output_path",
             "diastole",
             "image_center",
             "radius",
             "n_points",
+            "write_obj",
+            "output_path",
         )
         args = {k: merged[k] for k in required}
         return from_file_single(
             args["input_path"],
             args["steps_best_rotation"],
             args["range_rotation_deg"],
-            args["output_path"],
             args["diastole"],
             args["image_center"],
             args["radius"],
             args["n_points"],
+            args["write_obj"],
+            args["output_path"],
         )
 
     else:
@@ -343,7 +352,7 @@ def from_array(
         "max_rounds": 5,
         "diastole": True,
         "sort": True,
-        "write_obj": False,
+        "write_obj": True,
     }
     merged = {**defaults, **kwargs}
 
@@ -358,14 +367,15 @@ def from_array(
             "stress_geometry_sys",
             "steps_best_rotation",
             "range_rotation_deg",
-            "interpolation_steps",
+            "image_center",
+            "radius",
+            "n_points",
+            "write_obj",
             "rest_output_path",
             "stress_output_path",
             "diastole_output_path",
             "systole_output_path",
-            "image_center",
-            "radius",
-            "n_points",
+            "interpolation_steps",
         )
         args = {k: merged[k] for k in required}
         return from_array_full(
@@ -375,14 +385,15 @@ def from_array(
             args["stress_geometry_sys"],
             args["steps_best_rotation"],
             args["range_rotation_deg"],
-            args["interpolation_steps"],
+            args["image_center"],
+            args["radius"],
+            args["n_points"],
+            args["write_obj"],
             args["rest_output_path"],
             args["stress_output_path"],
             args["diastole_output_path"],
             args["systole_output_path"],
-            args["image_center"],
-            args["radius"],
-            args["n_points"],
+            args["interpolation_steps"],
         )
 
     elif mode == "doublepair":
@@ -393,12 +404,13 @@ def from_array(
             "stress_geometry_sys",
             "steps_best_rotation",
             "range_rotation_deg",
-            "interpolation_steps",
-            "rest_output_path",
-            "stress_output_path",
             "image_center",
             "radius",
             "n_points",
+            "write_obj",
+            "rest_output_path",
+            "stress_output_path",
+            "interpolation_steps",
         )
         args = {k: merged[k] for k in required}
         return from_array_doublepair(
@@ -408,37 +420,40 @@ def from_array(
             args["stress_geometry_sys"],
             args["steps_best_rotation"],
             args["range_rotation_deg"],
-            args["interpolation_steps"],
-            args["rest_output_path"],
-            args["stress_output_path"],
             args["image_center"],
             args["radius"],
             args["n_points"],
+            args["write_obj"],
+            args["rest_output_path"],
+            args["stress_output_path"],
+            args["interpolation_steps"],
         )
 
     elif mode == "singlepair":
         required = (
             "geometry_dia",
             "geometry_sys",
-            "output_path",
             "steps_best_rotation",
             "range_rotation_deg",
-            "interpolation_steps",
             "image_center",
             "radius",
             "n_points",
+            "write_obj",
+            "output_path",
+            "interpolation_steps",
         )
         args = {k: merged[k] for k in required}
         return from_array_singlepair(
             args["geometry_dia"],
             args["geometry_sys"],
-            args["output_path"],
             args["steps_best_rotation"],
             args["range_rotation_deg"],
-            args["interpolation_steps"],
             args["image_center"],
             args["radius"],
             args["n_points"],
+            args["write_obj"],
+            args["output_path"],
+            args["interpolation_steps"],
         )
 
     elif mode == "single":

@@ -9,11 +9,11 @@ use crate::io::{
     input::{Centerline, Contour},
     Geometry,
 };
-use crate::processing::geometries::GeometryPair;
+use crate::processing::align_between::GeometryPair;
 use anyhow::Error;
 
 use crate::io::output::{write_geometry_vec_to_obj, GeometryType};
-use crate::processing::process_case::interpolate_contours;
+use crate::processing::process_utils::interpolate_contours;
 use crate::texture::write_mtl_geometry;
 use align_algorithms::best_rotation_three_point;
 use preprocessing::{prepare_geometry_alignment, remove_leading_points_cl};

@@ -1,4 +1,4 @@
-use super::geometries::GeometryPair;
+use super::align_between::GeometryPair;
 use crate::io::input::{Contour, ContourPoint};
 use crate::io::Geometry;
 use std::error::Error;

@@ -1,16 +1,35 @@
 use rayon::prelude::*;
+use anyhow::Context;
 
 use crate::io::Geometry;
-use crate::processing::contours::hausdorff_distance;
+use crate::processing::align_within::hausdorff_distance;
 
-use super::contours::align_frames_in_geometry;
 use crate::io::input::{Contour, ContourPoint};
-use crate::processing::contours::AlignLog;
 
 #[derive(Clone, Debug)]
 pub struct GeometryPair {
     pub dia_geom: Geometry,
     pub sys_geom: Geometry,
+}
+
+pub fn get_geometry_pair(
+    case_name: String,
+    input_dir: &str,
+    image_center: (f64, f64),
+    radius: f64,
+    n_points: u32,
+) -> anyhow::Result<GeometryPair> {
+    let mut geometries = 
+    GeometryPair::new(
+        input_dir,
+        case_name.clone(),
+        image_center,
+        radius,
+        n_points)
+        .context(format!("Creating GeometryPair({}) failed", case_name))?;
+    geometries = geometries.adjust_z_coordinates();
+    
+    Ok(geometries)
 }
 
 impl GeometryPair {
@@ -35,55 +54,39 @@ impl GeometryPair {
         Ok(GeometryPair { dia_geom, sys_geom })
     }
 
-    /// aligns the frames in each geomtery by rotating them based on best Hausdorff distance
-    /// then translates systolic contours to the diastolic contours, aligns z-coordinates and
-    /// trims them to same length.
-    pub fn process_geometry_pair(
-        self,
+    /// Translates systolic contours to the diastolic contours, aligns z-coordinates and
+    /// finds the best rotation and trims them to same length.    
+    pub fn align_between_geometries(
+        mut self,
         steps_best_rotation: usize,
         range_rotation_deg: f64,
-        align_inside: bool,
-    ) -> (GeometryPair, (Vec<AlignLog>, Vec<AlignLog>)) {
-        let (diastole, dia_logs) = if align_inside {
-            align_frames_in_geometry(self.dia_geom, steps_best_rotation, range_rotation_deg)
-        } else {
-            (self.dia_geom, Vec::new())
-        };
-        let (mut systole, sys_logs) = if align_inside {
-            align_frames_in_geometry(self.sys_geom, steps_best_rotation, range_rotation_deg)
-        } else {
-            (self.sys_geom, Vec::new())
-        };
-
-        Self::translate_contours_to_match(&diastole, &mut systole);
-
+    ) -> anyhow::Result<GeometryPair> {
+        Self::translate_contours_to_match(&self.dia_geom, &mut self.sys_geom);
+    
         // Adjust the z-coordinates of systolic contours. (later replaceed by adjust_z_coordinates)
-        Self::apply_z_transformation(&diastole, &mut systole);
-
+        Self::apply_z_transformation(&self.dia_geom, &mut self.sys_geom);
+    
         let best_rotation_angle = find_best_rotation_all(
-            &diastole,
-            &systole,
+            &self.dia_geom,
+            &self.sys_geom,
             steps_best_rotation, // number of candidate steps (e.g. 200 or 400)
             range_rotation_deg,  // rotation range (e.g. 1.05 for ~±60°)
         );
-
-        for ref mut contour in systole
+    
+        for ref mut contour in self.sys_geom
             .contours
             .iter_mut()
-            .chain(systole.catheter.iter_mut())
+            .chain(self.sys_geom.catheter.iter_mut())
         {
             contour.rotate_contour(best_rotation_angle);
-        }
-        (
-            GeometryPair {
-                dia_geom: diastole,
-                sys_geom: systole,
-            },
-            (dia_logs, sys_logs),
-        )
+        };
+        Ok(GeometryPair {
+            dia_geom: self.dia_geom,
+            sys_geom: self.sys_geom,
+        })
     }
 
-    fn translate_contours_to_match(dia: &Geometry, sys: &mut Geometry) {
+    pub fn translate_contours_to_match(dia: &Geometry, sys: &mut Geometry) {
         let dia_ref = dia.contours.last().unwrap().centroid;
         let sys_ref = sys.contours.last().unwrap().centroid;
         let offset = (dia_ref.0 - sys_ref.0, dia_ref.1 - sys_ref.1);
@@ -97,7 +100,7 @@ impl GeometryPair {
         }
     }
 
-    fn apply_z_transformation(dia: &Geometry, sys: &mut Geometry) {
+    pub fn apply_z_transformation(dia: &Geometry, sys: &mut Geometry) {
         let dia_last_z = dia.contours.last().unwrap().centroid.2;
         let sys_last_z = sys.contours.last().unwrap().centroid.2;
         let z_offset = dia_last_z - sys_last_z;
@@ -410,7 +413,7 @@ mod geometry_pair_tests {
             dia_geom: simple_geometry((5.0, 5.0), 0.0, (None, None)),
             sys_geom: simple_geometry((0.0, 0.0), 0.0, (None, None)),
         };
-        (gp, _) = gp.process_geometry_pair(1, 0.0, true);
+        gp = gp.align_between_geometries(1, 0.0).unwrap();
         let dia_centroid = gp.dia_geom.contours[0].centroid;
         let sys_centroid = gp.sys_geom.contours[0].centroid;
         assert_relative_eq!(dia_centroid.0, sys_centroid.0, epsilon = 1e-6);
@@ -424,7 +427,7 @@ mod geometry_pair_tests {
             dia_geom: dia.clone(),
             sys_geom: simple_geometry((0.0, 0.0), 2.0, (None, None)),
         };
-        (gp, _) = gp.process_geometry_pair(1, 0.0, true);
+        gp = gp.align_between_geometries(1, 0.0).unwrap();
         gp = gp.adjust_z_coordinates();
         for contour in gp.dia_geom.contours.iter() {
             assert!(contour.centroid.2.is_finite());

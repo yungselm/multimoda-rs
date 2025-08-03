@@ -7,7 +7,7 @@ use crate::io::{
     input::{Contour, ContourPoint, Record},
     output::write_obj_mesh_without_uv,
 };
-use crate::processing::contours::AlignLog;
+use crate::processing::align_within::AlignLog;
 use classes::{PyContour, PyGeometry, PyGeometryPair, PyRecord};
 use entry_arr::*;
 use entry_file::{
@@ -87,16 +87,17 @@ fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<(u32, u32, f64, f64, f64, f64, f64
         rest_input_path,
         stress_input_path,
         // these four get defaults if not passed
-        steps_best_rotation = 300usize,
-        range_rotation_rad = 1.57f64,
+        steps_best_rotation = 270usize,
+        range_rotation_rad = 90.0f64,
+        image_center = (4.5f64, 4.5f64),
+        radius = 0.5f64,
+        n_points = 20u32,
+        write_obj = true,
         rest_output_path = "output/rest",
         stress_output_path = "output/stress",
         diastole_output_path = "output/diastole",
         systole_output_path = "output/systole",
         interpolation_steps = 28usize,
-        image_center = (4.5f64, 4.5f64),
-        radius = 0.5f64,
-        n_points = 20u32,
     )
 )]
 pub fn from_file_full(
@@ -104,14 +105,15 @@ pub fn from_file_full(
     stress_input_path: &str,
     steps_best_rotation: usize,
     range_rotation_rad: f64,
+    image_center: (f64, f64),
+    radius: f64,
+    n_points: u32,
+    write_obj: bool,
     rest_output_path: &str,
     stress_output_path: &str,
     diastole_output_path: &str,
     systole_output_path: &str,
     interpolation_steps: usize,
-    image_center: (f64, f64),
-    radius: f64,
-    n_points: u32,
 ) -> PyResult<(
     PyGeometryPair,
     PyGeometryPair,
@@ -129,17 +131,18 @@ pub fn from_file_full(
         (dia_logs, sys_logs, dia_logs_stress, sys_logs_stress),
     ) = from_file_full_rs(
         rest_input_path,
+        stress_input_path,
         steps_best_rotation,
         range_rotation_rad,
-        rest_output_path,
-        interpolation_steps,
-        stress_input_path,
-        stress_output_path,
-        diastole_output_path,
-        systole_output_path,
         image_center,
         radius,
         n_points,
+        write_obj,
+        rest_output_path,
+        stress_output_path,
+        diastole_output_path,
+        systole_output_path,
+        interpolation_steps,
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
@@ -214,24 +217,26 @@ pub fn from_file_full(
     // defaults for the rest:
     steps_best_rotation = 270usize,
     range_rotation_deg = 90.0f64,
-    rest_output_path = "output/rest",
-    stress_output_path = "output/stress",
-    interpolation_steps = 28usize,
     image_center = (4.5f64, 4.5f64),
     radius = 0.5f64,
     n_points = 20u32,
+    write_obj = true,
+    rest_output_path = "output/rest",
+    stress_output_path = "output/stress",
+    interpolation_steps = 28usize,
 ))]
 pub fn from_file_doublepair(
     rest_input_path: &str,
     stress_input_path: &str,
     steps_best_rotation: usize,
     range_rotation_deg: f64,
-    rest_output_path: &str,
-    stress_output_path: &str,
-    interpolation_steps: usize,
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
+    write_obj: bool,
+    rest_output_path: &str,
+    stress_output_path: &str,
+    interpolation_steps: usize,
 ) -> PyResult<(
     PyGeometryPair,
     PyGeometryPair,
@@ -245,15 +250,16 @@ pub fn from_file_doublepair(
     let ((rest_pair, stress_pair), (dia_logs, sys_logs, dia_logs_stress, sys_logs_stress)) =
         from_file_doublepair_rs(
             rest_input_path,
+            stress_input_path,
             steps_best_rotation,
             range_rotation_deg,
-            rest_output_path,
-            interpolation_steps,
-            stress_input_path,
-            stress_output_path,
             image_center,
             radius,
             n_points,
+            write_obj,
+            rest_output_path,
+            stress_output_path,
+            interpolation_steps,
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
@@ -331,24 +337,26 @@ pub fn from_file_doublepair(
 #[pyfunction]
 #[pyo3(signature = (
     input_path,
-    output_path,
     // defaults for the rest:
     steps_best_rotation = 270usize,
     range_rotation_deg = 90.0f64,
-    interpolation_steps = 28usize,
     image_center = (4.5f64, 4.5f64),
     radius = 0.5f64,
     n_points = 20u32,
+    write_obj = true,
+    output_path = "output/singlepair",
+    interpolation_steps = 28usize,
 ))]
 pub fn from_file_singlepair(
     input_path: &str,
-    output_path: &str,
     steps_best_rotation: usize,
     range_rotation_deg: f64,
-    interpolation_steps: usize,
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
+    write_obj: bool,
+    output_path: &str,
+    interpolation_steps: usize,
 ) -> PyResult<(
     PyGeometryPair,
     (
@@ -360,11 +368,12 @@ pub fn from_file_singlepair(
         input_path,
         steps_best_rotation,
         range_rotation_deg,
-        output_path,
-        interpolation_steps,
         image_center,
         radius,
         n_points,
+        write_obj,
+        output_path,
+        interpolation_steps,
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
@@ -424,31 +433,34 @@ pub fn from_file_singlepair(
     // defaults for the rest:
     steps_best_rotation = 270usize,
     range_rotation_deg = 90.0f64,
-    output_path = "output/single",
     diastole = true,
     image_center = (4.5f64, 4.5f64),
     radius = 0.5f64,
     n_points = 20u32,
+    write_obj = true,
+    output_path = "output/single",
 ))]
 pub fn from_file_single(
     input_path: &str,
     steps_best_rotation: usize,
     range_rotation_deg: f64,
-    output_path: &str,
     diastole: bool,
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
+    write_obj: bool,
+    output_path: &str,
 ) -> PyResult<(PyGeometry, Vec<(u32, u32, f64, f64, f64, f64, f64, f64)>)> {
     let (geom, logs) = from_file_single_rs(
         input_path,
         steps_best_rotation,
         range_rotation_deg,
-        output_path,
         diastole,
         image_center,
         radius,
         n_points,
+        write_obj,
+        output_path,
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
@@ -702,14 +714,15 @@ pub fn geometry_from_array(
         stress_geometry_sys,
         steps_best_rotation = 270usize,
         range_rotation_deg = 90.0f64,
-        interpolation_steps = 28usize,
+        image_center = (4.5f64, 4.5f64),
+        radius = 0.5f64,
+        n_points = 20u32,
+        write_obj = true,
         rest_output_path = "output/rest",
         stress_output_path = "output/stress",
         diastole_output_path = "output/diastole",
         systole_output_path = "output/systole",
-        image_center = (4.5f64, 4.5f64),
-        radius = 0.5f64,
-        n_points = 20u32,
+        interpolation_steps = 28usize,
     )
 )]
 pub fn from_array_full(
@@ -719,14 +732,15 @@ pub fn from_array_full(
     stress_geometry_sys: PyGeometry,
     steps_best_rotation: usize,
     range_rotation_deg: f64,
-    interpolation_steps: usize,
+    image_center: (f64, f64),
+    radius: f64,
+    n_points: u32,
+    write_obj: bool,
     rest_output_path: &str,
     stress_output_path: &str,
     diastole_output_path: &str,
     systole_output_path: &str,
-    image_center: (f64, f64),
-    radius: f64,
-    n_points: u32,
+    interpolation_steps: usize,
 ) -> PyResult<(
     PyGeometryPair,
     PyGeometryPair,
@@ -749,14 +763,15 @@ pub fn from_array_full(
         stress_geometry_sys.to_rust_geometry(),
         steps_best_rotation,
         range_rotation_deg,
-        interpolation_steps,
+        image_center,
+        radius,
+        n_points,
+        write_obj,
         rest_output_path,
         stress_output_path,
         diastole_output_path,
         systole_output_path,
-        image_center,
-        radius,
-        n_points,
+        interpolation_steps,
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
@@ -839,12 +854,13 @@ pub fn from_array_full(
         stress_geometry_sys,
         steps_best_rotation = 270usize,
         range_rotation_deg = 90.0f64,
-        interpolation_steps = 28usize,
-        rest_output_path = "output/rest",
-        stress_output_path = "output/stress",
         image_center = (4.5f64, 4.5f64),
         radius = 0.5f64,
         n_points = 20u32,
+        write_obj = true,
+        rest_output_path = "output/rest",
+        stress_output_path = "output/stress",
+        interpolation_steps = 28usize,
     )
 )]
 pub fn from_array_doublepair(
@@ -854,12 +870,13 @@ pub fn from_array_doublepair(
     stress_geometry_sys: PyGeometry,
     steps_best_rotation: usize,
     range_rotation_deg: f64,
-    interpolation_steps: usize,
-    rest_output_path: &str,
-    stress_output_path: &str,
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
+    write_obj: bool,
+    rest_output_path: &str,
+    stress_output_path: &str,
+    interpolation_steps: usize,
 ) -> PyResult<(
     PyGeometryPair,
     PyGeometryPair,
@@ -878,12 +895,13 @@ pub fn from_array_doublepair(
             stress_geometry_sys.to_rust_geometry(),
             steps_best_rotation,
             range_rotation_deg,
-            interpolation_steps,
-            rest_output_path,
-            stress_output_path,
             image_center,
             radius,
             n_points,
+            write_obj,
+            rest_output_path,
+            stress_output_path,
+            interpolation_steps,
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
@@ -949,25 +967,27 @@ pub fn from_array_doublepair(
     signature = (
         geometry_dia,
         geometry_sys,
-        output_path,
         steps_best_rotation = 270usize,
         range_rotation_deg = 90.0f64,
-        interpolation_steps = 28usize,
         image_center = (4.5f64, 4.5f64),
         radius = 0.5f64,
         n_points = 20u32,
+        write_obj = true,
+        output_path = "output/singlepair",
+        interpolation_steps = 28usize,
     )
 )]
 pub fn from_array_singlepair(
     geometry_dia: PyGeometry,
     geometry_sys: PyGeometry,
-    output_path: &str,
     steps_best_rotation: usize,
     range_rotation_deg: f64,
-    interpolation_steps: usize,
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
+    write_obj: bool,
+    output_path: &str,
+    interpolation_steps: usize,
 ) -> PyResult<(
     PyGeometryPair,
     (
@@ -978,13 +998,14 @@ pub fn from_array_singlepair(
     let (pair, (dia_logs, sys_logs)) = from_array_singlepair_rs(
         geometry_dia.to_rust_geometry(),
         geometry_sys.to_rust_geometry(),
-        output_path,
         steps_best_rotation,
         range_rotation_deg,
-        interpolation_steps,
         image_center,
         radius,
         n_points,
+        write_obj,
+        output_path,
+        interpolation_steps,
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 

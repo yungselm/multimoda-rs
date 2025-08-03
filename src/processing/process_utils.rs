@@ -3,43 +3,9 @@ use anyhow::bail;
 use crate::io::input::{Contour, ContourPoint};
 use crate::io::output::{write_geometry_vec_to_obj, GeometryType};
 use crate::io::Geometry;
-use crate::processing::contours::AlignLog;
-use crate::processing::geometries::GeometryPair;
+use crate::processing::align_between::GeometryPair;
 use crate::processing::walls::create_wall_geometry;
 use crate::texture::write_mtl_geometry;
-
-pub fn create_geometry_pair(
-    case_name: String,
-    input_dir: &str,
-    steps_best_rotation: usize,
-    range_rotation_deg: f64,
-    image_center: (f64, f64),
-    radius: f64,
-    n_points: u32,
-    align_inside: bool,
-) -> anyhow::Result<(GeometryPair, (Vec<AlignLog>, Vec<AlignLog>))> {
-    let mut geometries =
-        GeometryPair::new(input_dir, case_name.clone(), image_center, radius, n_points)?;
-    geometries = geometries.adjust_z_coordinates();
-
-    let (mut geometries, (dia_logs, sys_logs)) =
-        geometries.process_geometry_pair(steps_best_rotation, range_rotation_deg, align_inside);
-    geometries = geometries.trim_geometries_same_length();
-    geometries = geometries.thickness_adjustment();
-
-    let dia_geom = geometries.dia_geom;
-    let dia_geom = dia_geom.smooth_contours();
-    let sys_geom = geometries.sys_geom;
-    let sys_geom = sys_geom.smooth_contours();
-
-    Ok((
-        GeometryPair {
-            dia_geom: dia_geom,
-            sys_geom: sys_geom,
-        },
-        (dia_logs, sys_logs),
-    ))
-}
 
 /// Processes a given case by reading diastolic and systolic contours, aligning them,
 /// computing displacements and UV coordinates, and finally writing out the OBJ, MTL, and texture files.

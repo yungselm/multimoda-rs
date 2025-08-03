@@ -71,14 +71,15 @@ def test_full_file_arr_consistency(
         stress_geometry_sys=sample_stress_sys_arr,
         steps_best_rotation=270,
         range_rotation_deg=90,
-        interpolation_steps=0,
+        image_center=(4.5, 4.5),
+        radius=0.5,
+        n_points=20,
+        write_obj=True,
         rest_output_path=str(rest_out),
         stress_output_path=str(stress_out),
         diastole_output_path=str(dia_out),
         systole_output_path=str(sys_out),
-        image_center=(4.5, 4.5),
-        radius=0.5,
-        n_points=20,
+        interpolation_steps=0,
     )
 
     (
@@ -93,14 +94,15 @@ def test_full_file_arr_consistency(
         stress_input_path="data/fixtures/idealized_geometry",
         steps_best_rotation=270,
         range_rotation_deg=90,
+        image_center=(4.5, 4.5),
+        radius=0.5,
+        n_points=20,
+        write_obj=True,
         rest_output_path=str(rest_out),
         stress_output_path=str(stress_out),
         diastole_output_path=str(dia_out),
         systole_output_path=str(sys_out),
         interpolation_steps=0,
-        image_center=(4.5, 4.5),
-        radius=0.5,
-        n_points=20,
     )
 
     # test consistency between the two
@@ -187,12 +189,13 @@ def test_doublepair_file_arr_consistency(
         stress_geometry_sys=sample_stress_sys_arr,
         steps_best_rotation=270,
         range_rotation_deg=90,
-        interpolation_steps=0,
-        rest_output_path=str(rest_out),
-        stress_output_path=str(stress_out),
         image_center=(4.5, 4.5),
         radius=0.5,
         n_points=20,
+        write_obj=True,
+        rest_output_path=str(rest_out),
+        stress_output_path=str(stress_out),
+        interpolation_steps=0,
     )
 
     (
@@ -205,12 +208,13 @@ def test_doublepair_file_arr_consistency(
         stress_input_path="data/fixtures/idealized_geometry",
         steps_best_rotation=270,
         range_rotation_deg=90,
-        rest_output_path=str(rest_out),
-        stress_output_path=str(stress_out),
-        interpolation_steps=0,
         image_center=(4.5, 4.5),
         radius=0.5,
         n_points=20,
+        write_obj=True,
+        rest_output_path=str(rest_out),
+        stress_output_path=str(stress_out),
+        interpolation_steps=0,
     )
 
     # test consistency between the two
@@ -276,13 +280,14 @@ def test_singlepair_file_arr_consistency(
         mode="singlepair",
         geometry_dia=sample_rest_dia_arr,
         geometry_sys=sample_rest_sys_arr,
-        output_path=str(output_path),
         steps_best_rotation=270,
         range_rotation_deg=90,
-        interpolation_steps=0,
         image_center=(4.5, 4.5),
         radius=0.5,
         n_points=20,
+        write_obj=True,
+        output_path=str(output_path),
+        interpolation_steps=0,
     )
 
     (
@@ -291,13 +296,14 @@ def test_singlepair_file_arr_consistency(
     ) = from_file(
         mode="singlepair",
         input_path="data/fixtures/idealized_geometry",
-        output_path=str(output_path),
         steps_best_rotation=270,
         range_rotation_deg=90,
-        interpolation_steps=0,
         image_center=(4.5, 4.5),
         radius=0.5,
         n_points=20,
+        write_obj=True,
+        output_path=str(output_path),
+        interpolation_steps=0,
     )
 
     # test consistency between the two

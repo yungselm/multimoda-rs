@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::io::input::{Contour, ContourPoint};
 use crate::io::Geometry;
+use crate::processing::align_between::GeometryPair;
 
 #[derive(Debug)]
 pub struct AlignLog {
@@ -18,10 +19,38 @@ pub struct AlignLog {
     pub centroid: (f64, f64),
 }
 
+pub fn align_frames_in_geometries(
+    geom_pair: GeometryPair,
+    steps: usize,
+    range_deg: f64,
+    smooth: bool,
+) -> anyhow::Result<(GeometryPair, (Vec<AlignLog>, Vec<AlignLog>))> {
+    let (diastole, dia_logs) = align_frames_in_geometry(
+        geom_pair.dia_geom, 
+        steps, 
+        range_deg, 
+        smooth);
+    let (mut systole, sys_logs) = align_frames_in_geometry(
+        geom_pair.sys_geom, 
+        steps, 
+        range_deg, 
+        smooth);
+
+    GeometryPair::translate_contours_to_match(&diastole, &mut systole);
+    GeometryPair::apply_z_transformation(&diastole, &mut systole);
+    let geom_pair_clean = GeometryPair {
+        dia_geom: diastole,
+        sys_geom: systole,
+    };
+
+    Ok((geom_pair_clean, (dia_logs, sys_logs)))
+}
+
 pub fn align_frames_in_geometry(
     geometry: Geometry,
     steps: usize,
     range_deg: f64,
+    smooth: bool,
 ) -> (Geometry, Vec<AlignLog>) {
     let (mut geometry, reference_index, reference_pos, ref_contour) = prep_data_geometry(geometry);
 
@@ -76,7 +105,11 @@ pub fn align_frames_in_geometry(
         .into_inner()
         .expect("Logger mutex was poisoned");
     dump_table(&logs);
-
+    let geometry = if smooth {
+        geometry.smooth_contours()
+    } else {
+        geometry.clone()
+    };
     (geometry, logs)
 }
 
@@ -613,7 +646,7 @@ mod contour_tests {
             label: "test".to_string(),
         };
 
-        let (aligned_geometry, _) = align_frames_in_geometry(geometry, 100, PI);
+        let (aligned_geometry, _) = align_frames_in_geometry(geometry, 100, PI, true);
 
         // Check centroids are aligned to reference (0,0)
         for contour in aligned_geometry.contours {
@@ -679,7 +712,7 @@ mod contour_tests {
             label: "test".to_string(),
         };
         let geom_old = geometry.clone();
-        let (aligned, _) = align_frames_in_geometry(geometry, 100, PI);
+        let (aligned, _) = align_frames_in_geometry(geometry, 100, PI, true);
 
         for contour in &aligned.catheter {
             // skip the reference if you like, but we’ll test all three
