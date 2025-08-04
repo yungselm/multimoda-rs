@@ -29,7 +29,7 @@ pub fn align_three_point_rs(
     interpolation_steps: usize,
     output_dir: &str,
     case_name: &str,
-) -> GeometryPair {
+) -> (GeometryPair, Centerline) {
     let mut geom = prepare_geometry_alignment(geometry_pair);
     let mut cl = centerline.clone();
     ensure_descending_z(&mut cl);
@@ -57,7 +57,7 @@ pub fn align_three_point_rs(
         write_aligned_meshes(geom.clone(), interpolation_steps, output_dir, case_name).unwrap();
     }
 
-    geom
+    (geom, resampled_centerline)
 }
 
 pub fn align_manual_rs(
@@ -69,7 +69,7 @@ pub fn align_manual_rs(
     interpolation_steps: usize,
     output_dir: &str,
     case_name: &str,
-) -> GeometryPair {
+) -> (GeometryPair, Centerline) {
     let mut geom = prepare_geometry_alignment(geometry_pair);
     let mut cl = centerline.clone();
     ensure_descending_z(&mut cl);
@@ -91,7 +91,7 @@ pub fn align_manual_rs(
         write_aligned_meshes(geom.clone(), interpolation_steps, output_dir, case_name).unwrap();
     }
 
-    geom
+    (geom, resampled_centerline)
 }
 
 // pub fn align_hausdorff() -> () {

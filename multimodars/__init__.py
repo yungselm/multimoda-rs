@@ -1,10 +1,17 @@
+from __future__ import annotations
+
 from .multimodars import *
-from ._converters import to_array, numpy_to_geometry, numpy_to_centerline
+from ._converters import (
+    to_array, 
+    numpy_to_geometry, 
+    numpy_to_centerline
+)
 from ._wrappers import (
     from_file,
     from_array,
     to_centerline,
 )
+from .io.write_geometries import centerline_to_obj
 
 __all__ = [
     # rust‑backend functions
@@ -49,4 +56,6 @@ __all__ = [
     "from_array",
     "to_centerline",
     "to_obj",
+    # io
+    "centerline_to_obj"
 ]

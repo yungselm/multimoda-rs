@@ -18,7 +18,7 @@ from multimodars import (
     align_manual,
 )
 
-from .multimodars import PyGeometry, PyGeometryPair
+from .multimodars import PyGeometry, PyGeometryPair, PyCenterline
 
 Mode = Literal["full", "doublepair", "singlepair", "single"]
 
@@ -501,7 +501,7 @@ Mode_cl = Literal["three_pt", "manual"]
 def to_centerline(
     mode: Mode_cl,
     **kwargs: Any,
-) -> PyGeometryPair:
+) -> Tuple[PyGeometryPair, PyCenterline]:
     """
     Unified entry for all to_centerline pipelines.
 

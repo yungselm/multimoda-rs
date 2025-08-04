@@ -63,7 +63,7 @@ import multimodars as mm
 import numpy as np
 
 # IVUS pullbacks: full alignment of rest/stress & diastole/systole
-rest, stress, dia, sys = mm.from_file(
+rest, stress, dia, sys, _ = mm.from_file(
     mode="full",
     rest_input_path="data/ivus_rest",
     stress_input_path="data/ivus_stress"
@@ -74,7 +74,7 @@ cl_raw = np.genfromtxt("data/centerline_raw.csv", delimiter=",")
 centerline = mm.numpy_to_centerline(cl_raw)
 
 # Align geometry pair onto centerline
-aligned_pair = mm.to_centerline(
+aligned_pair, cl_resampled = mm.to_centerline(
     mode="three_pt",
     centerline=centerline,
     geometry_pair=rest,                # e.g. Rest geometry (dia/sys)
@@ -82,13 +82,17 @@ aligned_pair = mm.to_centerline(
     upper_ref_pt=(11.76, -202.19, 1754.80),
     lower_ref_pt=(15.66, -202.19, 1749.97)
 )
+
+# Optionally save aligned to obj
+mm.to_obj(aligned_pair.dia_geom, "data/aligned.obj")
+mm.centerline_to_obj(cl_resampled, "data/resampled_cl.obj")
 ```
 ## API Reference
 For detailed signatures and usage examples, see the [online documentation](https://multimoda-rs.readthedocs.io).
 The intended usage of the package with examples for every case are provided under examples with Jupyter Notebooks to follow along.
 
 ## License
-Distributed under the MIT License. See LICENSE.md for details.
+Distributed under the MIT License. See LICENSE for details.
 
 ## Detailed Background
 This package aims to register different cardiac imaging modalities together, while coronary computed tomography angiography (CCTA) is the undisputed goldstandard for 3D information, it has several downsides, when trying to create patient-specific geometries.

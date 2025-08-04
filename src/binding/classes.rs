@@ -799,6 +799,14 @@ impl From<&Centerline> for PyCenterline {
     }
 }
 
+// Conversion from Python to Rust for entire back-and-forth
+impl From<Centerline> for PyCenterline {
+    fn from(cl: Centerline) -> Self {
+        let points = cl.points.iter().map(|p| p.into()).collect();
+        PyCenterline { points }
+    }
+}
+
 /// Python wrapper for your Rust `Record`
 #[pyclass]
 #[derive(Debug, Clone)]

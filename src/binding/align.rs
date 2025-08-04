@@ -21,7 +21,7 @@ use crate::{
 ///     interpolation_steps: Number of interpolation steps
 ///
 /// Returns:
-///     PyGeometryPair
+///     PyGeometryPair, PyCenterline (resampled)
 ///
 /// Example:
 ///     >>> import multimodars as mm
@@ -58,12 +58,12 @@ pub fn align_three_point(
     interpolation_steps: usize,
     output_dir: &str,
     case_name: &str,
-) -> PyResult<PyGeometryPair> {
+) -> PyResult<(PyGeometryPair, PyCenterline)> {
     let cl_rs = centerline.to_rust_centerline();
     let geom_pair_rs = geometry_pair.to_rust_geometry_pair();
     let angle_step = angle_step_deg.to_radians();
 
-    let geom_pair = align_three_point_rs(
+    let (geom_pair, cl) = align_three_point_rs(
         cl_rs,
         geom_pair_rs,
         aortic_ref_pt,
@@ -77,8 +77,9 @@ pub fn align_three_point(
     );
 
     let aligned_py: PyGeometryPair = geom_pair.into();
+    let resampled_cl: PyCenterline = cl.into();
 
-    Ok(aligned_py)
+    Ok((aligned_py, resampled_cl))
 }
 
 /// Creates centerline-aligned meshes for diastolic and systolic geometries
@@ -130,11 +131,11 @@ pub fn align_manual(
     interpolation_steps: usize,
     output_dir: &str,
     case_name: &str,
-) -> PyResult<PyGeometryPair> {
+) -> PyResult<(PyGeometryPair, PyCenterline)> {
     let cl_rs = centerline.to_rust_centerline();
     let geom_pair_rs = geometry_pair.to_rust_geometry_pair();
 
-    let geom_pair = align_manual_rs(
+    let (geom_pair, cl) = align_manual_rs(
         cl_rs,
         geom_pair_rs,
         rotation_angle,
@@ -146,6 +147,7 @@ pub fn align_manual(
     );
 
     let aligned_py: PyGeometryPair = geom_pair.into();
+    let resampled_cl: PyCenterline = cl.into();
 
-    Ok(aligned_py)
+    Ok((aligned_py, resampled_cl))
 }
