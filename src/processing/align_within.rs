@@ -326,8 +326,45 @@ fn align_remaining_contours(
     (geometry, id_translation)
 }
 
-/// Finds the best rotation angle (in radians) that minimizes the Hausdorff distance
-/// leveraging parallel computation for performance.
+// /// Finds the best rotation angle (in radians) that minimizes the Hausdorff distance
+// /// leveraging parallel computation for performance.
+// pub fn find_best_rotation(
+//     reference: &[ContourPoint],
+//     target: &[ContourPoint],
+//     step_deg: f64,
+//     range_deg: f64,
+//     centroid: &(f64, f64, f64),
+// ) -> f64 {
+//     let steps: usize = ((2.0 * range_deg) / step_deg).round() as usize;
+//     let range = range_deg.to_radians();
+//     let increment = step_deg.to_radians();
+
+//     (0..=steps)
+//         .into_par_iter() // Parallel iteration (requires Rayon)
+//         .map(|i| {
+//             let angle = -range + (i as f64) * increment;
+//             // Rotate target contour inline without extra allocation
+//             let rotated: Vec<ContourPoint> = target
+//                 .iter()
+//                 .map(|p| p.rotate_point(angle, (centroid.0, centroid.1)))
+//                 .collect();
+
+//             let hausdorff_dist = hausdorff_distance(reference, &rotated);
+//             (angle, hausdorff_dist)
+//         })
+//         .reduce(
+//             || (std::f64::NEG_INFINITY, std::f64::MAX),
+//             |(best_a, best_d), (angle, dist)| {
+//                 if dist < best_d {
+//                     (angle, dist)
+//                 } else {
+//                     (best_a, best_d)
+//                 }
+//             },
+//         )
+//         .0
+// }
+
 pub fn find_best_rotation(
     reference: &[ContourPoint],
     target: &[ContourPoint],
@@ -335,34 +372,76 @@ pub fn find_best_rotation(
     range_deg: f64,
     centroid: &(f64, f64, f64),
 ) -> f64 {
-    let steps: usize = ((2.0 * range_deg) / step_deg).round() as usize;
-    let range = range_deg.to_radians();
-    let increment = step_deg.to_radians();
+    // Multi-resolution search parameters
+    const COARSE_STEP: f64 = 1.0;    // degrees
+    const MEDIUM_STEP: f64 = 0.1;     // degrees
+    
+    // First pass: Coarse search
+    let coarse_angle = search_range(
+        reference,
+        target,
+        COARSE_STEP,
+        range_deg,
+        centroid,
+        None
+    );
+    
+    // Second pass: Medium search around coarse result
+    let medium_angle = search_range(
+        reference,
+        target,
+        MEDIUM_STEP,
+        10.0,  // ±10 degree range around coarse result
+        centroid,
+        Some(coarse_angle)
+    );
+    
+    let angle = if step_deg < 1.0 {
+        // Final pass: Fine search with original step size
+        search_range(
+            reference,
+            target,
+            step_deg,
+            1.0,   // ±1 degree range around medium result
+            centroid,
+            Some(medium_angle))
+    } else {
+        medium_angle
+    };
 
+    angle
+}
+
+/// Helper function for multi-resolution search
+fn search_range(
+    reference: &[ContourPoint],
+    target: &[ContourPoint],
+    step_deg: f64,
+    range_deg: f64,
+    centroid: &(f64, f64, f64),
+    center_angle: Option<f64>,
+) -> f64 {
+    let range_rad = range_deg.to_radians();
+    let step_rad = step_deg.to_radians();
+    let center = center_angle.unwrap_or(0.0);
+    
+    let steps = (2.0 * range_rad / step_rad).ceil() as usize;
+    let start_angle = center - range_rad;
+    
     (0..=steps)
-        .into_par_iter() // Parallel iteration (requires Rayon)
+        .into_par_iter()
         .map(|i| {
-            let angle = -range + (i as f64) * increment;
-            // Rotate target contour inline without extra allocation
+            let angle = start_angle + (i as f64) * step_rad;
             let rotated: Vec<ContourPoint> = target
                 .iter()
                 .map(|p| p.rotate_point(angle, (centroid.0, centroid.1)))
                 .collect();
-
             let hausdorff_dist = hausdorff_distance(reference, &rotated);
             (angle, hausdorff_dist)
         })
-        .reduce(
-            || (std::f64::NEG_INFINITY, std::f64::MAX),
-            |(best_a, best_d), (angle, dist)| {
-                if dist < best_d {
-                    (angle, dist)
-                } else {
-                    (best_a, best_d)
-                }
-            },
-        )
-        .0
+        .min_by(|&(_, a), &(_, b)| a.partial_cmp(&b).unwrap())
+        .map(|(angle, _)| angle)
+        .unwrap_or(0.0)
 }
 
 /// Computes the Hausdorff distance between two point sets.

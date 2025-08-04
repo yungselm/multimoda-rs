@@ -71,8 +71,10 @@ pub fn align_within_and_between_array(
     output_dir: &str,
     interpolation_steps: usize,
 ) -> anyhow::Result<(GeometryPair, Vec<AlignLog>, Vec<AlignLog>)> {
+    let mut geometries = geometry_pair.adjust_z_coordinates();
+    geometries = geometries.trim_geometries_same_length();
     let (mut geom_pair, (logs_a, logs_b)) = align_frames_in_geometries(
-        geometry_pair,
+        geometries,
         step_rotation_deg, 
         range_rotation_deg,
         true,

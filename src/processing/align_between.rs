@@ -2,8 +2,6 @@ use rayon::prelude::*;
 use anyhow::Context;
 
 use crate::io::Geometry;
-use crate::processing::align_within::hausdorff_distance;
-
 use crate::io::input::{Contour, ContourPoint};
 
 #[derive(Clone, Debug)]
@@ -28,6 +26,7 @@ pub fn get_geometry_pair(
         n_points)
         .context(format!("Creating GeometryPair({}) failed", case_name))?;
     geometries = geometries.adjust_z_coordinates();
+    geometries = geometries.trim_geometries_same_length();
     
     Ok(geometries)
 }
@@ -276,6 +275,106 @@ impl GeometryPair {
     }
 }
 
+// pub fn find_best_rotation_all(
+//     diastole: &Geometry,
+//     systole: &Geometry,
+//     step_rotation_deg: f64,
+//     range_deg: f64,
+// ) -> f64 {
+//     println!(
+//         "---------------------Finding optimal rotation {:?}/{:?}---------------------",
+//         &diastole.label, &systole.label
+//     );
+//     let steps: usize = ((2.0 * range_deg) / step_rotation_deg).round() as usize;
+//     let range = range_deg.to_radians();
+//     let increment = step_rotation_deg.to_radians();
+
+//     let mut new_dia_cont = Vec::new();
+//     let mut new_sys_cont = Vec::new();
+//     for contour in &diastole.contours {
+//         let tmp_points = align_within::downsample_contour_points(&contour.points, 200);
+//         let new_cont = Contour {
+//             id: contour.id,
+//             points: tmp_points,
+//             centroid: contour.centroid,
+//             aortic_thickness: contour.aortic_thickness,
+//             pulmonary_thickness: contour.pulmonary_thickness,
+//         };
+//         new_dia_cont.push(new_cont)
+//     };
+//     for contour in &systole.contours {
+//         let tmp_points = align_within::downsample_contour_points(&contour.points, 200);
+//         let new_cont = Contour {
+//             id: contour.id,
+//             points: tmp_points,
+//             centroid: contour.centroid,
+//             aortic_thickness: contour.aortic_thickness,
+//             pulmonary_thickness: contour.pulmonary_thickness,
+//         };
+//         new_sys_cont.push(new_cont)
+//     };
+
+//     let mut new_dia = diastole.clone();
+//     let mut new_sys = systole.clone();
+//     new_dia.contours = new_dia_cont;
+//     new_sys.contours = new_sys_cont;
+
+//     let results: Vec<(f64, f64)> = (0..=steps)
+//         .into_par_iter()
+//         .map(|i| {
+//             let angle = -range + i as f64 * increment;
+//             let total_distance: f64 = new_dia
+//                 .contours
+//                 .par_iter()
+//                 .zip(new_sys.contours.par_iter())
+//                 .map(|(d_contour, s_contour)| {
+//                     assert_eq!(d_contour.id, s_contour.id, "Mismatched contour IDs");
+
+//                     // Rotate each point in systole contour
+//                     let rotated_points: Vec<ContourPoint> = s_contour
+//                         .points
+//                         .iter()
+//                         .map(|p| {
+//                             let x = p.x * angle.cos() - p.y * angle.sin();
+//                             let y = p.x * angle.sin() + p.y * angle.cos();
+//                             ContourPoint { x, y, ..*p }
+//                         })
+//                         .collect();
+
+//                     hausdorff_distance(&d_contour.points, &rotated_points)
+//                 })
+//                 .sum();
+
+//             let avg_distance = total_distance / diastole.contours.len() as f64;
+
+//             (angle, avg_distance)
+//         })
+//         .collect();
+
+//     let (best_angle, best_dist) = results
+//         .into_iter()
+//         .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+//         .unwrap_or((0.0, std::f64::INFINITY));
+
+//     // 3) Print a tiny table
+//     println!();
+//     println!(
+//         "{:>20} | {:>20} | {:>15} | {:>12}",
+//         "Geometry A", "Geometry B", "Best Distance", "Best Angle (°)"
+//     );
+//     println!("{:-<75}", "");
+//     println!(
+//         "{:>20} | {:>20} | {:>15.3} | {:>12.3}",
+//         diastole.label,
+//         systole.label,
+//         best_dist,
+//         best_angle.to_degrees(),
+//     );
+//     println!();
+
+//     best_angle
+// }
+
 pub fn find_best_rotation_all(
     diastole: &Geometry,
     systole: &Geometry,
@@ -286,48 +385,63 @@ pub fn find_best_rotation_all(
         "---------------------Finding optimal rotation {:?}/{:?}---------------------",
         &diastole.label, &systole.label
     );
-    let steps: usize = ((2.0 * range_deg) / step_rotation_deg).round() as usize;
-    let range = range_deg.to_radians();
-    let increment = step_rotation_deg.to_radians();
-
-    let results: Vec<(f64, f64)> = (0..=steps)
-        .into_par_iter()
-        .map(|i| {
-            let angle = -range + i as f64 * increment;
-            let total_distance: f64 = diastole
-                .contours
-                .par_iter()
-                .zip(systole.contours.par_iter())
-                .map(|(d_contour, s_contour)| {
-                    assert_eq!(d_contour.id, s_contour.id, "Mismatched contour IDs");
-
-                    // Rotate each point in systole contour
-                    let rotated_points: Vec<ContourPoint> = s_contour
-                        .points
-                        .iter()
-                        .map(|p| {
-                            let x = p.x * angle.cos() - p.y * angle.sin();
-                            let y = p.x * angle.sin() + p.y * angle.cos();
-                            ContourPoint { x, y, ..*p }
-                        })
-                        .collect();
-
-                    hausdorff_distance(&d_contour.points, &rotated_points)
-                })
-                .sum();
-
-            let avg_distance = total_distance / diastole.contours.len() as f64;
-
-            (angle, avg_distance)
+    
+    // Downsample contours once instead of cloning entire geometries
+    let dia_contours: Vec<_> = diastole.contours.iter()
+        .map(|c| {
+            let points = downsample_contour_points(&c.points, 200);
+            (c.id, points, c.centroid)
+        })
+        .collect();
+    
+    let sys_contours: Vec<_> = systole.contours.iter()
+        .map(|c| {
+            let points = downsample_contour_points(&c.points, 200);
+            let rel_points: Vec<_> = points.iter()
+                .map(|p| (p.x - c.centroid.0, p.y - c.centroid.1))
+                .collect();
+            (c.id, rel_points, c.centroid)
         })
         .collect();
 
-    let (best_angle, best_dist) = results
-        .into_iter()
-        .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
-        .unwrap_or((0.0, std::f64::INFINITY));
+    // Multi-resolution search parameters
+    let coarse_step = 1.0_f64.to_radians();
+    let medium_step = 0.1_f64.to_radians();
+    let fine_step = step_rotation_deg.to_radians();
+    
+    let range_rad = range_deg.to_radians();
+    
+    // Coarse search (1° steps)
+    let coarse_angle = search_rotation(
+        &dia_contours,
+        &sys_contours,
+        -range_rad,
+        range_rad,
+        coarse_step
+    );
+    
+    // Medium search (0.1° steps in ±10° window)
+    let medium_angle = search_rotation(
+        &dia_contours,
+        &sys_contours,
+        coarse_angle - 10.0_f64.to_radians(),
+        coarse_angle + 10.0_f64.to_radians(),
+        medium_step
+    );
+    
+    // Fine search (original steps in ±1° window)
+    let best_angle = search_rotation(
+        &dia_contours,
+        &sys_contours,
+        medium_angle - 1.0_f64.to_radians(),
+        medium_angle + 1.0_f64.to_radians(),
+        fine_step
+    );
+    
+    // Calculate best distance for reporting
+    let best_dist = calculate_avg_distance(&dia_contours, &sys_contours, best_angle);
 
-    // 3) Print a tiny table
+    // Print results
     println!();
     println!(
         "{:>20} | {:>20} | {:>15} | {:>12}",
@@ -344,6 +458,82 @@ pub fn find_best_rotation_all(
     println!();
 
     best_angle
+}
+
+fn downsample_contour_points(points: &[ContourPoint], n: usize) -> Vec<ContourPoint> {
+    if points.len() <= n {
+        return points.to_vec();
+    }
+    let step = points.len() as f64 / n as f64;
+    (0..n)
+        .map(|i| {
+            let index = (i as f64 * step) as usize;
+            points[index].clone()
+        })
+        .collect()
+}
+
+/// Helper function for rotation search in a given range
+fn search_rotation(
+    dia_contours: &[(u32, Vec<ContourPoint>, (f64, f64, f64))],
+    sys_contours: &[(u32, Vec<(f64, f64)>, (f64, f64, f64))],
+    start_angle: f64,
+    end_angle: f64,
+    step: f64,
+) -> f64 {
+    let steps = ((end_angle - start_angle) / step).ceil() as usize;
+    
+    (0..=steps)
+        .into_par_iter()
+        .map(|i| {
+            let angle = start_angle + (i as f64) * step;
+            (angle, calculate_avg_distance(dia_contours, sys_contours, angle))
+        })
+        .min_by(|&(_, a), &(_, b)| a.partial_cmp(&b).unwrap())
+        .map(|(angle, _)| angle)
+        .unwrap_or(0.0)
+}
+
+/// Calculate average Hausdorff distance for a given rotation angle
+fn calculate_avg_distance(
+    dia_contours: &[(u32, Vec<ContourPoint>, (f64, f64, f64))],
+    sys_contours: &[(u32, Vec<(f64, f64)>, (f64, f64, f64))],
+    angle: f64,
+) -> f64 {
+    let total: f64 = dia_contours
+        .par_iter()
+        .zip(sys_contours.par_iter())
+        .map(|((dia_id, dia_points, _), (sys_id, sys_rel, centroid))| {
+            assert_eq!(dia_id, sys_id, "Mismatched contour IDs");
+            
+            // Rotate points using precomputed relative coordinates
+            let rotated: Vec<ContourPoint> = sys_rel
+                .iter()
+                .map(|(dx, dy)| {
+                    let x = dx * angle.cos() - dy * angle.sin() + centroid.0;
+                    let y = dx * angle.sin() + dy * angle.cos() + centroid.1;
+                    ContourPoint { 
+                        frame_index: 0,
+                        point_index: 0,
+                        x: x, 
+                        y: y, 
+                        z: 0.0,
+                        aortic: false }
+                })
+                .collect();
+            
+            // hausdorff_distance(dia_points, &rotated)
+            dia_points.iter()
+                .zip(rotated.iter())
+                .map(|(d, s)| {
+                    (d.x - s.x).hypot(d.y - s.y)  // Euclidean distance
+                })
+                .sum::<f64>()
+              / (dia_points.len() as f64)
+        })
+        .sum();
+
+    total / dia_contours.len() as f64
 }
 
 #[cfg(test)]
@@ -544,7 +734,7 @@ mod geometry_pair_tests {
         let mut sys_contour = Contour {
             id: 0,
             points: vec![rotate(p1), rotate(p2), rotate(p3)],
-            centroid: (0.0, 1.0, 1.0),
+            centroid: (0.0, 0.0, 1.0),
             aortic_thickness: None,
             pulmonary_thickness: None,
         };
@@ -557,7 +747,7 @@ mod geometry_pair_tests {
             label: "".into(),
         };
 
-        let best = find_best_rotation_all(&dia, &sys, 4.0, PI.to_degrees());
+        let best = find_best_rotation_all(&dia, &sys, 0.01, PI.to_degrees() / 2.0);
         let expected = PI / 2.0;
         assert_relative_eq!(best.rem_euclid(2.0 * PI), expected, epsilon = 0.4);
     }
