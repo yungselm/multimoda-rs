@@ -21,18 +21,18 @@ pub struct AlignLog {
 
 pub fn align_frames_in_geometries(
     geom_pair: GeometryPair,
-    steps: usize,
+    step_deg: f64,
     range_deg: f64,
     smooth: bool,
 ) -> anyhow::Result<(GeometryPair, (Vec<AlignLog>, Vec<AlignLog>))> {
     let (diastole, dia_logs) = align_frames_in_geometry(
         geom_pair.dia_geom, 
-        steps, 
+        step_deg, 
         range_deg, 
         smooth);
     let (mut systole, sys_logs) = align_frames_in_geometry(
         geom_pair.sys_geom, 
-        steps, 
+        step_deg, 
         range_deg, 
         smooth);
 
@@ -48,7 +48,7 @@ pub fn align_frames_in_geometries(
 
 pub fn align_frames_in_geometry(
     geometry: Geometry,
-    steps: usize,
+    step_deg: f64,
     range_deg: f64,
     smooth: bool,
 ) -> (Geometry, Vec<AlignLog>) {
@@ -82,7 +82,7 @@ pub fn align_frames_in_geometry(
         reference_index,
         rotated_ref,
         rotation_to_y,
-        steps,
+        step_deg,
         range_deg,
         Arc::clone(&logger),
     );
@@ -239,7 +239,7 @@ fn align_remaining_contours(
     ref_idx: u32,
     ref_contour: Contour,
     rot: f64,
-    steps: usize,
+    step_deg: f64,
     range_deg: f64,
     logger: Arc<Mutex<Vec<AlignLog>>>,
 ) -> (Geometry, Vec<(u32, (f64, f64, f64), f64, (f64, f64))>) {
@@ -289,7 +289,7 @@ fn align_remaining_contours(
 
         // Optimize rotation
         let best_rel_rot =
-            find_best_rotation(&ref_points, &target, steps, range_deg, &contour.centroid);
+            find_best_rotation(&ref_points, &target, step_deg, range_deg, &contour.centroid);
 
         contour.rotate_contour(best_rel_rot);
         contour.sort_contour_points();
@@ -331,12 +331,13 @@ fn align_remaining_contours(
 pub fn find_best_rotation(
     reference: &[ContourPoint],
     target: &[ContourPoint],
-    steps: usize,
+    step_deg: f64,
     range_deg: f64,
     centroid: &(f64, f64, f64),
 ) -> f64 {
+    let steps: usize = ((2.0 * range_deg) / step_deg).round() as usize;
     let range = range_deg.to_radians();
-    let increment = (2.0 * range) / (steps as f64);
+    let increment = step_deg.to_radians();
 
     (0..=steps)
         .into_par_iter() // Parallel iteration (requires Rayon)
@@ -646,7 +647,7 @@ mod contour_tests {
             label: "test".to_string(),
         };
 
-        let (aligned_geometry, _) = align_frames_in_geometry(geometry, 100, PI, true);
+        let (aligned_geometry, _) = align_frames_in_geometry(geometry, 1.0, PI, true);
 
         // Check centroids are aligned to reference (0,0)
         for contour in aligned_geometry.contours {
@@ -712,7 +713,7 @@ mod contour_tests {
             label: "test".to_string(),
         };
         let geom_old = geometry.clone();
-        let (aligned, _) = align_frames_in_geometry(geometry, 100, PI, true);
+        let (aligned, _) = align_frames_in_geometry(geometry, 1.0, PI, true);
 
         for contour in &aligned.catheter {
             // skip the reference if you like, but we’ll test all three

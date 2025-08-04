@@ -35,13 +35,13 @@
 - [] reference point is not rotated and translated
 
 # Prepublish checklist:
-- [] tests/ with unit tests checking that importing and running every public function works
+- [x] tests/ with unit tests checking that importing and running every public function works
 - [] Integrate coverage measurement (e.g. pytest-cov) and upload reports to Coverall or Codecov
 - [] Status badge for coverage to README
-- [] Add testing to the CI workflow
+- [x] Add testing to the CI workflow
 - [x] Auto-generated API docs
 - [] High-level "Getting Started" guide
 - [x] CONTRIBUTING.md
 
-- [] Example scripts Jupyter notebook?
+- [x] Example scripts Jupyter notebook?
 - [] mypy in pre-commit hooks

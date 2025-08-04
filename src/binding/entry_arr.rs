@@ -15,8 +15,8 @@ pub fn geometry_from_array_rs(
     contours: Vec<Contour>,
     walls: Vec<Contour>,
     reference_point: ContourPoint,
-    steps: usize,
-    range_deg: f64,
+    step_rotation_deg: f64,
+    range_rotation_deg: f64,
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
@@ -74,11 +74,11 @@ pub fn geometry_from_array_rs(
 
     // Optionally align and refine ordering
     let (mut geometry, logs) = if sort {
-        let (interim, _) = align_frames_in_geometry(geometry, steps, range_deg, false);
+        let (interim, _) = align_frames_in_geometry(geometry, step_rotation_deg, range_rotation_deg, false);
         let refined = refine_ordering(interim, delta, max_rounds);
-        align_frames_in_geometry(refined, steps, range_deg, true)
+        align_frames_in_geometry(refined, step_rotation_deg, range_rotation_deg, true)
     } else {
-        align_frames_in_geometry(geometry, steps, range_deg, true)
+        align_frames_in_geometry(geometry, step_rotation_deg, range_rotation_deg, true)
     };
     
     geometry = if geometry.walls.is_empty() {
@@ -308,7 +308,7 @@ pub fn from_array_full_rs(
     rest_geometry_sys: Geometry,
     stress_geometry_dia: Geometry,
     stress_geometry_sys: Geometry,
-    steps_best_rotation: usize,
+    step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
     radius: f64,
@@ -348,7 +348,7 @@ pub fn from_array_full_rs(
                 let (geom_rest, logs_dia, logs_sys) = align_within_and_between_array(
                     "rest", 
                     geom_pair, 
-                    steps_best_rotation, 
+                    step_rotation_deg, 
                     range_rotation_deg, 
                     write_obj, 
                     rest_output_path, 
@@ -371,7 +371,7 @@ pub fn from_array_full_rs(
                 let (geom_stress, logs_dia_stress, logs_sys_stress) = align_within_and_between_array(
                     "stress", 
                     geom_pair, 
-                    steps_best_rotation, 
+                    step_rotation_deg, 
                     range_rotation_deg, 
                     write_obj, 
                     stress_output_path, 
@@ -468,7 +468,7 @@ pub fn from_array_doublepair_rs(
     rest_geometry_sys: Geometry,
     stress_geometry_dia: Geometry,
     stress_geometry_sys: Geometry,
-    steps_best_rotation: usize,
+    step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
     radius: f64,
@@ -504,7 +504,7 @@ pub fn from_array_doublepair_rs(
                 let (geom_rest, logs_dia, logs_sys) = align_within_and_between_array(
                     "rest", 
                     geom_pair, 
-                    steps_best_rotation, 
+                    step_rotation_deg, 
                     range_rotation_deg, 
                     write_obj, 
                     rest_output_path, 
@@ -527,7 +527,7 @@ pub fn from_array_doublepair_rs(
                 let (geom_stress, logs_dia_stress, logs_sys_stress) = align_within_and_between_array(
                     "stress", 
                     geom_pair, 
-                    steps_best_rotation, 
+                    step_rotation_deg, 
                     range_rotation_deg, 
                     write_obj, 
                     stress_output_path, 
@@ -564,7 +564,7 @@ pub fn from_array_doublepair_rs(
 pub fn from_array_singlepair_rs(
     rest_geometry_dia: Geometry,
     rest_geometry_sys: Geometry,
-    steps_best_rotation: usize,
+    step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
     radius: f64,
@@ -586,7 +586,7 @@ pub fn from_array_singlepair_rs(
     let (geom_pair, dia_logs, sys_logs) = align_within_and_between_array(
         "single", 
         geometries, 
-        steps_best_rotation,
+        step_rotation_deg,
         range_rotation_deg, 
         write_obj, 
         output_path, 

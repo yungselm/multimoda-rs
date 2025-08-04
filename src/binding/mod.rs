@@ -48,16 +48,17 @@ fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<(u32, u32, f64, f64, f64, f64, f64
 ///
 /// - ``rest_input_path`` – Path to REST input file
 /// - ``stress_input_path`` – Path to STRESS input file
-/// - ``steps_best_rotation`` (default: 300) – Rotation steps
-/// - ``range_rotation_rad`` (default: 1.57) – Rotation range in radians
-/// - ``rest_output_path`` (default: "output/rest")
-/// - ``stress_output_path`` (default: "output/stress")
-/// - ``diastole_output_path`` (default: "output/diastole")
-/// - ``systole_output_path`` (default: "output/systole")
-/// - ``interpolation_steps`` (default: 28)
-/// - ``image_center`` (default: (4.5, 4.5))
-/// - ``radius`` (default: 0.5)
-/// - ``n_points`` (default: 20)
+/// - ``step_rotation_deg`` (default 0.5°) – Rotation step in degree
+/// - ``range_rotation_deg`` (default 90°) – Rotation (+/-) range in degree, for 90° total range 180°
+/// - ``image_center`` (default (4.5mm, 4.5mm)) in mm
+/// - ``radius`` (default 0.5mm) in mm for catheter
+/// - ``n_points`` (default 20) number of points for catheter, more points stronger influence of image center
+/// - ``write_obj`` (default true)
+/// - ``rest_output_path`` (default "output/rest")
+/// - ``stress_output_path`` (default "output/stress")
+/// - ``diastole_output_path`` (default "output/diastole")
+/// - ``systole_output_path`` (default "output/systole")
+/// - ``interpolation_steps`` (default 28)
 ///
 /// CSV format:
 ///
@@ -87,8 +88,8 @@ fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<(u32, u32, f64, f64, f64, f64, f64
         rest_input_path,
         stress_input_path,
         // these four get defaults if not passed
-        steps_best_rotation = 270usize,
-        range_rotation_rad = 90.0f64,
+        step_rotation_deg = 0.5f64,
+        range_rotation_deg = 90.0f64,
         image_center = (4.5f64, 4.5f64),
         radius = 0.5f64,
         n_points = 20u32,
@@ -103,8 +104,8 @@ fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<(u32, u32, f64, f64, f64, f64, f64
 pub fn from_file_full(
     rest_input_path: &str,
     stress_input_path: &str,
-    steps_best_rotation: usize,
-    range_rotation_rad: f64,
+    step_rotation_deg: f64,
+    range_rotation_deg: f64,
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
@@ -132,8 +133,8 @@ pub fn from_file_full(
     ) = from_file_full_rs(
         rest_input_path,
         stress_input_path,
-        steps_best_rotation,
-        range_rotation_rad,
+        step_rotation_deg,
+        range_rotation_deg,
         image_center,
         radius,
         n_points,
@@ -179,14 +180,15 @@ pub fn from_file_full(
 ///
 /// - ``rest_input_path`` – Path to REST input file
 /// - ``stress_input_path`` – Path to STRESS input file
-/// - ``steps_best_rotation`` (default: 300) – Rotation steps
-/// - ``range_rotation_rad`` (default: 1.57) – Rotation range in radians
-/// - ``rest_output_path`` (default: "output/rest")
-/// - ``stress_output_path`` (default: "output/stress")
-/// - ``interpolation_steps`` (default: 28)
-/// - ``image_center`` (default: (4.5, 4.5))
-/// - ``radius`` (default: 0.5)
-/// - ``n_points`` (default: 20)
+/// - ``step_rotation_deg`` (default 0.5°) – Rotation step in degree
+/// - ``range_rotation_deg`` (default 90°) – Rotation (+/-) range in degree, for 90° total range 180°
+/// - ``image_center`` (default (4.5mm, 4.5mm)) in mm
+/// - ``radius`` (default 0.5mm) in mm for catheter
+/// - ``n_points`` (default 20) number of points for catheter, more points stronger influence of image center
+/// - ``write_obj`` (default true)
+/// - ``rest_output_path`` (default "output/rest")
+/// - ``stress_output_path`` (default "output/stress")
+/// - ``interpolation_steps`` (default 28)
 ///
 /// CSV format:
 ///
@@ -215,7 +217,7 @@ pub fn from_file_full(
     rest_input_path,
     stress_input_path,
     // defaults for the rest:
-    steps_best_rotation = 270usize,
+    step_rotation_deg = 0.5f64,
     range_rotation_deg = 90.0f64,
     image_center = (4.5f64, 4.5f64),
     radius = 0.5f64,
@@ -228,7 +230,7 @@ pub fn from_file_full(
 pub fn from_file_doublepair(
     rest_input_path: &str,
     stress_input_path: &str,
-    steps_best_rotation: usize,
+    step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
     radius: f64,
@@ -251,7 +253,7 @@ pub fn from_file_doublepair(
         from_file_doublepair_rs(
             rest_input_path,
             stress_input_path,
-            steps_best_rotation,
+            step_rotation_deg,
             range_rotation_deg,
             image_center,
             radius,
@@ -292,13 +294,14 @@ pub fn from_file_doublepair(
 /// ---------
 ///
 /// - ``input_path``: Path to the input CSV file.  
-/// - ``output_path``: Path to write the processed geometry.  
-/// - ``steps_best_rotation`` (default: 300): Number of rotation steps.  
-/// - ``range_rotation_rad`` (default: 1.57): Rotation range in radians.  
-/// - ``interpolation_steps`` (default: 28): Number of interpolation steps.  
-/// - ``image_center`` (default: (4.5, 4.5)): Center coordinates (x, y).  
-/// - ``radius`` (default: 0.5): Processing radius.  
-/// - ``n_points`` (default: 20): Number of boundary points.  
+/// - ``step_rotation_deg`` (default 0.5°) – Rotation step in degree
+/// - ``range_rotation_deg`` (default 90°) – Rotation (+/-) range in degree, for 90° total range 180°
+/// - ``image_center`` (default (4.5mm, 4.5mm)): Center coordinates (x, y).  
+/// - ``radius`` (default 0.5mm) Processing radius.  
+/// - ``n_points`` (default 20) Number of boundary points.  
+/// - ``write_obj`` (default true)
+/// - ``output_path``: Path to write the processed geometry. 
+/// - ``interpolation_steps`` (default 28) Number of interpolation steps.  
 ///
 /// CSV Format
 /// ----------
@@ -338,7 +341,7 @@ pub fn from_file_doublepair(
 #[pyo3(signature = (
     input_path,
     // defaults for the rest:
-    steps_best_rotation = 270usize,
+    step_rotation_deg = 0.5f64,
     range_rotation_deg = 90.0f64,
     image_center = (4.5f64, 4.5f64),
     radius = 0.5f64,
@@ -349,7 +352,7 @@ pub fn from_file_doublepair(
 ))]
 pub fn from_file_singlepair(
     input_path: &str,
-    steps_best_rotation: usize,
+    step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
     radius: f64,
@@ -366,7 +369,7 @@ pub fn from_file_singlepair(
 )> {
     let (geom_pair, (dia_logs, sys_logs)) = from_file_singlepair_rs(
         input_path,
-        steps_best_rotation,
+        step_rotation_deg,
         range_rotation_deg,
         image_center,
         radius,
@@ -394,13 +397,14 @@ pub fn from_file_singlepair(
 /// ---------
 ///
 /// - ``input_path``: Path to the input CSV (no header; columns: frame, x, y, z).  
-/// - ``steps_best_rotation`` (default: 300): Number of steps to search for best rotation.  
-/// - ``range_rotation_rad`` (default: 1.57): Max rotation in radians.  
+/// - ``step_rotation_deg`` (default 0.5°) – Rotation step in degree
+/// - ``range_rotation_deg`` (default 90°) – Rotation (+/-) range in degree, for 90° total range 180°
+/// - ``diastole`` (default true): If true, process the diastole phase; otherwise systole.  
+/// - ``image_center`` (default (4.5mm, 4.5mm)): (x, y) center for processing.  
+/// - ``radius`` (default: 0.5mm): Radius around center to consider for catheter.  
+/// - ``n_points`` (default: 20): Number of boundary points to generate.
+/// - ``write_obj`` (default true)
 /// - ``output_path`` (default: "output/single"): Where to write the processed geometry.  
-/// - ``diastole`` (default: true): If true, process the diastole phase; otherwise systole.  
-/// - ``image_center`` (default: (4.5, 4.5)): (x, y) center for processing.  
-/// - ``radius`` (default: 0.5): Radius around center to consider.  
-/// - ``n_points`` (default: 20): Number of boundary points to generate.  
 ///
 /// Returns
 /// -------
@@ -421,8 +425,8 @@ pub fn from_file_singlepair(
 ///    import multimodars as mm
 ///    geom, _ = mm.from_file_single(
 ///        "data/ivus.csv",
-///        steps_best_rotation=300,
-///        range_rotation_rad=1.57,
+///        steps_best_rotation=0.5,
+///        range_rotation_rad=90,
 ///        output_path="out/single",
 ///        diastole=False
 ///    )
@@ -431,7 +435,7 @@ pub fn from_file_singlepair(
 #[pyo3(signature = (
     input_path,
     // defaults for the rest:
-    steps_best_rotation = 270usize,
+    step_rotation_deg = 0.5f64,
     range_rotation_deg = 90.0f64,
     diastole = true,
     image_center = (4.5f64, 4.5f64),
@@ -442,7 +446,7 @@ pub fn from_file_singlepair(
 ))]
 pub fn from_file_single(
     input_path: &str,
-    steps_best_rotation: usize,
+    step_rotation_deg: f64,
     range_rotation_deg: f64,
     diastole: bool,
     image_center: (f64, f64),
@@ -453,7 +457,7 @@ pub fn from_file_single(
 ) -> PyResult<(PyGeometry, Vec<(u32, u32, f64, f64, f64, f64, f64, f64)>)> {
     let (geom, logs) = from_file_single_rs(
         input_path,
-        steps_best_rotation,
+        step_rotation_deg,
         range_rotation_deg,
         diastole,
         image_center,
@@ -479,9 +483,9 @@ pub fn from_file_single(
 /// Arguments
 /// ---------
 /// - ``geometry``: The original geometry with contours but no catheters.
-/// - ``image_center``: Center of the image (default = (4.5, 4.5)).
-/// - ``radius``: Radius of the generated catheter contours (default = 0.5).
-/// - ``n_points``: Number of points per catheter contour (default = 20).
+/// - ``image_center``: Center of the image (default = (4.5mm, 4.5mm)).
+/// - ``radius``: Radius of the generated catheter contours (default = 0.5mm).
+/// - ``n_points``: Number of points per catheter contour (default = 20mm).
 ///
 /// Returns
 /// -------
@@ -533,8 +537,8 @@ pub fn create_catheter_geometry(
 /// ---------
 ///
 /// - ``geometry``: The input ``PyGeometry`` (with ``contours``, ``walls``, and a ``reference_point``).  
-/// - ``steps_best_rotation`` (default: 300): Number of rotation steps for frame alignment.  
-/// - ``range_rotation_rad`` (default: 1.57): Angular range (in radians) for alignment.  
+/// - ``step_rotation_deg`` (default 0.5°) – Rotation step in degree
+/// - ``range_rotation_deg`` (default 90°) – Rotation (+/-) range in degree, for 90° total range 180°  
 /// - ``image_center`` (default: (4.5, 4.5)): Center (x, y) for catheter contour generation.  
 /// - ``radius`` (default: 0.5): Radius around ``image_center`` for catheter contours.  
 /// - ``n_points`` (default: 20): Number of points per catheter contour; set to 0 to skip.  
@@ -580,7 +584,7 @@ pub fn create_catheter_geometry(
 #[pyfunction]
 #[pyo3(signature = (
     geometry,
-    steps_best_rotation = 270usize,
+    step_rotation_deg = 0.5f64,
     range_rotation_deg = 90.0f64,
     image_center = (4.5f64, 4.5f64),
     radius = 0.5f64,
@@ -596,7 +600,7 @@ pub fn create_catheter_geometry(
 ))]
 pub fn geometry_from_array(
     geometry: PyGeometry,
-    steps_best_rotation: usize,
+    step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
     radius: f64,
@@ -631,7 +635,7 @@ pub fn geometry_from_array(
         contours_rs,
         walls_rs,
         reference_point_rs,
-        steps_best_rotation,
+        step_rotation_deg,
         range_rotation_deg,
         image_center,
         radius,
@@ -669,13 +673,14 @@ pub fn geometry_from_array(
 /// - ``rest_geometry_sys``: Input ``PyGeometry`` at systole for REST.  
 /// - ``stress_geometry_dia``: Input ``PyGeometry`` at diastole for STRESS.  
 /// - ``stress_geometry_sys``: Input ``PyGeometry`` at systole for STRESS.  
-/// - ``steps_best_rotation`` (default: 300): Number of rotation steps for alignment.  
-/// - ``range_rotation_rad`` (default: 1.57): Angular range in radians for alignment.  
-/// - ``interpolation_steps`` (default: 28): Number of interpolation steps between phases.  
+/// - ``step_rotation_deg`` (default 0.5°) – Rotation step in degree
+/// - ``range_rotation_deg`` (default 90°) – Rotation (+/-) range in degree, for 90° total range 180° 
+/// - ``write_obj`` (default true)
 /// - ``rest_output_path`` (default: "output/rest"): Output directory for REST results.  
 /// - ``stress_output_path`` (default: "output/stress"): Output directory for STRESS results.  
 /// - ``diastole_output_path`` (default: "output/diastole"): Output for interpolated diastole.  
 /// - ``systole_output_path`` (default: "output/systole"): Output for interpolated systole.  
+/// - ``interpolation_steps`` (default: 28): Number of interpolation steps between phases.  
 ///
 /// Returns
 /// -------
@@ -698,8 +703,8 @@ pub fn geometry_from_array(
 ///    # Assume you have four PyGeometry objects from earlier:
 ///    rest, stress, dia, sys, _ = mm.from_array_full(
 ///        rest_dia, rest_sys, stress_dia, stress_sys,
-///        steps_best_rotation=200,
-///        interpolation_steps=32,
+///        steps_best_rotation=0.1,
+///        interpolation_steps=28,
 ///        rest_output_path="out/rest",
 ///        stress_output_path="out/stress"
 ///    )
@@ -712,7 +717,7 @@ pub fn geometry_from_array(
         rest_geometry_sys,
         stress_geometry_dia,
         stress_geometry_sys,
-        steps_best_rotation = 270usize,
+        step_rotation_deg = 0.5f64,
         range_rotation_deg = 90.0f64,
         image_center = (4.5f64, 4.5f64),
         radius = 0.5f64,
@@ -730,7 +735,7 @@ pub fn from_array_full(
     rest_geometry_sys: PyGeometry,
     stress_geometry_dia: PyGeometry,
     stress_geometry_sys: PyGeometry,
-    steps_best_rotation: usize,
+    step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
     radius: f64,
@@ -761,7 +766,7 @@ pub fn from_array_full(
         rest_geometry_sys.to_rust_geometry(),
         stress_geometry_dia.to_rust_geometry(),
         stress_geometry_sys.to_rust_geometry(),
-        steps_best_rotation,
+        step_rotation_deg,
         range_rotation_deg,
         image_center,
         radius,
@@ -811,11 +816,12 @@ pub fn from_array_full(
 /// - ``rest_geometry_sys``: Input ``PyGeometry`` at systole for REST.  
 /// - ``stress_geometry_dia``: Input ``PyGeometry`` at diastole for STRESS.  
 /// - ``stress_geometry_sys``: Input ``PyGeometry`` at systole for STRESS.  
-/// - ``steps_best_rotation`` (default: 300): Number of rotation steps for alignment.  
-/// - ``range_rotation_rad`` (default: 1.57): Angular range in radians for alignment.  
-/// - ``interpolation_steps`` (default: 28): Number of interpolation steps between phases.  
+/// - ``step_rotation_deg`` (default 0.5°) – Rotation step in degree.
+/// - ``range_rotation_deg`` (default 90°) – Rotation (+/-) range in degree, for 90° total range 180°. 
+/// - ``write_obj`` (default true)
 /// - ``rest_output_path`` (default: "output/rest"): Output directory for REST results.  
 /// - ``stress_output_path`` (default: "output/stress"): Output directory for STRESS results.  
+/// - ``interpolation_steps`` (default: 28): Number of interpolation steps between phases.  
 ///
 /// Returns
 /// -------
@@ -839,7 +845,7 @@ pub fn from_array_full(
 ///    rest_pair, stress_pair, _ = mm.from_array_doublepair(
 ///        rest_dia, rest_sys,
 ///        stress_dia, stress_sys,
-///        steps_best_rotation=250,
+///        steps_best_rotation=0.2,
 ///        interpolation_steps=32,
 ///        rest_output_path="out/rest",
 ///        stress_output_path="out/stress"
@@ -852,7 +858,7 @@ pub fn from_array_full(
         rest_geometry_sys,
         stress_geometry_dia,
         stress_geometry_sys,
-        steps_best_rotation = 270usize,
+        step_rotation_deg = 0.5f64,
         range_rotation_deg = 90.0f64,
         image_center = (4.5f64, 4.5f64),
         radius = 0.5f64,
@@ -868,7 +874,7 @@ pub fn from_array_doublepair(
     rest_geometry_sys: PyGeometry,
     stress_geometry_dia: PyGeometry,
     stress_geometry_sys: PyGeometry,
-    steps_best_rotation: usize,
+    step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
     radius: f64,
@@ -893,7 +899,7 @@ pub fn from_array_doublepair(
             rest_geometry_sys.to_rust_geometry(),
             stress_geometry_dia.to_rust_geometry(),
             stress_geometry_sys.to_rust_geometry(),
-            steps_best_rotation,
+            step_rotation_deg,
             range_rotation_deg,
             image_center,
             radius,
@@ -932,9 +938,10 @@ pub fn from_array_doublepair(
 ///
 /// - ``geometry_dia``: Input ``PyGeometry`` at diastole.  
 /// - ``geometry_sys``: Input ``PyGeometry`` at systole.  
+/// - ``step_rotation_deg`` (default 0.5°) – Rotation step in degree
+/// - ``range_rotation_deg`` (default 90°) – Rotation (+/-) range in degree, for 90° total range 180°
+/// - ``write_obj`` (default true)
 /// - ``output_path``: Directory path to write interpolated output files.  
-/// - ``steps_best_rotation`` (default: 300): Number of rotation steps used for alignment.  
-/// - ``range_rotation_rad`` (default: 1.57): Angular range in radians for the alignment search.  
 /// - ``interpolation_steps`` (default: 28): Number of steps to interpolate between diastole and systole.  
 ///
 /// Returns
@@ -958,7 +965,7 @@ pub fn from_array_doublepair(
 ///    pair, _ = mm.from_array_singlepair(
 ///        rest_dia, rest_sys,
 ///        output_path="out/single",
-///        steps_best_rotation=250,
+///        steps_best_rotation=0.1,
 ///        interpolation_steps=30
 ///    )
 ///
@@ -967,7 +974,7 @@ pub fn from_array_doublepair(
     signature = (
         geometry_dia,
         geometry_sys,
-        steps_best_rotation = 270usize,
+        step_rotation_deg = 0.5f64,
         range_rotation_deg = 90.0f64,
         image_center = (4.5f64, 4.5f64),
         radius = 0.5f64,
@@ -980,7 +987,7 @@ pub fn from_array_doublepair(
 pub fn from_array_singlepair(
     geometry_dia: PyGeometry,
     geometry_sys: PyGeometry,
-    steps_best_rotation: usize,
+    step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
     radius: f64,
@@ -998,7 +1005,7 @@ pub fn from_array_singlepair(
     let (pair, (dia_logs, sys_logs)) = from_array_singlepair_rs(
         geometry_dia.to_rust_geometry(),
         geometry_sys.to_rust_geometry(),
-        steps_best_rotation,
+        step_rotation_deg,
         range_rotation_deg,
         image_center,
         radius,

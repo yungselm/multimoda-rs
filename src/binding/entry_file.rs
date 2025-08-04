@@ -13,7 +13,7 @@ use crate::io::Geometry;
 pub fn from_file_full_rs(
     rest_input_path: &str,
     stress_input_path: &str,
-    steps_best_rotation: usize,
+    step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
     radius: f64,
@@ -44,7 +44,7 @@ pub fn from_file_full_rs(
                 let (geom, dia_logs, sys_logs) = align_within_and_between(
                     "rest",
                     rest_input_path,
-                    steps_best_rotation,
+                    step_rotation_deg,
                     range_rotation_deg,
                     image_center,
                     radius,
@@ -62,7 +62,7 @@ pub fn from_file_full_rs(
                 let (geom_stress, dia_logs_stress, sys_logs_stress) = align_within_and_between(
                     "stress",
                     stress_input_path,
-                    steps_best_rotation,
+                    step_rotation_deg,
                     range_rotation_deg,
                     image_center,
                     radius,
@@ -163,7 +163,7 @@ pub fn from_file_full_rs(
 pub fn from_file_doublepair_rs(
     rest_input_path: &str,
     stress_input_path: &str,
-    steps_best_rotation: usize,
+    step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
     radius: f64,
@@ -190,7 +190,7 @@ pub fn from_file_doublepair_rs(
                 let (geom, dia_logs, sys_logs) = align_within_and_between(
                     "rest",
                     rest_input_path,
-                    steps_best_rotation,
+                    step_rotation_deg,
                     range_rotation_deg,
                     image_center,
                     radius,
@@ -208,7 +208,7 @@ pub fn from_file_doublepair_rs(
                 let (geom_stress, dia_logs_stress, sys_logs_stress) = align_within_and_between(
                     "stress",
                     stress_input_path,
-                    steps_best_rotation,
+                    step_rotation_deg,
                     range_rotation_deg,
                     image_center,
                     radius,
@@ -248,7 +248,7 @@ pub fn from_file_doublepair_rs(
 
 pub fn from_file_singlepair_rs(
     input_path: &str,
-    steps_best_rotation: usize,
+    step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
     radius: f64,
@@ -261,7 +261,7 @@ pub fn from_file_singlepair_rs(
     let (geom_pair, dia_logs, sys_logs) = align_within_and_between(
         "single",
         input_path,
-        steps_best_rotation,
+        step_rotation_deg,
         range_rotation_deg,
         image_center,
         radius,
@@ -277,7 +277,7 @@ pub fn from_file_singlepair_rs(
 
 pub fn from_file_single_rs(
     input_path: &str,
-    steps_best_rotation: usize,
+    step_rotation_deg: f64,
     range_rotation_deg: f64,
     diastole: bool,
     image_center: (f64, f64),
@@ -297,7 +297,7 @@ pub fn from_file_single_rs(
 
     let (geom, logs) = crate::processing::align_within::align_frames_in_geometry(
         geom, 
-        steps_best_rotation, 
+        step_rotation_deg, 
         range_rotation_deg,
     true);
     let geom = if geom.walls.is_empty() {

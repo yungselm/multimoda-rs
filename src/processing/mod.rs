@@ -14,7 +14,7 @@ use crate::processing::walls::create_wall_geometry;
 pub fn align_within_and_between(
     case_name: &str,
     input_dir: &str,
-    steps_best_rotation: usize,
+    step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
     radius: f64,
@@ -33,14 +33,14 @@ pub fn align_within_and_between(
     
     let (mut geom_pair, (logs_a, logs_b)) = align_frames_in_geometries(
         geom_pair,
-        steps_best_rotation, 
+        step_rotation_deg, 
         range_rotation_deg,
         true,
     )
     .context(format!("align within geometrypair({}) failed", case_name))?;
     
     geom_pair = geom_pair.align_between_geometries(
-        steps_best_rotation, 
+        step_rotation_deg, 
         range_rotation_deg)
         .context(format!("align between geometrypair({}) failed", case_name))?;
     
@@ -65,7 +65,7 @@ pub fn align_within_and_between(
 pub fn align_within_and_between_array(
     case_name: &str,
     geometry_pair: GeometryPair,
-    steps_best_rotation: usize,
+    step_rotation_deg: f64,
     range_rotation_deg: f64,
     write_obj: bool,
     output_dir: &str,
@@ -73,14 +73,14 @@ pub fn align_within_and_between_array(
 ) -> anyhow::Result<(GeometryPair, Vec<AlignLog>, Vec<AlignLog>)> {
     let (mut geom_pair, (logs_a, logs_b)) = align_frames_in_geometries(
         geometry_pair,
-        steps_best_rotation, 
+        step_rotation_deg, 
         range_rotation_deg,
         true,
     )
     .context(format!("align within geometrypair({}) failed", case_name))?;
     
     geom_pair = geom_pair.align_between_geometries(
-        steps_best_rotation, 
+        step_rotation_deg, 
         range_rotation_deg)
         .context(format!("align between geometrypair({}) failed", case_name))?;
     

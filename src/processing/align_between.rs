@@ -58,7 +58,7 @@ impl GeometryPair {
     /// finds the best rotation and trims them to same length.    
     pub fn align_between_geometries(
         mut self,
-        steps_best_rotation: usize,
+        steps_rotation_deg: f64,
         range_rotation_deg: f64,
     ) -> anyhow::Result<GeometryPair> {
         Self::translate_contours_to_match(&self.dia_geom, &mut self.sys_geom);
@@ -69,7 +69,7 @@ impl GeometryPair {
         let best_rotation_angle = find_best_rotation_all(
             &self.dia_geom,
             &self.sys_geom,
-            steps_best_rotation, // number of candidate steps (e.g. 200 or 400)
+            steps_rotation_deg, // number of candidate steps (e.g. 200 or 400)
             range_rotation_deg,  // rotation range (e.g. 1.05 for ~±60°)
         );
     
@@ -279,15 +279,16 @@ impl GeometryPair {
 pub fn find_best_rotation_all(
     diastole: &Geometry,
     systole: &Geometry,
-    steps: usize,
+    step_rotation_deg: f64,
     range_deg: f64,
 ) -> f64 {
     println!(
         "---------------------Finding optimal rotation {:?}/{:?}---------------------",
         &diastole.label, &systole.label
     );
+    let steps: usize = ((2.0 * range_deg) / step_rotation_deg).round() as usize;
     let range = range_deg.to_radians();
-    let increment = (2.0 * range) / steps as f64;
+    let increment = step_rotation_deg.to_radians();
 
     let results: Vec<(f64, f64)> = (0..=steps)
         .into_par_iter()
@@ -413,7 +414,7 @@ mod geometry_pair_tests {
             dia_geom: simple_geometry((5.0, 5.0), 0.0, (None, None)),
             sys_geom: simple_geometry((0.0, 0.0), 0.0, (None, None)),
         };
-        gp = gp.align_between_geometries(1, 0.0).unwrap();
+        gp = gp.align_between_geometries(1.0, 0.0).unwrap();
         let dia_centroid = gp.dia_geom.contours[0].centroid;
         let sys_centroid = gp.sys_geom.contours[0].centroid;
         assert_relative_eq!(dia_centroid.0, sys_centroid.0, epsilon = 1e-6);
@@ -427,7 +428,7 @@ mod geometry_pair_tests {
             dia_geom: dia.clone(),
             sys_geom: simple_geometry((0.0, 0.0), 2.0, (None, None)),
         };
-        gp = gp.align_between_geometries(1, 0.0).unwrap();
+        gp = gp.align_between_geometries(1.0, 0.0).unwrap();
         gp = gp.adjust_z_coordinates();
         for contour in gp.dia_geom.contours.iter() {
             assert!(contour.centroid.2.is_finite());
@@ -556,7 +557,7 @@ mod geometry_pair_tests {
             label: "".into(),
         };
 
-        let best = find_best_rotation_all(&dia, &sys, 4, PI.to_degrees());
+        let best = find_best_rotation_all(&dia, &sys, 4.0, PI.to_degrees());
         let expected = PI / 2.0;
         assert_relative_eq!(best.rem_euclid(2.0 * PI), expected, epsilon = 0.4);
     }
