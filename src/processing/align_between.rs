@@ -3,6 +3,7 @@ use anyhow::Context;
 
 use crate::io::Geometry;
 use crate::io::input::{Contour, ContourPoint};
+use crate::processing::process_utils::downsample_contour_points;
 
 #[derive(Clone, Debug)]
 pub struct GeometryPair {
@@ -458,19 +459,6 @@ pub fn find_best_rotation_all(
     println!();
 
     best_angle
-}
-
-fn downsample_contour_points(points: &[ContourPoint], n: usize) -> Vec<ContourPoint> {
-    if points.len() <= n {
-        return points.to_vec();
-    }
-    let step = points.len() as f64 / n as f64;
-    (0..n)
-        .map(|i| {
-            let index = (i as f64 * step) as usize;
-            points[index].clone()
-        })
-        .collect()
 }
 
 /// Helper function for rotation search in a given range

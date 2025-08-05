@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use crate::io::input::{Contour, ContourPoint};
 use crate::io::Geometry;
 use crate::processing::align_between::GeometryPair;
+use crate::processing::process_utils::downsample_contour_points;
 
 #[derive(Debug)]
 pub struct AlignLog {
@@ -77,10 +78,35 @@ pub fn align_frames_in_geometry(
 
     let logger = Arc::new(Mutex::new(Vec::<AlignLog>::new()));
 
+    let reference = if rotated_ref.points.len() > 200 {
+        let frac = 200 / rotated_ref.points.len();
+        let mut combined = downsample_contour_points(&rotated_ref.points, 200);
+        if let Some(catheter) = geometry.catheter.iter().find(|c| c.id == reference_index) {
+            let n_cath = catheter.points.len() * frac as usize;
+            let downsampled_catheter = downsample_contour_points(&catheter.points, n_cath);
+            combined.extend_from_slice(&downsampled_catheter);
+        }
+        combined
+    } else {
+        let mut combined = rotated_ref.points.clone();
+        if let Some(catheter) = geometry.catheter.iter().find(|c| c.id == reference_index) {
+            combined.extend_from_slice(&catheter.points);
+        }
+        combined
+    };
+
+    let reference_contour = Contour {
+        id: reference_index,
+        points: reference,
+        centroid: rotated_ref.centroid,
+        aortic_thickness: rotated_ref.aortic_thickness,
+        pulmonary_thickness: rotated_ref.pulmonary_thickness,
+    };
+
     let (mut geometry, id_translation) = align_remaining_contours(
         geometry,
         reference_index,
-        rotated_ref,
+        reference_contour,
         rotation_to_y,
         step_deg,
         range_deg,
@@ -280,8 +306,16 @@ fn align_remaining_contours(
         // Later also add wall points
         // Find the catheter with the same id as the current contour
         let target = if let Some(catheter) = geometry.catheter.iter().find(|c| c.id == contour.id) {
-            let mut combined = contour.points.clone();
-            combined.extend_from_slice(&catheter.points);
+            let combined = contour.points.clone();
+            let (mut combined, cat_pts) = if combined.len() > 200 {
+                let frac = 200 /combined.len();
+                let n_cath = catheter.points.len() * frac as usize;
+                (downsample_contour_points(&combined, 200),
+                downsample_contour_points(&catheter.points, n_cath))
+            } else {
+                (combined, catheter.points.clone())
+            };
+            combined.extend_from_slice(&cat_pts);
             combined
         } else {
             contour.points.clone()
@@ -377,26 +411,48 @@ pub fn find_best_rotation(
     const MEDIUM_STEP: f64 = 0.1;     // degrees
     
     // First pass: Coarse search
-    let coarse_angle = search_range(
+    let angle = if step_deg < 1.0 {
+        search_range(
         reference,
         target,
         COARSE_STEP,
         range_deg,
         centroid,
         None
-    );
+        )
+    } else {
+        search_range(
+        reference,
+        target,
+        COARSE_STEP,
+        range_deg,
+        centroid,
+        None
+        )
+    };
     
     // Second pass: Medium search around coarse result
-    let medium_angle = search_range(
+    let angle = if step_deg < 0.1 && range_deg > 10.0 {
+        search_range(
         reference,
         target,
         MEDIUM_STEP,
         10.0,  // ±10 degree range around coarse result
         centroid,
-        Some(coarse_angle)
-    );
-    
-    let angle = if step_deg < 1.0 {
+        Some(angle)
+        )
+    } else {
+        search_range(
+        reference,
+        target,
+        step_deg,
+        range_deg,  // ±10 degree range around coarse result
+        centroid,
+        Some(angle)
+        )        
+    };
+
+    let angle = if step_deg < 0.1 && range_deg > 1.0 {
         // Final pass: Fine search with original step size
         search_range(
             reference,
@@ -404,9 +460,9 @@ pub fn find_best_rotation(
             step_deg,
             1.0,   // ±1 degree range around medium result
             centroid,
-            Some(medium_angle))
+            Some(angle))
     } else {
-        medium_angle
+        angle
     };
 
     angle
