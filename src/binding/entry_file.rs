@@ -24,6 +24,7 @@ pub fn from_file_full_rs(
     diastole_output_path: &str,
     systole_output_path: &str,
     interpolation_steps: usize,
+    bruteforce: bool,
 ) -> anyhow::Result<(
     (GeometryPair, GeometryPair, GeometryPair, GeometryPair),
     (Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>),
@@ -52,6 +53,7 @@ pub fn from_file_full_rs(
                     write_obj,
                     rest_output_path,
                     interpolation_steps,
+                    bruteforce,
                 )
                 .context("process geometry pair(rest) failed")?;
                 Ok((geom, dia_logs, sys_logs))
@@ -70,6 +72,7 @@ pub fn from_file_full_rs(
                     write_obj,
                     stress_output_path,
                     interpolation_steps,
+                    bruteforce,
                 )
                 .context("process geometry pair(stress) failed")?;
                 Ok((geom_stress, dia_logs_stress, sys_logs_stress))
@@ -172,6 +175,7 @@ pub fn from_file_doublepair_rs(
     rest_output_path: &str,
     stress_output_path: &str,
     interpolation_steps: usize,
+    bruteforce: bool,
 ) -> anyhow::Result<(
     (GeometryPair, GeometryPair),
     (Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>),
@@ -198,6 +202,7 @@ pub fn from_file_doublepair_rs(
                     write_obj,
                     rest_output_path,
                     interpolation_steps,
+                    bruteforce,
                 )
                 .context("process geometry pair(rest) failed")?;
                 Ok((geom, dia_logs, sys_logs))
@@ -216,6 +221,7 @@ pub fn from_file_doublepair_rs(
                     write_obj,
                     stress_output_path,
                     interpolation_steps,
+                    bruteforce,
                 )
                 .context("process geometry pair(stress) failed")?;
                 Ok((geom_stress, dia_logs_stress, sys_logs_stress))
@@ -256,6 +262,7 @@ pub fn from_file_singlepair_rs(
     write_obj: bool,
     output_path: &str,
     interpolation_steps: usize,
+    bruteforce: bool,
 ) -> anyhow::Result<(GeometryPair, (Vec<AlignLog>, Vec<AlignLog>))> {
     // Build the raw pair
     let (geom_pair, dia_logs, sys_logs) = align_within_and_between(
@@ -269,6 +276,7 @@ pub fn from_file_singlepair_rs(
         write_obj,
         output_path,
         interpolation_steps,
+        bruteforce,
     )
     .context("process geometry_pair(single) failed")?;
 
@@ -285,6 +293,7 @@ pub fn from_file_single_rs(
     n_points: u32,
     write_obj: bool,
     output_path: &str,
+    bruteforce: bool,
 ) -> Result<(Geometry, Vec<AlignLog>)> {
     let geom = Geometry::new(
         input_path,
@@ -299,7 +308,8 @@ pub fn from_file_single_rs(
         geom, 
         step_rotation_deg, 
         range_rotation_deg,
-    true);
+    true,
+        bruteforce);
     let geom = if geom.walls.is_empty() {
         crate::processing::walls::create_wall_geometry(&geom, /*with_pulmonary=*/ false)
     } else {

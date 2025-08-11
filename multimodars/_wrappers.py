@@ -122,7 +122,7 @@ def from_file(
     """
     defaults = {
         "step_rotation_deg": 0.1,
-        "range_rotation_deg": 90,
+        "range_rotation_deg": 60,
         "image_center": (4.5, 4.5),
         "radius": 0.5,
         "n_points": 20,
@@ -132,6 +132,7 @@ def from_file(
         "diastole_output_path": "output/diastole",
         "systole_output_path": "output/systole",
         "interpolation_steps": 28,
+        "bruteforce": False,
     }
     merged = {**defaults, **kwargs}
 
@@ -150,6 +151,7 @@ def from_file(
             "diastole_output_path",
             "systole_output_path",
             "interpolation_steps",
+            "bruteforce",
         )
         args = {k: merged[k] for k in required}
         return from_file_full(
@@ -166,6 +168,7 @@ def from_file(
             args["diastole_output_path"],
             args["systole_output_path"],
             args["interpolation_steps"],
+            args["bruteforce"],
         )
 
     elif mode == "doublepair":
@@ -181,6 +184,7 @@ def from_file(
             "rest_output_path",
             "stress_output_path",
             "interpolation_steps",
+            "bruteforce",
         )
         args = {k: merged[k] for k in required}
         return from_file_doublepair(
@@ -195,6 +199,7 @@ def from_file(
             args["rest_output_path"],
             args["stress_output_path"],
             args["interpolation_steps"],
+            args["bruteforce"],
         )
 
     elif mode == "singlepair":
@@ -208,6 +213,7 @@ def from_file(
             "write_obj",
             "output_path",
             "interpolation_steps",
+            "bruteforce",
         )
         args = {k: merged[k] for k in required}
         return from_file_singlepair(
@@ -220,6 +226,7 @@ def from_file(
             args["write_obj"],
             args["output_path"],
             args["interpolation_steps"],
+            args["bruteforce"],
         )
 
     elif mode == "single":
@@ -233,6 +240,7 @@ def from_file(
             "n_points",
             "write_obj",
             "output_path",
+            "bruteforce",
         )
         args = {k: merged[k] for k in required}
         return from_file_single(
@@ -245,6 +253,7 @@ def from_file(
             args["n_points"],
             args["write_obj"],
             args["output_path"],
+            args["bruteforce"],
         )
 
     else:
@@ -336,7 +345,7 @@ def from_array(
     """
     defaults = {
         "step_rotation_deg": 0.1,
-        "range_rotation_deg": 90,
+        "range_rotation_deg": 60,
         "interpolation_steps": 28,
         "image_center": (4.5, 4.5),
         "radius": 0.5,
@@ -353,6 +362,7 @@ def from_array(
         "diastole": True,
         "sort": True,
         "write_obj": True,
+        "bruteforce": False,
     }
     merged = {**defaults, **kwargs}
 
@@ -376,6 +386,7 @@ def from_array(
             "diastole_output_path",
             "systole_output_path",
             "interpolation_steps",
+            "bruteforce",
         )
         args = {k: merged[k] for k in required}
         return from_array_full(
@@ -394,6 +405,7 @@ def from_array(
             args["diastole_output_path"],
             args["systole_output_path"],
             args["interpolation_steps"],
+            args["bruteforce"],
         )
 
     elif mode == "doublepair":
@@ -411,6 +423,7 @@ def from_array(
             "rest_output_path",
             "stress_output_path",
             "interpolation_steps",
+            "bruteforce",
         )
         args = {k: merged[k] for k in required}
         return from_array_doublepair(
@@ -427,6 +440,7 @@ def from_array(
             args["rest_output_path"],
             args["stress_output_path"],
             args["interpolation_steps"],
+            args["bruteforce"],
         )
 
     elif mode == "singlepair":
@@ -441,6 +455,7 @@ def from_array(
             "write_obj",
             "output_path",
             "interpolation_steps",
+            "bruteforce",
         )
         args = {k: merged[k] for k in required}
         return from_array_singlepair(
@@ -454,6 +469,7 @@ def from_array(
             args["write_obj"],
             args["output_path"],
             args["interpolation_steps"],
+            args["bruteforce"],
         )
 
     elif mode == "single":
@@ -472,6 +488,7 @@ def from_array(
             "sort",
             "write_obj",
             "output_path",
+            "bruteforce",
         )
         args = {k: merged[k] for k in required}
         return geometry_from_array(
@@ -489,6 +506,7 @@ def from_array(
             args["sort"],
             args["write_obj"],
             args["output_path"],
+            args["bruteforce"],
         )
 
     else:

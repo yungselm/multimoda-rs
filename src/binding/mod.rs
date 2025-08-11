@@ -59,6 +59,7 @@ fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<(u32, u32, f64, f64, f64, f64, f64
 /// - ``diastole_output_path`` (default "output/diastole")
 /// - ``systole_output_path`` (default "output/systole")
 /// - ``interpolation_steps`` (default 28)
+/// - ``bruteforce`` (default false)
 ///
 /// CSV format:
 ///
@@ -99,6 +100,7 @@ fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<(u32, u32, f64, f64, f64, f64, f64
         diastole_output_path = "output/diastole",
         systole_output_path = "output/systole",
         interpolation_steps = 28usize,
+        bruteforce = false,
     )
 )]
 pub fn from_file_full(
@@ -115,6 +117,7 @@ pub fn from_file_full(
     diastole_output_path: &str,
     systole_output_path: &str,
     interpolation_steps: usize,
+    bruteforce: bool,
 ) -> PyResult<(
     PyGeometryPair,
     PyGeometryPair,
@@ -144,6 +147,7 @@ pub fn from_file_full(
         diastole_output_path,
         systole_output_path,
         interpolation_steps,
+        bruteforce,
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
@@ -189,6 +193,7 @@ pub fn from_file_full(
 /// - ``rest_output_path`` (default "output/rest")
 /// - ``stress_output_path`` (default "output/stress")
 /// - ``interpolation_steps`` (default 28)
+/// - ``bruteforce`` (default false)
 ///
 /// CSV format:
 ///
@@ -226,6 +231,7 @@ pub fn from_file_full(
     rest_output_path = "output/rest",
     stress_output_path = "output/stress",
     interpolation_steps = 28usize,
+    bruteforce = false,
 ))]
 pub fn from_file_doublepair(
     rest_input_path: &str,
@@ -239,6 +245,7 @@ pub fn from_file_doublepair(
     rest_output_path: &str,
     stress_output_path: &str,
     interpolation_steps: usize,
+    bruteforce: bool,
 ) -> PyResult<(
     PyGeometryPair,
     PyGeometryPair,
@@ -262,6 +269,7 @@ pub fn from_file_doublepair(
             rest_output_path,
             stress_output_path,
             interpolation_steps,
+            bruteforce,
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
@@ -302,6 +310,7 @@ pub fn from_file_doublepair(
 /// - ``write_obj`` (default true)
 /// - ``output_path``: Path to write the processed geometry. 
 /// - ``interpolation_steps`` (default 28) Number of interpolation steps.  
+/// - ``bruteforce`` (default false)
 ///
 /// CSV Format
 /// ----------
@@ -349,6 +358,7 @@ pub fn from_file_doublepair(
     write_obj = true,
     output_path = "output/singlepair",
     interpolation_steps = 28usize,
+    bruteforce = false,
 ))]
 pub fn from_file_singlepair(
     input_path: &str,
@@ -360,6 +370,7 @@ pub fn from_file_singlepair(
     write_obj: bool,
     output_path: &str,
     interpolation_steps: usize,
+    bruteforce: bool,
 ) -> PyResult<(
     PyGeometryPair,
     (
@@ -377,6 +388,7 @@ pub fn from_file_singlepair(
         write_obj,
         output_path,
         interpolation_steps,
+        bruteforce,
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
@@ -405,6 +417,7 @@ pub fn from_file_singlepair(
 /// - ``n_points`` (default: 20): Number of boundary points to generate.
 /// - ``write_obj`` (default true)
 /// - ``output_path`` (default: "output/single"): Where to write the processed geometry.  
+/// - ``bruteforce`` (default false)
 ///
 /// Returns
 /// -------
@@ -443,6 +456,7 @@ pub fn from_file_singlepair(
     n_points = 20u32,
     write_obj = true,
     output_path = "output/single",
+    bruteforce = false,
 ))]
 pub fn from_file_single(
     input_path: &str,
@@ -454,6 +468,7 @@ pub fn from_file_single(
     n_points: u32,
     write_obj: bool,
     output_path: &str,
+    bruteforce: bool,
 ) -> PyResult<(PyGeometry, Vec<(u32, u32, f64, f64, f64, f64, f64, f64)>)> {
     let (geom, logs) = from_file_single_rs(
         input_path,
@@ -465,6 +480,7 @@ pub fn from_file_single(
         n_points,
         write_obj,
         output_path,
+        bruteforce,
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
@@ -550,6 +566,7 @@ pub fn create_catheter_geometry(
 /// - ``sort`` (default: true): If true, applies ``refine_ordering`` after an initial alignment; otherwise only aligns once.  
 /// - ``write_obj`` (default: false): If true, exports OBJ meshes to ``output_path``.  
 /// - ``output_path`` (default: "output/single"): Directory path for OBJ exports (if enabled).
+/// - ``bruteforce`` (default false)
 ///
 /// Returns
 /// -------
@@ -596,7 +613,8 @@ pub fn create_catheter_geometry(
     diastole = true,
     sort = true,
     write_obj=false,
-    output_path="output/single"
+    output_path="output/single",
+    bruteforce = false,
 ))]
 pub fn geometry_from_array(
     geometry: PyGeometry,
@@ -613,6 +631,7 @@ pub fn geometry_from_array(
     sort: bool,
     write_obj: bool,
     output_path: &str,
+    bruteforce: bool,
 ) -> PyResult<(PyGeometry, Vec<(u32, u32, f64, f64, f64, f64, f64, f64)>)> {
     let contours_rs: Vec<Contour> = geometry
         .contours
@@ -648,6 +667,7 @@ pub fn geometry_from_array(
         sort,
         write_obj,
         output_path,
+        bruteforce,
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
     let py_geom = PyGeometry::from(geom_rs);
@@ -681,6 +701,7 @@ pub fn geometry_from_array(
 /// - ``diastole_output_path`` (default: "output/diastole"): Output for interpolated diastole.  
 /// - ``systole_output_path`` (default: "output/systole"): Output for interpolated systole.  
 /// - ``interpolation_steps`` (default: 28): Number of interpolation steps between phases.  
+/// - ``bruteforce`` (default false)
 ///
 /// Returns
 /// -------
@@ -728,6 +749,7 @@ pub fn geometry_from_array(
         diastole_output_path = "output/diastole",
         systole_output_path = "output/systole",
         interpolation_steps = 28usize,
+        bruteforce = false,
     )
 )]
 pub fn from_array_full(
@@ -746,6 +768,7 @@ pub fn from_array_full(
     diastole_output_path: &str,
     systole_output_path: &str,
     interpolation_steps: usize,
+    bruteforce: bool,
 ) -> PyResult<(
     PyGeometryPair,
     PyGeometryPair,
@@ -777,6 +800,7 @@ pub fn from_array_full(
         diastole_output_path,
         systole_output_path,
         interpolation_steps,
+        bruteforce,
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
@@ -822,6 +846,7 @@ pub fn from_array_full(
 /// - ``rest_output_path`` (default: "output/rest"): Output directory for REST results.  
 /// - ``stress_output_path`` (default: "output/stress"): Output directory for STRESS results.  
 /// - ``interpolation_steps`` (default: 28): Number of interpolation steps between phases.  
+/// - ``bruteforce`` (default false)
 ///
 /// Returns
 /// -------
@@ -867,6 +892,7 @@ pub fn from_array_full(
         rest_output_path = "output/rest",
         stress_output_path = "output/stress",
         interpolation_steps = 28usize,
+        bruteforce = false,
     )
 )]
 pub fn from_array_doublepair(
@@ -883,6 +909,7 @@ pub fn from_array_doublepair(
     rest_output_path: &str,
     stress_output_path: &str,
     interpolation_steps: usize,
+    bruteforce: bool,
 ) -> PyResult<(
     PyGeometryPair,
     PyGeometryPair,
@@ -908,6 +935,7 @@ pub fn from_array_doublepair(
             rest_output_path,
             stress_output_path,
             interpolation_steps,
+            bruteforce,
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
@@ -943,6 +971,7 @@ pub fn from_array_doublepair(
 /// - ``write_obj`` (default true)
 /// - ``output_path``: Directory path to write interpolated output files.  
 /// - ``interpolation_steps`` (default: 28): Number of steps to interpolate between diastole and systole.  
+/// - ``bruteforce`` (default false)
 ///
 /// Returns
 /// -------
@@ -982,6 +1011,7 @@ pub fn from_array_doublepair(
         write_obj = true,
         output_path = "output/singlepair",
         interpolation_steps = 28usize,
+        bruteforce = false,
     )
 )]
 pub fn from_array_singlepair(
@@ -995,6 +1025,7 @@ pub fn from_array_singlepair(
     write_obj: bool,
     output_path: &str,
     interpolation_steps: usize,
+    bruteforce: bool,
 ) -> PyResult<(
     PyGeometryPair,
     (
@@ -1013,6 +1044,7 @@ pub fn from_array_singlepair(
         write_obj,
         output_path,
         interpolation_steps,
+        bruteforce,
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 

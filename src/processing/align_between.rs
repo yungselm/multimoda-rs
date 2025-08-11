@@ -438,7 +438,7 @@ pub fn find_best_rotation_all(
         medium_angle + 1.0_f64.to_radians(),
         fine_step
     );
-    
+
     // Calculate best distance for reporting
     let best_dist = calculate_avg_distance(&dia_contours, &sys_contours, best_angle);
 
