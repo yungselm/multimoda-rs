@@ -23,6 +23,7 @@ pub fn align_within_and_between(
     output_dir: &str,
     interpolation_steps: usize,
     bruteforce: bool,
+    sample_size: usize,
 ) -> anyhow::Result<(GeometryPair, Vec<AlignLog>, Vec<AlignLog>)> {
     let geom_pair = get_geometry_pair(
         case_name.to_string(), 
@@ -38,6 +39,7 @@ pub fn align_within_and_between(
         range_rotation_deg,
         true,
         bruteforce,
+        sample_size,
     )
     .context(format!("align within geometrypair({}) failed", case_name))?;
     
@@ -73,6 +75,7 @@ pub fn align_within_and_between_array(
     output_dir: &str,
     interpolation_steps: usize,
     bruteforce: bool,
+    sample_size: usize,
 ) -> anyhow::Result<(GeometryPair, Vec<AlignLog>, Vec<AlignLog>)> {
     let mut geometries = geometry_pair.adjust_z_coordinates();
     geometries = geometries.trim_geometries_same_length();
@@ -82,6 +85,7 @@ pub fn align_within_and_between_array(
         range_rotation_deg,
         true,
         bruteforce,
+        sample_size,
     )
     .context(format!("align within geometrypair({}) failed", case_name))?;
     

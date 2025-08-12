@@ -29,6 +29,7 @@ pub fn geometry_from_array_rs(
     write_obj: bool,
     output_path: &str,
     bruteforce: bool,
+    sample_size: usize,
 ) -> Result<(Geometry, Vec<AlignLog>), Box<dyn std::error::Error>> {
     let mut contours = contours;
     let label = label.to_string();
@@ -75,11 +76,17 @@ pub fn geometry_from_array_rs(
 
     // Optionally align and refine ordering
     let (mut geometry, logs) = if sort {
-        let (interim, _) = align_frames_in_geometry(geometry, step_rotation_deg, range_rotation_deg, false, bruteforce);
+        let (interim, _) = align_frames_in_geometry(
+            geometry, 
+            step_rotation_deg, 
+            range_rotation_deg, 
+            false, 
+            bruteforce, 
+            sample_size);
         let refined = refine_ordering(interim, delta, max_rounds);
-        align_frames_in_geometry(refined, step_rotation_deg, range_rotation_deg, true, bruteforce)
+        align_frames_in_geometry(refined, step_rotation_deg, range_rotation_deg, true, bruteforce, sample_size)
     } else {
-        align_frames_in_geometry(geometry, step_rotation_deg, range_rotation_deg, true, bruteforce)
+        align_frames_in_geometry(geometry, step_rotation_deg, range_rotation_deg, true, bruteforce, sample_size)
     };
     
     geometry = if geometry.walls.is_empty() {
@@ -321,6 +328,7 @@ pub fn from_array_full_rs(
     systole_output_path: &str,
     interpolation_steps: usize,
     bruteforce: bool,
+    sample_size: usize,
 ) -> anyhow::Result<(
     (GeometryPair, GeometryPair, GeometryPair, GeometryPair),
     (Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>),
@@ -355,7 +363,8 @@ pub fn from_array_full_rs(
                     write_obj, 
                     rest_output_path, 
                     interpolation_steps,
-                    bruteforce)
+                    bruteforce,
+                    sample_size)
                         .context("process geometry pair(rest) failed")?;
                     Ok((geom_rest, logs_dia, logs_sys))
             });
@@ -379,7 +388,8 @@ pub fn from_array_full_rs(
                     write_obj, 
                     stress_output_path, 
                     interpolation_steps,
-                    bruteforce)
+                    bruteforce,
+                    sample_size)
                         .context("process stress geometry pair(stress) failed")?;
                     Ok((geom_stress, logs_dia_stress, logs_sys_stress))
             });
@@ -482,6 +492,7 @@ pub fn from_array_doublepair_rs(
     stress_output_path: &str,
     interpolation_steps: usize,
     bruteforce: bool,
+    sample_size: usize,
 ) -> Result<(
     (GeometryPair, GeometryPair),
     (Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>),
@@ -514,7 +525,8 @@ pub fn from_array_doublepair_rs(
                     write_obj, 
                     rest_output_path, 
                     interpolation_steps,
-                    bruteforce)
+                    bruteforce,
+                    sample_size)
                         .context("process geometry pair(rest) failed")?;
                     Ok((geom_rest, logs_dia, logs_sys))
             });
@@ -538,7 +550,8 @@ pub fn from_array_doublepair_rs(
                     write_obj, 
                     stress_output_path, 
                     interpolation_steps,
-                    bruteforce)
+                    bruteforce,
+                    sample_size)
                         .context("process stress geometry pair(stress) failed")?;
                     Ok((geom_stress, logs_dia_stress, logs_sys_stress))
             });
@@ -580,6 +593,7 @@ pub fn from_array_singlepair_rs(
     output_path: &str,
     interpolation_steps: usize,
     bruteforce: bool,
+    sample_size: usize,
 ) -> Result<(GeometryPair, (Vec<AlignLog>, Vec<AlignLog>))> {
     // Build the raw pair
     let geometries = geometry_pair_from_array_rs(
@@ -599,7 +613,8 @@ pub fn from_array_singlepair_rs(
         write_obj, 
         output_path, 
         interpolation_steps,
-        bruteforce)
+        bruteforce,
+        sample_size)
         .context("process geometry_pair(single) failed")?;
     // Process it (e.g. align, interpolate, write meshes)
     let processed_pair = process_case("single", geom_pair, output_path, interpolation_steps)

@@ -80,6 +80,7 @@ def test_full_file_arr_consistency(
         diastole_output_path=str(dia_out),
         systole_output_path=str(sys_out),
         interpolation_steps=0,
+        bruteforce=False,
     )
 
     (
@@ -103,6 +104,7 @@ def test_full_file_arr_consistency(
         diastole_output_path=str(dia_out),
         systole_output_path=str(sys_out),
         interpolation_steps=0,
+        bruteforce=False,
     )
 
     # test consistency between the two
@@ -196,6 +198,7 @@ def test_doublepair_file_arr_consistency(
         rest_output_path=str(rest_out),
         stress_output_path=str(stress_out),
         interpolation_steps=0,
+        bruteforce=False,
     )
 
     (
@@ -215,6 +218,7 @@ def test_doublepair_file_arr_consistency(
         rest_output_path=str(rest_out),
         stress_output_path=str(stress_out),
         interpolation_steps=0,
+        bruteforce=False,
     )
 
     # test consistency between the two
@@ -288,6 +292,7 @@ def test_singlepair_file_arr_consistency(
         write_obj=True,
         output_path=str(output_path),
         interpolation_steps=0,
+        bruteforce=False,
     )
 
     (
@@ -304,6 +309,7 @@ def test_singlepair_file_arr_consistency(
         write_obj=True,
         output_path=str(output_path),
         interpolation_steps=0,
+        bruteforce=False,
     )
 
     # test consistency between the two
@@ -371,6 +377,7 @@ def test_single_file_arr_consistency(
         sort=False,
         write_obj=True,
         output_path=str(output_path),
+        bruteforce=False,
     )
 
     (
@@ -386,6 +393,7 @@ def test_single_file_arr_consistency(
         n_points=20,
         write_obj=True,
         output_path=str(output_path),
+        bruteforce=False,
     )
 
     # test consistency between the two

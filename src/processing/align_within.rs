@@ -26,19 +26,24 @@ pub fn align_frames_in_geometries(
     range_deg: f64,
     smooth: bool,
     bruteforce: bool,
+    sample_size: usize,
 ) -> anyhow::Result<(GeometryPair, (Vec<AlignLog>, Vec<AlignLog>))> {
     let (diastole, dia_logs) = align_frames_in_geometry(
         geom_pair.dia_geom, 
         step_deg, 
         range_deg, 
         smooth,
-        bruteforce);
+        bruteforce,
+        sample_size,
+    );
     let (mut systole, sys_logs) = align_frames_in_geometry(
         geom_pair.sys_geom, 
         step_deg, 
         range_deg, 
         smooth,
-        bruteforce);
+        bruteforce,
+        sample_size,
+    );
 
     GeometryPair::translate_contours_to_match(&diastole, &mut systole);
     GeometryPair::apply_z_transformation(&diastole, &mut systole);
@@ -56,6 +61,7 @@ pub fn align_frames_in_geometry(
     range_deg: f64,
     smooth: bool,
     bruteforce: bool,
+    sample_size: usize,
 ) -> (Geometry, Vec<AlignLog>) {
     let (mut geometry, reference_index, reference_pos, ref_contour) = prep_data_geometry(geometry);
 
@@ -82,9 +88,9 @@ pub fn align_frames_in_geometry(
 
     let logger = Arc::new(Mutex::new(Vec::<AlignLog>::new()));
 
-    let reference = if rotated_ref.points.len() > 200 {
-        let frac = 200 / rotated_ref.points.len();
-        let mut combined = downsample_contour_points(&rotated_ref.points, 200);
+    let reference = if rotated_ref.points.len() > sample_size {
+        let frac = sample_size / rotated_ref.points.len();
+        let mut combined = downsample_contour_points(&rotated_ref.points, sample_size);
         if let Some(catheter) = geometry.catheter.iter().find(|c| c.id == reference_index) {
             let n_cath = catheter.points.len() * frac as usize;
             let downsampled_catheter = downsample_contour_points(&catheter.points, n_cath);
@@ -116,6 +122,7 @@ pub fn align_frames_in_geometry(
         range_deg,
         Arc::clone(&logger),
         bruteforce,
+        sample_size,
     );
 
     for catheter in geometry.catheter.iter_mut() {
@@ -274,6 +281,7 @@ fn align_remaining_contours(
     range_deg: f64,
     logger: Arc<Mutex<Vec<AlignLog>>>,
     bruteforce: bool,
+    sample_size: usize,
 ) -> (Geometry, Vec<(u32, (f64, f64, f64), f64, (f64, f64))>) {
     let mut processed_refs: HashMap<u32, (Vec<ContourPoint>, (f64, f64, f64))> =
         std::collections::HashMap::new();
@@ -282,7 +290,7 @@ fn align_remaining_contours(
     // while frames are aligned based on local rotation
     let mut cum_rot = rot;
     // needed to adjust catheter, sample contour currently hardcoded
-    let frac = 200 / geometry.contours[0].points.len();
+    let frac = sample_size / geometry.contours[0].points.len();
     let n_cath = geometry.catheter[0].points.len() * frac as usize;
 
     // Process contours in reverse order (highest ID first)
@@ -300,7 +308,7 @@ fn align_remaining_contours(
         // Include corresponding catheter points in reference set
         let mut ref_points = base_ref_points;
         if let Some(cat) = geometry.catheter.iter().find(|c| c.id == contour.id + 1) {
-            let cat_points = if ref_points.len() > 200 {
+            let cat_points = if ref_points.len() > sample_size {
                 downsample_contour_points(&cat.points, n_cath)
             } else {
                 cat.points.clone()
@@ -308,8 +316,8 @@ fn align_remaining_contours(
             ref_points.extend_from_slice(&cat_points);
         }
 
-        ref_points = if ref_points.len() > 200 {
-            downsample_contour_points(&ref_points, 200)
+        ref_points = if ref_points.len() > sample_size {
+            downsample_contour_points(&ref_points, sample_size)
         } else {
             ref_points
         };
@@ -327,8 +335,8 @@ fn align_remaining_contours(
         // Find the catheter with the same id as the current contour
         let target = if let Some(catheter) = geometry.catheter.iter().find(|c| c.id == contour.id) {
             let combined = contour.points.clone();
-            let (mut combined, cat_pts) = if combined.len() > 200 && !catheter.points.is_empty() {
-                (downsample_contour_points(&combined, 200),
+            let (mut combined, cat_pts) = if combined.len() > sample_size && !catheter.points.is_empty() {
+                (downsample_contour_points(&combined, sample_size),
                 downsample_contour_points(&catheter.points, n_cath))
             } else {
                 (combined, catheter.points.clone())
@@ -341,7 +349,7 @@ fn align_remaining_contours(
 
         // Optimize rotation
         let best_rel_rot = if bruteforce {
-            search_range(&ref_points, &target, step_deg, range_deg, &contour.centroid, None)
+            search_range(&ref_points, &target, step_deg, range_deg, &contour.centroid, None, range_deg)
         } else {
             find_best_rotation(&ref_points, &target, step_deg, range_deg, &contour.centroid)
         };
@@ -381,96 +389,6 @@ fn align_remaining_contours(
     (geometry, id_translation)
 }
 
-// pub fn find_best_rotation(
-//     reference: &[ContourPoint],
-//     target: &[ContourPoint],
-//     step_deg: f64,
-//     range_deg: f64,
-//     centroid: &(f64, f64, f64),
-// ) -> f64 {
-//     // Always respect absolute rotation constraint
-//     let constrained_search = |center: f64| {
-//         search_range(
-//             reference,
-//             target,
-//             step_deg,
-//             range_deg,
-//             centroid,
-//             Some(center)
-//         )
-//     };
-
-//     // Coarse search (if step < 1° and range > 1°)
-//     let coarse_angle = if step_deg < 1.0 && range_deg > 1.0 {
-//         search_range(
-//             reference,
-//             target,
-//             1.0,  // Coarse step
-//             range_deg,
-//             centroid,
-//             None
-//         )
-//     } else {
-//         0.0
-//     };
-
-//     // Medium search around coarse result (if step < 0.1° and range > 0.1°)
-//     let medium_angle = if step_deg < 0.1 && range_deg > 0.1 {
-//         constrained_search(coarse_angle)
-//     } else {
-//         coarse_angle
-//     };
-
-//     // Fine search around medium result (if step < 0.1°)
-//     if step_deg < 0.1 && range_deg > 0.1 {
-//         constrained_search(medium_angle)
-//     } else {
-//         // Single search with original parameters
-//         search_range(
-//             reference,
-//             target,
-//             step_deg,
-//             range_deg,
-//             centroid,
-//             None
-//         )
-//     }
-// }
-
-// /// Helper function with absolute constraint enforcement
-// fn search_range(
-//     reference: &[ContourPoint],
-//     target: &[ContourPoint],
-//     step_deg: f64,
-//     range_deg: f64,
-//     centroid: &(f64, f64, f64),
-//     center_angle: Option<f64>,
-// ) -> f64 {
-//     let range_rad = range_deg.to_radians();
-//     let step_rad = step_deg.to_radians();
-//     let center = center_angle.unwrap_or(0.0);
-    
-//     // Constrain search to ±range_deg
-//     let start_angle = (center - range_rad).max(-range_rad);
-//     let end_angle = (center + range_rad).min(range_rad);
-//     let steps = ((end_angle - start_angle) / step_rad).ceil() as usize;
-    
-//     (0..=steps)
-//         .into_par_iter()
-//         .map(|i| {
-//             let angle = start_angle + (i as f64) * step_rad;
-//             let rotated: Vec<ContourPoint> = target
-//                 .iter()
-//                 .map(|p| p.rotate_point(angle, (centroid.0, centroid.1)))
-//                 .collect();
-//             let hausdorff_dist = hausdorff_distance(reference, &rotated);
-//             (angle, hausdorff_dist)
-//         })
-//         .min_by(|&(_, a), &(_, b)| a.partial_cmp(&b).unwrap())
-//         .map(|(angle, _)| angle)
-//         .unwrap_or(0.0)
-// }
-
 pub fn find_best_rotation(
     reference: &[ContourPoint],
     target: &[ContourPoint],
@@ -480,28 +398,28 @@ pub fn find_best_rotation(
 ) -> f64 {
     match step_deg {
         1.0..=f64::INFINITY => {
-            search_range(reference, target, step_deg, range_deg, centroid, None)
+            search_range(reference, target, step_deg, range_deg, centroid, None, range_deg)
         }
         0.1..1.0 => {
-            let coarse_angle = search_range(reference, target, 1.0, range_deg, centroid, None);
+            let coarse_angle = search_range(reference, target, 1.0, range_deg, centroid, None, range_deg);
             let range = if range_deg > 5.0 {5.0} else {range_deg};
-            search_range(reference, target, step_deg, range, centroid, Some(coarse_angle))
+            search_range(reference, target, step_deg, range, centroid, Some(coarse_angle), range_deg)
         }
         0.01..0.1 => {
-            let coarse_angle = search_range(reference, target, 1.0, range_deg, centroid, None);
+            let coarse_angle = search_range(reference, target, 1.0, range_deg, centroid, None, range_deg);
             let range = if range_deg > 5.0 {5.0} else {range_deg};
-            let medium_angle = search_range(reference, target, 0.1, range, centroid, Some(coarse_angle));
+            let medium_angle = search_range(reference, target, 0.1, range, centroid, Some(coarse_angle), range_deg);
             let range_small = if range_deg > 10.0 * step_deg {10.0 * step_deg} else {range_deg};
-            search_range(reference, target, step_deg, range_small, centroid, Some(medium_angle))
+            search_range(reference, target, step_deg, range_small, centroid, Some(medium_angle), range_deg)
         }
         _ => {
-            let coarse_angle = search_range(reference, target, 1.0, range_deg, centroid, None);
+            let coarse_angle = search_range(reference, target, 1.0, range_deg, centroid, None, range_deg);
             let range = if range_deg > 5.0 {5.0} else {range_deg};            
-            let medium_angle = search_range(reference, target, 0.1, range, centroid, Some(coarse_angle));
+            let medium_angle = search_range(reference, target, 0.1, range, centroid, Some(coarse_angle), range_deg);
             let range_small = if range_deg > 0.1 {0.1} else {range_deg};
-            let fine_angle = search_range(reference, target, 0.01, range_small, centroid, Some(medium_angle));
+            let fine_angle = search_range(reference, target, 0.01, range_small, centroid, Some(medium_angle), range_deg);
             let range_fine = if range_deg > 10.0 * step_deg {10.0 * step_deg} else {range_deg};
-            search_range(reference, target, step_deg, range_fine, centroid, Some(fine_angle))
+            search_range(reference, target, step_deg, range_fine, centroid, Some(fine_angle), range_deg)
         }
     }
 }
@@ -513,32 +431,54 @@ fn search_range(
     range_deg: f64,
     centroid: &(f64, f64, f64),
     center_angle: Option<f64>,
+    limes_deg: f64,
 ) -> f64 {
     let range_rad = range_deg.to_radians();
     let step_rad = step_deg.to_radians();
+    if step_rad <= 0.0 { return 0.0; }
+
     let center = center_angle.unwrap_or(0.0);
+    let limes = limes_deg.to_radians();
+    let lower_limes = -limes;
 
-    let start_angle = center - range_rad;
-    let steps = ((2.0 * range_rad) / step_rad).ceil() as usize;
+    // keep linear domain first, clamp in that domain
+    let mut start_angle = center - range_rad;
+    let stop_angle = center + range_rad;
+    start_angle = start_angle.max(lower_limes);
+    let stop_angle = stop_angle.min(limes);
 
-    let angle_dist_pairs: Vec<(f64, f64)> = (0..steps)
-        .map(|i| {
-            let angle = (start_angle + (i as f64) * step_rad).rem_euclid(2.0 * PI);
-            let mapped_angle = ((angle + PI) % (2.0 * PI)) - PI;
-            let rotated: Vec<ContourPoint> = target
-                .into_par_iter()
-                .map(|p| p.rotate_point(angle, (centroid.0, centroid.1)))
-                .collect();
-            let hausdorff_dist = hausdorff_distance(reference, &rotated);
-            (mapped_angle, hausdorff_dist)
-        })
-        .collect();
+    if stop_angle <= start_angle {
+        return ((center + PI).rem_euclid(2.0 * PI)) - PI;
+    }
 
-    // Find the angle with the minimum Hausdorff distance
+    let steps = (((stop_angle - start_angle) / step_rad).ceil() as usize).max(1);
+
+    let mut angle_dist_pairs = Vec::with_capacity(steps);
+    for i in 0..=steps {
+        let angle_lin = start_angle + (i as f64) * step_rad;
+        if angle_lin > stop_angle { break; }
+
+        // normalize for rotation (rem_euclid to [0,2π) then map if needed)
+        let angle = angle_lin.rem_euclid(2.0 * PI);
+        let mapped_angle = ((angle + PI).rem_euclid(2.0 * PI)) - PI;
+
+        let rotated: Vec<ContourPoint> = target
+            .par_iter()
+            .map(|p| p.rotate_point(angle, (centroid.0, centroid.1)))
+            .collect();
+
+        let hausdorff_dist = hausdorff_distance(reference, &rotated);
+        angle_dist_pairs.push((mapped_angle, hausdorff_dist));
+    }
+
+    if angle_dist_pairs.is_empty() {
+        return ((center + PI).rem_euclid(2.0 * PI)) - PI;
+    }
+
     let (min_angle, _min_dist) = angle_dist_pairs
         .iter()
         .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
-        .unwrap(); // safe if steps > 0
+        .unwrap();
 
     *min_angle
 }
@@ -825,7 +765,7 @@ mod contour_tests {
             label: "test".to_string(),
         };
 
-        let (aligned_geometry, _) = align_frames_in_geometry(geometry, 1.0, PI, true, true);
+        let (aligned_geometry, _) = align_frames_in_geometry(geometry, 1.0, PI, true, true, 200);
 
         // Check centroids are aligned to reference (0,0)
         for contour in aligned_geometry.contours {
@@ -891,7 +831,7 @@ mod contour_tests {
             label: "test".to_string(),
         };
         let geom_old = geometry.clone();
-        let (aligned, _) = align_frames_in_geometry(geometry, 1.0, PI, true, true);
+        let (aligned, _) = align_frames_in_geometry(geometry, 1.0, PI, true, true, 200);
 
         for contour in &aligned.catheter {
             // skip the reference if you like, but we’ll test all three

@@ -133,6 +133,7 @@ def from_file(
         "systole_output_path": "output/systole",
         "interpolation_steps": 28,
         "bruteforce": False,
+        "sample_size": 500,
     }
     merged = {**defaults, **kwargs}
 
@@ -152,6 +153,7 @@ def from_file(
             "systole_output_path",
             "interpolation_steps",
             "bruteforce",
+            "sample_size",
         )
         args = {k: merged[k] for k in required}
         return from_file_full(
@@ -169,6 +171,7 @@ def from_file(
             args["systole_output_path"],
             args["interpolation_steps"],
             args["bruteforce"],
+            args["sample_size"],
         )
 
     elif mode == "doublepair":
@@ -185,6 +188,7 @@ def from_file(
             "stress_output_path",
             "interpolation_steps",
             "bruteforce",
+            "sample_size",
         )
         args = {k: merged[k] for k in required}
         return from_file_doublepair(
@@ -200,6 +204,7 @@ def from_file(
             args["stress_output_path"],
             args["interpolation_steps"],
             args["bruteforce"],
+            args["sample_size"],
         )
 
     elif mode == "singlepair":
@@ -214,6 +219,7 @@ def from_file(
             "output_path",
             "interpolation_steps",
             "bruteforce",
+            "sample_size",
         )
         args = {k: merged[k] for k in required}
         return from_file_singlepair(
@@ -227,6 +233,7 @@ def from_file(
             args["output_path"],
             args["interpolation_steps"],
             args["bruteforce"],
+            args["sample_size"],
         )
 
     elif mode == "single":
@@ -241,6 +248,7 @@ def from_file(
             "write_obj",
             "output_path",
             "bruteforce",
+            "sample_size"
         )
         args = {k: merged[k] for k in required}
         return from_file_single(
@@ -254,6 +262,7 @@ def from_file(
             args["write_obj"],
             args["output_path"],
             args["bruteforce"],
+            args["sample_size"],
         )
 
     else:
@@ -363,6 +372,7 @@ def from_array(
         "sort": True,
         "write_obj": True,
         "bruteforce": False,
+        "sample_size": 500,
     }
     merged = {**defaults, **kwargs}
 
@@ -387,6 +397,7 @@ def from_array(
             "systole_output_path",
             "interpolation_steps",
             "bruteforce",
+            "sample_size",
         )
         args = {k: merged[k] for k in required}
         return from_array_full(
@@ -406,6 +417,7 @@ def from_array(
             args["systole_output_path"],
             args["interpolation_steps"],
             args["bruteforce"],
+            args["sample_size"],
         )
 
     elif mode == "doublepair":
@@ -424,6 +436,7 @@ def from_array(
             "stress_output_path",
             "interpolation_steps",
             "bruteforce",
+            "sample_size",
         )
         args = {k: merged[k] for k in required}
         return from_array_doublepair(
@@ -441,6 +454,7 @@ def from_array(
             args["stress_output_path"],
             args["interpolation_steps"],
             args["bruteforce"],
+            args["sample_size"],
         )
 
     elif mode == "singlepair":
@@ -456,6 +470,7 @@ def from_array(
             "output_path",
             "interpolation_steps",
             "bruteforce",
+            "sample_size",
         )
         args = {k: merged[k] for k in required}
         return from_array_singlepair(
@@ -470,6 +485,7 @@ def from_array(
             args["output_path"],
             args["interpolation_steps"],
             args["bruteforce"],
+            args["sample_size"],
         )
 
     elif mode == "single":
@@ -489,6 +505,7 @@ def from_array(
             "write_obj",
             "output_path",
             "bruteforce",
+            "sample_size",
         )
         args = {k: merged[k] for k in required}
         return geometry_from_array(
@@ -507,6 +524,7 @@ def from_array(
             args["write_obj"],
             args["output_path"],
             args["bruteforce"],
+            args["sample_size"],
         )
 
     else:
