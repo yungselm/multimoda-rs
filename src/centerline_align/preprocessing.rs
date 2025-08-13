@@ -70,66 +70,178 @@ fn distance_sq(a: &ContourPoint, b: &(f64, f64, f64)) -> f64 {
     dx * dx + dy * dy + dz * dz
 }
 
+/// Resample `centerline` along its arc-length so that adjacent points are spaced at the
+/// mean Euclidean distance between consecutive contour centroids in `ref_mesh`.
+///
+/// Precondition (expected caller behavior):
+/// - `centerline` should be trimmed so the first point corresponds to the aortic start
+///   (you already call `remove_leading_points_cl` before this).
+/// - `centerline` should be in decreasing z-order if that matters (you call `ensure_descending_z`).
 pub fn resample_centerline_by_contours(centerline: &Centerline, ref_mesh: &Geometry) -> Centerline {
+    // If no centerline -> nothing to do
     if centerline.points.is_empty() {
         return Centerline { points: Vec::new() };
     }
 
-    // Extract and sort z_refs (descending)
-    let mut z_refs: Vec<f64> = ref_mesh.contours.iter().map(|c| c.centroid.2).collect();
-    z_refs.sort_by(|a, b| b.partial_cmp(a).unwrap()); // Descending
-    z_refs.dedup();
-
-    let min_z = centerline.points.last().unwrap().contour_point.z;
-    let max_z = centerline.points[0].contour_point.z;
-
-    // Filter z_refs within centerline's z-range
-    let z_refs: Vec<f64> = z_refs
-        .into_iter()
-        .filter(|&z| z <= max_z && z >= min_z)
+    // 1) Compute centroid positions from ref_mesh
+    let centroids: Vec<(f64, f64, f64)> = ref_mesh
+        .contours
+        .iter()
+        .map(|c| (c.centroid.0, c.centroid.1, c.centroid.2))
         .collect();
 
-    if z_refs.is_empty() {
+    // 2) Compute distances between consecutive centroids (Euclidean)
+    let centroid_dists: Vec<f64> = centroids
+        .windows(2)
+        .map(|w| {
+            let dx = w[1].0 - w[0].0;
+            let dy = w[1].1 - w[0].1;
+            let dz = w[1].2 - w[0].2;
+            (dx * dx + dy * dy + dz * dz).sqrt()
+        })
+        .collect();
+
+    // 3) Mean spacing from contours (fallbacks later)
+    let mean_spacing_opt = if !centroid_dists.is_empty() {
+        let sum: f64 = centroid_dists.iter().sum();
+        Some(sum / centroid_dists.len() as f64)
+    } else {
+        None
+    };
+
+    // 4) Compute cumulative arc-length along the centerline
+    let mut cum: Vec<f64> = Vec::with_capacity(centerline.points.len());
+    cum.push(0.0f64);
+    for i in 1..centerline.points.len() {
+        let p0 = &centerline.points[i - 1].contour_point;
+        let p1 = &centerline.points[i].contour_point;
+        let dx = p1.x - p0.x;
+        let dy = p1.y - p0.y;
+        let dz = p1.z - p0.z;
+        let d = (dx * dx + dy * dy + dz * dz).sqrt();
+        cum.push(cum.last().unwrap() + d);
+    }
+    let total_length = *cum.last().unwrap();
+
+    // 5) Decide spacing: prefer centroid mean, fallback to average centerline segment length
+    let spacing = match mean_spacing_opt {
+        Some(s) if s.is_finite() && s > 1e-12 => s,
+        _ => {
+            if centerline.points.len() > 1 {
+                total_length / ((centerline.points.len() - 1) as f64)
+            } else {
+                // degenerate single-point centerline -> return it
+                return centerline.clone();
+            }
+        }
+    };
+
+    if !(spacing.is_finite() && spacing > 1e-12) {
+        // nothing we can do reliably
+        eprintln!("resample_centerline_by_contours: invalid spacing computed, returning original centerline");
         return centerline.clone();
     }
 
-    let mut i = 0; // Index in z_refs
-    let mut j = 0; // Index in centerline segments
-    let mut new_points = Vec::new();
+    // Debug log (remove or lower verbosity later)
+    eprintln!(
+        "resample_centerline_by_contours: centroid_count={}, centroid_mean_spacing={:?}, centerline_length={}, spacing={:.6}",
+        centroids.len(),
+        mean_spacing_opt,
+        total_length,
+        spacing
+    );
 
-    while i < z_refs.len() && j < centerline.points.len() - 1 {
-        let z_target = z_refs[i];
-        let p0 = &centerline.points[j];
-        let p1 = &centerline.points[j + 1];
-        let p0_z = p0.contour_point.z;
-        let p1_z = p1.contour_point.z;
+    // 6) Build target arc-length samples s = 0, spacing, 2*spacing, ... <= total_length
+    let mut s_new: Vec<f64> = Vec::new();
+    let mut s = 0.0;
+    let eps = 1e-9;
+    while s <= total_length + eps {
+        s_new.push(s);
+        s += spacing;
+    }
 
-        if z_target > p0_z {
-            // Above current segment - skip
-            i += 1;
-        } else if z_target < p1_z {
-            // Below current segment - move to next segment
-            j += 1;
-        } else {
-            // Within segment - interpolate
-            let t = (p0_z - z_target) / (p0_z - p1_z);
-            let x = p0.contour_point.x + t * (p1.contour_point.x - p0.contour_point.x);
-            let y = p0.contour_point.y + t * (p1.contour_point.y - p0.contour_point.y);
-
-            new_points.push(CenterlinePoint {
-                contour_point: ContourPoint {
-                    frame_index: new_points.len() as u32,
-                    point_index: new_points.len() as u32,
-                    x,
-                    y,
-                    z: z_target,
-                    aortic: false,
-                },
-                normal: Vector3::zeros(),
-            });
-            i += 1;
+    // Ensure last sample isn't just slightly beyond due to FP; clamp
+    if let Some(&last) = s_new.last() {
+        if last > total_length + 1e-6 {
+            s_new.pop();
+            s_new.push(total_length);
         }
     }
+
+    // 7) For each target s, find segment index and interpolate position and normal
+    let mut new_points: Vec<CenterlinePoint> = Vec::with_capacity(s_new.len());
+
+    for (k, &target_s) in s_new.iter().enumerate() {
+        // binary search to find first cum[idx] > target_s
+        let idx = match cum.binary_search_by(|v| v.partial_cmp(&target_s).unwrap()) {
+            Ok(i) => i,             // exact match
+            Err(0) => 0usize,       // before first (shouldn't happen since cum[0]=0 and target_s >=0)
+            Err(pos) => pos - 1,    // segment index
+        };
+
+        // if at the very end, return last point
+        if idx >= centerline.points.len() - 1 {
+            let last_pt = &centerline.points.last().unwrap().contour_point;
+            let normal = centerline.points.last().unwrap().normal;
+            new_points.push(CenterlinePoint {
+                contour_point: ContourPoint {
+                    frame_index: k as u32,
+                    point_index: k as u32,
+                    x: last_pt.x,
+                    y: last_pt.y,
+                    z: last_pt.z,
+                    aortic: false,
+                },
+                normal,
+            });
+            continue;
+        }
+
+        // Interpolate between idx and idx+1
+        let p0 = &centerline.points[idx].contour_point;
+        let p1 = &centerline.points[idx + 1].contour_point;
+        let s0 = cum[idx];
+        let s1 = cum[idx + 1];
+        let denom = s1 - s0;
+        let t = if denom.abs() < 1e-12 {
+            0.0
+        } else {
+            (target_s - s0) / denom
+        };
+
+        let x = p0.x + t * (p1.x - p0.x);
+        let y = p0.y + t * (p1.y - p0.y);
+        let z = p0.z + t * (p1.z - p0.z);
+
+        // interpolate normal if available, else zeros
+        let n0 = centerline.points[idx].normal;
+        let n1 = centerline.points[idx + 1].normal;
+        let mut normal = Vector3::zeros();
+        // If normals are both non-zero, interpolate and normalize
+        if n0.norm() > 0.0 || n1.norm() > 0.0 {
+            normal = n0 * (1.0 - t) + n1 * t;
+            let n_norm = normal.norm();
+            if n_norm > 1e-12 {
+                normal /= n_norm;
+            } else {
+                normal = Vector3::zeros();
+            }
+        }
+
+        new_points.push(CenterlinePoint {
+            contour_point: ContourPoint {
+                frame_index: k as u32,
+                point_index: k as u32,
+                x,
+                y,
+                z,
+                aortic: false,
+            },
+            normal,
+        });
+    }
+
+    eprintln!("resample_centerline_by_contours: produced {} points", new_points.len());
 
     Centerline { points: new_points }
 }

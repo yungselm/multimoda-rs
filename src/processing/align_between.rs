@@ -617,6 +617,82 @@ mod geometry_pair_tests {
     }
 
     #[test]
+    fn test_adjust_z_coordinates_mean_spacing() {
+        // helper to build a Geometry with contours at the given centroid z-positions
+        fn geom_from_zs(zs: &[f64]) -> Geometry {
+            let mut contours = Vec::new();
+            for (i, &z) in zs.iter().enumerate() {
+                let p = ContourPoint {
+                    frame_index: i as u32,
+                    point_index: 0,
+                    x: 0.0,
+                    y: 0.0,
+                    z,
+                    aortic: false,
+                };
+                let mut cont = Contour {
+                    id: i as u32,
+                    points: vec![p.clone()],
+                    centroid: (0.0, 0.0, z),
+                    aortic_thickness: None,
+                    pulmonary_thickness: None,
+                };
+                // ensure sorting if your implementation expects it
+                cont.sort_contour_points();
+                contours.push(cont);
+            }
+            Geometry {
+                contours,
+                catheter: vec![],
+                walls: vec![],
+                reference_point: ContourPoint {
+                    frame_index: 0,
+                    point_index: 0,
+                    x: 0.0,
+                    y: 0.0,
+                    z: zs[0],
+                    aortic: false,
+                },
+                label: "test".into(),
+            }
+        }
+
+        // dia with 1.0 spacing (0,1,2,3)
+        let dia = geom_from_zs(&[0.0, 1.0, 2.0, 3.0]);
+        // sys with 2.0 spacing (0,2,4,6)
+        let sys = geom_from_zs(&[0.0, 2.0, 4.0, 6.0]);
+
+        let gp = GeometryPair {
+            dia_geom: dia,
+            sys_geom: sys,
+        };
+
+        let gp = gp.adjust_z_coordinates();
+
+        // expected mean spacing = (1.0 + 2.0) / 2.0 = 1.5
+        let expected_spacing = 1.5;
+        // check dia spacing
+        for window in gp.dia_geom.contours.windows(2) {
+            let d = window[1].centroid.2 - window[0].centroid.2;
+            assert_relative_eq!(d, expected_spacing, epsilon = 1e-9);
+        }
+        // check sys spacing
+        for window in gp.sys_geom.contours.windows(2) {
+            let d = window[1].centroid.2 - window[0].centroid.2;
+            assert_relative_eq!(d, expected_spacing, epsilon = 1e-9);
+        }
+
+        // spot-check first and last positions (optional)
+        let n = gp.dia_geom.contours.len();
+        assert_relative_eq!(gp.dia_geom.contours[0].centroid.2, 0.0, epsilon = 1e-9);
+        assert_relative_eq!(
+            gp.dia_geom.contours[n - 1].centroid.2,
+            expected_spacing * ((n - 1) as f64),
+            epsilon = 1e-9
+        );
+    }
+
+    #[test]
     fn test_trim_geometries_same_length() {
         let mut gp = GeometryPair {
             dia_geom: simple_geometry((0.0, 0.0), 0.0, (None, None)),

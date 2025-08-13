@@ -59,7 +59,7 @@ impl PyContourPoint {
     // Add a __repr__ method
     fn __repr__(&self) -> String {
         format!(
-            "Point(f={}, p={}, x={:.2}, y={:.2}, z={:.2}, aortic={})",
+            "Point(frame_id={}, pt_id={}, x={:.2}, y={:.2}, z={:.2}, aortic={})",
             self.frame_index, self.point_index, self.x, self.y, self.z, self.aortic
         )
     }
@@ -67,7 +67,7 @@ impl PyContourPoint {
     // Add a __str__ method for human-readable output
     fn __str__(&self) -> String {
         format!(
-            "Point(f={}, p={}, x={:.2}, y={:.2}, z={:.2}, aortic={})",
+            "Point(frame_id={}, pt_id={}, x={:.2}, y={:.2}, z={:.2}, aortic={})",
             self.frame_index, self.point_index, self.x, self.y, self.z, self.aortic
         )
     }
@@ -763,7 +763,7 @@ impl PyCenterline {
     }
 
     fn __repr__(&self) -> String {
-        format!("Centerline(len={})", self.points.len())
+        format!("Centerline(len={}, spacing={:.2} mm)", self.points.len(), self._spacing())
     }
 
     fn __str__(&self) -> String {
@@ -772,6 +772,29 @@ impl PyCenterline {
 
     fn __len__(&self) -> usize {
         self.points.len()
+    }
+
+    fn _spacing(&self) -> f64 {
+        // if fewer than 2 points there is no spacing
+        if self.points.len() < 2 {
+            return 0.0;
+        }
+
+        // sum distances between consecutive contour points
+        let mut total: f64 = 0.0;
+        let mut count: usize = 0;
+        for pair in self.points.windows(2) {
+            let a = &pair[0].contour_point;
+            let b = &pair[1].contour_point;
+
+            let dx = a.x - b.x;
+            let dy = a.y - b.y;
+            let dz = a.z - b.z;
+            total += (dx * dx + dy * dy + dz * dz).sqrt();
+            count += 1;
+        }
+
+        total / (count as f64)
     }
 
     fn points_as_tuples(&self) -> Vec<(f64, f64, f64)> {
