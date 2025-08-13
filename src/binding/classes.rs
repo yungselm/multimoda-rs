@@ -569,6 +569,93 @@ impl PyGeometry {
         rust_geometry = refine_ordering(rust_geometry, delta, max_rounds);
         rust_geometry.into()
     }
+
+    /// Get a compact summary of lumen properties for this geometry.
+    ///
+    /// Returns a tuple (mla, max_stenosis, stenosis_length_mm):
+    ///     - mla: minimal lumen area (same units as contour.area(), e.g. mm^2)
+    ///     - max_stenosis: 1 - (mla / biggest_area)
+    ///     - stenosis_length_mm: length (in mm) of the longest contiguous region
+    ///         where contour area < threshold.
+    ///
+    /// Threshold logic (implemented by assumption):
+    ///     - If ALL contours have elliptic_ratio < 1.3 we treat the vessel as "elliptic"
+    ///       and use a more lenient threshold of 0.70 * biggest_area.
+    ///     - Otherwise we use a stricter threshold of 0.50 * biggest_area (50%).
+    ///
+    /// Note: you asked for behavior described as
+    ///     "stenosis length (if elliptic vessels all <1.3 else all with <50% lumen area of biggest)"
+    /// This implementation interprets that to mean: choose threshold 0.7*biggest when all
+    /// elliptic ratios < 1.3, otherwise 0.5*biggest. If you prefer a different elliptic
+    /// threshold (e.g. 0.8 or another method), tell me and I will adjust.
+    #[pyo3(signature = ())]
+    pub fn get_summary(&self) -> PyResult<(f64, f64, f64)> {
+        let geom = self.to_rust_geometry();
+
+        if geom.contours.is_empty() {
+            return Ok((0.0, 0.0, 0.0));
+        }
+
+        // compute areas and elliptic ratios
+        let areas: Vec<f64> = geom.contours.iter().map(|c| c.area()).collect();
+        let biggest = areas
+                    .iter()
+                    .cloned()
+                    .fold(f64::NAN, |a, b| if a.is_nan() || b > a { b } else { a });
+        let mla = areas
+            .iter()
+            .cloned()
+            .fold(f64::INFINITY, |a, b| if b < a { b } else { a });
+
+        let max_stenosis = if biggest > 0.0 { 1.0 - (mla / biggest) } else { 0.0 };
+
+        // elliptic decision
+        let all_elliptic = geom
+            .contours
+            .iter()
+            .all(|c| c.elliptic_ratio() < 1.3);
+
+        // threshold selection (see note above)
+        let threshold = if all_elliptic { 0.70 * biggest } else { 0.50 * biggest };
+
+        // build centroid list for distance computations
+        let centroids: Vec<(f64, f64, f64)> = geom.contours.iter().map(|c| c.centroid).collect();
+
+        // find longest contiguous run where area < threshold
+        let mut longest_mm: f64 = 0.0;
+        let mut i = 0usize;
+        while i < areas.len() {
+            if areas[i] < threshold {
+                // start run
+                let start = i;
+                let mut end = i;
+                while end + 1 < areas.len() && areas[end + 1] < threshold {
+                    end += 1;
+                }
+
+                // compute length along centroids from start..=end
+                let mut run_len = 0.0;
+                for k in start..end {
+                    let a = centroids[k];
+                    let b = centroids[k + 1];
+                    let dx = a.0 - b.0;
+                    let dy = a.1 - b.1;
+                    let dz = a.2 - b.2;
+                    run_len += (dx * dx + dy * dy + dz * dz).sqrt();
+                }
+
+                if run_len > longest_mm {
+                    longest_mm = run_len;
+                }
+
+                i = end + 1;
+            } else {
+                i += 1;
+            }
+        }
+
+        Ok((mla, max_stenosis, longest_mm))
+    }
 }
 
 impl PyGeometry {
@@ -640,6 +727,18 @@ impl PyGeometryPair {
     // Add a __str__ method
     fn __str__(&self) -> String {
         self.__repr__()
+    }
+
+    /// Get summaries for both diastolic and systolic geometries.
+    ///
+    /// Returns a tuple: ((dia_mla, dia_max_stenosis, dia_len_mm), (sys_mla, sys_max_stenosis, sys_len_mm))
+    ///
+    /// This simply calls `get_summary()` on each contained PyGeometry and returns both results.
+    #[pyo3(signature = ())]
+    pub fn get_summary(&self) -> PyResult<((f64, f64, f64), (f64, f64, f64))> {
+        let dia = self.dia_geom.get_summary()?;
+        let sys = self.sys_geom.get_summary()?;
+        Ok((dia, sys))
     }
 }
 
