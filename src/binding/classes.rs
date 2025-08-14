@@ -577,7 +577,7 @@ impl PyGeometry {
     ///         mla (float): minimal lumen area (same units as contour.area(), e.g. mm^2)
     ///         max_stenosis (float): 1 - (mla / biggest_area)
     ///         stenosis_length_mm (float): length (in mm) of the longest contiguous region
-    ///             where contour area < threshold.
+    ///         where contour area < threshold.
     ///
     /// Threshold logic (implemented by assumption):
     ///     If ALL contours have elliptic_ratio < 1.3 we treat the vessel as "elliptic"
