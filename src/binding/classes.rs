@@ -572,22 +572,17 @@ impl PyGeometry {
 
     /// Get a compact summary of lumen properties for this geometry.
     ///
-    /// Returns a tuple (mla, max_stenosis, stenosis_length_mm):
-    ///     - mla: minimal lumen area (same units as contour.area(), e.g. mm^2)
-    ///     - max_stenosis: 1 - (mla / biggest_area)
-    ///     - stenosis_length_mm: length (in mm) of the longest contiguous region
-    ///         where contour area < threshold.
+    /// Returns:
+    ///     tuple: (mla, max_stenosis, stenosis_length_mm)
+    ///         mla (float): minimal lumen area (same units as contour.area(), e.g. mm^2)
+    ///         max_stenosis (float): 1 - (mla / biggest_area)
+    ///         stenosis_length_mm (float): length (in mm) of the longest contiguous region
+    ///             where contour area < threshold.
     ///
     /// Threshold logic (implemented by assumption):
-    ///     - If ALL contours have elliptic_ratio < 1.3 we treat the vessel as "elliptic"
-    ///       and use a more lenient threshold of 0.70 * biggest_area.
-    ///     - Otherwise we use a stricter threshold of 0.50 * biggest_area (50%).
-    ///
-    /// Note: you asked for behavior described as
-    ///     "stenosis length (if elliptic vessels all <1.3 else all with <50% lumen area of biggest)"
-    /// This implementation interprets that to mean: choose threshold 0.7*biggest when all
-    /// elliptic ratios < 1.3, otherwise 0.5*biggest. If you prefer a different elliptic
-    /// threshold (e.g. 0.8 or another method), tell me and I will adjust.
+    ///     If ALL contours have elliptic_ratio < 1.3 we treat the vessel as "elliptic"
+    ///     and use a more lenient threshold of 0.70 * biggest_area.
+    ///     Otherwise we use a stricter threshold of 0.50 * biggest_area (50%).
     #[pyo3(signature = ())]
     pub fn get_summary(&self) -> PyResult<(f64, f64, f64)> {
         let geom = self.to_rust_geometry();
@@ -733,7 +728,7 @@ impl PyGeometryPair {
     ///
     /// Returns a tuple: ((dia_mla, dia_max_stenosis, dia_len_mm), (sys_mla, sys_max_stenosis, sys_len_mm))
     ///
-    /// This simply calls `get_summary()` on each contained PyGeometry and returns both results.
+    /// This simply calls ``get_summary()`` on each contained PyGeometry and returns both results.
     #[pyo3(signature = ())]
     pub fn get_summary(&self) -> PyResult<((f64, f64, f64), (f64, f64, f64))> {
         let dia = self.dia_geom.get_summary()?;
