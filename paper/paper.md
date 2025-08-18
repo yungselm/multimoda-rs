@@ -13,14 +13,14 @@ authors:
     orcid: 0000-0002-5861-3753
     affiliation: [1, 2] # (Multiple affiliations must be quoted)
     corresponding: true
+  - name: Ali Mokthari
+    orcid: 0009-0004-8864-6988
+    affiliation: [1, 2]
   - name: Pooya Mohammadi Kazaj
     orcid: 0000-0003-2747-1489
     affiliation: [1, 2]
   - name: Marc Ilic
     orcid: 0009-0000-6443-8739
-    affiliation: [1, 2]
-  - name: Ali Mokthari
-    orcid: 0009-0004-8864-6988
     affiliation: [1, 2]
   - name: Isaac Shiri
     orcid: 0000-0002-5735-0736
@@ -53,7 +53,9 @@ Currently, different imaging modalities are assessed independently in cardiac im
 The project is built having scalability in mind and in the future this can be expanded to include additional imaging modalities such as cardiac magnetic resonance imaging (CMR) for tissue characterization or functional imaging modalities.
 
 # Features
-`multimodars` is a Rust-powered, Python-accessible toolkit for multi-modality intravascular/CCTA image fusion and registration that combines a high-performance native core with a NumPy-first I/O model for easy integration into research pipelines. Core algorithms (Hausdorff-based frame alignment, three-point rotational fitting, Hamiltonian ordering) are implemented in Rust and parallelized with Rayon, while ergonomic PyO3 bindings expose a compact, well-typed data model (`PyContourPoint`, `PyContour`, `PyGeometry`, `PyGeometryPair`) that maps 1:1 to simple (N,4) NumPy arrays. The package supports four gating paradigms (full, double-pair, single-pair, single), round-trip conversion to/from CSV or binary arrays, and deterministic reconstruction of geometries from array inputs; utility methods provide centroiding, area/ellipticity metrics, smoothing, reordering, rotation/translation, and summary stenosis metrics. 
+`multimodars` is a Rust-powered, Python-accessible toolkit for multi-modality intravascular/CCTA image fusion and registration that combines a high-performance native core with a NumPy-first I/O model for easy integration into research pipelines. Core algorithms (Hausdorff-based frame alignment, three-point rotational fitting, Hamiltonian ordering) are implemented in Rust and parallelized with Rayon, while ergonomic PyO3 bindings expose a compact, well-typed data model (`PyContourPoint`, `PyContour`, `PyGeometry`, `PyGeometryPair`) that maps 1:1 to simple (N,4) NumPy arrays. The package supports four processings paradigms (full, double-pair, single-pair, single), round-trip conversion to/from CSV or binary arrays, and deterministic reconstruction of geometries from array inputs; utility methods provide centroiding, area/ellipticity metrics, smoothing, reordering, rotation/translation, and summary stenosis metrics.
+
+![Illustration of `multimodars`'s different processing modes in the context of coronary artery anomalies. "full" returns all 4 geometry pairs (rest pulsatile lumen deformation, stress pulsatile lumen deformation, stress-induced diastolic lumen deformation, stress-induced systolic lumen deformation), "double-pair" returns pulsatile lumen deformation in rest and stress, "single-pair" can be used to compare any two states in the same patient (pulsatile lumen deformation or pre- and post-stent) and "single" aligns just the frames in a pullback.\label{processing_modes}](figures/Figure1.jpg){width=80%}
 
 ## Alignment Algorithm
 Frame alignment in `multimodars` is a two-stage registration procedure that produces a spatially and rotationally consistent mapping of intravascular frames both **within a single pullback** (intra-pullback, *align-within*) and **between paired pullbacks** (inter-pullback, *align-between*). The result is deterministic and reproducible suitable for visualization, geometric analysis and downstream processing. The algorithmic design prioritises robustness and computational efficiency, however also leaves the option for a precise but inefficient bruteforce approach.
@@ -63,10 +65,15 @@ Frame alignment in `multimodars` is a two-stage registration procedure that prod
 - **Outputs**: aligned `PyGeometry` / `PyGeometryPair` objects, per-frame `AlignLog` entries (rotation, cumulative rotation, centroid translations), optional OBJ meshes for interpolated geometries.
 - **Key ideas**: pick a stable reference contour, rotate/translate all frames to that baseline, find local best rotations by minimising a point-set distance (Hausdorff), use multiscale angular search to balance accuracy and cost, downsample for speed, and parallelise angle / distance computations.
 
+The package is designed to work flawlessly with numpy, while information inside the module is stored in Hierarchical order in `PyGeometryPair`-, `PyGeometry`-, `PyContour`- and `PyContourPoint`-structs, they can easily be converted back and forth to numpy arrays. Additionally, all the different structs can be directly saved to .obj files.
+
+![Illustration of `multimodars`'s internal data handling and the differenty entry and exit points.\label{data types}](figures/Figure2.jpg){width=80%}
+
+
+# Alignment algorithms
+
+
 Designed for reproducible research, multimodars ships with CI-driven tests, example notebooks, ReadTheDocs documentation, and file I/O helpers so clinicians and researchers can rapidly prototype patient-specific digital twin workflows while retaining high throughput and scalability.
-
-# Software architecture
-
 
 # Acknowledgements
 
