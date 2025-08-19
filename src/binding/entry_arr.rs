@@ -288,14 +288,14 @@ fn geometry_pair_from_array_rs(
     catheters_sys.sort_by_key(|c| c.id);
 
     // Insert in Geometry
-    let geometry_dia = Geometry {
+    let mut geometry_dia = Geometry {
         contours: geometry_dia.contours,
         catheter: catheters_dia,
         walls: geometry_dia.walls,
         reference_point: geometry_dia.reference_point,
         label: "Diastole".to_string(),
     };
-    let geometry_sys = Geometry {
+    let mut geometry_sys = Geometry {
         contours: geometry_sys.contours,
         catheter: catheters_sys,
         walls: geometry_sys.walls,
@@ -303,11 +303,24 @@ fn geometry_pair_from_array_rs(
         label: "Systole".to_string(),
     };
 
-    let mut geometries = GeometryPair {
+    // reindex contours in geometry_dia and geometry_sys to range from 0 to length
+    for (new_id, contour) in geometry_dia.contours.iter_mut().enumerate() {
+        contour.id = new_id as u32;
+    }
+    for (new_id, contour) in geometry_sys.contours.iter_mut().enumerate() {
+        contour.id = new_id  as u32;
+    }
+    for (new_id, catheter) in geometry_dia.catheter.iter_mut().enumerate() {
+        catheter.id = new_id  as u32;
+    }
+    for (new_id, catheter) in geometry_sys.catheter.iter_mut().enumerate() {
+        catheter.id = new_id  as u32;
+    }
+
+    let geometries = GeometryPair {
         dia_geom: geometry_dia,
         sys_geom: geometry_sys,
     };
-    geometries = geometries.adjust_z_coordinates();
     Ok(geometries)
 }
 
