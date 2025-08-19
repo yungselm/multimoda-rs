@@ -171,7 +171,7 @@ This can either be done with three point alignment (preferred), where one point 
 of the PyGeometry (e.g. aortic reference for coronary artery anomalies) and one point indicating the superior position
 and another point indicating the inferior position.
 
-.. image:: ../examples/figures/Alignment3.png
+.. image:: ../examples/figures/Alignment3p.png
    :alt: Example figure
    :align: center
    :width: 400px
