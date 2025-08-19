@@ -24,18 +24,22 @@ To run the whole workflow from .csv files the following requirements have to be 
 Files should be named ``diastolic_contours.csv``, ``systolic_contours.csv``, 
 ``diastolic_reference_points.csv`` and ``systolic_reference_points.csv`` depending on the required analysis.
 Every file should be structured in the following way (no headers):
-+------------+----------+----------+----------+
-| frame      | x        | y        | z        |
-+------------+----------+----------+----------+
-| 771        | 2.4862   | 6.7096   | 24.5370  |
-| 771        | 2.5118   | 6.7017   | 24.5370  |
-| 771        | 2.5370   | 6.6936   | 24.5370  |
-+------------+----------+----------+----------+
+
++-------+---------+---------+---------+
+| frame | x       | y       | z       |
++=======+=========+=========+=========+
+| 771   | 2.4862  | 6.7096  | 24.5370 |
++-------+---------+---------+---------+
+| 771   | 2.5118  | 6.7017  | 24.5370 |
++-------+---------+---------+---------+
+| 771   | 2.5370  | 6.6936  | 24.5370 |
++-------+---------+---------+---------+
 
 To acquire meaningful measurement data, the coordinates should be provided in mm or another SI unit instead of pixel values.
 Optionally a record file can be provided `combined_sorted_manual.csv`, which should have the following structure, here the first column should contain the desired frame order and measurement_1 
 represent the thickness of the wall between aorta and coronary and measurement_2 for the thickness between pulmonary artery and coronary. This is based on the output of
 the AIVUS-CAA software _a link: https://github.com/AI-in-Cardiovascular-Medicine/AIVUS-CAA/:
+
 +-----------------+---------------+---------------+---------------+---------------+
 | frame           | position      |   phase       | measurement_1 | measurement_2 |
 +-----------------+---------------+---------------+---------------+---------------+
@@ -68,7 +72,8 @@ However the preferred more flexible array is from numpy arrays.
 
 2. Workflow numpy arrays
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-Here the geometry can be directly build from arrays with the same structure as before: 
+Here the geometry can be directly build from arrays with the same structure as before:
+
 +------------+----------+----------+----------+
 | ...        |   ...    |   ...    |   ...    |
 +------------+----------+----------+----------+
@@ -80,6 +85,7 @@ Here the geometry can be directly build from arrays with the same structure as b
 +------------+----------+----------+----------+
 | ...        |   ...    |   ...    |   ...    |
 +------------+----------+----------+----------+
+
 catheter and walls are optional. However it is not recommended to provide the catheter points directly, but rather the image center (in mm), radius of the catheter (e.g. 0.5mm for IVUS)
 and number of points to represent the catheter. If no walls are provided a default wall with 1mm offset is created.
 
@@ -118,7 +124,7 @@ and number of points to represent the catheter. If no walls are provided a defau
 This ``from_array`` function automatically aligns the frames within a pullback and then between pullbacks. The algorithm translates contours to the same centroid as the most proximal contour,
 and then finds the best rotation based on contour **AND** contour points.
 
-.. image:: ../paper/figures/Figure2.jpg
+.. image:: ../paper/figures/Figure3.jpg
    :alt: Example figure
    :align: center
    :width: 400px

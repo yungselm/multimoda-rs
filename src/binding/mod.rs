@@ -625,7 +625,7 @@ pub fn create_catheter_geometry(
     n_points = 20u32,
     label = "None",
     records = None,
-    delta = 0.1f64,
+    delta = 0.0f64,
     max_rounds = 5,
     diastole = true,
     sort = true,

@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use crossbeam::thread;
+use std::collections::HashSet;
 
 use crate::io::input::{Contour, ContourPoint, Record};
 use crate::io::Geometry;
@@ -50,7 +51,7 @@ pub fn geometry_from_array_rs(
     };
 
     // Initial geometry setup, possibly reordering by records
-    let geometry = if let Some(recs) = records.as_ref() {
+    let mut geometry = if let Some(recs) = records.as_ref() {
         let mut z_coords: Vec<f64> = contours.iter().map(|c| c.centroid.2).collect();
         z_coords.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
@@ -74,6 +75,25 @@ pub fn geometry_from_array_rs(
         }
     };
 
+    for (new_id, contour) in geometry.contours.iter_mut().enumerate() {
+        contour.id = new_id  as u32;
+        for point in contour.points.iter_mut() {
+            point.frame_index = new_id as u32;
+        }
+    }
+    for (new_id, catheter) in geometry.catheter.iter_mut().enumerate() {
+        catheter.id = new_id  as u32;
+        for point in catheter.points.iter_mut() {
+            point.frame_index = new_id as u32;
+        }
+    }
+    for contour in geometry.contours.iter_mut() {
+        contour.sort_contour_points();
+    }
+    for catheter in geometry.catheter.iter_mut() {
+        catheter.sort_contour_points();
+    }
+
     // Optionally align and refine ordering
     let (mut geometry, logs) = if sort {
         let (interim, _) = align_frames_in_geometry(
@@ -88,7 +108,7 @@ pub fn geometry_from_array_rs(
     } else {
         align_frames_in_geometry(geometry, step_rotation_deg, range_rotation_deg, true, bruteforce, sample_size)
     };
-    
+
     geometry = if geometry.walls.is_empty() {
         crate::processing::walls::create_wall_geometry(&geometry, false)
     } else {
@@ -116,34 +136,70 @@ pub fn geometry_from_array_rs(
 }
 
 pub fn refine_ordering(mut geom: Geometry, delta: f64, max_rounds: usize) -> Geometry {
-    let mut last_order = Vec::new();
+    let n = geom.contours.len();
+    if n <= 1 {
+        return geom;
+    }
+
+    // Find ostium (contour with highest original ID)
+    let ostium_idx = geom.contours
+        .iter()
+        .enumerate()
+        .max_by_key(|(_, c)| c.id)
+        .map(|(idx, _)| idx)
+        .unwrap();
+
+    // Start with current index order as the baseline
+    let mut best_order: Vec<usize> = (0..n).collect();
+
+    // If you want ostium at start of best_order initially, you can swap here,
+    // but keep best_order consistent with current indices / geometry.
+    // best_order.swap(0, ostium_idx);
+
     for _round in 0..max_rounds {
+        // Recompute cost matrix for current geometry ordering
         let cost = build_cost_matrix(&geom.contours, delta);
-        let order = if geom.contours.len() <= 15 {
-            held_karp(&cost)
-        } else {
-            two_opt(&cost, 500)
-        };
-        if order == last_order {
+
+        // Greedy path starting from ostium index (important!)
+        let mut new_order = vec![ostium_idx];
+        let mut remaining: HashSet<usize> = (0..n).collect();
+        remaining.remove(&ostium_idx);
+
+        while !remaining.is_empty() {
+            let last = *new_order.last().unwrap();
+            // choose remaining index with minimal cost from `last`
+            let &best_next = remaining
+                .iter()
+                .min_by(|&&a, &&b| {
+                    cost[last][a]
+                        .partial_cmp(&cost[last][b])
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .unwrap();
+            new_order.push(best_next);
+            remaining.remove(&best_next);
+        }
+
+        // If new path isn't better than current best, stop
+        if path_cost(&cost, &new_order) >= path_cost(&cost, &best_order) {
             break;
         }
-        last_order = order.clone();
-        geom = reorder_geometry(geom, &order);
-    }
-    geom
-}
 
-fn reorder_geometry(mut geom: Geometry, new_order: &[usize]) -> Geometry {
-    let reordered_contours = new_order
-        .iter()
-        .map(|&i| geom.contours[i].clone())
-        .collect();
-    let reordered_catheter = new_order
-        .iter()
-        .map(|&i| geom.catheter[i].clone())
-        .collect();
-    geom.contours = reordered_contours;
-    geom.catheter = reordered_catheter;
+        // Accept new order -> reorder geometry immediately so indices are in sync
+        best_order = new_order.clone();
+        geom = reorder_geometry(geom, &best_order);
+        // update contour ids to reflect new indices (optional but recommended)
+        for (i, c) in geom.contours.iter_mut().enumerate() {
+            c.id = i as u32;
+        }
+        // if catheter length == contours length, reassign IDs too
+        if geom.catheter.len() == geom.contours.len() {
+            for (i, cath) in geom.catheter.iter_mut().enumerate() {
+                cath.id = i as u32;
+            }
+        }
+    }
+
     geom
 }
 
@@ -156,7 +212,8 @@ fn build_cost_matrix(contours: &[Contour], delta: f64) -> Vec<Vec<f64>> {
                 cost[i][j] = 0.0;
             } else {
                 let h = hausdorff_distance(&contours[i].points, &contours[j].points);
-                let jump = (contours[i].id as i32 - contours[j].id as i32).abs() as f64;
+                // Use index-based jump penalty (indices refer to current ordering)
+                let jump = (i as i32 - j as i32).abs() as f64;
                 cost[i][j] = h + delta * jump;
             }
         }
@@ -164,87 +221,65 @@ fn build_cost_matrix(contours: &[Contour], delta: f64) -> Vec<Vec<f64>> {
     cost
 }
 
-/// Solve the shortest Hamiltonian path from 0 through all nodes exactly.
-fn held_karp(cost: &[Vec<f64>]) -> Vec<usize> {
-    let n = cost.len();
-    let full_mask = (1 << n) - 1;
-    // dp[mask][j] = best cost to start at 0, visit mask, end at j
-    let mut dp = vec![vec![f64::INFINITY; n]; 1 << n];
-    let mut parent = vec![vec![None; n]; 1 << n];
-
-    dp[1 << 0][0] = 0.0;
-    for mask in 1..=full_mask {
-        if (mask & 1) == 0 {
-            continue;
-        } // must always include node 0
-        for j in 0..n {
-            if mask & (1 << j) == 0 {
-                continue;
-            }
-            if j == 0 && mask != (1 << 0) {
-                continue;
-            }
-            let prev_mask = mask ^ (1 << j);
-            for i in 0..n {
-                if prev_mask & (1 << i) == 0 {
-                    continue;
-                }
-                let cost_ij = cost[i][j];
-                let cand = dp[prev_mask][i] + cost_ij;
-                if cand < dp[mask][j] {
-                    dp[mask][j] = cand;
-                    parent[mask][j] = Some(i);
-                }
-            }
-        }
+fn path_cost(cost_matrix: &[Vec<f64>], path: &[usize]) -> f64 {
+    if path.len() < 2 {
+        return 0.0;
     }
-    // Pick endpoint with minimal cost
-    let (mut end, _) = (1..n)
-        .map(|j| (j, dp[full_mask][j]))
-        .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
-        .unwrap();
-    // Reconstruct path
-    let mut order = Vec::with_capacity(n);
-    let mut mask = full_mask;
-    while let Some(p) = parent[mask][end] {
-        order.push(end);
-        mask ^= 1 << end;
-        end = p;
+    let mut total = 0.0;
+    for i in 0..path.len() - 1 {
+        total += cost_matrix[path[i]][path[i + 1]];
     }
-    order.push(0);
-    order.reverse();
-    order
+    total
 }
 
-/// Start with identity ordering, then do repeated 2‑opt swaps
-fn two_opt(cost: &[Vec<f64>], max_iters: usize) -> Vec<usize> {
-    let n = cost.len();
-    let mut order: Vec<usize> = (0..n).collect();
+fn reorder_geometry(mut geom: Geometry, new_order: &[usize]) -> Geometry {
+    let mut z_coords: Vec<f64> = Vec::new();
+    for contour in &geom.contours {
+        z_coords.push(contour.centroid.2)
+    }
+    z_coords.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
-    let mut best_impr = true;
-    for _ in 0..max_iters {
-        if !best_impr {
-            break;
-        }
-        best_impr = false;
-        for a in 1..n - 1 {
-            for b in a + 1..n {
-                // compute delta cost of reversing order[a..=b]
-                let i = order[a - 1];
-                let j = order[a];
-                let k = order[b];
-                let l = if b + 1 < n { order[b + 1] } else { usize::MAX };
+    // Reorder contours according to new_order
+    let mut reordered_contours = new_order
+        .iter()
+        .map(|&i| geom.contours[i].clone())
+        .collect::<Vec<_>>();
 
-                let before = cost[i][j] + if l != usize::MAX { cost[k][l] } else { 0.0 };
-                let after = cost[i][k] + if l != usize::MAX { cost[j][l] } else { 0.0 };
-                if after + 1e-9 < before {
-                    order[a..=b].reverse();
-                    best_impr = true;
-                }
-            }
+    // Reorder catheter only if same length (otherwise leave as-is or implement mapping)
+    let mut reordered_catheter = if geom.catheter.len() == geom.contours.len() {
+        new_order.iter().map(|&i| geom.catheter[i].clone()).collect()
+    } else {
+        // safer: keep catheter unchanged (or implement desired behavior)
+        geom.catheter.clone()
+    };
+
+    for (i, contour) in reordered_contours.iter_mut().enumerate() {
+        contour.centroid.2 = z_coords[i];
+        for point in contour.points.iter_mut() {
+            point.z = z_coords[i];
         }
     }
-    order
+    for (i, catheter) in reordered_catheter.iter_mut().enumerate() {
+        catheter.centroid.2 = z_coords[i];
+        for point in catheter.points.iter_mut() {
+            point.z = z_coords[i];
+        }
+    }
+
+    geom.contours = reordered_contours;
+    geom.catheter = reordered_catheter;
+
+    // Optionally reset IDs to be consistent with new indices (caller may also do this)
+    for (idx, c) in geom.contours.iter_mut().enumerate() {
+        c.id = idx as u32;
+    }
+    if geom.catheter.len() == geom.contours.len() {
+        for (idx, c) in geom.catheter.iter_mut().enumerate() {
+            c.id = idx as u32;
+        }
+    }
+
+    geom
 }
 
 fn geometry_pair_from_array_rs(
@@ -634,4 +669,73 @@ pub fn from_array_singlepair_rs(
         .context("process_case(single) failed")?;
 
     Ok((processed_pair, (dia_logs, sys_logs)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::f64::consts::PI;
+    use crate::io::input::{Contour, ContourPoint};
+
+    fn create_circle_contour(id: u32, radius: f64, n_points: u32) -> Contour {
+        let mut points = Vec::new();
+        let centroid = (0.0, 0.0, id as f64);
+        for i in 0..n_points {
+            let angle = 2.0 * PI * i as f64 / n_points as f64;
+            let x = radius * angle.cos();
+            let y = radius * angle.sin();
+            points.push(ContourPoint {
+                frame_index: id,
+                point_index: i,
+                x,
+                y,
+                z: id as f64,
+                aortic: false,
+            });
+        }
+        Contour {
+            id,
+            points,
+            centroid,
+            aortic_thickness: None,
+            pulmonary_thickness: None,
+        }
+    }
+
+    #[test]
+    fn test_refine_ordering_shuffled() {
+        // Create 5 contours with increasing radii
+        let radii = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let contours: Vec<Contour> = radii
+            .iter()
+            .enumerate()
+            .map(|(i, &r)| create_circle_contour(i as u32, r, 100))
+            .collect();
+
+        // Shuffle to a nontrivial order: [1, 3, 0, 2, 4]
+        let shuffle_order = vec![1, 3, 0, 2, 4];
+        let shuffled_contours: Vec<Contour> = shuffle_order.iter().map(|&i| contours[i].clone()).collect();
+
+        let geom = Geometry {
+            contours: shuffled_contours,
+            catheter: Vec::new(),
+            walls: Vec::new(),
+            reference_point: ContourPoint {
+                frame_index: 0,
+                point_index: 0,
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+            label: "test".to_string(),
+        };
+
+        // Refine ordering with high delta to prioritize ID order over Hausdorff
+        let refined = refine_ordering(geom, 0.0, 5);
+
+        // Check IDs are now in ascending order (0, 1, 2, 3, 4)
+        let ids: Vec<u32> = refined.contours.iter().map(|c| c.id).collect();
+        assert_eq!(ids, vec![0, 1, 2, 3, 4]);
+    }
 }
