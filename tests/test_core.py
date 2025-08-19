@@ -202,7 +202,7 @@ def test_reorder_by_shape_similarity():
     assert _radius_sequence(geom) == pytest.approx([10.0, 5.0, 6.0])
 
     # Reorder with delta=0 so only Hausdorff similarity matters
-    reordered = geom.reorder(delta=0.1, max_rounds=5)
+    reordered = geom.reorder(delta=0.0, max_rounds=5)
 
     # After reorder, we should go 0→2→1 (very→slight→round) i.e. [10, 6, 5]
     result = _radius_sequence(reordered)

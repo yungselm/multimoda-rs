@@ -20,7 +20,7 @@
 - [x] reorder
 - [x] rotate geometry
 - [x] translate geometry
-- [] reorder contours
+- [x] reorder contours
 
 ### PyGeometryPair
 - [x] Create new

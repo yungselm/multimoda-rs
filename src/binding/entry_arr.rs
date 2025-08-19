@@ -135,6 +135,21 @@ pub fn geometry_from_array_rs(
     Ok((geometry, logs))
 }
 
+fn contour_area(contour: &Contour) -> f64 {
+    let points = &contour.points;
+    let n = points.len();
+    if n < 3 {
+        return 0.0;
+    }
+    let mut area = 0.0;
+    for i in 0..n {
+        let j = (i + 1) % n;
+        area += points[i].x * points[j].y;
+        area -= points[i].y * points[j].x;
+    }
+    area.abs() / 2.0
+}
+
 pub fn refine_ordering(mut geom: Geometry, delta: f64, max_rounds: usize) -> Geometry {
     let n = geom.contours.len();
     if n <= 1 {
@@ -145,7 +160,9 @@ pub fn refine_ordering(mut geom: Geometry, delta: f64, max_rounds: usize) -> Geo
     let ostium_idx = geom.contours
         .iter()
         .enumerate()
-        .max_by_key(|(_, c)| c.id)
+        .min_by(|(_, a), (_, b)| {
+            contour_area(a).partial_cmp(&contour_area(b)).unwrap_or(std::cmp::Ordering::Equal)
+        })
         .map(|(idx, _)| idx)
         .unwrap();
 
