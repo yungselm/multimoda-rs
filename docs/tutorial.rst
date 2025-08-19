@@ -1,41 +1,38 @@
 Tutorial
----------
+========
 
 This step-by-step tutorial demonstrates how to:
 
 - Run the workflow from csv files
 - Run the workflow by building geometries from numpy arrays
-- finetuning of alignment algorithms
-- reordering algorithm
-- alignment with a centerline
-- saving everything as .obj files
-- util functions to link to numpy
+- Finetuning of alignment algorithms
+- Reordering algorithm
+- Alignment with a centerline
+- Saving everything as .obj files
+- Utility functions to link to numpy
 
 1. Workflow csv files
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^
 
-After pip installing or locally building the package install it in the familiar way
+After pip installing or locally building the package install it in the familiar way.
 
 .. code-block:: python
+
     import multimodars as mm
 
-To run the whole workflow from .csv files the following requirements have to be met. Files should be names ``diastolic_contours.csv``, ``systolic_contours.csv``, 
+To run the whole workflow from .csv files the following requirements have to be met.
+Files should be named ``diastolic_contours.csv``, ``systolic_contours.csv``, 
 ``diastolic_reference_points.csv`` and ``systolic_reference_points.csv`` depending on the required analysis.
-Every file should be structure in the following way (no headers):
+Every file should be structured in the following way (no headers):
 +------------+----------+----------+----------+
-| ...        |   ...    |   ...    |   ...    |
+| frame      | x        | y        | z        |
 +------------+----------+----------+----------+
-| 771        | 2.4862   |  6.7096  |  24.5370 |
-+------------+----------+----------+----------+
-| 771        | 2.5118   |  6.7017  |  24.5370 |
-+------------+----------+----------+----------+
-| 771        | 2.5370   |  6.6936  |  24.5370 |
-+------------+----------+----------+----------+
-| ...        |   ...    |   ...    |   ...    |
+| 771        | 2.4862   | 6.7096   | 24.5370  |
+| 771        | 2.5118   | 6.7017   | 24.5370  |
+| 771        | 2.5370   | 6.6936   | 24.5370  |
 +------------+----------+----------+----------+
 
-where the first column is the frame index the point is from the second the points x-coordinate and second and third y- and z-coordinate. To acquire meaningful measurement data, the corrdinates
-should be provided in mm or another SI unit instead of pixel values.
+To acquire meaningful measurement data, the coordinates should be provided in mm or another SI unit instead of pixel values.
 Optionally a record file can be provided `combined_sorted_manual.csv`, which should have the following structure, here the first column should contain the desired frame order and measurement_1 
 represent the thickness of the wall between aorta and coronary and measurement_2 for the thickness between pulmonary artery and coronary. This is based on the output of
 the AIVUS-CAA software _a link: https://github.com/AI-in-Cardiovascular-Medicine/AIVUS-CAA/:
@@ -56,7 +53,9 @@ the AIVUS-CAA software _a link: https://github.com/AI-in-Cardiovascular-Medicine
 +-----------------+---------------+---------------+---------------+---------------+
 
 This simplifies the workflow, by just providing a directory to automatically process:
+
 .. code-block:: python
+
     rest, stress, dia, sys, (rest_logs, stress_logs, dia_logs, sys_logs) = mm.from_file(
         mode="full",
         rest_input_path="rest_csv_files",
@@ -85,17 +84,20 @@ catheter and walls are optional. However it is not recommended to provide the ca
 and number of points to represent the catheter. If no walls are provided a default wall with 1mm offset is created.
 
 .. code-block:: python
+
     prestent = mm.numpy_to_geometry(
-        contours_arr=contours, 
-        catheters_arr=np.array([]), 
-        walls_arr=np.array([]), 
-        reference_arr=references)
+        contours_arr=contours,
+        catheters_arr=np.array([]),
+        walls_arr=np.array([]),
+        reference_arr=references,
+    )
 
     poststent = mm.numpy_to_geometry(
-        contours_arr=contours, 
-        catheters_arr=np.array([]), 
-        walls_arr=np.array([]), 
-        reference_arr=references)
+        contours_arr=contours,
+        catheters_arr=np.array([]),
+        walls_arr=np.array([]),
+        reference_arr=references,
+    )
 
     pair, logs = mm.from_array(
         mode="singlepair",
@@ -106,7 +108,7 @@ and number of points to represent the catheter. If no walls are provided a defau
         image_center=(4.5, 4.5),
         radius=0.5,
         n_points=20,
-        write_obj = True,
+        write_obj=True,
         output_path="output/stent_comparison",
         interpolation_steps=28,
         bruteforce=False,
