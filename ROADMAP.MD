@@ -24,14 +24,14 @@
 - [x] .from_array(rest, stress, dia, sys)
 - [x] .reorder -> initial alignment, without breathing correction, reorder, checks for better order then reruns
 - [x] .to_centerline(mode = {three_point, hausdorff, manual}) -> if three point provide three tuples, hausdorff nothing, manual provide centerline point and rotation (v0.0.2 for hausdorff)
-- [] .get_array()
+- [x] .get_array()
 - [x] .to_array() for all datatypes (GeometryPair, Geometry, Contour, Point)
-- [] .to_obj() writes contours/catheters/walls to .obj file
+- [x] .to_obj() writes contours/catheters/walls to .obj file
 
 # Miscellaneous
 - [x] change hardcoded catheter settings
 - [x] better summarized print statement
-- [] for fixture use a idealized geometry to check functionality
+- [x] for fixture use a idealized geometry to check functionality
 - [] reference point is not rotated and translated
 
 # Prepublish checklist:

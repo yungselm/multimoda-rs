@@ -20,6 +20,7 @@
 - [x] reorder
 - [x] rotate geometry
 - [x] translate geometry
+- [] reorder contours
 
 ### PyGeometryPair
 - [x] Create new
@@ -39,12 +40,12 @@
 
 ## from_file variants
 ### wrapper variants
-- [] wrapper for all variants
+- [x] wrapper for all variants
 ### Rust functions
-- [] individual rust functions
+- [x] individual rust functions
 
 ## from array variants
 ### wrapper variants
-- [] wrapper for all variants
+- [x] wrapper for all variants
 ### Rust functions
-- [] individual rust functions
+- [x] individual rust functions
