@@ -117,6 +117,7 @@ and number of points to represent the catheter. If no walls are provided a defau
 
 This ``from_array`` function automatically aligns the frames within a pullback and then between pullbacks. The algorithm translates contours to the same centroid as the most proximal contour,
 and then finds the best rotation based on contour **AND** contour points.
+
 .. image:: ../paper/figures/Figure2.jpg
    :alt: Example figure
    :align: center

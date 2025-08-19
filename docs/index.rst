@@ -5,7 +5,7 @@
 
 
 multimodars documentation
-========================
+==========================
 
 *multimodars: A Rust-powered cardiac multi-image modality fusion package.*
 
