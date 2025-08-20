@@ -92,7 +92,7 @@ For detailed signatures and usage examples, see the [online documentation](https
 The intended usage of the package with examples for every case are provided under examples with Jupyter Notebooks to follow along.
 
 ## License
-Distributed under the MIT License. See LICENSE for details.
+Distributed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ## Detailed Background
 This package aims to register different cardiac imaging modalities together, while coronary computed tomography angiography (CCTA) is the undisputed goldstandard for 3D information, it has several downsides, when trying to create patient-specific geometries.
