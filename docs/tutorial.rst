@@ -10,6 +10,7 @@ This step-by-step tutorial demonstrates how to:
 - Saving everything as .obj files
 - Utility functions to link to numpy
 - Reordering algorithm
+- Class methods
 
 1. Workflow csv files
 ^^^^^^^^^^^^^^^^^^^^^^
@@ -38,11 +39,11 @@ Every file should be structured in the following way (no headers):
 
 To acquire meaningful measurement data, the coordinates should be provided in mm or another SI unit instead of pixel values.
 Optionally a record file can be provided `combined_sorted_manual.csv`, which should have the following structure, here the first column should contain the desired frame order and measurement_1 
-represent the thickness of the wall between aorta and coronary and measurement_2 for the thickness between pulmonary artery and coronary. This is based on the output of
-the AIVUS-CAA software _a link: https://github.com/AI-in-Cardiovascular-Medicine/AIVUS-CAA/:
+represent the thickness of the wall between aorta and coronary and measurement_2 for the thickness between pulmonary artery and coronary (position just for demonstration). This is based on the 
+output of the AIVUS-CAA software _a link: https://github.com/AI-in-Cardiovascular-Medicine/AIVUS-CAA/:
 
 +-----------------+---------------+---------------+---------------+---------------+
-| frame           | position      |   phase       | measurement_1 | measurement_2 |
+| frame           | (position)    |   phase       | measurement_1 | measurement_2 |
 +-----------------+---------------+---------------+---------------+---------------+
 | 18              |  23.99        |       D       |               |               |
 +-----------------+---------------+---------------+---------------+---------------+
@@ -241,3 +242,55 @@ between all frames in the geometry.
 .. code-block:: python
 
     rest.reorder(delta=0.0, max_rounds=5)
+
+6. Class methods
+^^^^^^^^^^^^^^^^^
+PyContour
+--------------
+After creating a PyGeometry several utility methods provided. If a new contour is created from points
+and no centroid is available it can easily be calculated, additionally can the closest opposite points
+and the farthest points be identified:
+
+.. code-block:: python
+
+    contour.compute_centroid()
+    (p1, p2), distance = contour.find_closest_opposite()
+    (p1, p2), distance = contour.find_farthest_points()
+
+For every contour the area and elliptic ratio can be returned. CAVE units are calculated from the original
+image spacing, if contours were provided in pixels no meaningful result will be returned.
+
+.. code-block:: python
+
+    area = contour.get_area()
+    elliptic_ratio = contour.get_elliptic_ratio()
+
+Contours can also be manipulated, however for additional safety operations are not performed in place
+but rather return a new contour that can then be set to the original position if needed.
+
+.. code-block:: python
+
+    contour = geometry.contours[2]
+    contour_rot = contour.rotate(20)
+    contour_trsl = contour_rot.translate((0.0, 1.0, 2.0))
+    geometry.set_cont(2, contour_trsl)
+
+PyGeometry/PyGeometryPair
+-------------------------
+The PyGeometry has some additional functionality, contours inside can be smoothed with a
+moving average and rotation and translation can be performed on Geometry level
+
+.. code-block:: python
+
+    geometry.smooth_contours(window_size=3)
+    geom_rot = geometry.rotate(20)
+    geom_trsl = geom_rot.translate((0.0, 1.0, 2.0))
+
+Additionally there is a summary function to return minimal lumen area, maximum stenosis, and stenosis length in mm
+as a tuple for either PyGeometry or PyGeometryPair.
+
+.. code-block:: python
+
+    geometries.get_summary()
+    geometries.dia_geom.get_summary()
+    geometries.sys_geom.get_summary()
