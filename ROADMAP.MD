@@ -40,7 +40,7 @@
 - [] Status badge for coverage to README
 - [x] Add testing to the CI workflow
 - [x] Auto-generated API docs
-- [] High-level "Getting Started" guide
+- [x] High-level "Getting Started" guide
 - [x] CONTRIBUTING.md
 
 - [x] Example scripts Jupyter notebook?
