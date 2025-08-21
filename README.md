@@ -49,12 +49,28 @@ pip install multimodars
 
 or by cloning the repo and building the project yourself:
 ```bash
+# Install rust in case you don't have it on your system
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
 git clone https://github.com/yungselm/multimoda-rs.git
-pip install maturin
 python -m venv .venv
 source .venv/bin/activate
+pip install maturin
+. "$HOME/.cargo/env" # Set rust env
 maturin develop
 ```
+
+**Note:** In case you get the following error:
+```
+💥 maturin failed
+  Caused by: rustc, the rust compiler, is not installed or not in PATH. This package requires Rust and Cargo to compile extensions. Install it through the system's package manager or via https://rustup.rs/.
+```
+execute the following commands:
+```commandline
+unset -v VIRTUAL_ENV
+maturin develop
+```
+
 
 ## Quickstart Example
 Run the script with the provided test cases, to ensure sufficient set up.
