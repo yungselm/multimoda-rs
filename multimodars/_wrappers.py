@@ -121,8 +121,8 @@ def from_file(
         If an unsupported `mode` is passed.
     """
     defaults = {
-        "step_rotation_deg": 0.1,
-        "range_rotation_deg": 60,
+        "step_rotation_deg": 0.01,
+        "range_rotation_deg": 30,
         "image_center": (4.5, 4.5),
         "radius": 0.5,
         "n_points": 20,
@@ -353,8 +353,8 @@ def from_array(
         If an unsupported `mode` is passed.
     """
     defaults = {
-        "step_rotation_deg": 0.1,
-        "range_rotation_deg": 60,
+        "step_rotation_deg": 0.01,
+        "range_rotation_deg": 30,
         "interpolation_steps": 28,
         "image_center": (4.5, 4.5),
         "radius": 0.5,

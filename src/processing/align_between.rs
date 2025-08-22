@@ -1,5 +1,6 @@
 use rayon::prelude::*;
 use anyhow::Context;
+use std::f64::consts::PI;
 
 use crate::io::Geometry;
 use crate::io::input::{Contour, ContourPoint};
@@ -277,106 +278,6 @@ impl GeometryPair {
     }
 }
 
-// pub fn find_best_rotation_all(
-//     diastole: &Geometry,
-//     systole: &Geometry,
-//     step_rotation_deg: f64,
-//     range_deg: f64,
-// ) -> f64 {
-//     println!(
-//         "---------------------Finding optimal rotation {:?}/{:?}---------------------",
-//         &diastole.label, &systole.label
-//     );
-//     let steps: usize = ((2.0 * range_deg) / step_rotation_deg).round() as usize;
-//     let range = range_deg.to_radians();
-//     let increment = step_rotation_deg.to_radians();
-
-//     let mut new_dia_cont = Vec::new();
-//     let mut new_sys_cont = Vec::new();
-//     for contour in &diastole.contours {
-//         let tmp_points = align_within::downsample_contour_points(&contour.points, 200);
-//         let new_cont = Contour {
-//             id: contour.id,
-//             points: tmp_points,
-//             centroid: contour.centroid,
-//             aortic_thickness: contour.aortic_thickness,
-//             pulmonary_thickness: contour.pulmonary_thickness,
-//         };
-//         new_dia_cont.push(new_cont)
-//     };
-//     for contour in &systole.contours {
-//         let tmp_points = align_within::downsample_contour_points(&contour.points, 200);
-//         let new_cont = Contour {
-//             id: contour.id,
-//             points: tmp_points,
-//             centroid: contour.centroid,
-//             aortic_thickness: contour.aortic_thickness,
-//             pulmonary_thickness: contour.pulmonary_thickness,
-//         };
-//         new_sys_cont.push(new_cont)
-//     };
-
-//     let mut new_dia = diastole.clone();
-//     let mut new_sys = systole.clone();
-//     new_dia.contours = new_dia_cont;
-//     new_sys.contours = new_sys_cont;
-
-//     let results: Vec<(f64, f64)> = (0..=steps)
-//         .into_par_iter()
-//         .map(|i| {
-//             let angle = -range + i as f64 * increment;
-//             let total_distance: f64 = new_dia
-//                 .contours
-//                 .par_iter()
-//                 .zip(new_sys.contours.par_iter())
-//                 .map(|(d_contour, s_contour)| {
-//                     assert_eq!(d_contour.id, s_contour.id, "Mismatched contour IDs");
-
-//                     // Rotate each point in systole contour
-//                     let rotated_points: Vec<ContourPoint> = s_contour
-//                         .points
-//                         .iter()
-//                         .map(|p| {
-//                             let x = p.x * angle.cos() - p.y * angle.sin();
-//                             let y = p.x * angle.sin() + p.y * angle.cos();
-//                             ContourPoint { x, y, ..*p }
-//                         })
-//                         .collect();
-
-//                     hausdorff_distance(&d_contour.points, &rotated_points)
-//                 })
-//                 .sum();
-
-//             let avg_distance = total_distance / diastole.contours.len() as f64;
-
-//             (angle, avg_distance)
-//         })
-//         .collect();
-
-//     let (best_angle, best_dist) = results
-//         .into_iter()
-//         .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
-//         .unwrap_or((0.0, std::f64::INFINITY));
-
-//     // 3) Print a tiny table
-//     println!();
-//     println!(
-//         "{:>20} | {:>20} | {:>15} | {:>12}",
-//         "Geometry A", "Geometry B", "Best Distance", "Best Angle (°)"
-//     );
-//     println!("{:-<75}", "");
-//     println!(
-//         "{:>20} | {:>20} | {:>15.3} | {:>12.3}",
-//         diastole.label,
-//         systole.label,
-//         best_dist,
-//         best_angle.to_degrees(),
-//     );
-//     println!();
-
-//     best_angle
-// }
-
 pub fn find_best_rotation_all(
     diastole: &Geometry,
     systole: &Geometry,
@@ -387,7 +288,7 @@ pub fn find_best_rotation_all(
         "---------------------Finding optimal rotation {:?}/{:?}---------------------",
         &diastole.label, &systole.label
     );
-    
+
     let dia_contours: Vec<_> = diastole.contours.iter()
         .map(|c| {
             let points = downsample_contour_points(&c.points, 200);
@@ -398,7 +299,7 @@ pub fn find_best_rotation_all(
             (c.id, points, c.centroid, ellip_ratio)
         })
         .collect();
-    
+
     let sys_contours: Vec<_> = systole.contours.iter()
         .map(|c| {
             let points = downsample_contour_points(&c.points, 200);
@@ -410,38 +311,37 @@ pub fn find_best_rotation_all(
         })
         .collect();
 
-    // Multi-resolution search parameters
-    let coarse_step = 1.0_f64.to_radians();
-    let medium_step = 0.1_f64.to_radians();
-    let fine_step = step_rotation_deg.to_radians();
-    
-    let range_rad = range_deg.to_radians();
-    
-    // Coarse search (1° steps)
+    // Multi-resolution search parameters (degrees here)
+    // coarse: 1°, medium: 0.1°, fine: user-specified
+    // Use the same limes (limit) as the global range for clamping behavior
     let coarse_angle = search_rotation(
         &dia_contours,
         &sys_contours,
-        -range_rad,
-        range_rad,
-        coarse_step
+        1.0,          // step_deg
+        range_deg,    // range_deg
+        None,         // center_angle
+        range_deg,    // limes_deg
     );
-    
-    // Medium search (0.1° steps in ±10° window)
+
+    let medium_range = if range_deg > 10.0 { 10.0 } else { range_deg };
     let medium_angle = search_rotation(
         &dia_contours,
         &sys_contours,
-        coarse_angle - 10.0_f64.to_radians(),
-        coarse_angle + 10.0_f64.to_radians(),
-        medium_step
+        0.1,
+        medium_range,
+        Some(coarse_angle),
+        range_deg,
     );
-    
-    // Fine search (original steps in ±1° window)
+
+    // Fine search: search ±1° around medium (or clamp to range_deg if smaller), then use user step within ±1°
+    let fine_window = if range_deg > 1.0 { 1.0 } else { range_deg };
     let best_angle = search_rotation(
         &dia_contours,
         &sys_contours,
-        medium_angle - 1.0_f64.to_radians(),
-        medium_angle + 1.0_f64.to_radians(),
-        fine_step
+        step_rotation_deg,
+        fine_window,
+        Some(medium_angle),
+        range_deg,
     );
 
     // Calculate best distance for reporting
@@ -466,25 +366,66 @@ pub fn find_best_rotation_all(
     best_angle
 }
 
-/// Helper function for rotation search in a given range
 fn search_rotation(
     dia_contours: &[(u32, Vec<ContourPoint>, (f64, f64, f64), f64)],
     sys_contours: &[(u32, Vec<(f64, f64)>, (f64, f64, f64), f64)],
-    start_angle: f64,
-    end_angle: f64,
-    step: f64,
+    step_deg: f64,
+    range_deg: f64,
+    center_angle: Option<f64>, // radians (same convention as align_within uses)
+    limes_deg: f64,            // degrees, absolute clamp limits (symmetric: +/- limes)
 ) -> f64 {
-    let steps = ((end_angle - start_angle) / step).ceil() as usize;
-    
-    (0..=steps)
-        .into_par_iter()
-        .map(|i| {
-            let angle = start_angle + (i as f64) * step;
-            (angle, calculate_avg_distance(dia_contours, sys_contours, angle))
-        })
-        .min_by(|&(_, a), &(_, b)| a.partial_cmp(&b).unwrap())
-        .map(|(angle, _)| angle)
-        .unwrap_or(0.0)
+    let range_rad = range_deg.to_radians();
+    let step_rad = step_deg.to_radians();
+    if step_rad <= 0.0 {
+        return 0.0;
+    }
+
+    // center and limes in radians
+    let center = center_angle.unwrap_or(0.0);
+    let limes = limes_deg.to_radians();
+    let lower_limes = -limes;
+
+    // linear domain then clamp to [-limes, limes]
+    let mut start_angle = center - range_rad;
+    let mut stop_angle = center + range_rad;
+    start_angle = start_angle.max(lower_limes);
+    stop_angle = stop_angle.min(limes);
+
+    if stop_angle <= start_angle {
+        // fallback to normalized center (mapped into [-π, π])
+        return ((center + PI).rem_euclid(2.0 * PI)) - PI;
+    }
+
+    let steps = (((stop_angle - start_angle) / step_rad).ceil() as usize).max(1);
+
+    let mut angle_dist_pairs: Vec<(f64, f64)> = Vec::with_capacity(steps + 1);
+    for i in 0..=steps {
+        let angle_lin = start_angle + (i as f64) * step_rad;
+        if angle_lin > stop_angle {
+            break;
+        }
+
+        // normalize for rotation (rem_euclid -> [0,2π) )
+        let angle = angle_lin.rem_euclid(2.0 * PI);
+        // map to [-π, π] for stable return value
+        let mapped_angle = ((angle + PI).rem_euclid(2.0 * PI)) - PI;
+
+        // Use the rotation angle for computing the score (calculate_avg_distance expects radians)
+        let dist = calculate_avg_distance(dia_contours, sys_contours, angle);
+
+        angle_dist_pairs.push((mapped_angle, dist));
+    }
+
+    if angle_dist_pairs.is_empty() {
+        return ((center + PI).rem_euclid(2.0 * PI)) - PI;
+    }
+
+    let (min_angle, _min_dist) = angle_dist_pairs
+        .iter()
+        .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+        .unwrap();
+
+    *min_angle
 }
 
 /// Calculate average Hausdorff distance for a given rotation angle,
