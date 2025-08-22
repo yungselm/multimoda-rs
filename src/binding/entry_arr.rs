@@ -465,7 +465,11 @@ pub fn from_array_full_rs(
 
             // Prepare diastolic & systolic geometry pairs
             let (dia_pair, sys_pair) =
-                prepare_geometries_comparison(rest_pair.clone(), stress_pair.clone());
+                prepare_geometries_comparison(
+                    rest_pair.clone(), 
+                    stress_pair.clone(),
+                    step_rotation_deg,
+                    range_rotation_deg);
             let dia_pair_for_thread = dia_pair.clone();
             let sys_pair_for_thread = sys_pair.clone();
 

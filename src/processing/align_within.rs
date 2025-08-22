@@ -424,7 +424,7 @@ pub fn find_best_rotation(
     }
 }
 
-fn search_range(
+pub fn search_range(
     reference: &[ContourPoint],
     target: &[ContourPoint],
     step_deg: f64,

@@ -1,3 +1,5 @@
+use anyhow::Context;
+
 use super::align_between::GeometryPair;
 use crate::io::input::{Contour, ContourPoint};
 use crate::io::Geometry;
@@ -6,6 +8,8 @@ use std::error::Error;
 pub fn prepare_geometries_comparison(
     geometries_rest: GeometryPair,
     geometries_stress: GeometryPair,
+    step_rotation_deg: f64,
+    range_rotation_deg: f64,
 ) -> (GeometryPair, GeometryPair) {
     let mut dia_rest = geometries_rest.dia_geom;
     let mut sys_rest = geometries_rest.sys_geom;
@@ -37,6 +41,16 @@ pub fn prepare_geometries_comparison(
     let sys_pair = sys_pair
         .trim_geometries_same_length()
         .adjust_z_coordinates();
+
+    let dia_pair = dia_pair
+        .align_between_geometries(step_rotation_deg, range_rotation_deg)
+        .context("align between geometrypair(diastolic) failed")
+        .unwrap();
+
+    let sys_pair = sys_pair
+        .align_between_geometries(step_rotation_deg, range_rotation_deg)
+        .context("align between geometrypair(systolic) failed")
+        .unwrap();
 
     (dia_pair, sys_pair)
 }
