@@ -728,13 +728,17 @@ impl PyGeometryPair {
     /// Get summaries for both diastolic and systolic geometries.
     ///
     /// Returns a tuple: ((dia_mla, dia_max_stenosis, dia_len_mm), (sys_mla, sys_max_stenosis, sys_len_mm))
+    /// and a matrix (N, 6): (contour id, area_dia, ellip_dia, area_sys, ellip_sys, z-coordinate)
     ///
-    /// This simply calls ``get_summary()`` on each contained PyGeometry and returns both results.
+    /// This calls ``get_summary()`` on each contained PyGeometry and returns both results.
+    /// and additionally assesses dynamic between the two PyGeometry object (area, elliptic ratio)
     #[pyo3(signature = ())]
-    pub fn get_summary(&self) -> PyResult<((f64, f64, f64), (f64, f64, f64))> {
+    pub fn get_summary(&self) -> PyResult<(((f64, f64, f64), (f64, f64, f64)), Vec<[f64; 6]>)> {
         let dia = self.dia_geom.get_summary()?;
         let sys = self.sys_geom.get_summary()?;
-        Ok((dia, sys))
+
+        let map = self.create_deformation_table();
+        Ok(((dia, sys), map))
     }
 
     fn create_deformation_table(&self) -> Vec<[f64; 6]> {
@@ -782,11 +786,11 @@ impl PyGeometryPair {
             .map(|i| {
                 [
                     ids[i].to_string(),                      // id as integer
-                    format!("{:.6}", mat[i][1]),             // area_dia
-                    format!("{:.6}", mat[i][2]),             // ellip_dia
-                    format!("{:.6}", mat[i][3]),             // area_sys
-                    format!("{:.6}", mat[i][4]),             // ellip_sys
-                    format!("{:.6}", mat[i][5]),             // z
+                    format!("{:.2}", mat[i][1]),             // area_dia
+                    format!("{:.2}", mat[i][2]),             // ellip_dia
+                    format!("{:.2}", mat[i][3]),             // area_sys
+                    format!("{:.2}", mat[i][4]),             // ellip_sys
+                    format!("{:.2}", mat[i][5]),             // z
                 ]
             })
             .collect();

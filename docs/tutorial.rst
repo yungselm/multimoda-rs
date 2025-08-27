@@ -287,10 +287,14 @@ moving average and rotation and translation can be performed on Geometry level
     geom_trsl = geom_rot.translate((0.0, 1.0, 2.0))
 
 Additionally there is a summary function to return minimal lumen area, maximum stenosis, and stenosis length in mm
-as a tuple for either PyGeometry or PyGeometryPair.
+as a tuple for either PyGeometry or PyGeometryPair. For PyGeometryPair additionally a map with lumen area and elliptic
+ratio for either diastole and systole are provided. These results can then easily be translated to a numpy array.
 
 .. code-block:: python
 
     geometries.get_summary()
     geometries.dia_geom.get_summary()
     geometries.sys_geom.get_summary()
+    # turn summary map to numpy array
+    _, deformation = geometries.get_summary()
+    deform_array = np.array(deformation)
