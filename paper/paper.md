@@ -13,14 +13,14 @@ authors:
     orcid: 0000-0002-5861-3753
     affiliation: [1, 2] # (Multiple affiliations must be quoted)
     corresponding: true
+  - name: Marc Ilic
+    orcid: 0009-0000-6443-8739
+    affiliation: [1, 2]
   - name: Ali Mokthari
     orcid: 0009-0004-8864-6988
     affiliation: [1, 2]
   - name: Pooya Mohammadi Kazaj
     orcid: 0000-0003-2747-1489
-    affiliation: [1, 2]
-  - name: Marc Ilic
-    orcid: 0009-0000-6443-8739
     affiliation: [1, 2]
   - name: Isaac Shiri
     orcid: 0000-0002-5735-0736
