@@ -6,6 +6,7 @@
 - [] Walls not rotated together with contours, and also catheter. 
     here a helper function that performs operations on all ContourPoints
     inside of a Geometry regardless of type, should solve the problem.
+- [] double check resampling for dia and sys
 
 # Centerline alignment module
 - [x] Centerline resampling based on geometry
@@ -17,7 +18,7 @@
 - [] Read in CCTA mesh (STL/Obj)
 - [] Assign regions based on Centerlines (RCA, LCA, Aorta)
 - [] Shrink/Expand CCTA to best match Aortic wall and shrink/expand coronary to match iv images
-- [] ensure works for IVUS and OCT
+- [x] ensure works for IVUS and OCT
 
 # v0.1.0 desired functionality:
 - [x] .from_file(mode = {full, single}, "rest dir", "stress dir", "dia dir", "sys dir")

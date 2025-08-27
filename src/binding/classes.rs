@@ -649,6 +649,7 @@ impl PyGeometry {
             }
         }
 
+        println!("Geometry {:?}:\nMLA [mm²]: {:.2}\nMax. stenosis [%]: {:.0}\nStenosis length [mm]: {:.2}\n", geom.label, mla, max_stenosis * 100.0, longest_mm);
         Ok((mla, max_stenosis, longest_mm))
     }
 }
@@ -734,6 +735,126 @@ impl PyGeometryPair {
         let dia = self.dia_geom.get_summary()?;
         let sys = self.sys_geom.get_summary()?;
         Ok((dia, sys))
+    }
+
+    fn create_deformation_table(&self) -> Vec<[f64; 6]> {
+        let areas_dia: Vec<f64> =
+            self.dia_geom.contours.iter().map(|c| c.get_area().unwrap()).collect();
+        let areas_sys: Vec<f64> =
+            self.sys_geom.contours.iter().map(|c| c.get_area().unwrap()).collect();
+
+        let ellip_dia: Vec<f64> =
+            self.dia_geom.contours.iter().map(|c| c.get_elliptic_ratio().unwrap()).collect();
+        let ellip_sys: Vec<f64> =
+            self.sys_geom.contours.iter().map(|c| c.get_elliptic_ratio().unwrap()).collect();
+
+        let ids: Vec<u32> = self.dia_geom.contours.iter().map(|c| c.id).collect();
+        let z_coords: Vec<f64> =
+            self.dia_geom.contours.iter().map(|c| c.centroid.2).collect();
+
+        // Ensure all vectors have same length
+        let n = ids.len();
+        if areas_dia.len() != n
+            || ellip_dia.len() != n
+            || areas_sys.len() != n
+            || ellip_sys.len() != n
+            || z_coords.len() != n
+        {
+            eprintln!("ERROR: mismatched lengths between contour vectors");
+        }
+
+        // Build numeric matrix: each row is [id, area_dia, ellip_dia, area_sys, ellip_sys, z]
+        let mut mat: Vec<[f64; 6]> = Vec::with_capacity(n);
+        for i in 0..n {
+            mat.push([
+                ids[i] as f64,
+                areas_dia[i],
+                ellip_dia[i],
+                areas_sys[i],
+                ellip_sys[i],
+                z_coords[i],
+            ]);
+        }
+
+        // Prepare printable rows (format floats to 6 decimal places)
+        let headers = ["id", "area_dia", "ellip_dia", "area_sys", "ellip_sys", "z"];
+        let rows: Vec<[String; 6]> = (0..n)
+            .map(|i| {
+                [
+                    ids[i].to_string(),                      // id as integer
+                    format!("{:.6}", mat[i][1]),             // area_dia
+                    format!("{:.6}", mat[i][2]),             // ellip_dia
+                    format!("{:.6}", mat[i][3]),             // area_sys
+                    format!("{:.6}", mat[i][4]),             // ellip_sys
+                    format!("{:.6}", mat[i][5]),             // z
+                ]
+            })
+            .collect();
+
+        // Compute max width for each of the 6 columns
+        let mut widths = [0usize; 6];
+        for (i, &h) in headers.iter().enumerate() {
+            widths[i] = h.len();
+        }
+        for row in &rows {
+            for (i, cell) in row.iter().enumerate() {
+                widths[i] = widths[i].max(cell.len());
+            }
+        }
+
+        // Print a left-aligned data row (same style as your dump_table)
+        fn print_row(cells: &[String], widths: &[usize]) {
+            print!("|");
+            for (i, cell) in cells.iter().enumerate() {
+                let pad = widths[i] - cell.len();
+                print!(" {}{} |", cell, " ".repeat(pad));
+            }
+            println!();
+        }
+
+        // Print a centered header row
+        fn print_header(cells: &[String], widths: &[usize]) {
+            print!("|");
+            for (i, cell) in cells.iter().enumerate() {
+                let total_pad = widths[i] - cell.len();
+                let left = total_pad / 2;
+                let right = total_pad - left;
+                print!(" {}{}{} |", " ".repeat(left), cell, " ".repeat(right));
+            }
+            println!();
+        }
+
+        // Top border
+        print!("+");
+        for w in &widths {
+            print!("{}+", "-".repeat(w + 2));
+        }
+        println!();
+
+        // Header row
+        let header_cells: Vec<String> = headers.iter().map(|&s| s.to_string()).collect();
+        print_header(&header_cells, &widths);
+
+        // Separator
+        print!("+");
+        for w in &widths {
+            print!("{}+", "-".repeat(w + 2));
+        }
+        println!();
+
+        // Data rows
+        for row in &rows {
+            print_row(&row.to_vec(), &widths);
+        }
+
+        // Bottom border
+        print!("+");
+        for w in &widths {
+            print!("{}+", "-".repeat(w + 2));
+        }
+        println!();
+
+        mat
     }
 }
 
