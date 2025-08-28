@@ -14,7 +14,7 @@ use pyo3::prelude::*;
 ///     x (float): X-coordinate in mm
 ///     y (float): Y-coordinate in mm
 ///     z (float): Z-coordinate (depth) in mm
-///     aortic (bool): Flag indicating aortic position
+///     aortic (bool): Flag indicating aortic position (in case of intramural course)
 ///
 /// Example:
 ///     >>> point = PyContourPoint(
@@ -74,6 +74,9 @@ impl PyContourPoint {
 
     /// Euclidean distance to another PyContourPoint
     ///
+    /// Args:
+    ///     point (PyContourPoint): Any other PyContourPoint.
+    /// 
     /// Example:
     ///     >>> p1.distance(p2)
     pub fn distance(&self, other: &PyContourPoint) -> f64 {
@@ -231,7 +234,7 @@ impl PyContour {
     ///         Ratio of farthest points distance divided by closest
     ///         opposite points distance.
     /// Example:
-    ///     elliptic_ratio = contour.get_elliptic_ratio()
+    ///     >>> elliptic_ratio = contour.get_elliptic_ratio()
     pub fn get_elliptic_ratio(&self) -> PyResult<f64> {
         let rust_contour = self.to_rust_contour()?;
         let elliptic_ratio = rust_contour.elliptic_ratio();
@@ -245,7 +248,7 @@ impl PyContour {
     ///         Area of the current contour in the unit that the original
     ///         contour data was provided (e.g. mm2).
     /// Example:
-    ///     elliptic_ratio = contour.get_elliptic_ratio()    
+    ///     >>> area = contour.get_area()    
     pub fn get_area(&self) -> PyResult<f64> {
         let rust_contour = self.to_rust_contour()?;
         let area = rust_contour.area();
@@ -259,7 +262,7 @@ impl PyContour {
     ///     PyContour:
     ///         Original Contour rotated around it's centroid
     /// Example:
-    ///     contour = contour.rotate(20)
+    ///     >>> contour = contour.rotate(20)
     #[pyo3(signature = (angle_deg))]
     pub fn rotate(&mut self, angle_deg: f64) -> PyResult<PyContour> {
         let angle_rad = angle_deg.to_radians();
@@ -271,11 +274,16 @@ impl PyContour {
 
     /// translate a given contour by x, y, z coordinates
     ///
+    /// Args:
+    ///     dx (float): Translation in x-direction.
+    ///     dy (float): Translation in y-direction.
+    ///     dz (float): Translation in z-direction.
+    /// 
     /// Returns:
     ///     PyContour:
     ///         Original Contour translated to (x, y, z)
     /// Example:
-    ///     contour = contour.translate((0.0, 1.0, 2.0))
+    ///     >>> contour = contour.translate((0.0, 1.0, 2.0))
     #[pyo3(signature = (dx, dy, dz))]
     pub fn translate(&mut self, dx: f64, dy: f64, dz: f64) -> PyResult<PyContour> {
         let translation = (dx, dy, dz);
@@ -292,7 +300,7 @@ impl PyContour {
     ///     PyContour:
     ///         Original Contour rearranged points.point_idx
     /// Example:
-    ///     contour = contour.sort_contour_points()
+    ///     >>> contour = contour.sort_contour_points()
     pub fn sort_contour_points(&mut self) -> PyResult<PyContour> {
         let mut rust_contour = self.to_rust_contour()?;
         rust_contour.sort_contour_points();
@@ -397,6 +405,13 @@ impl PyGeometry {
     }
 
     /// Replace the contour at `idx` (can be negative).
+    /// 
+    /// Args:
+    ///     idx (float): Target index to replace.
+    ///     contour (PyContour): Contour to set to target index.
+    /// Example:
+    ///     >>> contour = geom.contours[0].copy()
+    ///     >>> geom.set_contour(10, contour)
     #[pyo3(signature = (idx, contour))]
     fn set_contour(&mut self, idx: isize, contour: PyContour) -> PyResult<()> {
         let len = self.contours.len() as isize;
@@ -412,6 +427,13 @@ impl PyGeometry {
     }
 
     /// Replace the contour at `idx` (can be negative).
+    /// 
+    /// Args:
+    ///     idx (float): Target index to replace.
+    ///     wall (PyContour): Wall-contour to set to target index.
+    /// Example:
+    ///     >>> wall = geom.walls[0].copy()
+    ///     >>> geom.set_wall(10, wall)
     #[pyo3(signature = (idx, wall))]
     fn set_wall(&mut self, idx: isize, wall: PyContour) -> PyResult<()> {
         let len = self.walls.len() as isize;
@@ -427,6 +449,13 @@ impl PyGeometry {
     }
 
     /// Replace the contour at `idx` (can be negative).
+    /// 
+    /// Args:
+    ///     idx (float): Target index to replace.
+    ///     catheter (PyContour): Catheter to set to target index.
+    /// Example:
+    ///     >>> catheter = geom.catheters[0].copy()
+    ///     >>> geom.set_catheter(10, catheter)
     #[pyo3(signature = (idx, catheter))]
     fn set_catheter(&mut self, idx: isize, catheter: PyContour) -> PyResult<()> {
         let len = self.catheters.len() as isize;
@@ -449,7 +478,7 @@ impl PyGeometry {
     ///     PyGeometry:
     ///         Original Geometry rotated around it's centroid
     /// Example:
-    ///     geometry = geometry.rotate(20)
+    ///     >>> geometry = geometry.rotate(20)
     #[pyo3(signature = (angle_deg))]
     pub fn rotate(&self, angle_deg: f64) -> PyGeometry {
         let angle_rad = angle_deg.to_radians();
@@ -493,10 +522,10 @@ impl PyGeometry {
 
     /// Translates all contours, walls, and catheters in a geometry by (dx, dy, dz).
     ///
-    /// Arguments:
-    ///     - dx: translation in x-direction
-    ///     - dy: translation in y-direction
-    ///     - dz: translation in z-direction
+    /// Args:
+    ///     dx (float): translation in x-direction.
+    ///     dy (float): translation in y-direction.
+    ///     dz (float): translation in z-direction.
     ///
     /// Returns:
     ///     A new PyGeometry with all elements translated.
@@ -536,16 +565,10 @@ impl PyGeometry {
         }
     }
 
-    /// Applies smoothing to all contours using moving average
-    ///
-    /// Args:
-    ///     window_size (int): Number of points in smoothing window
-    ///
-    /// Note:
-    ///     Larger windows create smoother contours but may lose detail
-    ///
+    /// Applies smoothing to all contours using a threepoint moving average
+    /// 
     /// Example:
-    ///     >>> geom.smooth_contours(window_size=5)
+    ///     >>> geom.smooth_contours()
     pub fn smooth_contours(&self) -> PyGeometry {
         // take &self, build the Rust Geometry, run smoothing, convert back
         let geometry = self.to_rust_geometry();
@@ -1049,20 +1072,6 @@ impl From<Centerline> for PyCenterline {
     }
 }
 
-/// Python wrapper for your Rust `Record`
-#[pyclass]
-#[derive(Debug, Clone)]
-pub struct PyRecord {
-    #[pyo3(get, set)]
-    pub frame: u32,
-    #[pyo3(get, set)]
-    pub phase: String,
-    #[pyo3(get, set)]
-    pub measurement_1: Option<f64>,
-    #[pyo3(get, set)]
-    pub measurement_2: Option<f64>,
-}
-
 /// Python representation of a measurement record
 ///
 /// Attributes:
@@ -1078,6 +1087,19 @@ pub struct PyRecord {
 ///     ...     measurement_1=42.0,
 ///     ...     measurement_2=38.5
 ///     ... )
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct PyRecord {
+    #[pyo3(get, set)]
+    pub frame: u32,
+    #[pyo3(get, set)]
+    pub phase: String,
+    #[pyo3(get, set)]
+    pub measurement_1: Option<f64>,
+    #[pyo3(get, set)]
+    pub measurement_2: Option<f64>,
+}
+
 #[pymethods]
 impl PyRecord {
     /// Python constructor

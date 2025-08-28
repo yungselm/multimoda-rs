@@ -35,12 +35,12 @@ html_static_path = [os.path.join(_here, "_static")]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 # Theme
-html_theme = "furo"
-# html_theme = 'sphinx_rtd_theme'
-# html_theme_options = {
-#     'navigation_depth': 3,
-#     'collapse_navigation': False,
-# }
+# html_theme = "furo"
+html_theme = 'sphinx_rtd_theme'
+html_theme_options = {
+    'navigation_depth': 3,
+    'collapse_navigation': False,
+}
 
 # Autodoc config
 autodoc_default_options = {

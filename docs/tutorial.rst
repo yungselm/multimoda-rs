@@ -214,22 +214,22 @@ will be returned as a dictionary with their corresponding arrays (contours, cath
     centerline_arr = mm.to_array(cl_resampled)
     ostial_contour_arr = mm.to_array(rest.dia_geom.contours[-1])
 
-Returns
--------
-np.ndarray
-    For PyContour or PyCenterline:
-    A 2D array of shape (N, 4), where each row is (frame_index, x, y, z).
+Returns::
 
-dict[str, np.ndarray]
-    For PyGeometry:
-    A dictionary with keys ["contours", "catheters", "walls", "reference"],
-    each containing a 2D array of shape (M, 4), where M is the number of points in that layer.
-    "reference" is a (1, 4) array or (0, 4) if missing.
+    np.ndarray
+        For PyContour or PyCenterline:
+        A 2D array of shape (N, 4), where each row is (frame_index, x, y, z).
 
-Tuple[dict[str, np.ndarray], dict[str, np.ndarray]]
-    For PyGeometryPair:
-    A tuple of two dictionaries (one for diastolic, one for systolic), each in the same format
-    as returned for a single PyGeometry.
+    dict[str, np.ndarray]
+        For PyGeometry:
+        A dictionary with keys ["contours", "catheters", "walls", "reference"],
+        each containing a 2D array of shape (M, 4), where M is the number of points in that layer.
+        "reference" is a (1, 4) array or (0, 4) if missing.
+
+    Tuple[dict[str, np.ndarray], dict[str, np.ndarray]]
+        For PyGeometryPair:
+        A tuple of two dictionaries (one for diastolic, one for systolic), each in the same format
+        as returned for a single PyGeometry.
 
 5. Reordering algorithm
 ^^^^^^^^^^^^^^^^^^^^^^^^
@@ -298,3 +298,45 @@ ratio for either diastole and systole are provided. These results can then easil
     # turn summary map to numpy array
     _, deformation = geometries.get_summary()
     deform_array = np.array(deformation)
+
+Returns::
+
+    Geometry "Diastole":
+    MLA [mm²]: 5.57
+    Max. stenosis [%]: 58
+    Stenosis length [mm]: 2.99
+
+    Geometry "Systole":
+    MLA [mm²]: 4.71
+    Max. stenosis [%]: 69
+    Stenosis length [mm]: 11.20
+
+    +----+----------+-----------+----------+-----------+-------+
+    | id | area_dia | ellip_dia | area_sys | ellip_sys |   z   |
+    +----+----------+-----------+----------+-----------+-------+
+    | 0  | 12.20    | 1.23      | 15.14    | 1.03      | 0.75  |
+    | 1  | 12.68    | 1.20      | 14.99    | 1.04      | 1.49  |
+    | 2  | 13.09    | 1.16      | 14.85    | 1.05      | 2.24  |
+    | 3  | 13.24    | 1.13      | 14.51    | 1.04      | 2.99  |
+    | 4  | 13.26    | 1.11      | 13.48    | 1.03      | 3.73  |
+    | 5  | 13.22    | 1.12      | 11.78    | 1.06      | 4.48  |
+    | 6  | 13.07    | 1.11      | 9.50     | 1.11      | 5.23  |
+    | 7  | 12.70    | 1.10      | 7.86     | 1.13      | 5.97  |
+    | 8  | 12.46    | 1.10      | 6.87     | 1.18      | 6.72  |
+    | 9  | 12.37    | 1.09      | 6.62     | 1.18      | 7.46  |
+    | 10 | 12.28    | 1.08      | 6.28     | 1.21      | 8.21  |
+    | 11 | 12.04    | 1.09      | 5.91     | 1.26      | 8.96  |
+    | 12 | 11.77    | 1.12      | 5.56     | 1.32      | 9.70  |
+    | 13 | 11.06    | 1.14      | 5.58     | 1.37      | 10.45 |
+    | 14 | 10.09    | 1.12      | 5.96     | 1.48      | 11.20 |
+    | 15 | 8.93     | 1.11      | 6.31     | 1.59      | 11.94 |
+    | 16 | 7.85     | 1.14      | 6.35     | 1.87      | 12.69 |
+    | 17 | 6.80     | 1.16      | 5.81     | 2.27      | 13.44 |
+    | 18 | 5.99     | 1.30      | 5.29     | 2.76      | 14.18 |
+    | 19 | 5.57     | 1.55      | 5.25     | 2.97      | 14.93 |
+    | 20 | 5.86     | 1.78      | 5.42     | 2.88      | 15.68 |
+    | 21 | 6.04     | 1.76      | 5.45     | 2.79      | 16.42 |
+    | 22 | 6.55     | 1.53      | 5.02     | 2.66      | 17.17 |
+    | 23 | 7.22     | 1.43      | 4.71     | 2.56      | 17.92 |
+    +----+----------+-----------+----------+-----------+-------+
+
