@@ -1,6 +1,6 @@
 [project]
 name = "multimodars"
-version = "0.0.5"
+version = "0.0.6"
 authors = [
     { name = "Anselm W. Stark"}
 ]

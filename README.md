@@ -25,7 +25,7 @@
 
 ---
 # Overview 
-`multimoda-rs` addresses the challenge of aligning and fusing diverse cardiac imaging modalities, such as CCTA, IVUS, OCT, and MRI—into a unified, high‑resolution 3D model. While CCTA provides comprehensive volumetric context, intravascular modalities (IVUS and OCT) offer sub‑millimeter resolution along the vessel lumen, and MRI (LGE) reveals tissue characteristics like scar and edema. This library leverages Rust for computationally intensive registration steps, delivering faster performance than pure Python implementations.
+`multimoda-rs` is a high-performance toolkit developed to enable the study of dynamic vessel deformation in coronary artery anomalies (CAAs), where quantifying lumen changes under stress and rest is critical. It addresses the general challenge of aligning and fusing diverse cardiac imaging modalities, such as CCTA, IVUS, OCT, and MRI—into a unified, high‑resolution 3D model. While CCTA provides comprehensive volumetric context, intravascular modalities (IVUS and OCT) offer sub‑millimeter resolution along the vessel lumen, and MRI (LGE) reveals tissue characteristics like scar and edema. This library leverages Rust for computationally intensive registration steps, delivering faster performance than pure Python implementations.
 
 ## Key Features
 - IVUS/OCT Contours Registration
@@ -111,16 +111,24 @@ The intended usage of the package with examples for every case are provided unde
 Distributed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ## Detailed Background
-This package aims to register different cardiac imaging modalities together, while coronary computed tomography angiography (CCTA) is the undisputed goldstandard for 3D information, it has several downsides, when trying to create patient-specific geometries.
+### Primary Motivation: Coronary Artery Anomalies (CAAs)
 
-First, intravascular imaging (intravascular ultrasound (IVUS) and optical coherence tomography (OCT)) have a much higher image resolution. It would therefore desirable to replace the sections along the coronary artery depicted by the intravascular images with these high resolution images. Since this intravascular images are acquired during a pullback along a catheter with a certain shape in the 3D space, and the coronary vessel undergoes several motions (heartbeat breathing), are the images inside a pullback not perfectly aligned with each other. The first aim of this package is to register these images towards each other using Hausdorff distances of the vessel contours and the catheter position (center of the image). The full backend is written in Rust leveraging parallelization to achieve much faster results than using traditional python only.
+This package was initially built to study anomalous aortic origin of a coronary artery (AAOCA). In these patients, a dynamic stenosis is present where the intramural section (inside the aortic wall) undergoes complex lumen deformation:
 
-! Not implemented yet !
-Second, MRI has the potential to depict several tissue characteristics, most importantly scar tissue using LGE. Again only 2D images are acquired, in this case the 2D images should be placed at the correct position in the CCTA mesh and a 3D model should be created showing the volume of scar tissue (or edema) and it's corresponding region.
+1. Pulsatile deformation during rest and stress with every heartbeat (diastole vs. systole).
 
-### IVUS registration - gated images
-The initial idea for this package, was built with a focus on coronary artery anomalies, particularly anomalous aortic origin of a coronary artery (AAOCA). In these patients a dynamic stenosis is present, where the intramural section (inside of the aortic wall) undergoes a pulsatile lumen deformation during rest and stress with every heartbeat. Additionally undergoes the vessel a stress-induced lumen deformation from rest to stress for both diastole and systole. The `from_file()` and `from_array()` functions where both built having this four possible changes in mind.
+2. Stress-induced deformation from rest to stress for both diastole and systole.
+
+The `from_file()` and `from_array()` functions and their processing modes (full, double-pair, etc.) were specifically designed to quantify these four distinct geometric states, which are crucial for diagnosis and treatment planning.
+
 ![Dynamic lumen changes](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/media/dynamic_lumen_changes.png)
+
+### General-Purpose Application
+While inspired by CAAs, multimoda-rs is a general-purpose toolkit for multi-modality cardiac image fusion.
+
+* **Intravascular Imaging (IVUS/OCT) + CCTA**: While coronary computed tomography angiography (CCTA) is the gold standard for 3D anatomic information, intravascular imaging (intravascular ultrasound (IVUS) and optical coherence tomography (OCT)) offers a much higher resolution. This package enables the replacement of sections of the CCTA-derived coronary artery model with these high-resolution intravascular images. Since intravascular images are acquired during a catheter pullback and the vessel undergoes motion (heartbeat, breathing), the images within a pullback are not perfectly aligned. This package first registers these images to each other using Hausdorff distances of the vessel contours and the catheter centroid position. The Rust backend leverages parallelization to achieve significantly faster results than pure Python.
+
+* **Longitudinal Studies (Pre-/Post-Stenting)**: The same registration functionality is directly applicable to longitudinal comparisons in coronary artery disease, such as assessing the results of percutaneous coronary intervention (comparing pre-stent vs. post-stent pullbacks).
 
 The options to display are therefore:
 
@@ -169,8 +177,12 @@ No headers -> frame index, x-coord [mm], y-coord [mm], z-coord [mm]
 ```
 The contours can also be in pixels, but results of the `.get_area()` function will be wrong.
 
+The output allows for the creation of several interpolated meshes. These can then be used to render videos displaying the dynamics.
+
+![Stress-induced diastolic lumen deformation](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/examples/figures/animation_stress_induced_systolic_deformation.gif)
+
 ### IVUS registration - pre- and post-stenting
 IVUS registration works in the same way. An example is provided in `data/ivus_prestent` and `data/ivus_poststent`.
 
 ### OCT registration
-
+OCT registration works exactly the same as IVUS registration, just the parameters for image resolution have to be set differently.

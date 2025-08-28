@@ -1076,16 +1076,16 @@ impl From<Centerline> for PyCenterline {
 ///
 /// Attributes:
 ///     frame (int): Frame number
-///     phase (str): Cardiac phase ('Diastole'/'Systole')
-///     measurement_1 (float, optional): Primary measurement
-///     measurement_2 (float, optional): Secondary measurement
+///     phase (str): Cardiac phase ('D'/'S') for diastole or systole
+///     measurement_1 (float, optional): Primary measurement. In coronary artery anomalies thickness between aorta and coronary.
+///     measurement_2 (float, optional): Secondary measurement. In coronary artery anomalies thickness between pulmonary artery and coronary.
 ///
 /// Example:
 ///     >>> record = PyRecord(
 ///     ...     frame=5,
-///     ...     phase="Diastole",
-///     ...     measurement_1=42.0,
-///     ...     measurement_2=38.5
+///     ...     phase="D",
+///     ...     measurement_1=1.4,
+///     ...     measurement_2=2.1
 ///     ... )
 #[pyclass]
 #[derive(Debug, Clone)]
