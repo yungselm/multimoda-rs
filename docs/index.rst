@@ -12,7 +12,7 @@ Welcome to multimodars documentation!
 This package aims to combine different cardiac imaging modalities to combined 3D models. A particular focus is on the fusion of intravascular 
 imaging with computed coronary tomography angiography (CCTA).
 
-..warning::
+.. warning::
    
    Not intended for clinical use.
 
@@ -36,7 +36,7 @@ Table of Contents
 License
 -------
 
-This package is covered by the open source `MIT License <https://github.com/yungselm/multimodars/LICENSE.md>`_.
+This package is covered by the open source `MIT License <https://github.com/yungselm/multimoda-rs/blob/main/LICENSE>`_.
 
 Developers
 ----------
@@ -53,7 +53,7 @@ Developers
 Contributing
 ------------
 We'd welcome your contributions to multimodars. Please read the
-`contributing guidelines <https://github.com/yungselm/multimodars/CONTRIBUTING.md>` on how to contribute to multimodars.
+`contributing guidelines <https://github.com/yungselm/multimoda-rs/blob/main/CONTRIBUTING.md>`_ on how to contribute to ``multimodars``.
 
 Indices and tables
 ==================

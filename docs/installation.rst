@@ -10,8 +10,8 @@ There are two ways you can use pyradiomics:
 1. Install via pip
 ------------------
 
-Pre-built binaries are available on PyPi for installation via pip. For the python versions
-mentioned below, wheels are automatically generated for each release of multimodars, allowing you to
+Pre-built binaries are available on PyPI for installation via pip. For the python versions
+mentioned below, wheels are automatically generated for each release of ``multimodars``, allowing you to
 install multimodars without having to compile anything.
 
 * Ensure that you have ``python`` installed on your machine, version 3.12 or higher (64-bits).
