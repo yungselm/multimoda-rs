@@ -14,7 +14,7 @@ This step-by-step tutorial demonstrates how to:
 
 1. Workflow csv files
 ^^^^^^^^^^^^^^^^^^^^^^
-After pip installing or locally building the package install it in the familiar way.
+After pip installing or locally building the package, install it in the familiar way.
 
 .. code-block:: python
 
@@ -38,9 +38,9 @@ Every file should be structured in the following way (no headers):
 +-------+---------+---------+---------+
 
 To acquire meaningful measurement data, the coordinates should be provided in mm or another SI unit instead of pixel values.
-Optionally a record file can be provided `combined_sorted_manual.csv`, which should have the following structure, here the first column should contain the desired frame order and measurement_1 
-represent the thickness of the wall between aorta and coronary and measurement_2 for the thickness between pulmonary artery and coronary (position just for demonstration). This is based on the 
-output of the AIVUS-CAA software _a link: https://github.com/AI-in-Cardiovascular-Medicine/AIVUS-CAA/:
+Optionally a record file can be provided `combined_sorted_manual.csv`, which should have the following structure, here the first column should contain the desired frame order and "measurement_1" 
+represent the thickness of the wall between aorta and coronary and "measurement_2" for the thickness between pulmonary artery and coronary (position just for demonstration). This is based on the 
+output of the `AIVUS-CAA software <https://github.com/AI-in-Cardiovascular-Medicine/AIVUS-CAA/>`_:
 
 +-----------------+---------------+---------------+---------------+---------------+
 | frame           | (position)    |   phase       | measurement_1 | measurement_2 |
@@ -70,7 +70,7 @@ This simplifies the workflow, by just providing a directory to automatically pro
         stress_output_path="output/stress",
     )
 
-However the preferred more flexible array is from numpy arrays.
+However the preferred more flexible way is from numpy arrays.
 
 2. Workflow numpy arrays and Finetuning
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -124,7 +124,7 @@ and number of points to represent the catheter. If no walls are provided a defau
     )
 
 This ``from_array`` function automatically aligns the frames within a pullback and then between pullbacks. The algorithm translates contours to the same centroid as the most proximal contour,
-and then finds the best rotation based on contour **AND** contour points.
+and then finds the best rotation based on contour **AND** catheter points.
 
 .. image:: ../paper/figures/Figure3.jpg
    :alt: Example figure
@@ -132,7 +132,7 @@ and then finds the best rotation based on contour **AND** contour points.
    :width: 400px
 
 The number of catheter points (``n_points``) therefore influences how much weight is given to the original image center. For mostly round contours, where Hausdorff distances are similar in different angles,
-this image center can increase accuarcy of the right rotation. For stenotic section or coronary artery anomalies, where the vessel has distinct shape difference, this number can be kept
+this image center can increase accuracy of the correct rotation. For stenotic sections or coronary artery anomalies, where the vessel has distinct shape difference, this number can be kept
 rather small (default 20 points compared to 500 for the contour).
 
 ``range_rotation_deg`` and ``step_rotation_deg`` define the +/- degree range where the rotation is tested (default 90° so full range) and step_rotation_deg in what step sizes (default 0.5°).
@@ -140,7 +140,12 @@ This algorithm is optimized and where it downsamples the original contour to 200
 in 0.1° steps and so on until the desired acccuracy). If bruteforce is set to 'True' the complete range is sweeped with the provided acccuracy (not recommended O(n^3)).
 
 If ``write_obj`` is set to True, geometries will be saved as .obj files. if interpolation steps are not 0, additionally interpolated geometries will be created. This is useful if the dynamic
-behaviour will be rendered later on.
+behaviour will be rendered later on. For example here a rendering of a non-aligned systolic stress-induced deformation in a coronary artery anomaly:
+
+.. image:: ../examples/figures/animation_stress_induced_systolic_deformation.gif
+    :alt: Example figure
+    :align: center
+    :width: 400px
 
 2. Alignment with a centerline
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -195,7 +200,7 @@ and the spacing is adjusted to match the z-spacing of the PyGeometry.
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 While every wrapper function allows to directly save the created geometries as .obj files (with optional interpolation),
 it is also possible to save any created geometry directly to an object file. The ``to_obj`` function can automatically
-detect the type of the object, and can be applied to PyGeometryPair, PyGeometry or PyCenterline.
+detect the type of the object, and can be applied to PyGeometryPair, PyGeometry. For PyCenterline use the ``centerline_to_obj`` function.
 
 .. code-block:: python
 
@@ -257,7 +262,7 @@ and the farthest points be identified:
     (p1, p2), distance = contour.find_closest_opposite()
     (p1, p2), distance = contour.find_farthest_points()
 
-For every contour the area and elliptic ratio can be returned. CAVE units are calculated from the original
+For every contour the area and elliptic ratio can be returned. **CAVE:** units are calculated from the original
 image spacing, if contours were provided in pixels no meaningful result will be returned.
 
 .. code-block:: python
