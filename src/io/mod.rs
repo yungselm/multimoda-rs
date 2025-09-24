@@ -45,7 +45,7 @@ impl Geometry {
             )
         };
 
-        let reference_point = Self::load_reference_point(&reference_path).with_context(|| {
+        let mut reference_point = Self::load_reference_point(&reference_path).with_context(|| {
             format!(
                 "Failed to load reference point from {}",
                 reference_path.display()
@@ -121,6 +121,15 @@ impl Geometry {
 
         //sort catheter in ascending order
         catheter.sort_by_key(|c| c.id);
+
+        // assign frame_index for reference_point to the same as the highest contour idx
+        let n = contours.len();
+        if n > 0 {
+            let max_idx = contours.iter().map(|c| c.id).max().unwrap();
+            reference_point.frame_index = max_idx;
+        } else {
+            println!("Warning: No contours loaded, reference point frame_index not set.");
+        };
 
         let contours_loaded = !contours.is_empty();
         let reference_loaded = !Some(reference_point).is_none();

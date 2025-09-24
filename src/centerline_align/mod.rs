@@ -2,9 +2,6 @@ pub mod align_algorithms;
 pub mod preprocessing;
 
 use crate::centerline_align::align_algorithms::{get_transformations, FrameTransformation};
-use crate::centerline_align::preprocessing::{
-    ensure_descending_z, resample_centerline_by_contours,
-};
 use crate::io::{
     input::{Centerline, Contour},
     Geometry,
@@ -16,7 +13,7 @@ use crate::io::output::{write_geometry_vec_to_obj, GeometryType};
 use crate::processing::process_utils::interpolate_contours;
 use crate::texture::write_mtl_geometry;
 use align_algorithms::best_rotation_three_point;
-use preprocessing::{prepare_geometry_alignment, remove_leading_points_cl};
+use preprocessing::{prepare_geometry_alignment, preprocess_centerline};
 
 pub fn align_three_point_rs(
     centerline: Centerline,
@@ -31,13 +28,7 @@ pub fn align_three_point_rs(
     case_name: &str,
 ) -> (GeometryPair, Centerline) {
     let mut geom = prepare_geometry_alignment(geometry_pair);
-    let mut cl = centerline.clone();
-    ensure_descending_z(&mut cl);
-
-    let mut centerline = remove_leading_points_cl(cl, &aortic_ref_pt);
-    ensure_descending_z(&mut centerline);
-
-    let resampled_centerline = resample_centerline_by_contours(&centerline, &geom.dia_geom);
+    let resampled_centerline = preprocess_centerline(centerline, &aortic_ref_pt, &geom.dia_geom).unwrap();
 
     let best_rot = best_rotation_three_point(
         &geom.dia_geom.contours[0],
@@ -71,17 +62,11 @@ pub fn align_manual_rs(
     case_name: &str,
 ) -> (GeometryPair, Centerline) {
     let mut geom = prepare_geometry_alignment(geometry_pair);
-    let mut cl = centerline.clone();
-    ensure_descending_z(&mut cl);
-
     // maybe stupidly extensive, but can reuse remove_leading_points function
     let ref_pt = centerline.points[start_point].contour_point;
     let ref_coords = (ref_pt.x, ref_pt.y, ref_pt.z);
 
-    let mut centerline = remove_leading_points_cl(cl, &ref_coords);
-    ensure_descending_z(&mut centerline);
-
-    let resampled_centerline = resample_centerline_by_contours(&centerline, &geom.dia_geom);
+    let resampled_centerline = preprocess_centerline(centerline, &ref_coords, &geom.dia_geom).unwrap();
 
     geom = rotate_by_best_rotation(geom, rotation_angle);
 

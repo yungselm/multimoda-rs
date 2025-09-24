@@ -47,6 +47,14 @@ pub fn align_within_and_between(
         step_rotation_deg, 
         range_rotation_deg)
         .context(format!("align between geometrypair({}) failed", case_name))?;
+
+    // set the reference point z to the last contour z for both geometries
+    if let Some(last_dia) = geom_pair.dia_geom.contours.last() {
+        geom_pair.dia_geom.reference_point.z = last_dia.centroid.2;
+    }
+    if let Some(last_sys) = geom_pair.sys_geom.contours.last() {
+        geom_pair.sys_geom.reference_point.z = last_sys.centroid.2;
+    }
     
     let geom_pair_walls: GeometryPair = if write_obj {
         process_case(
@@ -93,6 +101,14 @@ pub fn align_within_and_between_array(
         step_rotation_deg, 
         range_rotation_deg)
         .context(format!("align between geometrypair({}) failed", case_name))?;
+
+    // set the reference point z to the last contour z for both geometries
+    if let Some(last_dia) = geom_pair.dia_geom.contours.last() {
+        geom_pair.dia_geom.reference_point.z = last_dia.centroid.2;
+    }
+    if let Some(last_sys) = geom_pair.sys_geom.contours.last() {
+        geom_pair.sys_geom.reference_point.z = last_sys.centroid.2;
+    }
     
     let geom_pair_walls: GeometryPair = if write_obj {
         process_case(

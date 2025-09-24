@@ -179,6 +179,14 @@ impl GeometryPair {
             current_z += mean_z_coords;
         }
 
+        // set the reference point z to the last contour z for both geometries
+        if let Some(last_dia) = self.dia_geom.contours.last() {
+            self.dia_geom.reference_point.z = last_dia.centroid.2;
+        }
+        if let Some(last_sys) = self.sys_geom.contours.last() {
+            self.sys_geom.reference_point.z = last_sys.centroid.2;
+        }
+
         self
     }
 
@@ -234,6 +242,15 @@ impl GeometryPair {
                 }
             }
         }
+
+        // set the reference point z to the last contour z for both geometries
+        if let Some(last_dia) = self.dia_geom.contours.last() {
+            self.dia_geom.reference_point.z = last_dia.centroid.2;
+        }
+        if let Some(last_sys) = self.sys_geom.contours.last() {
+            self.sys_geom.reference_point.z = last_sys.centroid.2;
+        }
+
         self
     }
 
