@@ -22,11 +22,11 @@ authors:
   - name: Pooya Mohammadi Kazaj
     orcid: 0000-0003-2747-1489
     affiliation: "1, 2"
-  - name: Isaac Shiri
-    orcid: 0000-0002-5735-0736
-    affiliation: 1
   - name: Christoph Gräni
     orcid: 0000-0001-6029-0597
+    affiliation: 1
+  - name: Isaac Shiri
+    orcid: 0000-0002-5735-0736
     affiliation: 1
 affiliations:
   - name: Department of Cardiology, Inselspital, Bern University Hospital, University of Bern, Switzerland
