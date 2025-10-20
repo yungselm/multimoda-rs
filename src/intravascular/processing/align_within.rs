@@ -4,10 +4,10 @@ use std::collections::HashSet;
 use std::f64::consts::PI;
 use std::sync::{Arc, Mutex};
 
-use crate::io::input::{Contour, ContourPoint};
-use crate::io::Geometry;
-use crate::processing::align_between::GeometryPair;
-use crate::processing::process_utils::downsample_contour_points;
+use crate::intravascular::io::input::{Contour, ContourPoint};
+use crate::intravascular::io::Geometry;
+use crate::intravascular::processing::align_between::GeometryPair;
+use crate::intravascular::processing::process_utils::downsample_contour_points;
 
 #[derive(Debug)]
 pub struct AlignLog {
@@ -600,7 +600,7 @@ fn dump_table(logs: &[AlignLog]) {
 #[cfg(test)]
 mod contour_tests {
     use super::*;
-    use crate::utils::test_utils::{generate_ellipse_points, new_dummy_contour};
+    use crate::intravascular::utils::test_utils::{generate_ellipse_points, new_dummy_contour};
     use approx::assert_relative_eq;
     use std::f64::consts::PI;
 

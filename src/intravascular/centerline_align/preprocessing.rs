@@ -1,8 +1,8 @@
 use nalgebra::Vector3;
 
-use crate::io::input::{Centerline, CenterlinePoint, ContourPoint};
-use crate::io::Geometry;
-use crate::processing::align_between::GeometryPair;
+use crate::intravascular::io::input::{Centerline, CenterlinePoint, ContourPoint};
+use crate::intravascular::io::Geometry;
+use crate::intravascular::processing::align_between::GeometryPair;
 
 /// Resample `centerline` along its arc-length so that adjacent points are spaced at the
 /// mean Euclidean distance between consecutive contour centroids in `ref_mesh`.
@@ -436,7 +436,7 @@ pub fn prepare_geometry_alignment(mut geom_pair: GeometryPair) -> GeometryPair {
 #[cfg(test)]
 mod cl_preprocessing_tests {
     use super::*;
-    use crate::io::input::{Contour, ContourPoint};
+    use crate::intravascular::io::input::{Contour, ContourPoint};
     use approx::assert_relative_eq;
     
     #[test]
@@ -573,7 +573,7 @@ mod cl_preprocessing_tests {
 
     #[test]
     fn test_calculate_mean_spacing() {
-        use crate::io::input::{Contour, ContourPoint};
+        use crate::intravascular::io::input::{Contour, ContourPoint};
 
         // Case 1: multiple centroids → valid mean spacing
         let geom = Geometry {

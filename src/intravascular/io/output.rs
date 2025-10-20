@@ -2,8 +2,8 @@ use anyhow::{anyhow, bail, Context};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
-use crate::io::input::Contour;
-use crate::io::Geometry;
+use crate::intravascular::io::input::Contour;
+use crate::intravascular::io::Geometry;
 use rayon::prelude::*;
 use std::path::Path;
 

@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 
-use crate::{
+use crate::intravascular::{
     binding::classes::{PyCenterline, PyGeometryPair},
     centerline_align::{align_manual_rs, align_three_point_rs},
 };

@@ -6,10 +6,10 @@ pub mod align_between;
 pub mod process_utils;
 pub mod walls;
 
-use crate::processing::align_within::{align_frames_in_geometries, AlignLog};
-use crate::processing::align_between::{get_geometry_pair, GeometryPair};
-use crate::processing::process_utils::process_case;
-use crate::processing::walls::create_wall_geometry;
+use crate::intravascular::processing::align_within::{align_frames_in_geometries, AlignLog};
+use crate::intravascular::processing::align_between::{get_geometry_pair, GeometryPair};
+use crate::intravascular::processing::process_utils::process_case;
+use crate::intravascular::processing::walls::create_wall_geometry;
 
 pub fn align_within_and_between(
     case_name: &str,

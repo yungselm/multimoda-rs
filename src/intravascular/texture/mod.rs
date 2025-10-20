@@ -1,6 +1,6 @@
 pub mod texture;
 
-use crate::io::Geometry;
+use crate::intravascular::io::Geometry;
 use ::std::fs::File;
 use ::std::io::Write;
 use std::path::Path;

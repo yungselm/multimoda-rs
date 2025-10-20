@@ -1,8 +1,8 @@
 // File: src/python_bind.rs
-use crate::entry_arr::refine_ordering;
-use crate::io::input::{Centerline, CenterlinePoint, Contour, ContourPoint, Record};
-use crate::io::Geometry;
-use crate::processing::align_between::GeometryPair;
+use super::entry_arr::refine_ordering;
+use crate::intravascular::io::input::{Centerline, CenterlinePoint, Contour, ContourPoint, Record};
+use crate::intravascular::io::Geometry;
+use crate::intravascular::processing::align_between::GeometryPair;
 use nalgebra::Vector3;
 use pyo3::prelude::*;
 

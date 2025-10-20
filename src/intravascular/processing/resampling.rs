@@ -1,8 +1,8 @@
 use anyhow::Context;
 
 use super::align_between::GeometryPair;
-use crate::io::input::{Contour, ContourPoint};
-use crate::io::Geometry;
+use crate::intravascular::io::input::{Contour, ContourPoint};
+use crate::intravascular::io::Geometry;
 use std::error::Error;
 
 pub fn prepare_geometries_comparison(

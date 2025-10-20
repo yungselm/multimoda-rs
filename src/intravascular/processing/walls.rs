@@ -1,7 +1,7 @@
 use std::ops::RangeInclusive;
 
-use crate::io::input::{Contour, ContourPoint};
-use crate::io::Geometry;
+use crate::intravascular::io::input::{Contour, ContourPoint};
+use crate::intravascular::io::Geometry;
 
 pub fn create_wall_geometry(geometry: &Geometry, with_pulmonary: bool) -> Geometry {
     let mut new_contours = Vec::new();

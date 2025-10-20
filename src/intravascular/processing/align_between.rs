@@ -2,10 +2,10 @@ use rayon::prelude::*;
 use anyhow::Context;
 use std::f64::consts::PI;
 
-use crate::io::Geometry;
-use crate::io::input::{Contour, ContourPoint};
-use crate::processing::process_utils::downsample_contour_points;
-use crate::processing::align_within::hausdorff_distance;
+use crate::intravascular::io::Geometry;
+use crate::intravascular::io::input::{Contour, ContourPoint};
+use crate::intravascular::processing::process_utils::downsample_contour_points;
+use crate::intravascular::processing::align_within::hausdorff_distance;
 
 #[derive(Clone, Debug)]
 pub struct GeometryPair {
@@ -532,9 +532,9 @@ mod geometry_pair_tests {
     use approx::assert_relative_eq;
     use std::f64::consts::PI;
 
-    use crate::io::input::{Contour, ContourPoint};
-    use crate::io::Geometry;
-    use crate::utils::test_utils::new_dummy_contour;
+    use crate::intravascular::io::input::{Contour, ContourPoint};
+    use crate::intravascular::io::Geometry;
+    use crate::intravascular::utils::test_utils::new_dummy_contour;
 
     /// Helper: build a simple geometry with one contour of three points
     fn simple_geometry(

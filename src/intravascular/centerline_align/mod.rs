@@ -1,17 +1,17 @@
 pub mod align_algorithms;
 pub mod preprocessing;
 
-use crate::centerline_align::align_algorithms::{get_transformations, FrameTransformation};
-use crate::io::{
+use crate::intravascular::centerline_align::align_algorithms::{get_transformations, FrameTransformation};
+use crate::intravascular::io::{
     input::{Centerline, Contour},
     Geometry,
 };
-use crate::processing::align_between::GeometryPair;
+use crate::intravascular::processing::align_between::GeometryPair;
 use anyhow::Error;
 
-use crate::io::output::{write_geometry_vec_to_obj, GeometryType};
-use crate::processing::process_utils::interpolate_contours;
-use crate::texture::write_mtl_geometry;
+use crate::intravascular::io::output::{write_geometry_vec_to_obj, GeometryType};
+use crate::intravascular::processing::process_utils::interpolate_contours;
+use crate::intravascular::texture::write_mtl_geometry;
 use align_algorithms::best_rotation_three_point;
 use preprocessing::{prepare_geometry_alignment, preprocess_centerline};
 

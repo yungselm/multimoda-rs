@@ -1,14 +1,14 @@
 use anyhow::{anyhow, Context, Result};
 use crossbeam::thread;
 
-use crate::processing::align_within_and_between;
-use crate::processing::resampling::prepare_geometries_comparison;
-use crate::processing::process_utils::process_case;
-use crate::processing::align_between::GeometryPair;
-use crate::processing::align_within::AlignLog;
+use crate::intravascular::processing::align_within_and_between;
+use crate::intravascular::processing::resampling::prepare_geometries_comparison;
+use crate::intravascular::processing::process_utils::process_case;
+use crate::intravascular::processing::align_between::GeometryPair;
+use crate::intravascular::processing::align_within::AlignLog;
 
-use crate::io::output::write_obj_mesh_without_uv;
-use crate::io::Geometry;
+use crate::intravascular::io::output::write_obj_mesh_without_uv;
+use crate::intravascular::io::Geometry;
 
 pub fn from_file_full_rs(
     rest_input_path: &str,
@@ -317,7 +317,7 @@ pub fn from_file_single_rs(
         n_points,
     )?;
 
-    let (geom, logs) = crate::processing::align_within::align_frames_in_geometry(
+    let (geom, logs) = crate::intravascular::processing::align_within::align_frames_in_geometry(
         geom, 
         step_rotation_deg, 
         range_rotation_deg,
@@ -325,7 +325,7 @@ pub fn from_file_single_rs(
         bruteforce,
         sample_size);
     let geom = if geom.walls.is_empty() {
-        crate::processing::walls::create_wall_geometry(&geom, /*with_pulmonary=*/ false)
+        crate::intravascular::processing::walls::create_wall_geometry(&geom, /*with_pulmonary=*/ false)
     } else {
         geom
     };

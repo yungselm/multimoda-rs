@@ -1,11 +1,11 @@
 use anyhow::bail;
 
-use crate::io::input::{Contour, ContourPoint};
-use crate::io::output::{write_geometry_vec_to_obj, GeometryType};
-use crate::io::Geometry;
-use crate::processing::align_between::GeometryPair;
-use crate::processing::walls::create_wall_geometry;
-use crate::texture::write_mtl_geometry;
+use crate::intravascular::io::input::{Contour, ContourPoint};
+use crate::intravascular::io::output::{write_geometry_vec_to_obj, GeometryType};
+use crate::intravascular::io::Geometry;
+use crate::intravascular::processing::align_between::GeometryPair;
+use crate::intravascular::processing::walls::create_wall_geometry;
+use crate::intravascular::texture::write_mtl_geometry;
 
 
 pub fn downsample_contour_points(points: &[ContourPoint], n: usize) -> Vec<ContourPoint> {
@@ -252,7 +252,7 @@ fn interpolate_thickness(start: &Option<f64>, end: &Option<f64>, t: f64) -> Opti
 #[cfg(test)]
 mod process_tests {
     use super::*;
-    use crate::io::input::{Contour, ContourPoint};
+    use crate::intravascular::io::input::{Contour, ContourPoint};
     use approx::assert_relative_eq; // Add approx = "1.4" to Cargo.toml
 
     // Helper to create mock geometry

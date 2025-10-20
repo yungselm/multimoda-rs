@@ -2,15 +2,15 @@ use anyhow::{anyhow, Context, Result};
 use crossbeam::thread;
 use std::collections::HashSet;
 
-use crate::io::input::{Contour, ContourPoint, Record};
-use crate::io::Geometry;
-use crate::processing::resampling::prepare_geometries_comparison;
-use crate::processing::align_within::{align_frames_in_geometry, hausdorff_distance, AlignLog};
-use crate::processing::align_between::GeometryPair;
-use crate::processing::process_utils::process_case;
-use crate::processing::align_within_and_between_array;
+use crate::intravascular::io::input::{Contour, ContourPoint, Record};
+use crate::intravascular::io::Geometry;
+use crate::intravascular::processing::resampling::prepare_geometries_comparison;
+use crate::intravascular::processing::align_within::{align_frames_in_geometry, hausdorff_distance, AlignLog};
+use crate::intravascular::processing::align_between::GeometryPair;
+use crate::intravascular::processing::process_utils::process_case;
+use crate::intravascular::processing::align_within_and_between_array;
 
-use crate::io::output::write_obj_mesh_without_uv;
+use crate::intravascular::io::output::write_obj_mesh_without_uv;
 
 pub fn geometry_from_array_rs(
     contours: Vec<Contour>,
@@ -110,7 +110,7 @@ pub fn geometry_from_array_rs(
     };
 
     geometry = if geometry.walls.is_empty() {
-        crate::processing::walls::create_wall_geometry(&geometry, false)
+        crate::intravascular::processing::walls::create_wall_geometry(&geometry, false)
     } else {
         geometry
     };
@@ -696,7 +696,7 @@ pub fn from_array_singlepair_rs(
 mod tests {
     use super::*;
     use std::f64::consts::PI;
-    use crate::io::input::{Contour, ContourPoint};
+    use crate::intravascular::io::input::{Contour, ContourPoint};
 
     fn create_circle_contour(id: u32, radius: f64, n_points: u32) -> Contour {
         let mut points = Vec::new();
