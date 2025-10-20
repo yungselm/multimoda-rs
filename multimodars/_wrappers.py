@@ -27,7 +27,7 @@ def from_file(
     mode: Mode,
     **kwargs: Any,
 ) -> Union[
-    # full now returns 4 geometry pairs *and* 4 log-lists
+    # full returns 4 geometry pairs + 4 log-lists
     Tuple[
         PyGeometryPair,
         PyGeometryPair,

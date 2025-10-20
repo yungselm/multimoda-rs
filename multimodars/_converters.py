@@ -34,15 +34,12 @@ def to_array(generic) -> Union[np.ndarray, dict, Tuple[dict, dict]]:
     TypeError
         If the input type is not one of the supported multimodars types.
     """
-    # Import here to avoid circular imports
     from multimodars import PyContour, PyCenterline, PyGeometry, PyGeometryPair
 
-    # Contour: flatten points
     if isinstance(generic, PyContour):
         pts = [(p.frame_index, p.x, p.y, p.z) for p in generic.points]
         return np.array(pts, dtype=float)
 
-    # Centerline: use contour_point attrs
     if isinstance(generic, PyCenterline):
         pts = [
             (
@@ -55,11 +52,9 @@ def to_array(generic) -> Union[np.ndarray, dict, Tuple[dict, dict]]:
         ]
         return np.array(pts, dtype=float)
 
-    # Geometry: use helper
     if isinstance(generic, PyGeometry):
         return _geometry_to_numpy(generic)
 
-    # Geometry Pair: two geometries
     if isinstance(generic, PyGeometryPair):
         dia_dict = _geometry_to_numpy(generic.dia_geom)
         sys_dict = _geometry_to_numpy(generic.sys_geom)
@@ -200,7 +195,6 @@ def numpy_to_centerline(
     """
     from multimodars import PyContourPoint, PyCenterline
 
-    # sanity check
     if arr.ndim != 2 or arr.shape[1] != 3:
         raise ValueError("Input must be a (N,3) array")
 
@@ -218,5 +212,4 @@ def numpy_to_centerline(
             )
         )
 
-    # Use your static constructor to build a PyCenterline
     return PyCenterline.from_contour_points(pts)
