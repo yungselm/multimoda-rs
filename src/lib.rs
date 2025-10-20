@@ -1,4 +1,5 @@
 mod intravascular;
+mod ccta;
 
 use crate::intravascular::binding::align::{align_manual, align_three_point};
 use crate::intravascular::binding::classes::*;
