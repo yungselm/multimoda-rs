@@ -291,7 +291,6 @@ impl Contour {
         }
     }
 
-    /// Translates a contour by a given (dx, dy, dz) offset and recalculates the centroid.
     pub fn translate_contour(&mut self, translation: (f64, f64, f64)) {
         let (dx, dy, dz) = translation;
         for p in self.points.iter_mut() {
@@ -299,7 +298,6 @@ impl Contour {
             p.y += dy;
             p.z += dz;
         }
-        // Recalculate the centroid
         self.centroid = Self::compute_centroid(&self.points);
     }
 }
