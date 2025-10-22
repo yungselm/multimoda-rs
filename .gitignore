@@ -89,3 +89,6 @@ index.xsd
 xml.xsd
 rust-library-root.rst
 unabridged_api.rst.include
+
+# For now hide test stl
+data/NARCO_119.stl

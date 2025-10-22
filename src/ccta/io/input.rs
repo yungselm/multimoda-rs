@@ -59,7 +59,7 @@ impl LabeledMesh {
     }
 }
 
-fn read_stl_ccta<P: AsRef<Path>>(path: P) -> Result<LabeledMesh> {
+pub fn read_stl_ccta<P: AsRef<Path>>(path: P) -> Result<LabeledMesh> {
     let path_ref = path.as_ref();
 
     if !path_ref.exists() {

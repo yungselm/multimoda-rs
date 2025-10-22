@@ -12,6 +12,7 @@ from ._wrappers import (
     to_centerline,
 )
 from .io.write_geometries import centerline_to_obj
+from .io.read_geometrical import read_stl_geometry
 
 __all__ = [
     # rust‑backend functions
@@ -57,5 +58,6 @@ __all__ = [
     "to_centerline",
     "to_obj",
     # io
-    "centerline_to_obj"
+    "centerline_to_obj",
+    "read_stl_geometry",
 ]

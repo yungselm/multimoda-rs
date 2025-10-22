@@ -28,6 +28,7 @@ pub fn geometry_from_array_rs(
     diastole: bool,
     sort: bool,
     write_obj: bool,
+    watertight: bool,
     output_path: &str,
     bruteforce: bool,
     sample_size: usize,
@@ -123,12 +124,19 @@ pub fn geometry_from_array_rs(
             &geometry.contours,
             &filename_cont,
             "mesh_000_single.mtl",
+            watertight,
         )?;
-        write_obj_mesh_without_uv(&geometry.walls, &filename_walls, "wall_000_single.mtl")?;
+        write_obj_mesh_without_uv(
+            &geometry.walls, 
+            &filename_walls, 
+            "wall_000_single.mtl",
+            watertight,
+        )?;
         write_obj_mesh_without_uv(
             &geometry.catheter,
             &filename_cath,
             "catheter_000_single.mtl",
+            watertight,
         )?;
     }
 
@@ -387,6 +395,7 @@ pub fn from_array_full_rs(
     radius: f64,
     n_points: u32,
     write_obj: bool,
+    watertight: bool,
     rest_output_path: &str,
     stress_output_path: &str,
     diastole_output_path: &str,
@@ -426,6 +435,7 @@ pub fn from_array_full_rs(
                     step_rotation_deg, 
                     range_rotation_deg, 
                     write_obj, 
+                    watertight,
                     rest_output_path, 
                     interpolation_steps,
                     bruteforce,
@@ -451,6 +461,7 @@ pub fn from_array_full_rs(
                     step_rotation_deg, 
                     range_rotation_deg, 
                     write_obj, 
+                    watertight,
                     stress_output_path, 
                     interpolation_steps,
                     bruteforce,
@@ -481,6 +492,7 @@ pub fn from_array_full_rs(
                         dia_pair_for_thread,
                         diastole_output_path,
                         interpolation_steps,
+                        watertight,
                     )
                     .context("process_case(diastolic) failed")
                 }))
@@ -496,6 +508,7 @@ pub fn from_array_full_rs(
                         sys_pair_for_thread,
                         systole_output_path,
                         interpolation_steps,
+                        watertight,
                     )
                     .context("process_case(systolic) failed")
                 }))
@@ -557,6 +570,7 @@ pub fn from_array_doublepair_rs(
     radius: f64,
     n_points: u32,
     write_obj: bool,
+    watertight: bool,
     rest_output_path: &str,
     stress_output_path: &str,
     interpolation_steps: usize,
@@ -592,6 +606,7 @@ pub fn from_array_doublepair_rs(
                     step_rotation_deg, 
                     range_rotation_deg, 
                     write_obj, 
+                    watertight,
                     rest_output_path, 
                     interpolation_steps,
                     bruteforce,
@@ -617,6 +632,7 @@ pub fn from_array_doublepair_rs(
                     step_rotation_deg, 
                     range_rotation_deg, 
                     write_obj, 
+                    watertight,
                     stress_output_path, 
                     interpolation_steps,
                     bruteforce,
@@ -659,6 +675,7 @@ pub fn from_array_singlepair_rs(
     radius: f64,
     n_points: u32,
     write_obj: bool,
+    watertight: bool,
     output_path: &str,
     interpolation_steps: usize,
     bruteforce: bool,
@@ -680,13 +697,14 @@ pub fn from_array_singlepair_rs(
         step_rotation_deg,
         range_rotation_deg, 
         write_obj, 
+        watertight,
         output_path, 
         interpolation_steps,
         bruteforce,
         sample_size)
         .context("process geometry_pair(single) failed")?;
     // Process it (e.g. align, interpolate, write meshes)
-    let processed_pair = process_case("single", geom_pair, output_path, interpolation_steps)
+    let processed_pair = process_case("single", geom_pair, output_path, interpolation_steps, watertight)
         .context("process_case(single) failed")?;
 
     Ok((processed_pair, (dia_logs, sys_logs)))

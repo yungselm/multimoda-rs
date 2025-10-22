@@ -19,6 +19,7 @@ pub fn from_file_full_rs(
     radius: f64,
     n_points: u32,
     write_obj: bool,
+    watertight: bool,
     rest_output_path: &str,
     stress_output_path: &str,
     diastole_output_path: &str,
@@ -52,6 +53,7 @@ pub fn from_file_full_rs(
                     radius,
                     n_points,
                     write_obj,
+                    watertight,
                     rest_output_path,
                     interpolation_steps,
                     bruteforce,
@@ -72,6 +74,7 @@ pub fn from_file_full_rs(
                     radius,
                     n_points,
                     write_obj,
+                    watertight,
                     stress_output_path,
                     interpolation_steps,
                     bruteforce,
@@ -103,6 +106,7 @@ pub fn from_file_full_rs(
                         dia_pair_for_thread,
                         diastole_output_path,
                         interpolation_steps,
+                        watertight,
                     )
                     .context("process_case(diastolic) failed")
                 }))
@@ -118,6 +122,7 @@ pub fn from_file_full_rs(
                         sys_pair_for_thread,
                         systole_output_path,
                         interpolation_steps,
+                        watertight,
                     )
                     .context("process_case(systolic) failed")
                 }))
@@ -179,6 +184,7 @@ pub fn from_file_doublepair_rs(
     radius: f64,
     n_points: u32,
     write_obj: bool,
+    watertight: bool,
     rest_output_path: &str,
     stress_output_path: &str,
     interpolation_steps: usize,
@@ -208,6 +214,7 @@ pub fn from_file_doublepair_rs(
                     radius,
                     n_points,
                     write_obj,
+                    watertight,
                     rest_output_path,
                     interpolation_steps,
                     bruteforce,
@@ -228,6 +235,7 @@ pub fn from_file_doublepair_rs(
                     radius,
                     n_points,
                     write_obj,
+                    watertight,
                     stress_output_path,
                     interpolation_steps,
                     bruteforce,
@@ -270,6 +278,7 @@ pub fn from_file_singlepair_rs(
     radius: f64,
     n_points: u32,
     write_obj: bool,
+    watertight: bool,
     output_path: &str,
     interpolation_steps: usize,
     bruteforce: bool,
@@ -285,6 +294,7 @@ pub fn from_file_singlepair_rs(
         radius,
         n_points,
         write_obj,
+        watertight,
         output_path,
         interpolation_steps,
         bruteforce,
@@ -304,6 +314,7 @@ pub fn from_file_single_rs(
     radius: f64,
     n_points: u32,
     write_obj: bool,
+    watertight: bool,
     output_path: &str,
     bruteforce: bool,
     sample_size: usize,
@@ -332,7 +343,7 @@ pub fn from_file_single_rs(
     if write_obj {
         let filename = format!("{}/mesh_000_single.obj", output_path);
     
-        write_obj_mesh_without_uv(&geom.contours, &filename, "mesh_000_single.mtl")?;
+        write_obj_mesh_without_uv(&geom.contours, &filename, "mesh_000_single.mtl", watertight)?;
     }
 
     Ok((geom, logs))

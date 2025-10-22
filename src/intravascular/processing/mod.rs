@@ -20,6 +20,7 @@ pub fn align_within_and_between(
     radius: f64,
     n_points: u32,
     write_obj: bool,
+    watertight: bool,
     output_dir: &str,
     interpolation_steps: usize,
     bruteforce: bool,
@@ -62,6 +63,7 @@ pub fn align_within_and_between(
             geom_pair,
             output_dir,
             interpolation_steps,
+            watertight,
         )
         .context(format!("creating walls geometrypair({}) failed", case_name))?
     } else {
@@ -80,6 +82,7 @@ pub fn align_within_and_between_array(
     step_rotation_deg: f64,
     range_rotation_deg: f64,
     write_obj: bool,
+    watertight: bool,
     output_dir: &str,
     interpolation_steps: usize,
     bruteforce: bool,
@@ -116,6 +119,7 @@ pub fn align_within_and_between_array(
             geom_pair,
             output_dir,
             interpolation_steps,
+            watertight,
         )
         .context(format!("creating walls geometrypair({}) failed", case_name))?
     } else {

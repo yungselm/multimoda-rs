@@ -23,6 +23,7 @@ pub fn align_three_point_rs(
     lower_ref_pt: (f64, f64, f64),
     angle_step: f64,
     write: bool,
+    watertight: bool,
     interpolation_steps: usize,
     output_dir: &str,
     case_name: &str,
@@ -45,7 +46,7 @@ pub fn align_three_point_rs(
     geom = apply_transformations(geom, &resampled_centerline);
 
     if write {
-        write_aligned_meshes(geom.clone(), interpolation_steps, output_dir, case_name).unwrap();
+        write_aligned_meshes(geom.clone(), interpolation_steps, output_dir, case_name, watertight).unwrap();
     }
 
     (geom, resampled_centerline)
@@ -57,6 +58,7 @@ pub fn align_manual_rs(
     rotation_angle: f64,
     start_point: usize,
     write: bool,
+    watertight: bool,
     interpolation_steps: usize,
     output_dir: &str,
     case_name: &str,
@@ -73,7 +75,7 @@ pub fn align_manual_rs(
     geom = apply_transformations(geom, &resampled_centerline);
 
     if write {
-        write_aligned_meshes(geom.clone(), interpolation_steps, output_dir, case_name).unwrap();
+        write_aligned_meshes(geom.clone(), interpolation_steps, output_dir, case_name, watertight).unwrap();
     }
 
     (geom, resampled_centerline)
@@ -173,6 +175,7 @@ fn write_aligned_meshes(
     interpolation_steps: usize,
     output_dir: &str,
     case_name: &str,
+    watertight: bool,
 ) -> Result<(), Error> {
     let geometries = interpolate_contours(
         &geom_pair.dia_geom,
@@ -189,6 +192,7 @@ fn write_aligned_meshes(
         output_dir,
         &geometries,
         &uv_coords_contours,
+        watertight,
     )?;
 
     write_geometry_vec_to_obj(
@@ -197,6 +201,7 @@ fn write_aligned_meshes(
         output_dir,
         &geometries,
         &uv_coords_catheter,
+        watertight,
     )?;
 
     write_geometry_vec_to_obj(
@@ -205,6 +210,7 @@ fn write_aligned_meshes(
         output_dir,
         &geometries,
         &uv_coords_walls,
+        watertight,
     )?;
 
     Ok(())

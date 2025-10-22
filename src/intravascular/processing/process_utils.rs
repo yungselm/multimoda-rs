@@ -30,6 +30,7 @@ pub fn process_case(
     geometries: GeometryPair,
     output_dir: &str,
     interpolation_steps: usize,
+    watertight: bool,
 ) -> anyhow::Result<GeometryPair> {
     std::fs::create_dir_all(output_dir)?;
 
@@ -55,6 +56,7 @@ pub fn process_case(
         output_dir,
         &interpolated_geometries,
         &uv_coords_contours,
+        watertight,
     )?;
 
     if !dia_geom.catheter.is_empty() & !sys_geom.catheter.is_empty() {
@@ -64,6 +66,7 @@ pub fn process_case(
             output_dir,
             &interpolated_geometries,
             &uv_coords_catheter,
+            watertight,
         )?;
     }
 
@@ -73,6 +76,7 @@ pub fn process_case(
         output_dir,
         &interpolated_geometries,
         &uv_coords_walls,
+        watertight,
     )?;
 
     Ok(GeometryPair { dia_geom, sys_geom })

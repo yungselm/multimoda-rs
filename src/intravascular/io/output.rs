@@ -12,7 +12,13 @@ pub fn write_obj_mesh(
     uv_coords: &[(f64, f64)],
     filename: &str,
     mtl_filename: &str,
+    watertight: bool,
 ) -> anyhow::Result<()> {
+    if let Some(parent) = Path::new(filename).parent() {
+        std::fs::create_dir_all(parent)
+            .context(format!("Could not create output directory: {:?}", parent))?;
+    }
+
     let sorted_contours = contours.to_owned();
 
     if sorted_contours.len() < 2 {
@@ -30,14 +36,39 @@ pub fn write_obj_mesh(
     let mut writer = BufWriter::new(file);
     let mut vertex_offsets = Vec::new();
     let mut current_offset = 1;
-    let mut normals = Vec::new();
 
-    // Write vertices and compute normals
+    // Write vertices
     for contour in &sorted_contours {
         vertex_offsets.push(current_offset);
-        let centroid = &contour.centroid;
         for point in &contour.points {
             writeln!(writer, "v {} {} {}", point.x, point.y, point.z)?;
+            current_offset += 1;
+        }
+    }
+
+    let total_vertices_before_centroids = current_offset - 1;
+
+    if uv_coords.len() != total_vertices_before_centroids {
+        return Err(anyhow!(
+            "UV coordinates must match the number of vertices. Expected {}, got {}.",
+            total_vertices_before_centroids,
+            uv_coords.len()
+        ));
+    }
+
+    // Write material reference
+    writeln!(writer, "mtllib {}", mtl_filename)?;
+    writeln!(writer, "usemtl displacement_material")?;
+
+    // Write UV coordinates for original vertices
+    for (u, v) in uv_coords {
+        writeln!(writer, "vt {} {}", u, v)?;
+    }
+
+    // Compute and write normals for original vertices
+    for contour in &sorted_contours {
+        let centroid = &contour.centroid;
+        for point in &contour.points {
             let dx = point.x - centroid.0;
             let dy = point.y - centroid.1;
             let length = (dx * dx + dy * dy).sqrt();
@@ -46,36 +77,11 @@ pub fn write_obj_mesh(
             } else {
                 (0.0, 0.0, 0.0)
             };
-            normals.push((nx * -1.0, ny * -1.0, nz * -1.0));
-            current_offset += 1;
+            writeln!(writer, "vn {} {} {}", nx * -1.0, ny * -1.0, nz * -1.0)?;
         }
     }
 
-    // Validate UV coordinates
-    if uv_coords.len() != current_offset - 1 {
-        return Err(anyhow!(
-            "UV coordinates must match the number of vertices. Expected {}, got {}.",
-            current_offset - 1,
-            uv_coords.len()
-        )
-        .into());
-    }
-
-    // Write material reference
-    writeln!(writer, "mtllib {}", mtl_filename)?;
-    writeln!(writer, "usemtl displacement_material")?;
-
-    // Write UV coordinates
-    for (u, v) in uv_coords {
-        writeln!(writer, "vt {} {}", u, v)?;
-    }
-
-    // Write normals
-    for (nx, ny, nz) in &normals {
-        writeln!(writer, "vn {} {} {}", nx, ny, nz)?;
-    }
-
-    // Write faces with normals and UVs
+    // Write faces for the main shell
     for c in 0..(sorted_contours.len() - 1) {
         let offset1 = vertex_offsets[c];
         let offset2 = vertex_offsets[c + 1];
@@ -85,6 +91,7 @@ pub fn write_obj_mesh(
             let v2 = offset1 + j_next;
             let v3 = offset2 + j;
             writeln!(writer, "f {0}/{0}/{0} {1}/{1}/{1} {2}/{2}/{2}", v1, v2, v3)?;
+            
             let v1_t2 = offset2 + j;
             let v2_t2 = offset1 + j_next;
             let v3_t2 = offset2 + j_next;
@@ -96,6 +103,64 @@ pub fn write_obj_mesh(
         }
     }
 
+    if watertight {
+        let proximal_centroid_index = current_offset;
+        writeln!(
+            writer,
+            "v {} {} {}",
+            sorted_contours[0].centroid.0, sorted_contours[0].centroid.1, sorted_contours[0].centroid.2
+        )?;
+        writeln!(writer, "vt 0.5 0.5")?;
+        writeln!(writer, "vn 0.0 0.0 -1.0")?; // Pointing inward
+
+        let distal_centroid_index = current_offset + 1;
+        let last_contour = &sorted_contours[sorted_contours.len() - 1];
+        writeln!(
+            writer,
+            "v {} {} {}",
+            last_contour.centroid.0, last_contour.centroid.1, last_contour.centroid.2
+        )?;
+        writeln!(writer, "vt 0.5 0.5")?;
+        writeln!(writer, "vn 0.0 0.0 1.0")?; // Pointing inward
+
+        close_end(&mut writer, vertex_offsets[0], proximal_centroid_index, points_per_contour, false)?;
+        let last_contour_index = sorted_contours.len() - 1;
+        close_end(&mut writer, vertex_offsets[last_contour_index], distal_centroid_index, points_per_contour, true)?;
+    }
+
+    writer.flush()?;
+
+    Ok(())
+}
+
+fn close_end(
+    writer: &mut BufWriter<File>,
+    vertex_offset: usize,
+    centroid_vertex_index: usize,
+    points_per_contour: usize,
+    reverse_winding: bool,
+) -> anyhow::Result<()> {
+    for i in 0..points_per_contour {
+        let next_i = (i + 1) % points_per_contour;
+        
+        let v1 = vertex_offset + i;
+        let v2 = vertex_offset + next_i;
+        let v3 = centroid_vertex_index;
+
+        if reverse_winding {
+            writeln!(
+                writer,
+                "f {0}/{0}/{0} {1}/{1}/{1} {2}/{2}/{2}",
+                v3, v2, v1
+            )?;
+        } else {
+            writeln!(
+                writer,
+                "f {0}/{0}/{0} {1}/{1}/{1} {2}/{2}/{2}",
+                v1, v2, v3
+            )?;
+        }
+    }
     Ok(())
 }
 
@@ -103,13 +168,10 @@ pub fn write_obj_mesh_without_uv(
     contours: &Vec<Contour>,
     filename: &str,
     mtl_filename: &str,
+    watertight: bool,
 ) -> anyhow::Result<()> {
-    if let Some(parent) = std::path::Path::new(filename).parent() {
-        std::fs::create_dir_all(parent)
-            .context(format!("Could not create output directory: {:?}", parent))?;
-    }
     let empty_uv_coords = vec![(0.0, 0.0); contours.iter().map(|c| c.points.len()).sum()];
-    write_obj_mesh(contours, &empty_uv_coords, filename, mtl_filename)
+    write_obj_mesh(contours, &empty_uv_coords, filename, mtl_filename, watertight)
         .map_err(|e| anyhow!("Failed to write OBJ mesh without UV: {}", e))
 }
 
@@ -146,6 +208,7 @@ pub fn write_geometry_vec_to_obj(
     output_dir: impl AsRef<Path>,
     geometries: &[Geometry],
     uv_coords: &[Vec<(f64, f64)>],
+    watertight: bool,
 ) -> anyhow::Result<()> {
     // Create owned versions for thread-safe capture
     let output_dir = output_dir.as_ref(); // Get &Path reference
@@ -172,7 +235,7 @@ pub fn write_geometry_vec_to_obj(
                 .ok_or_else(|| anyhow!("Invalid path for OBJ file"))?;
 
             let contours = geometry_type.get_contours(geometry);
-            write_obj_mesh(contours, mesh_uv, obj_path_str, &mtl_name)
+            write_obj_mesh(contours, mesh_uv, obj_path_str, &mtl_name, watertight)
                 .map_err(|e| anyhow!("Failed [{}]: {}", obj_name, e))
         })
         .collect();

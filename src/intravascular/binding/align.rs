@@ -15,10 +15,12 @@ use crate::intravascular::{
 ///     aortic_ref_pt: Reference point for aortic position
 ///     upper_ref_pt: Upper reference point
 ///     lower_ref_pt: Lower reference point
-///     state: Physiological state ("rest" or "stress")
-///     input_dir: Input directory for raw geometries
-///     output_dir: Output directory for aligned meshes
+///     angle_step_deg (default 1.0): step size in degrees for rotation search 
+///     write (default false): Wether to write aligned meshes to OBJ 
+///     watertight (default true): Wether to write shell or watertight mesh to OBJ.
 ///     interpolation_steps: Number of interpolation steps
+///     output_dir (default "output/aligned"): Output directory for aligned meshes
+///     case_name (default "None"): Case name for output files
 ///
 /// Returns:
 ///     PyGeometryPair, PyCenterline (resampled)
@@ -42,6 +44,7 @@ use crate::intravascular::{
         lower_ref_pt,
         angle_step_deg=1.0,
         write=false,
+        watertight=true,
         interpolation_steps=28usize,
         output_dir="output/aligned",
         case_name="None",
@@ -55,6 +58,7 @@ pub fn align_three_point(
     lower_ref_pt: (f64, f64, f64),
     angle_step_deg: f64,
     write: bool,
+    watertight: bool,
     interpolation_steps: usize,
     output_dir: &str,
     case_name: &str,
@@ -71,6 +75,7 @@ pub fn align_three_point(
         lower_ref_pt,
         angle_step,
         write,
+        watertight,
         interpolation_steps,
         output_dir,
         case_name,
@@ -89,13 +94,13 @@ pub fn align_three_point(
 /// Args:
 ///     centerline: PyCenterline object
 ///     geometry_pair: PyGeometryPair object
-///     aortic_ref_pt: Reference point for aortic position
-///     upper_ref_pt: Upper reference point
-///     lower_ref_pt: Lower reference point
-///     state: Physiological state ("rest" or "stress")
-///     input_dir: Input directory for raw geometries
-///     output_dir: Output directory for aligned meshes
+///     rotation_angle: Rotation angle in radians
+///     start_point: Index of centerline point to use as reference point
+///     write (default false): Wether to write aligned meshes to OBJ 
+///     watertight (default true): Wether to write shell or watertight mesh to OBJ.
 ///     interpolation_steps: Number of interpolation steps
+///     output_dir (default "output/aligned"): Output directory for aligned meshes
+///     case_name (default "None"): Case name for output files
 ///
 /// Returns:
 ///     PyGeometryPair
@@ -117,6 +122,7 @@ pub fn align_three_point(
         rotation_angle,
         start_point,
         write=false,
+        watertight=true,
         interpolation_steps=28usize,
         output_dir="output/aligned",
         case_name="None",
@@ -128,6 +134,7 @@ pub fn align_manual(
     rotation_angle: f64,
     start_point: usize,
     write: bool,
+    watertight: bool,
     interpolation_steps: usize,
     output_dir: &str,
     case_name: &str,
@@ -141,6 +148,7 @@ pub fn align_manual(
         rotation_angle,
         start_point,
         write,
+        watertight,
         interpolation_steps,
         output_dir,
         case_name,
