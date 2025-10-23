@@ -4,6 +4,7 @@ use std::path::Path;
 use stl_io::IndexedMesh;
 use std::collections::{HashMap, HashSet};
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Label {
     LCA,
@@ -13,6 +14,7 @@ pub enum Label {
     Unknown,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct LabeledMesh {
     pub mesh: IndexedMesh,
@@ -20,6 +22,7 @@ pub struct LabeledMesh {
     pub label_index: HashMap<Label, HashSet<usize>>,
 }
 
+#[allow(dead_code)]
 impl LabeledMesh {
     /// Create a new LabeledMesh with all vertices unlabeled
     pub fn from_mesh(mesh: IndexedMesh) -> Self {
@@ -59,6 +62,7 @@ impl LabeledMesh {
     }
 }
 
+#[allow(dead_code)]
 pub fn read_stl_ccta<P: AsRef<Path>>(path: P) -> Result<LabeledMesh> {
     let path_ref = path.as_ref();
 
