@@ -92,3 +92,5 @@ unabridged_api.rst.include
 
 # For now hide test stl
 data/NARCO_119.stl
+data/centerlines_narco119.csv
+data/center_smoothed.vtk
