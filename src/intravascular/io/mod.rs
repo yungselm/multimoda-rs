@@ -1,6 +1,6 @@
 pub mod input;
-pub mod load_geometry;
 pub mod output;
+pub mod geometry;
 
 use anyhow::Context;
 use input::{read_records, Contour, ContourPoint, Record};
