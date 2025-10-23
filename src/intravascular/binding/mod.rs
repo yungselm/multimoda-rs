@@ -62,11 +62,12 @@ fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<(u32, u32, f64, f64, f64, f64, f64
 ///     bruteforce (default false): Wether to use bruteforce alignment (comparison for every step size)
 ///     sample_size (default 200): number of points to downsample to
 ///
-/// CSV format:
+/// .. warning::
+/// 
+///    The CSV must have **no header**. Each row is (frame index, x-coord (mm), y-coord (mm), z-coord (mm)):
 ///
 /// .. code-block:: text
 ///
-///    Frame Index, X-coord (mm), Y-coord (mm), Z-coord (mm)
 ///    185, 5.32, 2.37, 0.0
 ///    ...
 ///
@@ -178,8 +179,8 @@ pub fn from_file_full(
 ///
 ///    Rest:                    Stress:
 ///    diastole                  diastole
-///       |                         |
-///       v                         v
+///        │                         │
+///        ▼                         ▼
 ///    systole                   systole
 ///
 /// Args:
@@ -198,11 +199,12 @@ pub fn from_file_full(
 ///     bruteforce (default false): Wether to use bruteforce alignment (comparison for every step size)
 ///     sample_size (default 200): number of points to downsample to
 ///
-/// CSV format:
+/// .. warning::
+/// 
+///    The CSV must have **no header**. Each row is (frame index, x-coord (mm), y-coord (mm), z-coord (mm)):
 ///
 /// .. code-block:: text
 ///
-///    Frame Index, X-coord (mm), Y-coord (mm), Z-coord (mm)
 ///    185, 5.32, 2.37, 0.0
 ///    ...
 ///
@@ -307,18 +309,18 @@ pub fn from_file_doublepair(
 ///     step_rotation_deg (default 0.5°) – Rotation step in degree
 ///     range_rotation_deg (default 90°) – Rotation (+/-) range in degree, for 90° total range 180°
 ///     image_center (default (4.5mm, 4.5mm)): Center coordinates (x, y).  
-///     radius (default 0.5mm) Processing radius.  
-///     n_points (default 20) Number of boundary points.  
-///     write_obj (default true)
+///     radius (default 0.5mm): in mm for catheter
+///     n_points (default 20): number of points for catheter, more points stronger influence of image center
+///     write_obj (default true): Wether to write OBJ files
 ///     watertight (default true): Wether to write shell or watertight mesh to OBJ.
 ///     output_path: Path to write the processed geometry. 
-///     interpolation_steps (default 28) Number of interpolation steps.  
-///     bruteforce (default false)
-///     sample_size (default 200) number of points to downsample to
+///     interpolation_steps (default 28): Number of interpolated meshes
+///     bruteforce (default false): Wether to use bruteforce alignment (comparison for every step size)
+///     sample_size (default 200): number of points to downsample to
 ///
-/// CSV Format:
-///
-///     The CSV must have **no header**. Each row is:
+/// .. warning::
+/// 
+///    The CSV must have **no header**. Each row is:
 ///
 /// .. code-block:: text
 ///
@@ -331,7 +333,7 @@ pub fn from_file_doublepair(
 ///     for (diastole logs, systole logs).
 ///
 /// Raises:
-///     ``RuntimeError`` if the Rust pipeline fails.
+///     **RuntimeError** if the Rust pipeline fails.
 ///
 /// Example:
 ///     >>> import multimodars as mm
@@ -339,9 +341,6 @@ pub fn from_file_doublepair(
 ///     ...     "data/ivus_rest.csv",
 ///     ...     "output/rest"
 ///     ... )
-///
-/// .. note::
-///     This is a thin Python wrapper around the Rust implementation.
 #[pyfunction]
 #[pyo3(signature = (
     input_path,
@@ -413,10 +412,10 @@ pub fn from_file_singlepair(
 ///     diastole (default true): If true, process the diastole phase; otherwise systole.  
 ///     image_center (default (4.5mm, 4.5mm)): (x, y) center for processing.  
 ///     radius (default: 0.5mm): Radius around center to consider for catheter.  
-///     n_points (default: 20): Number of boundary points to generate.
+///     n_points (default 20): number of points for catheter, more points stronger influence of image center.
 ///     write_obj (default true): Wether to write OBJ files.
 ///     watertight (default true): Wether to write shell or watertight mesh to OBJ.
-///     output_path (default: "output/single"): Where to write the processed geometry.  
+///     output_path (default "output/single"): Where to write the processed geometry.  
 ///     bruteforce (default false): Wether to use bruteforce alignment (comparison for every step size).
 ///     sample_size (default 200): number of points to downsample to
 ///
@@ -425,7 +424,7 @@ pub fn from_file_singlepair(
 ///     A ``Vec<id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y>``.
 ///
 /// Raises:
-///     ``RuntimeError`` if the underlying Rust pipeline fails.
+///     **RuntimeError** if the underlying Rust pipeline fails.
 ///
 /// Example:
 ///     >>> import multimodars as mm
@@ -497,9 +496,9 @@ pub fn from_file_single(
 ///
 /// Args:
 ///     geometry: The original geometry with contours but no catheters.
-///     image_center: Center of the image (default = (4.5mm, 4.5mm)).
-///     radius: Radius of the generated catheter contours (default = 0.5mm).
-///     n_points: Number of points per catheter contour (default = 20mm).
+///     image_center (default = (4.5mm, 4.5mm)): Center of the image.
+///     radius (default = 0.5mm): Radius of the generated catheter contours.
+///     n_points (default = 20mm): Number of points per catheter contour.
 ///
 /// Returns:
 ///     A new ``PyGeometry`` with the same data but `catheter` field filled.
@@ -550,19 +549,19 @@ pub fn create_catheter_geometry(
 ///     geometry: The input ``PyGeometry`` (with ``contours``, ``walls``, and a ``reference_point``).  
 ///     step_rotation_deg (default 0.5°): Rotation step in degree
 ///     range_rotation_deg (default 90°): Rotation (+/-) range in degree, for 90° total range 180°  
-///     image_center (default: (4.5, 4.5)): Center (x, y) for catheter contour generation.  
-///     radius (default: 0.5): Radius around ``image_center`` for catheter contours.  
-///     n_points (default: 20): Number of points per catheter contour; set to 0 to skip.  
-///     label (default: "None"): Label tag applied to the output geometry.  
-///     records (default: None): Optional list of ``PyRecord`` entries; if provided, contours are reordered to match the chronological record order using z‑coordinates.  
+///     image_center (default (4.5mm, 4.5mm)): Center (x, y) for catheter contour generation.  
+///     radius (default 0.5mm): Radius around ``image_center`` for catheter contours.  
+///     n_points (default 20): Number of points per catheter contour; set to 0 to skip.  
+///     label (default "None"): Label tag applied to the output geometry.  
+///     records (default ``None``): Optional list of ``PyRecord`` entries; if provided, contours are reordered to match the chronological record order using z‑coordinates.  
 ///     delta (default: 0.1): Penalty weight for non‑sequential jumps when building the cost matrix.  
-///     max_rounds (default: 5): Maximum iterations for the ``refine_ordering`` loop.  
-///     diastole (default: true): Phase flag used during initial reorder by `records`.  
-///     sort (default: true): If true, applies ``refine_ordering`` after an initial alignment; otherwise only aligns once.  
-///     write_obj (default: false): If true, exports OBJ meshes to ``output_path``.
-///     watertight (default true): Wether to write shell or watertight mesh to OBJ.
-///     output_path (default: "output/single"): Directory path for OBJ exports (if enabled).
-///     bruteforce (default false): Wether to use bruteforce alignment (comparison for every step size).
+///     max_rounds (default 5): Maximum iterations for the ``refine_ordering`` loop.  
+///     diastole (default true): Phase flag used during initial reorder by `records`.  
+///     sort (default true): If true, applies ``refine_ordering`` after an initial alignment; otherwise only aligns once.  
+///     write_obj (default False): If true, exports OBJ meshes to ``output_path``.
+///     watertight (default True): Wether to write shell or watertight mesh to OBJ.
+///     output_path (default "output/single"): Directory path for OBJ exports (if enabled).
+///     bruteforce (default False): Wether to use bruteforce alignment (comparison for every step size).
 ///     sample_size (default 200): number of points to downsample to
 ///
 /// Returns:
@@ -570,7 +569,7 @@ pub fn create_catheter_geometry(
 ///     A ``Vec<id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y>``.
 ///
 /// Raises:
-///     ``RuntimeError`` if any Rust‑side processing step fails.
+///     **RuntimeError** if any Rust‑side processing step fails.
 ///
 /// Example
 /// -------
@@ -693,14 +692,14 @@ pub fn geometry_from_array(
 ///     stress_geometry_sys: Input ``PyGeometry`` at systole for STRESS.  
 ///     step_rotation_deg (default 0.5°): Rotation step in degree
 ///     range_rotation_deg (default 90°): Rotation (+/-) range in degree, for 90° total range 180° 
-///     write_obj (default true): Wether to write OBJ files.
-///     watertight (default true): Wether to write shell or watertight mesh to OBJ.
-///     rest_output_path (default: "output/rest"): Output directory for REST results.  
-///     stress_output_path (default: "output/stress"): Output directory for STRESS results.  
-///     diastole_output_path (default: "output/diastole"): Output for interpolated diastole.  
-///     systole_output_path (default: "output/systole"): Output for interpolated systole.  
-///     interpolation_steps (default: 28): Number of interpolation steps between phases.  
-///     bruteforce (default false): Wether to use bruteforce alignment (comparison for every step size).
+///     write_obj (default True): Wether to write OBJ files.
+///     watertight (default True): Wether to write shell or watertight mesh to OBJ.
+///     rest_output_path (default "output/rest"): Output directory for REST results.  
+///     stress_output_path (default "output/stress"): Output directory for STRESS results.  
+///     diastole_output_path (default "output/diastole"): Output for interpolated diastole.  
+///     systole_output_path (default "output/systole"): Output for interpolated systole.  
+///     interpolation_steps (default 28): Number of interpolation steps between phases.  
+///     bruteforce (default False): Wether to use bruteforce alignment (comparison for every step size).
 ///     sample_size (default 200): number of points to downsample to
 ///
 /// Returns:
@@ -709,7 +708,7 @@ pub fn geometry_from_array(
 ///     for (diastole logs, systole logs, diastole stress logs, systole stress logs).
 ///
 /// Raises:
-///     ``RuntimeError`` if any Rust‑side processing fails.
+///     **RuntimeError** if any Rust‑side processing fails.
 ///
 /// Example
 /// -------
@@ -842,12 +841,12 @@ pub fn from_array_full(
 ///     stress_geometry_sys: Input ``PyGeometry`` at systole for STRESS.  
 ///     step_rotation_deg (default 0.5°): Rotation step in degree.
 ///     range_rotation_deg (default 90°): Rotation (+/-) range in degree, for 90° total range 180°. 
-///     write_obj (default true): Wether to write OBJ files.
-///     watertight (default true): Wether to write shell or watertight mesh to OBJ.
-///     rest_output_path (default: "output/rest"): Output directory for REST results.  
-///     stress_output_path (default: "output/stress"): Output directory for STRESS results.  
-///     interpolation_steps (default: 28): Number of interpolation steps between phases.  
-///     bruteforce (default false): Wether to use bruteforce alignment (comparison for every step size).
+///     write_obj (default True): Wether to write OBJ files.
+///     watertight (default True): Wether to write shell or watertight mesh to OBJ.
+///     rest_output_path (default "output/rest"): Output directory for REST results.  
+///     stress_output_path (default "output/stress"): Output directory for STRESS results.  
+///     interpolation_steps (default 28): Number of interpolation steps between phases.  
+///     bruteforce (default False): Wether to use bruteforce alignment (comparison for every step size).
 ///     sample_size (default 200) number of points to downsample to
 ///
 /// Returns:
@@ -857,7 +856,7 @@ pub fn from_array_full(
 ///     for (diastole logs, systole logs, diastole stress logs, systole stress logs).
 ///
 /// Raises:
-///     ``RuntimeError`` if any Rust‑side processing fails.
+///     **RuntimeError** if any Rust‑side processing fails.
 ///
 /// Example
 /// -------
@@ -970,11 +969,11 @@ pub fn from_array_doublepair(
 ///     geometry_sys: Input ``PyGeometry`` at systole.  
 ///     step_rotation_deg (default 0.5°): Rotation step in degree
 ///     range_rotation_deg (default 90°): Rotation (+/-) range in degree, for 90° total range 180°
-///     write_obj (default true): Wether to write OBJ files.
-///     watertight (default true): Wether to write shell or watertight mesh to OBJ.
+///     write_obj (default True): Wether to write OBJ files.
+///     watertight (default True): Wether to write shell or watertight mesh to OBJ.
 ///     output_path: Directory path to write interpolated output files.  
-///     interpolation_steps (default: 28): Number of steps to interpolate between diastole and systole.  
-///     bruteforce (default false): Wether to use bruteforce alignment (comparison for every step size).
+///     interpolation_steps (default 28): Number of steps to interpolate between diastole and systole.  
+///     bruteforce (default False): Wether to use bruteforce alignment (comparison for every step size).
 ///     sample_size (default 200): number of points to downsample to
 ///
 /// Returns:
@@ -983,7 +982,7 @@ pub fn from_array_doublepair(
 ///     for (diastole logs, systole logs).
 ///
 /// Raises:
-///     ``RuntimeError`` if the underlying Rust function fails.
+///     **RuntimeError** if the underlying Rust function fails.
 ///
 /// Example
 /// -------
@@ -1070,16 +1069,16 @@ pub fn from_array_singlepair(
 /// Args:
 ///     geometry: Input ``PyGeometry`` instance containing the mesh data.
 ///     output_path: Directory path where the OBJ and MTL files will be written.
-///     watertight`` (default true): Wether to write shell or watertight mesh to OBJ.
-///     contours (default: ``true``): Whether to export the contour mesh.
-///     walls (default: ``true``): Whether to export the wall mesh.
-///     catheter (default: ``true``): Whether to export the catheter mesh.
-///     filename_contours (default: "contours.obj"): Filename for the contour OBJ.
-///     material_contours (default: "contours.mtl"): Filename for the contour MTL.
-///     filename_catheter (default: "catheter.obj"): Filename for the catheter OBJ.
-///     material_catheter (default: "catheter.mtl"): Filename for the catheter MTL.
-///     filename_walls (default: "walls.obj"): Filename for the walls OBJ.
-///     material_walls (default: "walls.mtl"): Filename for the walls MTL.
+///     watertight`` (default True): Wether to write shell or watertight mesh to OBJ.
+///     contours (default ``True``): Whether to export the contour mesh.
+///     walls (default ``True``): Whether to export the wall mesh.
+///     catheter (default ``True``): Whether to export the catheter mesh.
+///     filename_contours (default "contours.obj"): Filename for the contour OBJ.
+///     material_contours (default "contours.mtl"): Filename for the contour MTL.
+///     filename_catheter (default "catheter.obj"): Filename for the catheter OBJ.
+///     material_catheter (default "catheter.mtl"): Filename for the catheter MTL.
+///     filename_walls (default "walls.obj"): Filename for the walls OBJ.
+///     material_walls (default "walls.mtl"): Filename for the walls MTL.
 ///
 /// Returns:
 ///     Returns a `PyRuntimeError` if any of the underlying file writes fail.
