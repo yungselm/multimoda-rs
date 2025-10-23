@@ -1,6 +1,6 @@
 [project]
 name = "multimodars"
-version = "0.0.6"
+version = "0.0.7"
 authors = [
     { name = "Anselm W. Stark"}
 ]
@@ -9,7 +9,8 @@ readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
     "numpy>=2.0.0,<3.0.0",
-    "trimesh[all]>=4.8.0",
+    "trimesh>=4.8.0",
+    "pyglet<2",
 ]
 classifiers = [
     "Programming Language :: Rust",
