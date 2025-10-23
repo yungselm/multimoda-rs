@@ -8,9 +8,16 @@ def read_stl_geometry():
 
 
 if __name__ == "__main__":
-    # test_mesh = trimesh.load('data/NARCO_119.stl')
-    # print(test_mesh.is_watertight)
+    # import pyvista as pv
+    # import numpy as np
+    # vtk_path = 'data/center_smoothed.vtk'
 
+    # mesh = pv.read(vtk_path)
+    # points = mesh.points
+
+    # np.savetxt("data/centerline_narco119.csv", points, delimiter=",", fmt="%.6f")
+
+    from trimesh.points import PointCloud
     mesh = trimesh.load('output/rest/mesh_000_rest.obj')
     print("watertight?", mesh.is_watertight)
 
@@ -31,4 +38,10 @@ if __name__ == "__main__":
     # print("watertight after fill_holes?", mesh.is_watertight)
     # mesh.export('my_mesh_repaired_trimesh.obj')
 
-    mesh.show()
+    mesh2 = trimesh.load('data/NARCO_119.stl')
+    points = np.loadtxt("data/centerline_narco119.csv", delimiter=",")
+    pc = PointCloud(points)
+
+    scene = trimesh.Scene([mesh, mesh2])
+    scene.add_geometry(pc)
+    scene.show()
