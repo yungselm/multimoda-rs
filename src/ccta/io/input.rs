@@ -17,7 +17,7 @@ pub enum Label {
 pub struct LabeledMesh {
     pub mesh: IndexedMesh,
     pub labels: Vec<Option<Label>>,
-    label_index: HashMap<Label, HashSet<usize>>,
+    pub label_index: HashMap<Label, HashSet<usize>>,
 }
 
 impl LabeledMesh {

@@ -27,6 +27,8 @@ if __name__ == "__main__":
     # attempt to fill small holes
     trimesh.repair.fill_holes(mesh)
 
-    # re-check
-    print("watertight after fill_holes?", mesh.is_watertight)
-    mesh.export('my_mesh_repaired_trimesh.obj')
+    # # re-check
+    # print("watertight after fill_holes?", mesh.is_watertight)
+    # mesh.export('my_mesh_repaired_trimesh.obj')
+
+    mesh.show()

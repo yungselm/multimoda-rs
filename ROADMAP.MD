@@ -16,7 +16,7 @@
 
 # Mesh combination (v0.2.0)
 - [x] Read in CCTA mesh (STL/Obj)
-- [] Create closed mesh for intravascular segment
+- [x] Create closed mesh for intravascular segment
 - [] Assign regions based on Centerlines (RCA, LCA, Aorta)
 - [] Shrink/Expand CCTA to best match Aortic wall and shrink/expand coronary to match iv images
 - [x] ensure works for IVUS and OCT
