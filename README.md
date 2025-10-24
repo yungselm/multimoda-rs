@@ -188,3 +188,23 @@ IVUS registration works in the same way. An example is provided in `data/ivus_pr
 
 ### OCT registration
 OCT registration works exactly the same as IVUS registration, just the parameters for image resolution have to be set differently.
+
+
+
+# Citation
+Please kindly cite the following paper if you use this repository.
+
+```
+@article{stark2025multimodars,
+  title     = {multimodars: A Rust-powered toolkit for multi-modality cardiac image fusion and registration},
+  author    = {Stark, Anselm W. and Ilic, Marc and Mokhtari, Ali and Mohammadi Kazaj, Pooya and Graeni, Christoph and Shiri, Isaac},
+  journal   = {arXiv preprint arXiv:2510.06241},
+  year      = {2025}
+}
+
+```
+
+Stark, Anselm W., Marc Ilic, Ali Mokhtari, Pooya Mohammadi Kazaj, Christoph Graeni, and Isaac Shiri. "multimodars: A Rust-powered toolkit for multi-modality cardiac image fusion and registration." arXiv preprint arXiv:2510.06241 (2025).
+
+
+```
