@@ -8,6 +8,41 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
+/// InputData stores raw data from typical AIVUS-CAA output
+/// where dataframes have the following order
+/// 
+/// .. text::
+///     
+///     frame_idx, x, y, z
+/// 
+/// not automatically kept in sync with geometry.rs
+pub struct InputData {
+    lumen: Vec<ContourPoint>,
+    eem: Option<Vec<ContourPoint>>,
+    calcification: Option<Vec<ContourPoint>>,
+    sidebranch: Option<Vec<ContourPoint>>,
+    record: Option<Vec<Record>>,
+    ref_point: ContourPoint,
+}
+
+impl InputData {
+    pub fn new() {
+        todo!()
+    }
+
+    pub fn new_from_file() {
+       todo!() 
+    }
+
+    pub fn check_integrity() {
+        todo!()
+    }
+}
+
+pub fn process_directory() {
+    todo!()
+}
+
 /// Utility: detect whether the file uses comma or tab as delimiter.
 fn detect_delimiter<P: AsRef<Path>>(path: P) -> Result<u8> {
     let file = File::open(&path).with_context(|| {
