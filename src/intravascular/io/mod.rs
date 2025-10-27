@@ -6,6 +6,7 @@ mod integrity_check;
 
 use input::{InputData, ContourPoint};
 use geometry::{Contour, Frame, Geometry, ContourType};
+use integrity_check::check_geometry_integrity;
 use std::path::Path;
 use std::collections::HashMap;
 
@@ -126,6 +127,9 @@ pub fn build_geometry_from_inputdata(
     if let Some(records) = &input_data.record {
         geometry.reorder_frames(records, diastole);
     }
+
+    // check integrity of geometry
+    check_geometry_integrity(&geometry)?;
 
     Ok(geometry)
 }
