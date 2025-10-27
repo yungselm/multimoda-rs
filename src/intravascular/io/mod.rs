@@ -2,10 +2,37 @@ pub mod input;
 pub mod output;
 pub mod geometry;
 pub mod wall;
+mod integrity_check;
 
 use anyhow::Context;
-use input::{read_records, Contour, ContourPoint, Record};
+use input::{read_records, ContourPoint, Record, InputData};
+use geometry::{Contour, Frame, Geometry};
 use std::path::Path;
+
+pub fn build_geometry_from_inputdata(
+    input_data: Option<InputData>,
+    label: &str,
+    // both have default values
+    n_points: u32,
+    radius: f64,
+) -> anyhow::Result<Geometry> {
+    // for every contourtype get an Vec<Contour> by using the build_contour
+    // only passing records if kind is lumen.
+
+    // reorder by Record if [Record] is Some (should assign new id?)
+
+    // create catheter contours for every frame
+    
+    todo!()
+}
+
+fn split_points_unique_id() {
+    todo!()
+}
+
+fn assign_thickness() {
+    todo!()
+}
 
 #[derive(Debug, Clone)]
 pub struct Geometry {
@@ -13,7 +40,7 @@ pub struct Geometry {
     pub catheter: Vec<Contour>,
     pub walls: Vec<Contour>,
     pub reference_point: ContourPoint, // needs to be set on aortic wall ostium!
-    pub label: String,
+    pub label: &str,
 }
 
 impl Geometry {

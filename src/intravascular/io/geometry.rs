@@ -1,7 +1,7 @@
-use super::input::{ContourPoint, Record};
-use super::wall;
+use super::input::{ContourPoint, Record, InputData};
 use std::collections::HashMap;
 use std::f64::consts::PI;
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ContourType {
@@ -38,33 +38,64 @@ pub struct Frame {
 pub struct Geometry {
     pub frames: Vec<Frame>,
     pub label: String,
-    // pointer to proximal end
 }
 
 impl Contour {
-    // pub fn new(
-    //     points: Vec<ContourPoint>,  
-    //     records: Option<Vec<Record>>, 
-    //     label: ContourType) -> Self {
-    //     Self {
-    //         id,
-    //         original_frame,
-
-    //     }
-    // }
-    pub fn create_contour() {
-        
-    }
-
-    fn build_contour_records(&mut self) -> () {
+    pub fn new(&mut self,
+        points: Vec<ContourPoint>,  
+        records: Option<Vec<Record>>, 
+        label: ContourType) -> Self {
         todo!()
     }
+    
+    fn build_contour(
+        points: Vec<ContourPoint>,
+        records: Option<Vec<Record>>,
+        kind: ContourType,
+    ) -> anyhow::Result<Vec<Contour>> {
+        let mut groups: HashMap<u32, Vec<ContourPoint>> = HashMap::new();
+        for p in points {
+            groups.entry(p.frame_index).or_default().push(p);
+        }
 
-    fn build_contour(&mut self) -> () {
-        todo!()
+        let mut contours = Vec::new();
+
+        // Only process measurements for Lumen contour type
+        let measurements = if kind == ContourType::Lumen {
+            let mut meas = HashMap::new();
+            if let Some(records) = records {
+                for record in records {
+                    meas.insert(record.frame, (record.measurement_1, record.measurement_2));
+                }
+            }
+            Some(meas)
+        } else {
+            None
+        };
+
+        for (frame_idx, points) in groups {
+            let (aortic, pulmonary) = if let Some(ref meas) = measurements {
+                meas.get(&frame_idx)
+                    .map(|&(m1, m2)| (Some(m1), Some(m2)))
+                    .unwrap_or((None, None))
+            } else {
+                (None, None)
+            };
+
+            contours.push(Contour {
+                id: frame_idx,
+                original_frame: frame_idx,
+                points,
+                centroid: None,
+                aortic_thickness: aortic.flatten(),
+                pulmonary_thickness: pulmonary.flatten(),
+                kind,
+            });
+        }
+
+        Ok(contours)
     }
 
-    /// Compute centroid by calculating mean of x-, y- and z-coordinates
     pub fn compute_centroid(&self) -> Self {
         let (sum_x, sum_y, sum_z) = self.points.iter().fold((0.0, 0.0, 0.0), |(sx, sy, sz), p| {
             (sx + p.x, sy + p.y, sz + p.z)
@@ -108,7 +139,7 @@ impl Contour {
         let n = self.points.len();
         assert!(n > 2, "Need at least 3 points");
 
-        // 1) Compute centroid (x0,y0) if missing
+        // 1) Compute centroid (x0,y0). If missing, compute it first.
         let (cx, cy, _) = match self.centroid {
             Some(c) => c,
             None => {
@@ -239,6 +270,71 @@ impl Frame {
         todo!()
     }
 
+    /// Sets a value for all contours and reference point in the frame.
+    /// You can set `id`, `original_frame`, `points`, or `centroid` for all contours and reference point.
+    pub fn set_value(
+        &mut self,
+        id: Option<u32>,
+        original_frame: Option<u32>,
+        points: Option<Vec<ContourPoint>>,
+        centroid: Option<(f64, f64, f64)>,
+        z_value: Option<f64>,
+    ) {
+        if let Some(new_id) = id {
+            self.lumen.id = new_id;
+            for contour in self.extras.values_mut() {
+                contour.id = new_id;
+            }
+        }
+        if let Some(new_frame) = original_frame {
+            self.lumen.original_frame = new_frame;
+            for contour in self.extras.values_mut() {
+                contour.original_frame = new_frame;
+            }
+            if let Some(ref mut rp) = self.reference_point {
+                rp.frame_index = new_frame;
+            }
+        }
+        if let Some(new_points) = points.clone() {
+            self.lumen.points = new_points.clone();
+            for contour in self.extras.values_mut() {
+                contour.points = new_points.clone();
+            }
+        }
+        if let Some(new_centroid) = centroid {
+            self.lumen.centroid = Some(new_centroid);
+            for contour in self.extras.values_mut() {
+                contour.centroid = Some(new_centroid);
+            }
+            self.centroid = new_centroid;
+        }
+        if let Some(z_value) = z_value {
+            for point in &mut self.lumen.points {
+                point.z = z_value;
+            }
+            
+            if let Some(ref mut centroid) = self.lumen.centroid {
+                centroid.2 = z_value;
+            }
+            
+            for contour in self.extras.values_mut() {
+                for point in &mut contour.points {
+                    point.z = z_value;
+                }
+
+                if let Some(ref mut centroid) = contour.centroid {
+                    centroid.2 = z_value;
+                }
+            }
+            
+            if let Some(ref mut point) = self.reference_point {
+                point.z = z_value;
+            }
+            
+            self.centroid.2 = z_value;
+        }
+    }
+
     pub fn rotate_frame(&mut self, angle: f64) {
         let center = (self.centroid.0, self.centroid.1);
 
@@ -296,69 +392,52 @@ impl Frame {
         }
     }
 
-    fn create_catheter_contour(
-        contour: &Contour,
+    pub fn create_catheter_points(
+        points: &Vec<ContourPoint>,
         image_center: (f64, f64),
         radius: f64,
         n_points: u32,
-    ) -> Contour {
-        let centroid = match contour.centroid {
-            Some(c) => c,
-            None => {
-                let computed = contour.compute_centroid();
-                computed.centroid.unwrap()
-            }
-        };
+    ) -> Vec<ContourPoint> {
+        // Map to store unique frame indices and one associated z coordinate per frame.
+        let mut frame_z: HashMap<u32, f64> = HashMap::new();
+        for point in points {
+            // Use the first encountered z-coordinate for each frame index.
+            frame_z.entry(point.frame_index).or_insert(point.z);
+        }
 
         let mut catheter_points = Vec::new();
+        // Sort the frame indices to ensure a predictable order.
+        let mut frames: Vec<u32> = frame_z.keys().cloned().collect();
+        frames.sort();
 
+        // Parameters for the catheter circle.
         let center_x = image_center.0;
         let center_y = image_center.1;
+        let radius = radius;
+        let num_points = n_points;
 
-        // Generate n_points around a circle
-        for i in 0..n_points {
-            let angle = 2.0 * PI * (i as f64) / (n_points as f64);
-            let x = center_x + radius * angle.cos();
-            let y = center_y + radius * angle.sin();
-            catheter_points.push(ContourPoint {
-                frame_index: contour.id,
-                point_index: i,
-                x,
-                y,
-                z: centroid.2, // Use frame's z coordinate
-                aortic: false,
-            });
+        // For each unique frame, generate 20 catheter points around a circle.
+        for frame in frames {
+            let z = frame_z[&frame];
+            for i in 0..num_points {
+                let angle = 2.0 * PI * (i as f64) / (num_points as f64);
+                let x = center_x + radius * angle.cos();
+                let y = center_y + radius * angle.sin();
+                catheter_points.push(ContourPoint {
+                    frame_index: frame,
+                    point_index: i,
+                    x,
+                    y,
+                    z,
+                    aortic: false,
+                });
+            }
         }
-
-        Contour {
-            id: contour.id,
-            original_frame: contour.id,
-            points: catheter_points,
-            centroid: Some((image_center.0, image_center.1, centroid.2)),
-            aortic_thickness: None,
-            pulmonary_thickness: None,
-            kind: ContourType::Catheter,
-        }
+        catheter_points
     }
 
-    pub fn create_catheter_frame(
-        &mut self, 
-        image_center: (f64, f64), 
-        radius: f64, 
-        n_points: u32) -> Self {
-        
-        let catheter = Frame::create_catheter_contour(&self.lumen, image_center, radius, n_points);
-        
-        let mut new_extras = self.extras.clone();
-        new_extras.insert(ContourType::Catheter, catheter);
-
-        Self {
-            id: self.id,
-            centroid: self.centroid,
-            lumen: self.lumen.clone(),
-            extras: new_extras,
-            reference_point: self.reference_point,
-        }
+    pub fn create_wall_contour() -> () {
+        todo!()
     }
 }
 
@@ -367,15 +446,94 @@ impl Geometry {
         todo!("from files and from arrays")
     }
 
-    pub fn reorder_frames() {
-        todo!()
+    /// Reorder frames based on order of Vec<Record>
+    pub fn reorder_frames(&mut self, records: &[Record], diastole: bool) {
+        use std::mem;
+
+        let filtered = Self::filter_records(records, diastole);
+
+        let mut orig_z_map: HashMap<u32, f64> = HashMap::new();
+        for fr in &self.frames {
+            let orig = fr.lumen.original_frame;
+            if let Some(p) = fr.lumen.points.first() {
+                orig_z_map.entry(orig).or_insert(p.z);
+            }
+        }
+
+        // Move existing frames into a lookup by original_frame for reordering
+        let old_frames = mem::take(&mut self.frames);
+        let mut frame_map: HashMap<u32, Frame> = HashMap::new();
+        for f in old_frames.into_iter() {
+            frame_map.insert(f.lumen.original_frame, f);
+        }
+
+        let mut new_frames: Vec<Frame> = Vec::with_capacity(frame_map.len());
+        let mut used_originals: HashSet<u32> = HashSet::new();
+
+        for &orig_id in &filtered {
+            if let Some(frame) = frame_map.remove(&orig_id) {
+                new_frames.push(frame);
+                used_originals.insert(orig_id);
+            }
+        }
+
+        for (_orig, frame) in frame_map.into_iter() {
+            new_frames.push(frame);
+        }
+
+        for (new_idx, frame) in new_frames.iter_mut().enumerate() {
+            let new_id = new_idx as u32;
+
+            let orig = frame.lumen.original_frame;
+            let z_value = *orig_z_map.get(&orig).unwrap_or(&(new_id as f64));
+
+            frame.id = new_id;
+
+            frame.lumen.id = new_id;
+            for p in frame.lumen.points.iter_mut() {
+                p.frame_index = new_id;
+                p.z = z_value;
+            }
+            if let Some(ref mut c) = frame.lumen.centroid {
+                c.2 = z_value;
+            }
+
+            // Extras contours
+            for contour in frame.extras.values_mut() {
+                contour.id = new_id;
+                for p in contour.points.iter_mut() {
+                    p.frame_index = new_id;
+                    p.z = z_value;
+                }
+                if let Some(ref mut c) = contour.centroid {
+                    c.2 = z_value;
+                }
+            }
+
+            // Reference point
+            if let Some(ref mut rp) = frame.reference_point {
+                rp.frame_index = new_id;
+                rp.z = z_value;
+            }
+
+            frame.centroid.2 = z_value;
+        }
+
+        self.frames = new_frames;
     }
 
+    fn filter_records(records: &[Record], diastole: bool) -> Vec<u32> {
+        let phase = if diastole { "D" } else { "S" };
+        let filtered: Vec<u32> = records
+            .iter()
+            .filter(|r| r.phase == phase)
+            .map(|r| r.frame)
+            .collect();
 
-    /// Smooths the x and y coordinates using a 3‐point moving average for the following `ContourTypes`:
-    ///     - Lumen
-    ///     - Wall
-    ///     - EEM
+        filtered
+    }
+
+    /// Smooths the x and y coordinates of the lumen, eem, and wall using a 3‐point moving average.
     ///
     /// For each point i in contour j, the new x and y values are computed as:
     ///     new_x = (prev_contour[i].x + current_contour[i].x + next_contour[i].x) / 3.0
@@ -383,115 +541,8 @@ impl Geometry {
     /// while the z coordinate remains unchanged (taken from the current contour).
     ///
     /// For the first and last contours, the current contour is used twice to simulate a mirror effect.
-    pub fn smooth_frames(mut self) -> Geometry {
-        let n = self.frames.len();
-        if n == 0 {
-            return self;
-        }
+    pub fn smooth_contours(mut self) {
+        todo!()
 
-        // Helper function to smooth a single contour type across frames
-        fn smooth_contour_type(frames: &mut [Frame], n: usize, contour_type: ContourType) {
-            for j in 0..n {
-                let mut new_points = Vec::new();
-                
-                // Get current frame's contour points
-                let current_points = match contour_type {
-                    ContourType::Lumen => &frames[j].lumen.points,
-                    _ => match &frames[j].extras.get(&contour_type) {
-                        Some(c) => &c.points,
-                        None => continue,
-                    }
-                };
-
-                for i in 0..current_points.len() {
-                    // Get previous and next frame points
-                    let (prev_points, next_points) = if j == 0 {
-                        // First frame: use current for previous
-                        (current_points, match contour_type {
-                            ContourType::Lumen => &frames[j + 1].lumen.points,
-                            _ => match &frames[j + 1].extras.get(&contour_type) {
-                                Some(c) => &c.points,
-                                None => current_points,
-                            }
-                        })
-                    } else if j == n - 1 {
-                        // Last frame: use current for next
-                        (match contour_type {
-                            ContourType::Lumen => &frames[j - 1].lumen.points,
-                            _ => match &frames[j - 1].extras.get(&contour_type) {
-                                Some(c) => &c.points,
-                                None => current_points,
-                            }
-                        }, current_points)
-                    } else {
-                        (match contour_type {
-                            ContourType::Lumen => &frames[j - 1].lumen.points,
-                            _ => match &frames[j - 1].extras.get(&contour_type) {
-                                Some(c) => &c.points,
-                                None => current_points,
-                            }
-                        }, match contour_type {
-                            ContourType::Lumen => &frames[j + 1].lumen.points,
-                            _ => match &frames[j + 1].extras.get(&contour_type) {
-                                Some(c) => &c.points,
-                                None => current_points,
-                            }
-                        })
-                    };
-
-                    let curr_point = &current_points[i];
-                    let prev_point = &prev_points[i];
-                    let next_point = &next_points[i];
-
-                    let avg_x = (prev_point.x + curr_point.x + next_point.x) / 3.0;
-                    let avg_y = (prev_point.y + curr_point.y + next_point.y) / 3.0;
-
-                    new_points.push(ContourPoint {
-                        frame_index: curr_point.frame_index,
-                        point_index: curr_point.point_index,
-                        x: avg_x,
-                        y: avg_y,
-                        z: curr_point.z,
-                        aortic: curr_point.aortic,
-                    });
-                }
-
-                // Update the points in the frame
-                match contour_type {
-                    ContourType::Lumen => frames[j].lumen.points = new_points,
-                    _ => if let Some(contour) = frames[j].extras.get_mut(&contour_type) {
-                        contour.points = new_points;
-                    }
-                }
-            }
-        }
-
-        // Only smooth these contour types
-        let smooth_types = [ContourType::Lumen, ContourType::Eem, ContourType::Wall];
-        
-        for contour_type in smooth_types.iter() {
-            smooth_contour_type(&mut self.frames, n, *contour_type);
-        }
-
-        self
-    }
-
-    pub fn create_walls(&mut self, pulmonary: bool) -> anyhow::Result<Self> {
-        let new_frames = wall::create_wall_frames(&self.frames, pulmonary);
-
-        // Simple check for the moment
-        if new_frames.len() != self.frames.len() {
-            return Err(anyhow::anyhow!(
-                "wall::create_wall_frames returned {} walls for {} frames",
-                new_frames.len(),
-                self.frames.len()
-            ));
-        }
-
-        // Return a new Geometry with updated frames and the same label.
-        Ok(Self {
-            frames: new_frames,
-            label: self.label.clone(),
-        })
     }
 }
