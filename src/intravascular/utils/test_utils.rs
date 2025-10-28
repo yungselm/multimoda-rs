@@ -1,4 +1,5 @@
-use crate::intravascular::io::input::{Contour, ContourPoint};
+use crate::intravascular::io::input::ContourPoint;
+use crate::intravascular::io::geometry::Contour;
 use std::f64::consts::PI;
 
 /// Generates ellipse contour points for testing

@@ -2,8 +2,8 @@ use anyhow::{anyhow, Context, Result};
 use crossbeam::thread;
 use std::collections::HashSet;
 
-use crate::intravascular::io::input::{Contour, ContourPoint, Record};
-use crate::intravascular::io::Geometry;
+use crate::intravascular::io::input::{ContourPoint, InputData, Record};
+use crate::intravascular::io::geometry::{Contour, Frame, Geometry};
 use crate::intravascular::processing::resampling::prepare_geometries_comparison;
 use crate::intravascular::processing::align_within::{align_frames_in_geometry, hausdorff_distance, AlignLog};
 use crate::intravascular::processing::align_between::GeometryPair;
