@@ -1,8 +1,8 @@
 use anyhow::bail;
 
-use crate::intravascular::io::input::{Contour, ContourPoint};
-use crate::intravascular::io::output::{write_geometry_vec_to_obj, GeometryType};
-use crate::intravascular::io::Geometry;
+use crate::intravascular::io::input::ContourPoint;
+use crate::intravascular::io::output::write_geometry_vec_to_obj;
+use crate::intravascular::io::geometry::{Contour, ContourType, Frame, Geometry};
 use crate::intravascular::processing::align_between::GeometryPair;
 use crate::intravascular::processing::walls::create_wall_geometry;
 use crate::intravascular::texture::write_mtl_geometry;

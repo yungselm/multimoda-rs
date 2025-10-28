@@ -1,6 +1,7 @@
 use super::input::{ContourPoint, Record};
 use std::collections::{HashMap, HashSet};
 use std::f64::consts::PI;
+use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ContourType {
@@ -10,6 +11,19 @@ pub enum ContourType {
     Sidebranch,
     Catheter,
     Wall,
+}
+
+impl fmt::Display for ContourType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", match self {
+            ContourType::Lumen => "Lumen",
+            ContourType::Eem => "Eem", 
+            ContourType::Calcification => "Calcification",
+            ContourType::Sidebranch => "Sidebranch",
+            ContourType::Catheter => "Catheter",
+            ContourType::Wall => "Wall",
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

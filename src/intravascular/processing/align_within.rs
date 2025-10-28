@@ -4,8 +4,8 @@ use std::collections::HashSet;
 use std::f64::consts::PI;
 use std::sync::{Arc, Mutex};
 
-use crate::intravascular::io::input::{Contour, ContourPoint};
-use crate::intravascular::io::Geometry;
+use crate::intravascular::io::input::ContourPoint;
+use crate::intravascular::io::geometry::{Contour, Frame, Geometry};
 use crate::intravascular::processing::align_between::GeometryPair;
 use crate::intravascular::processing::process_utils::downsample_contour_points;
 
