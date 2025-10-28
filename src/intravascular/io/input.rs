@@ -25,6 +25,7 @@ pub struct InputData {
     pub sidebranch: Option<Vec<ContourPoint>>,
     pub record: Option<Vec<Record>>,
     pub ref_point: ContourPoint,
+    pub diastole: bool,
     pub label: String,
 }
 
@@ -36,6 +37,7 @@ impl InputData {
         sidebranch: Option<Vec<ContourPoint>>,
         record: Option<Vec<Record>>,
         ref_point: ContourPoint,
+        diastole: bool,
         label: String,
     ) -> anyhow::Result<InputData> {
         let input = InputData {
@@ -45,6 +47,7 @@ impl InputData {
             sidebranch,
             record,
             ref_point,
+            diastole,
             label,
         };
         Ok(input)
@@ -178,6 +181,7 @@ impl InputData {
             sidebranch,
             record,
             ref_point,
+            diastole,
             label: phase.to_string(),
         };
 

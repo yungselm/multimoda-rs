@@ -4,3 +4,5 @@ pub mod io;
 pub mod processing;
 pub mod texture;
 pub mod utils;
+
+pub mod neo_processing;
