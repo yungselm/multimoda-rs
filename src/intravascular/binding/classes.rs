@@ -284,21 +284,7 @@ impl PyContour {
     pub fn rotate(&self, angle_deg: f64) -> PyResult<PyContour> {
         let angle_rad = angle_deg.to_radians();
         let mut rust_contour = self.to_rust_contour()?;
-        
-        if rust_contour.centroid.is_none() {
-            rust_contour = rust_contour.compute_centroid();
-        }
-        
-        let center = if let Some(centroid) = rust_contour.centroid {
-            (centroid.0, centroid.1)
-        } else {
-            (0.0, 0.0)
-        };
-        
-        rust_contour.points = rust_contour.points
-            .iter()
-            .map(|p| p.rotate_point(angle_rad, center))
-            .collect();
+        rust_contour.rotate_contour(angle_rad);
             
         Ok(PyContour::from(&rust_contour))
     }
@@ -318,22 +304,7 @@ impl PyContour {
     #[pyo3(signature = (dx, dy, dz))]
     pub fn translate(&self, dx: f64, dy: f64, dz: f64) -> PyResult<PyContour> {
         let mut rust_contour = self.to_rust_contour()?;
-        
-        rust_contour.points = rust_contour.points
-            .iter()
-            .map(|p| {
-                let mut new_p = p.clone();
-                new_p.x += dx;
-                new_p.y += dy;
-                new_p.z += dz;
-                new_p
-            })
-            .collect();
-            
-        // Update centroid
-        if let Some(centroid) = rust_contour.centroid {
-            rust_contour.centroid = Some((centroid.0 + dx, centroid.1 + dy, centroid.2 + dz));
-        }
+        rust_contour.translate_contour((dx, dy, dz));
             
         Ok(PyContour::from(&rust_contour))
     }

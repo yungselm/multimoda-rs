@@ -296,6 +296,38 @@ impl Contour {
             pt.point_index = i as u32;
         }
     }
+
+    /// Rotates a contour around its centroid by the specified angle (in radians)
+    pub fn rotate_contour(&mut self, angle: f64) {
+        // Get centroid or compute if not present
+        let (cx, cy, _) = match self.centroid {
+            Some(c) => c,
+            None => {
+                let computed = self.compute_centroid();
+                computed.centroid.unwrap()
+            }
+        };
+
+        // Rotate each point around the centroid
+        for point in self.points.iter_mut() {
+            let x = point.x - cx;
+            let y = point.y - cy;
+            let cos_a = angle.cos();
+            let sin_a = angle.sin();
+            
+            point.x = x * cos_a - y * sin_a + cx;
+            point.y = x * sin_a + y * cos_a + cy;
+        }
+    }
+
+    pub fn translate_contour(&mut self, translation: (f64, f64, f64)) {
+        let (dx, dy, dz) = translation;
+        for p in self.points.iter_mut() {
+            p.x += dx;
+            p.y += dy;
+            p.z += dz;
+        }
+    }
 }
 
 impl Frame {

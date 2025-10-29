@@ -63,11 +63,12 @@ pub fn build_geometry_from_inputdata(
 
     // Process lumen contours (mandatory)
     for contour in lumen_contours {
+        contour.compute_centroid();
         let frame_id = contour.id;
         let mut frame = Frame {
             id: frame_id,
             centroid: contour.centroid.unwrap_or((0.0, 0.0, 0.0)),
-            lumen: contour.compute_centroid(),
+            lumen: contour,
             extras: HashMap::new(),
             reference_point: None,
         };
@@ -123,15 +124,21 @@ pub fn build_geometry_from_inputdata(
         label: label.to_string(),
     };
 
-    // Reorder frames based on records if available
     if let Some(records) = &input_data.record {
         geometry.reorder_frames(records, diastole);
     }
 
-    // check integrity of geometry
+    for frame in &mut geometry.frames {
+        frame.sort_frame_points();
+    }
+
     check_geometry_integrity(&geometry)?;
 
     Ok(geometry)
+}
+
+fn print_success_message() {
+    todo!()
 }
 
 // Helper function for backward compatibility

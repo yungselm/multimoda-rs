@@ -41,10 +41,11 @@ pub fn prepare_n_geometries(
                     // Build one geometry from first InputData (consume it)
                     let input = inputs.remove(0);
                     let diastole = input.diastole; // copy diastole before moving `input`
+                    let label_str = input.label.as_str().to_string();
                     let geom = build_geometry_from_inputdata(
                         Some(input),
                         None,
-                        label,
+                        &label_str,
                         diastole,
                         image_center,
                         radius,
@@ -102,10 +103,11 @@ pub fn prepare_n_geometries(
             for _ in 0..2 {
                 let input = inputs.remove(0);
                 let diastole = input.diastole;
+                let label_str = input.label.as_str().to_string();
                 let geom = build_geometry_from_inputdata(
                     Some(input),
                     Some(path),
-                    label,
+                    &label_str,
                     diastole,
                     image_center,
                     radius,
