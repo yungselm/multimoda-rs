@@ -132,6 +132,7 @@ pub fn build_geometry_from_inputdata(
         frame.sort_frame_points();
     }
 
+    todo!("Ensure that proximal frame has id 0");
     check_geometry_integrity(&geometry)?;
 
     Ok(geometry)

@@ -16,6 +16,7 @@ pub fn check_geometry_integrity(geometry: &Geometry) -> Result<()> {
     check_reference_point(geometry)?;
     check_contour_point_counts(geometry)?;
     check_original_frame_consistency(geometry)?;
+    check_proximal_end_index(geometry)?;
 
     Ok(())
 }
@@ -188,6 +189,15 @@ fn check_original_frame_consistency(geometry: &Geometry) -> Result<()> {
                 ));
             }
         }
+    }
+    Ok(())
+}
+
+/// check that proximal end has index 0
+fn check_proximal_end_index(geometry: &Geometry) -> Result<()> {
+    let proximal_idx = geometry.find_proximal_end_idx();
+    if proximal_idx != 0 {
+        return Err(anyhow!("Proximal end index is {}, expected 0", proximal_idx));
     }
     Ok(())
 }

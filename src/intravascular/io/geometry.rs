@@ -540,6 +540,37 @@ impl Geometry {
         todo!("from files and from arrays")
     }
 
+    pub fn find_proximal_end_idx(&self) -> u32 {
+        let n = self.frames.len();
+        if n == 0 {
+            return 0;
+        }
+
+        if n == 1 {
+            return self.frames[0].lumen.id;
+        }
+
+        // simple check for now, just take the frame from two ends with highest original frame id
+        let proximal_idx = if self.frames[0].lumen.original_frame
+            > self.frames[n - 1].lumen.original_frame
+        {
+            self.frames[0].lumen.id
+        } else {
+            self.frames[n - 1].lumen.id
+        };
+        proximal_idx
+    }
+
+    pub fn find_ref_frame_idx(&self) -> anyhow::Result<u32> {
+        for frame in self.frames.iter() {
+            if frame.reference_point.is_some() {
+                return Ok(frame.id);
+            }
+        }
+        Err(anyhow::anyhow!("No reference point found in any frame"))
+
+    }
+
     /// Reorder frames based on order of Vec<Record>
     pub fn reorder_frames(&mut self, records: &[Record], diastole: bool) {
         use std::mem;
@@ -698,20 +729,6 @@ impl Geometry {
 
         self.frames = smoothed_frames;
         self
-    }
-
-    pub fn find_proximal_end(&self) -> u32 {
-        let mut proximal_idx = 0;
-
-        for frame in self.frames.iter() {
-            if frame.lumen.original_frame > proximal_idx {
-                proximal_idx = frame.lumen.original_frame.clone();
-            } else {
-                continue;
-            }
-        }
-
-        proximal_idx
     }
 }
 

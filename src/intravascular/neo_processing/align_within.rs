@@ -27,7 +27,12 @@ pub fn align_frames_in_geometry(
     bruteforce: bool,
     sample_size: usize,    
 ) -> (Geometry, Vec<AlignLog>) {
-    
+    let ref_idx = geometry.find_ref_frame_idx().unwrap_or(geometry.find_proximal_end_idx());
+
+    todo!()
+}
+
+fn catheter_lumen_contourvec_from_frames() {
     todo!()
 }
 
