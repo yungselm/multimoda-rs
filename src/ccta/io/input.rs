@@ -1,8 +1,8 @@
 use anyhow::{anyhow, Context, Result};
+use std::collections::{HashMap, HashSet};
 use std::fs::OpenOptions;
 use std::path::Path;
 use stl_io::IndexedMesh;
-use std::collections::{HashMap, HashSet};
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -27,11 +27,11 @@ impl LabeledMesh {
     /// Create a new LabeledMesh with all vertices unlabeled
     pub fn from_mesh(mesh: IndexedMesh) -> Self {
         let labels = vec![None; mesh.vertices.len()];
-        Self { 
-            mesh, 
+        Self {
+            mesh,
             labels,
             label_index: HashMap::new(),
-         }
+        }
     }
 
     /// Assign a label to a vertex
@@ -50,14 +50,24 @@ impl LabeledMesh {
 
     /// Count how many vertices have a given label
     pub fn count_label(&self, label: &Label) -> usize {
-        self.labels.iter().filter(|l| l.as_ref() == Some(label)).count()
+        self.labels
+            .iter()
+            .filter(|l| l.as_ref() == Some(label))
+            .count()
     }
 
     /// Retrieve all vertices for a given label
     pub fn vertices_with_label(&self, label: &Label) -> Vec<usize> {
-        self.labels.iter()
+        self.labels
+            .iter()
             .enumerate()
-            .filter_map(|(i, l)| if l.as_ref() == Some(label) { Some(i) } else { None })
+            .filter_map(|(i, l)| {
+                if l.as_ref() == Some(label) {
+                    Some(i)
+                } else {
+                    None
+                }
+            })
             .collect()
     }
 }
@@ -83,7 +93,10 @@ pub fn read_stl_ccta<P: AsRef<Path>>(path: P) -> Result<LabeledMesh> {
         .with_context(|| format!("Failed to parse STL file: {:?}", path_ref.display()))?;
 
     if stl.validate().is_err() {
-        return Err(anyhow!("STL file is not a valid mesh: {:?}", path_ref.display()));
+        return Err(anyhow!(
+            "STL file is not a valid mesh: {:?}",
+            path_ref.display()
+        ));
     }
 
     Ok(LabeledMesh::from_mesh(stl))

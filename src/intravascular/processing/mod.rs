@@ -1,13 +1,13 @@
 use anyhow::Context;
 
-pub mod resampling;
-pub mod align_within;
 pub mod align_between;
+pub mod align_within;
 pub mod process_utils;
+pub mod resampling;
 pub mod walls;
 
-use crate::intravascular::processing::align_within::{align_frames_in_geometries, AlignLog};
 use crate::intravascular::processing::align_between::{get_geometry_pair, GeometryPair};
+use crate::intravascular::processing::align_within::{align_frames_in_geometries, AlignLog};
 use crate::intravascular::processing::process_utils::process_case;
 use crate::intravascular::processing::walls::create_wall_geometry;
 
@@ -27,26 +27,26 @@ pub fn align_within_and_between(
     sample_size: usize,
 ) -> anyhow::Result<(GeometryPair, Vec<AlignLog>, Vec<AlignLog>)> {
     let geom_pair = get_geometry_pair(
-        case_name.to_string(), 
-        input_dir, 
-        image_center, 
-        radius, 
-        n_points)
-        .context(format!("create_geometry_pair({}) failed", case_name))?;
-    
+        case_name.to_string(),
+        input_dir,
+        image_center,
+        radius,
+        n_points,
+    )
+    .context(format!("create_geometry_pair({}) failed", case_name))?;
+
     let (mut geom_pair, (logs_a, logs_b)) = align_frames_in_geometries(
         geom_pair,
-        step_rotation_deg, 
+        step_rotation_deg,
         range_rotation_deg,
         true,
         bruteforce,
         sample_size,
     )
     .context(format!("align within geometrypair({}) failed", case_name))?;
-    
-    geom_pair = geom_pair.align_between_geometries(
-        step_rotation_deg, 
-        range_rotation_deg)
+
+    geom_pair = geom_pair
+        .align_between_geometries(step_rotation_deg, range_rotation_deg)
         .context(format!("align between geometrypair({}) failed", case_name))?;
 
     // set the reference point z to the last contour z for both geometries
@@ -56,7 +56,7 @@ pub fn align_within_and_between(
     if let Some(last_sys) = geom_pair.sys_geom.contours.last() {
         geom_pair.sys_geom.reference_point.z = last_sys.centroid.2;
     }
-    
+
     let geom_pair_walls: GeometryPair = if write_obj {
         process_case(
             case_name,
@@ -92,17 +92,16 @@ pub fn align_within_and_between_array(
     geometries = geometries.trim_geometries_same_length();
     let (mut geom_pair, (logs_a, logs_b)) = align_frames_in_geometries(
         geometries,
-        step_rotation_deg, 
+        step_rotation_deg,
         range_rotation_deg,
         true,
         bruteforce,
         sample_size,
     )
     .context(format!("align within geometrypair({}) failed", case_name))?;
-    
-    geom_pair = geom_pair.align_between_geometries(
-        step_rotation_deg, 
-        range_rotation_deg)
+
+    geom_pair = geom_pair
+        .align_between_geometries(step_rotation_deg, range_rotation_deg)
         .context(format!("align between geometrypair({}) failed", case_name))?;
 
     // set the reference point z to the last contour z for both geometries
@@ -112,7 +111,7 @@ pub fn align_within_and_between_array(
     if let Some(last_sys) = geom_pair.sys_geom.contours.last() {
         geom_pair.sys_geom.reference_point.z = last_sys.centroid.2;
     }
-    
+
     let geom_pair_walls: GeometryPair = if write_obj {
         process_case(
             case_name,

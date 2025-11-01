@@ -4,8 +4,8 @@ use std::collections::HashSet;
 use std::f64::consts::PI;
 use std::sync::{Arc, Mutex};
 
-use crate::intravascular::io::input::ContourPoint;
 use crate::intravascular::io::geometry::{Contour, Frame, Geometry};
+use crate::intravascular::io::input::ContourPoint;
 use crate::intravascular::processing::align_between::GeometryPair;
 use crate::intravascular::processing::process_utils::downsample_contour_points;
 
@@ -29,17 +29,17 @@ pub fn align_frames_in_geometries(
     sample_size: usize,
 ) -> anyhow::Result<(GeometryPair, (Vec<AlignLog>, Vec<AlignLog>))> {
     let (diastole, dia_logs) = align_frames_in_geometry(
-        geom_pair.dia_geom, 
-        step_deg, 
-        range_deg, 
+        geom_pair.dia_geom,
+        step_deg,
+        range_deg,
         smooth,
         bruteforce,
         sample_size,
     );
     let (mut systole, sys_logs) = align_frames_in_geometry(
-        geom_pair.sys_geom, 
-        step_deg, 
-        range_deg, 
+        geom_pair.sys_geom,
+        step_deg,
+        range_deg,
         smooth,
         bruteforce,
         sample_size,
@@ -335,12 +335,15 @@ fn align_remaining_contours(
         // Find the catheter with the same id as the current contour
         let target = if let Some(catheter) = geometry.catheter.iter().find(|c| c.id == contour.id) {
             let combined = contour.points.clone();
-            let (mut combined, cat_pts) = if combined.len() > sample_size && !catheter.points.is_empty() {
-                (downsample_contour_points(&combined, sample_size),
-                downsample_contour_points(&catheter.points, n_cath))
-            } else {
-                (combined, catheter.points.clone())
-            };
+            let (mut combined, cat_pts) =
+                if combined.len() > sample_size && !catheter.points.is_empty() {
+                    (
+                        downsample_contour_points(&combined, sample_size),
+                        downsample_contour_points(&catheter.points, n_cath),
+                    )
+                } else {
+                    (combined, catheter.points.clone())
+                };
             combined.extend_from_slice(&cat_pts);
             combined
         } else {
@@ -349,7 +352,15 @@ fn align_remaining_contours(
 
         // Optimize rotation
         let best_rel_rot = if bruteforce {
-            search_range(&ref_points, &target, step_deg, range_deg, &contour.centroid, None, range_deg)
+            search_range(
+                &ref_points,
+                &target,
+                step_deg,
+                range_deg,
+                &contour.centroid,
+                None,
+                range_deg,
+            )
         } else {
             find_best_rotation(&ref_points, &target, step_deg, range_deg, &contour.centroid)
         };
@@ -397,29 +408,88 @@ pub fn find_best_rotation(
     centroid: &(f64, f64, f64),
 ) -> f64 {
     match step_deg {
-        1.0..=f64::INFINITY => {
-            search_range(reference, target, step_deg, range_deg, centroid, None, range_deg)
-        }
+        1.0..=f64::INFINITY => search_range(
+            reference, target, step_deg, range_deg, centroid, None, range_deg,
+        ),
         0.1..1.0 => {
-            let coarse_angle = search_range(reference, target, 1.0, range_deg, centroid, None, range_deg);
-            let range = if range_deg > 5.0 {5.0} else {range_deg};
-            search_range(reference, target, step_deg, range, centroid, Some(coarse_angle), range_deg)
+            let coarse_angle =
+                search_range(reference, target, 1.0, range_deg, centroid, None, range_deg);
+            let range = if range_deg > 5.0 { 5.0 } else { range_deg };
+            search_range(
+                reference,
+                target,
+                step_deg,
+                range,
+                centroid,
+                Some(coarse_angle),
+                range_deg,
+            )
         }
         0.01..0.1 => {
-            let coarse_angle = search_range(reference, target, 1.0, range_deg, centroid, None, range_deg);
-            let range = if range_deg > 5.0 {5.0} else {range_deg};
-            let medium_angle = search_range(reference, target, 0.1, range, centroid, Some(coarse_angle), range_deg);
-            let range_small = if range_deg > 10.0 * step_deg {10.0 * step_deg} else {range_deg};
-            search_range(reference, target, step_deg, range_small, centroid, Some(medium_angle), range_deg)
+            let coarse_angle =
+                search_range(reference, target, 1.0, range_deg, centroid, None, range_deg);
+            let range = if range_deg > 5.0 { 5.0 } else { range_deg };
+            let medium_angle = search_range(
+                reference,
+                target,
+                0.1,
+                range,
+                centroid,
+                Some(coarse_angle),
+                range_deg,
+            );
+            let range_small = if range_deg > 10.0 * step_deg {
+                10.0 * step_deg
+            } else {
+                range_deg
+            };
+            search_range(
+                reference,
+                target,
+                step_deg,
+                range_small,
+                centroid,
+                Some(medium_angle),
+                range_deg,
+            )
         }
         _ => {
-            let coarse_angle = search_range(reference, target, 1.0, range_deg, centroid, None, range_deg);
-            let range = if range_deg > 5.0 {5.0} else {range_deg};            
-            let medium_angle = search_range(reference, target, 0.1, range, centroid, Some(coarse_angle), range_deg);
-            let range_small = if range_deg > 0.1 {0.1} else {range_deg};
-            let fine_angle = search_range(reference, target, 0.01, range_small, centroid, Some(medium_angle), range_deg);
-            let range_fine = if range_deg > 10.0 * step_deg {10.0 * step_deg} else {range_deg};
-            search_range(reference, target, step_deg, range_fine, centroid, Some(fine_angle), range_deg)
+            let coarse_angle =
+                search_range(reference, target, 1.0, range_deg, centroid, None, range_deg);
+            let range = if range_deg > 5.0 { 5.0 } else { range_deg };
+            let medium_angle = search_range(
+                reference,
+                target,
+                0.1,
+                range,
+                centroid,
+                Some(coarse_angle),
+                range_deg,
+            );
+            let range_small = if range_deg > 0.1 { 0.1 } else { range_deg };
+            let fine_angle = search_range(
+                reference,
+                target,
+                0.01,
+                range_small,
+                centroid,
+                Some(medium_angle),
+                range_deg,
+            );
+            let range_fine = if range_deg > 10.0 * step_deg {
+                10.0 * step_deg
+            } else {
+                range_deg
+            };
+            search_range(
+                reference,
+                target,
+                step_deg,
+                range_fine,
+                centroid,
+                Some(fine_angle),
+                range_deg,
+            )
         }
     }
 }
@@ -435,7 +505,9 @@ pub fn search_range(
 ) -> f64 {
     let range_rad = range_deg.to_radians();
     let step_rad = step_deg.to_radians();
-    if step_rad <= 0.0 { return 0.0; }
+    if step_rad <= 0.0 {
+        return 0.0;
+    }
 
     let center = center_angle.unwrap_or(0.0);
     let limes = limes_deg.to_radians();
@@ -456,7 +528,9 @@ pub fn search_range(
     let mut angle_dist_pairs = Vec::with_capacity(steps);
     for i in 0..=steps {
         let angle_lin = start_angle + (i as f64) * step_rad;
-        if angle_lin > stop_angle { break; }
+        if angle_lin > stop_angle {
+            break;
+        }
 
         // normalize for rotation (rem_euclid to [0,2π) then map if needed)
         let angle = angle_lin.rem_euclid(2.0 * PI);

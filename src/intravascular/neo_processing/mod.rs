@@ -1,5 +1,5 @@
-mod preprocessing;
-pub mod align_within;
 pub mod align_between;
-mod wall;
+pub mod align_within;
+mod preprocessing;
 mod process_utils;
+mod wall;

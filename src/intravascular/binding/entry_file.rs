@@ -1,11 +1,11 @@
 use anyhow::{anyhow, Context, Result};
 use crossbeam::thread;
 
-use crate::intravascular::processing::align_within_and_between;
-use crate::intravascular::processing::resampling::prepare_geometries_comparison;
-use crate::intravascular::processing::process_utils::process_case;
 use crate::intravascular::processing::align_between::GeometryPair;
 use crate::intravascular::processing::align_within::AlignLog;
+use crate::intravascular::processing::align_within_and_between;
+use crate::intravascular::processing::process_utils::process_case;
+use crate::intravascular::processing::resampling::prepare_geometries_comparison;
 
 use crate::intravascular::io::output::write_obj_mesh_without_uv;
 use crate::intravascular::io::Geometry;
@@ -89,12 +89,12 @@ pub fn from_file_full_rs(
             let (stress_pair, dia_logs_stress, sys_logs_stress) = stress_handle.join().unwrap()?;
 
             // Prepare diastolic & systolic geometry pairs
-            let (dia_pair, sys_pair) =
-                prepare_geometries_comparison(
-                    rest_pair.clone(), 
-                    stress_pair.clone(),
-                    step_rotation_deg,
-                    range_rotation_deg);
+            let (dia_pair, sys_pair) = prepare_geometries_comparison(
+                rest_pair.clone(),
+                stress_pair.clone(),
+                step_rotation_deg,
+                range_rotation_deg,
+            );
             let dia_pair_for_thread = dia_pair.clone();
             let sys_pair_for_thread = sys_pair.clone();
 
@@ -329,20 +329,23 @@ pub fn from_file_single_rs(
     )?;
 
     let (geom, logs) = crate::intravascular::processing::align_within::align_frames_in_geometry(
-        geom, 
-        step_rotation_deg, 
+        geom,
+        step_rotation_deg,
         range_rotation_deg,
-    true,
+        true,
         bruteforce,
-        sample_size);
+        sample_size,
+    );
     let geom = if geom.walls.is_empty() {
-        crate::intravascular::processing::walls::create_wall_geometry(&geom, /*with_pulmonary=*/ false)
+        crate::intravascular::processing::walls::create_wall_geometry(
+            &geom, /*with_pulmonary=*/ false,
+        )
     } else {
         geom
     };
     if write_obj {
         let filename = format!("{}/mesh_000_single.obj", output_path);
-    
+
         write_obj_mesh_without_uv(&geom.contours, &filename, "mesh_000_single.mtl", watertight)?;
     }
 

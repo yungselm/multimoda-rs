@@ -2,13 +2,15 @@ use anyhow::{anyhow, Context, Result};
 use crossbeam::thread;
 use std::collections::HashSet;
 
-use crate::intravascular::io::input::{ContourPoint, InputData, Record};
 use crate::intravascular::io::geometry::{Contour, Frame, Geometry};
-use crate::intravascular::processing::resampling::prepare_geometries_comparison;
-use crate::intravascular::processing::align_within::{align_frames_in_geometry, hausdorff_distance, AlignLog};
+use crate::intravascular::io::input::{ContourPoint, InputData, Record};
 use crate::intravascular::processing::align_between::GeometryPair;
-use crate::intravascular::processing::process_utils::process_case;
+use crate::intravascular::processing::align_within::{
+    align_frames_in_geometry, hausdorff_distance, AlignLog,
+};
 use crate::intravascular::processing::align_within_and_between_array;
+use crate::intravascular::processing::process_utils::process_case;
+use crate::intravascular::processing::resampling::prepare_geometries_comparison;
 
 use crate::intravascular::io::output::write_obj_mesh_without_uv;
 
@@ -77,13 +79,13 @@ pub fn geometry_from_array_rs(
     };
 
     for (new_id, contour) in geometry.contours.iter_mut().enumerate() {
-        contour.id = new_id  as u32;
+        contour.id = new_id as u32;
         for point in contour.points.iter_mut() {
             point.frame_index = new_id as u32;
         }
     }
     for (new_id, catheter) in geometry.catheter.iter_mut().enumerate() {
-        catheter.id = new_id  as u32;
+        catheter.id = new_id as u32;
         for point in catheter.points.iter_mut() {
             point.frame_index = new_id as u32;
         }
@@ -98,16 +100,31 @@ pub fn geometry_from_array_rs(
     // Optionally align and refine ordering
     let (mut geometry, logs) = if sort {
         let (interim, _) = align_frames_in_geometry(
-            geometry, 
-            step_rotation_deg, 
-            range_rotation_deg, 
-            false, 
-            bruteforce, 
-            sample_size);
+            geometry,
+            step_rotation_deg,
+            range_rotation_deg,
+            false,
+            bruteforce,
+            sample_size,
+        );
         let refined = refine_ordering(interim, delta, max_rounds);
-        align_frames_in_geometry(refined, step_rotation_deg, range_rotation_deg, true, bruteforce, sample_size)
+        align_frames_in_geometry(
+            refined,
+            step_rotation_deg,
+            range_rotation_deg,
+            true,
+            bruteforce,
+            sample_size,
+        )
     } else {
-        align_frames_in_geometry(geometry, step_rotation_deg, range_rotation_deg, true, bruteforce, sample_size)
+        align_frames_in_geometry(
+            geometry,
+            step_rotation_deg,
+            range_rotation_deg,
+            true,
+            bruteforce,
+            sample_size,
+        )
     };
 
     geometry = if geometry.walls.is_empty() {
@@ -127,8 +144,8 @@ pub fn geometry_from_array_rs(
             watertight,
         )?;
         write_obj_mesh_without_uv(
-            &geometry.walls, 
-            &filename_walls, 
+            &geometry.walls,
+            &filename_walls,
             "wall_000_single.mtl",
             watertight,
         )?;
@@ -165,11 +182,14 @@ pub fn refine_ordering(mut geom: Geometry, delta: f64, max_rounds: usize) -> Geo
     }
 
     // Find ostium (contour with highest original ID)
-    let ostium_idx = geom.contours
+    let ostium_idx = geom
+        .contours
         .iter()
         .enumerate()
         .min_by(|(_, a), (_, b)| {
-            contour_area(a).partial_cmp(&contour_area(b)).unwrap_or(std::cmp::Ordering::Equal)
+            contour_area(a)
+                .partial_cmp(&contour_area(b))
+                .unwrap_or(std::cmp::Ordering::Equal)
         })
         .map(|(idx, _)| idx)
         .unwrap();
@@ -272,7 +292,10 @@ fn reorder_geometry(mut geom: Geometry, new_order: &[usize]) -> Geometry {
 
     // Reorder catheter only if same length (otherwise leave as-is or implement mapping)
     let mut reordered_catheter = if geom.catheter.len() == geom.contours.len() {
-        new_order.iter().map(|&i| geom.catheter[i].clone()).collect()
+        new_order
+            .iter()
+            .map(|&i| geom.catheter[i].clone())
+            .collect()
     } else {
         // safer: keep catheter unchanged (or implement desired behavior)
         geom.catheter.clone()
@@ -368,13 +391,13 @@ fn geometry_pair_from_array_rs(
         contour.id = new_id as u32;
     }
     for (new_id, contour) in geometry_sys.contours.iter_mut().enumerate() {
-        contour.id = new_id  as u32;
+        contour.id = new_id as u32;
     }
     for (new_id, catheter) in geometry_dia.catheter.iter_mut().enumerate() {
-        catheter.id = new_id  as u32;
+        catheter.id = new_id as u32;
     }
     for (new_id, catheter) in geometry_sys.catheter.iter_mut().enumerate() {
-        catheter.id = new_id  as u32;
+        catheter.id = new_id as u32;
     }
 
     let geometries = GeometryPair {
@@ -430,18 +453,19 @@ pub fn from_array_full_rs(
                 .context("create rest geometry pair(rest) failed")?;
 
                 let (geom_rest, logs_dia, logs_sys) = align_within_and_between_array(
-                    "rest", 
-                    geom_pair, 
-                    step_rotation_deg, 
-                    range_rotation_deg, 
-                    write_obj, 
+                    "rest",
+                    geom_pair,
+                    step_rotation_deg,
+                    range_rotation_deg,
+                    write_obj,
                     watertight,
-                    rest_output_path, 
+                    rest_output_path,
                     interpolation_steps,
                     bruteforce,
-                    sample_size)
-                        .context("process geometry pair(rest) failed")?;
-                    Ok((geom_rest, logs_dia, logs_sys))
+                    sample_size,
+                )
+                .context("process geometry pair(rest) failed")?;
+                Ok((geom_rest, logs_dia, logs_sys))
             });
 
             // STRESS thread
@@ -455,19 +479,21 @@ pub fn from_array_full_rs(
                 )
                 .context("create stress geometry pair(stress) failed")?;
 
-                let (geom_stress, logs_dia_stress, logs_sys_stress) = align_within_and_between_array(
-                    "stress", 
-                    geom_pair, 
-                    step_rotation_deg, 
-                    range_rotation_deg, 
-                    write_obj, 
-                    watertight,
-                    stress_output_path, 
-                    interpolation_steps,
-                    bruteforce,
-                    sample_size)
-                        .context("process stress geometry pair(stress) failed")?;
-                    Ok((geom_stress, logs_dia_stress, logs_sys_stress))
+                let (geom_stress, logs_dia_stress, logs_sys_stress) =
+                    align_within_and_between_array(
+                        "stress",
+                        geom_pair,
+                        step_rotation_deg,
+                        range_rotation_deg,
+                        write_obj,
+                        watertight,
+                        stress_output_path,
+                        interpolation_steps,
+                        bruteforce,
+                        sample_size,
+                    )
+                    .context("process stress geometry pair(stress) failed")?;
+                Ok((geom_stress, logs_dia_stress, logs_sys_stress))
             });
 
             // Join REST & STRESS
@@ -475,12 +501,12 @@ pub fn from_array_full_rs(
             let (stress_pair, dia_logs_stress, sys_logs_stress) = stress_handle.join().unwrap()?;
 
             // Prepare diastolic & systolic geometry pairs
-            let (dia_pair, sys_pair) =
-                prepare_geometries_comparison(
-                    rest_pair.clone(), 
-                    stress_pair.clone(),
-                    step_rotation_deg,
-                    range_rotation_deg);
+            let (dia_pair, sys_pair) = prepare_geometries_comparison(
+                rest_pair.clone(),
+                stress_pair.clone(),
+                step_rotation_deg,
+                range_rotation_deg,
+            );
             let dia_pair_for_thread = dia_pair.clone();
             let sys_pair_for_thread = sys_pair.clone();
 
@@ -601,18 +627,19 @@ pub fn from_array_doublepair_rs(
                 .context("create rest geometry pair(rest) failed")?;
 
                 let (geom_rest, logs_dia, logs_sys) = align_within_and_between_array(
-                    "rest", 
-                    geom_pair, 
-                    step_rotation_deg, 
-                    range_rotation_deg, 
-                    write_obj, 
+                    "rest",
+                    geom_pair,
+                    step_rotation_deg,
+                    range_rotation_deg,
+                    write_obj,
                     watertight,
-                    rest_output_path, 
+                    rest_output_path,
                     interpolation_steps,
                     bruteforce,
-                    sample_size)
-                        .context("process geometry pair(rest) failed")?;
-                    Ok((geom_rest, logs_dia, logs_sys))
+                    sample_size,
+                )
+                .context("process geometry pair(rest) failed")?;
+                Ok((geom_rest, logs_dia, logs_sys))
             });
 
             // STRESS thread
@@ -626,19 +653,21 @@ pub fn from_array_doublepair_rs(
                 )
                 .context("create stress geometry pair(stress) failed")?;
 
-                let (geom_stress, logs_dia_stress, logs_sys_stress) = align_within_and_between_array(
-                    "stress", 
-                    geom_pair, 
-                    step_rotation_deg, 
-                    range_rotation_deg, 
-                    write_obj, 
-                    watertight,
-                    stress_output_path, 
-                    interpolation_steps,
-                    bruteforce,
-                    sample_size)
-                        .context("process stress geometry pair(stress) failed")?;
-                    Ok((geom_stress, logs_dia_stress, logs_sys_stress))
+                let (geom_stress, logs_dia_stress, logs_sys_stress) =
+                    align_within_and_between_array(
+                        "stress",
+                        geom_pair,
+                        step_rotation_deg,
+                        range_rotation_deg,
+                        write_obj,
+                        watertight,
+                        stress_output_path,
+                        interpolation_steps,
+                        bruteforce,
+                        sample_size,
+                    )
+                    .context("process stress geometry pair(stress) failed")?;
+                Ok((geom_stress, logs_dia_stress, logs_sys_stress))
             });
             // Join threads & propagate any processing errors
             let (rest_geom_pair, dia_logs, sys_logs) = rest_handle.join().unwrap()?;
@@ -692,20 +721,27 @@ pub fn from_array_singlepair_rs(
     .context("create geometry_pair(single) failed")?;
 
     let (geom_pair, dia_logs, sys_logs) = align_within_and_between_array(
-        "single", 
-        geometries, 
+        "single",
+        geometries,
         step_rotation_deg,
-        range_rotation_deg, 
-        write_obj, 
+        range_rotation_deg,
+        write_obj,
         watertight,
-        output_path, 
+        output_path,
         interpolation_steps,
         bruteforce,
-        sample_size)
-        .context("process geometry_pair(single) failed")?;
+        sample_size,
+    )
+    .context("process geometry_pair(single) failed")?;
     // Process it (e.g. align, interpolate, write meshes)
-    let processed_pair = process_case("single", geom_pair, output_path, interpolation_steps, watertight)
-        .context("process_case(single) failed")?;
+    let processed_pair = process_case(
+        "single",
+        geom_pair,
+        output_path,
+        interpolation_steps,
+        watertight,
+    )
+    .context("process_case(single) failed")?;
 
     Ok((processed_pair, (dia_logs, sys_logs)))
 }
@@ -713,8 +749,8 @@ pub fn from_array_singlepair_rs(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::f64::consts::PI;
     use crate::intravascular::io::input::{Contour, ContourPoint};
+    use std::f64::consts::PI;
 
     fn create_circle_contour(id: u32, radius: f64, n_points: u32) -> Contour {
         let mut points = Vec::new();
@@ -753,7 +789,8 @@ mod tests {
 
         // Shuffle to a nontrivial order: [1, 3, 0, 2, 4]
         let shuffle_order = vec![1, 3, 0, 2, 4];
-        let shuffled_contours: Vec<Contour> = shuffle_order.iter().map(|&i| contours[i].clone()).collect();
+        let shuffled_contours: Vec<Contour> =
+            shuffle_order.iter().map(|&i| contours[i].clone()).collect();
 
         let geom = Geometry {
             contours: shuffled_contours,

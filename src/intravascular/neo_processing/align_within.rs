@@ -4,8 +4,8 @@ use std::f64::consts::PI;
 use std::sync::{Arc, Mutex};
 
 use super::wall::create_wall_frames;
-use crate::intravascular::io::input::ContourPoint;
 use crate::intravascular::io::geometry::{ContourType, Frame, Geometry};
+use crate::intravascular::io::input::ContourPoint;
 use crate::intravascular::neo_processing::process_utils::downsample_contour_points;
 
 #[derive(Debug)]
@@ -24,7 +24,7 @@ pub fn align_frames_in_geometry(
     range_deg: f64,
     smooth: bool,
     bruteforce: bool,
-    sample_size: usize,    
+    sample_size: usize,
 ) -> anyhow::Result<(Geometry, Vec<AlignLog>)> {
     if geometry.frames.is_empty() {
         return Err(anyhow!("Geometry contains no frames"));
@@ -36,12 +36,21 @@ pub fn align_frames_in_geometry(
         return Err(anyhow!("sample_size must be > 0"));
     }
 
-    let ref_idx = geometry.
-        find_ref_frame_idx().
-        unwrap_or(geometry.find_proximal_end_idx()) as usize;
+    let ref_idx = geometry
+        .find_ref_frame_idx()
+        .unwrap_or(geometry.find_proximal_end_idx()) as usize;
     let sample_ratio = sample_size as f64 / geometry.frames[0].lumen.points.len() as f64;
-    let sample_size_catheter = if geometry.frames[0].extras.contains_key(&ContourType::Catheter) {
-        Some((geometry.frames[0].extras[&ContourType::Catheter].points.len() as f64 * sample_ratio).ceil() as usize)
+    let sample_size_catheter = if geometry.frames[0]
+        .extras
+        .contains_key(&ContourType::Catheter)
+    {
+        Some(
+            (geometry.frames[0].extras[&ContourType::Catheter]
+                .points
+                .len() as f64
+                * sample_ratio)
+                .ceil() as usize,
+        )
     } else {
         None
     };
@@ -51,7 +60,7 @@ pub fn align_frames_in_geometry(
     for i in 1..geometry.frames.len() {
         let (prev_frames, curr_frames) = geometry.frames.split_at_mut(i);
         let current = &mut curr_frames[0];
-        let previous = &prev_frames[i-1];
+        let previous = &prev_frames[i - 1];
 
         // TODO: Later maybe add option to move first contour to (0.0, 0.0, 0.0)
         let translation = (
@@ -62,31 +71,29 @@ pub fn align_frames_in_geometry(
 
         current.translate_frame(translation);
 
-        let _testing_points = catheter_lumen_vec_from_frames(
-            current, 
-            sample_size, 
-            sample_size_catheter);
-        let _reference_points = catheter_lumen_vec_from_frames(
-            &previous, 
-            sample_size, 
-            sample_size_catheter);
-        
+        let _testing_points =
+            catheter_lumen_vec_from_frames(current, sample_size, sample_size_catheter);
+        let _reference_points =
+            catheter_lumen_vec_from_frames(&previous, sample_size, sample_size_catheter);
+
         let best_rotation = if bruteforce {
             search_range(
-                &_reference_points, 
+                &_reference_points,
                 &_testing_points,
-                step_deg, 
-                range_deg, 
-                &current.centroid, 
-                None, 
-                range_deg)
+                step_deg,
+                range_deg,
+                &current.centroid,
+                None,
+                range_deg,
+            )
         } else {
             find_best_rotation(
-                &_reference_points, 
-                &_testing_points, 
-                step_deg, 
-                range_deg, 
-                &current.centroid)
+                &_reference_points,
+                &_testing_points,
+                step_deg,
+                range_deg,
+                &current.centroid,
+            )
         };
         current.rotate_frame(best_rotation);
 
@@ -99,11 +106,9 @@ pub fn align_frames_in_geometry(
             centroid: (current.centroid.0, current.centroid.1),
         };
         logger.lock().unwrap().push(new_log);
-    };
+    }
     let anomalous_bool = is_anomalous_coronary(&geometry.frames[ref_idx]);
-    let additional_rotation = angle_ref_point_to_right(
-        &geometry.frames[ref_idx],
-        anomalous_bool)?;
+    let additional_rotation = angle_ref_point_to_right(&geometry.frames[ref_idx], anomalous_bool)?;
     for frame in geometry.frames.iter_mut() {
         frame.rotate_frame(additional_rotation);
         frame.sort_frame_points();
@@ -135,9 +140,9 @@ pub fn align_frames_in_geometry(
 }
 
 fn catheter_lumen_vec_from_frames(
-    frame: &Frame, 
-    sample_size_lumen: usize, 
-    sample_size_catheter: Option<usize>
+    frame: &Frame,
+    sample_size_lumen: usize,
+    sample_size_catheter: Option<usize>,
 ) -> Vec<ContourPoint> {
     let mut lumen_points = downsample_contour_points(&frame.lumen.points, sample_size_lumen);
     let mut catheter_points = if let Some(sample_size_catheter) = sample_size_catheter {
@@ -161,29 +166,88 @@ pub fn find_best_rotation(
     centroid: &(f64, f64, f64),
 ) -> f64 {
     match step_deg {
-        1.0..=f64::INFINITY => {
-            search_range(reference, target, step_deg, range_deg, centroid, None, range_deg)
-        }
+        1.0..=f64::INFINITY => search_range(
+            reference, target, step_deg, range_deg, centroid, None, range_deg,
+        ),
         0.1..1.0 => {
-            let coarse_angle = search_range(reference, target, 1.0, range_deg, centroid, None, range_deg);
-            let range = if range_deg > 5.0 {5.0} else {range_deg};
-            search_range(reference, target, step_deg, range, centroid, Some(coarse_angle), range_deg)
+            let coarse_angle =
+                search_range(reference, target, 1.0, range_deg, centroid, None, range_deg);
+            let range = if range_deg > 5.0 { 5.0 } else { range_deg };
+            search_range(
+                reference,
+                target,
+                step_deg,
+                range,
+                centroid,
+                Some(coarse_angle),
+                range_deg,
+            )
         }
         0.01..0.1 => {
-            let coarse_angle = search_range(reference, target, 1.0, range_deg, centroid, None, range_deg);
-            let range = if range_deg > 5.0 {5.0} else {range_deg};
-            let medium_angle = search_range(reference, target, 0.1, range, centroid, Some(coarse_angle), range_deg);
-            let range_small = if range_deg > 10.0 * step_deg {10.0 * step_deg} else {range_deg};
-            search_range(reference, target, step_deg, range_small, centroid, Some(medium_angle), range_deg)
+            let coarse_angle =
+                search_range(reference, target, 1.0, range_deg, centroid, None, range_deg);
+            let range = if range_deg > 5.0 { 5.0 } else { range_deg };
+            let medium_angle = search_range(
+                reference,
+                target,
+                0.1,
+                range,
+                centroid,
+                Some(coarse_angle),
+                range_deg,
+            );
+            let range_small = if range_deg > 10.0 * step_deg {
+                10.0 * step_deg
+            } else {
+                range_deg
+            };
+            search_range(
+                reference,
+                target,
+                step_deg,
+                range_small,
+                centroid,
+                Some(medium_angle),
+                range_deg,
+            )
         }
         _ => {
-            let coarse_angle = search_range(reference, target, 1.0, range_deg, centroid, None, range_deg);
-            let range = if range_deg > 5.0 {5.0} else {range_deg};            
-            let medium_angle = search_range(reference, target, 0.1, range, centroid, Some(coarse_angle), range_deg);
-            let range_small = if range_deg > 0.1 {0.1} else {range_deg};
-            let fine_angle = search_range(reference, target, 0.01, range_small, centroid, Some(medium_angle), range_deg);
-            let range_fine = if range_deg > 10.0 * step_deg {10.0 * step_deg} else {range_deg};
-            search_range(reference, target, step_deg, range_fine, centroid, Some(fine_angle), range_deg)
+            let coarse_angle =
+                search_range(reference, target, 1.0, range_deg, centroid, None, range_deg);
+            let range = if range_deg > 5.0 { 5.0 } else { range_deg };
+            let medium_angle = search_range(
+                reference,
+                target,
+                0.1,
+                range,
+                centroid,
+                Some(coarse_angle),
+                range_deg,
+            );
+            let range_small = if range_deg > 0.1 { 0.1 } else { range_deg };
+            let fine_angle = search_range(
+                reference,
+                target,
+                0.01,
+                range_small,
+                centroid,
+                Some(medium_angle),
+                range_deg,
+            );
+            let range_fine = if range_deg > 10.0 * step_deg {
+                10.0 * step_deg
+            } else {
+                range_deg
+            };
+            search_range(
+                reference,
+                target,
+                step_deg,
+                range_fine,
+                centroid,
+                Some(fine_angle),
+                range_deg,
+            )
         }
     }
 }
@@ -199,7 +263,9 @@ pub fn search_range(
 ) -> f64 {
     let range_rad = range_deg.to_radians();
     let step_rad = step_deg.to_radians();
-    if step_rad <= 0.0 { return 0.0; }
+    if step_rad <= 0.0 {
+        return 0.0;
+    }
 
     let center = center_angle.unwrap_or(0.0);
     let limes = limes_deg.to_radians();
@@ -220,7 +286,9 @@ pub fn search_range(
     let mut angle_dist_pairs = Vec::with_capacity(steps);
     for i in 0..=steps {
         let angle_lin = start_angle + (i as f64) * step_rad;
-        if angle_lin > stop_angle { break; }
+        if angle_lin > stop_angle {
+            break;
+        }
 
         // normalize for rotation (rem_euclid to [0,2π) then map if needed)
         let angle = angle_lin.rem_euclid(2.0 * PI);
@@ -325,7 +393,7 @@ fn angle_ref_point_to_right(ref_frame: &Frame, anomalous: bool) -> anyhow::Resul
     let ref_point = ref_frame
         .reference_point
         .ok_or(anyhow!("No reference point found in frame"))?;
-    // Define line between to points to align either horizontally or 
+    // Define line between to points to align either horizontally or
     // vertically (based on anomalous)
     let (p1, p2) = if anomalous {
         let ((p1, p2), _) = ref_frame.lumen.find_farthest_points();
@@ -342,7 +410,11 @@ fn angle_ref_point_to_right(ref_frame: &Frame, anomalous: bool) -> anyhow::Resul
     let dy = p2.1 - p1.1;
     let line_angle = dy.atan2(dx);
 
-    let desired = if anomalous { std::f64::consts::FRAC_PI_2 } else { 0.0 };
+    let desired = if anomalous {
+        std::f64::consts::FRAC_PI_2
+    } else {
+        0.0
+    };
     let mut rotation = (desired - line_angle).rem_euclid(2.0 * std::f64::consts::PI);
 
     let rotate2 = |pt: (f64, f64), center: (f64, f64), angle: f64| -> (f64, f64) {
@@ -363,7 +435,9 @@ fn angle_ref_point_to_right(ref_frame: &Frame, anomalous: bool) -> anyhow::Resul
     let mut all_good = true;
     for &op in &other_pts {
         // skip comparison if op is identical to ref (possible in non-anomalous case)
-        if (op.0 - ref_pt_2d.0).abs() < std::f64::EPSILON && (op.1 - ref_pt_2d.1).abs() < std::f64::EPSILON {
+        if (op.0 - ref_pt_2d.0).abs() < std::f64::EPSILON
+            && (op.1 - ref_pt_2d.1).abs() < std::f64::EPSILON
+        {
             continue;
         }
         let r_op = rotate2(op, center, rotation);

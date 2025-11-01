@@ -54,7 +54,7 @@ fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<(u32, u32, f64, f64, f64, f64, f64
 ///     n_points (default 20): number of points for catheter, more points stronger influence of image center
 ///     write_obj (default true): Wether to write OBJ files
 ///     watertight (default true): Wether to write shell or watertight mesh to OBJ.
-///     rest_output_path (default "output/rest"): 
+///     rest_output_path (default "output/rest"):
 ///     stress_output_path (default "output/stress"):
 ///     diastole_output_path (default "output/diastole"):
 ///     systole_output_path (default "output/systole"):
@@ -63,7 +63,7 @@ fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<(u32, u32, f64, f64, f64, f64, f64
 ///     sample_size (default 200): number of points to downsample to
 ///
 /// .. warning::
-/// 
+///
 ///    The CSV must have **no header**. Each row is (frame index, x-coord (mm), y-coord (mm), z-coord (mm)):
 ///
 /// .. code-block:: text
@@ -193,14 +193,14 @@ pub fn from_file_full(
 ///     n_points (default 20): number of points for catheter, more points stronger influence of image center
 ///     write_obj (default true): Wether to write OBJ files
 ///     watertight (default true): Wether to write shell or watertight mesh to OBJ.
-///     rest_output_path (default "output/rest"): 
-///     stress_output_path (default "output/stress"): 
+///     rest_output_path (default "output/rest"):
+///     stress_output_path (default "output/stress"):
 ///     interpolation_steps (default 28): Number of interpolated meshes
 ///     bruteforce (default false): Wether to use bruteforce alignment (comparison for every step size)
 ///     sample_size (default 200): number of points to downsample to
 ///
 /// .. warning::
-/// 
+///
 ///    The CSV must have **no header**. Each row is (frame index, x-coord (mm), y-coord (mm), z-coord (mm)):
 ///
 /// .. code-block:: text
@@ -313,13 +313,13 @@ pub fn from_file_doublepair(
 ///     n_points (default 20): number of points for catheter, more points stronger influence of image center
 ///     write_obj (default true): Wether to write OBJ files
 ///     watertight (default true): Wether to write shell or watertight mesh to OBJ.
-///     output_path: Path to write the processed geometry. 
+///     output_path: Path to write the processed geometry.
 ///     interpolation_steps (default 28): Number of interpolated meshes
 ///     bruteforce (default false): Wether to use bruteforce alignment (comparison for every step size)
 ///     sample_size (default 200): number of points to downsample to
 ///
 /// .. warning::
-/// 
+///
 ///    The CSV must have **no header**. Each row is:
 ///
 /// .. code-block:: text
@@ -691,7 +691,7 @@ pub fn geometry_from_array(
 ///     stress_geometry_dia: Input ``PyGeometry`` at diastole for STRESS.  
 ///     stress_geometry_sys: Input ``PyGeometry`` at systole for STRESS.  
 ///     step_rotation_deg (default 0.5°): Rotation step in degree
-///     range_rotation_deg (default 90°): Rotation (+/-) range in degree, for 90° total range 180° 
+///     range_rotation_deg (default 90°): Rotation (+/-) range in degree, for 90° total range 180°
 ///     write_obj (default True): Wether to write OBJ files.
 ///     watertight (default True): Wether to write shell or watertight mesh to OBJ.
 ///     rest_output_path (default "output/rest"): Output directory for REST results.  
@@ -840,7 +840,7 @@ pub fn from_array_full(
 ///     stress_geometry_dia: Input ``PyGeometry`` at diastole for STRESS.  
 ///     stress_geometry_sys: Input ``PyGeometry`` at systole for STRESS.  
 ///     step_rotation_deg (default 0.5°): Rotation step in degree.
-///     range_rotation_deg (default 90°): Rotation (+/-) range in degree, for 90° total range 180°. 
+///     range_rotation_deg (default 90°): Rotation (+/-) range in degree, for 90° total range 180°.
 ///     write_obj (default True): Wether to write OBJ files.
 ///     watertight (default True): Wether to write shell or watertight mesh to OBJ.
 ///     rest_output_path (default "output/rest"): Output directory for REST results.  

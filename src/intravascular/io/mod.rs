@@ -1,13 +1,13 @@
-pub mod input;
-pub mod output;
 pub mod geometry;
+pub mod input;
 mod integrity_check;
+pub mod output;
 
-use input::{InputData, ContourPoint};
-use geometry::{Contour, Frame, Geometry, ContourType};
+use geometry::{Contour, ContourType, Frame, Geometry};
+use input::{ContourPoint, InputData};
 use integrity_check::check_geometry_integrity;
-use std::path::Path;
 use std::collections::HashMap;
+use std::path::Path;
 
 pub fn build_geometry_from_inputdata(
     input_data: Option<InputData>,
@@ -28,10 +28,12 @@ pub fn build_geometry_from_inputdata(
         names.insert(ContourType::Calcification, "calcium");
         names.insert(ContourType::Sidebranch, "branch");
         names.insert(ContourType::Catheter, "catheter");
-        
+
         InputData::process_directory(path, names, diastole)?
     } else {
-        return Err(anyhow::anyhow!("Either input_data or path must be provided"));
+        return Err(anyhow::anyhow!(
+            "Either input_data or path must be provided"
+        ));
     };
 
     let lumen_contours = Contour::build_contour(
@@ -71,45 +73,56 @@ pub fn build_geometry_from_inputdata(
             extras: HashMap::new(),
             reference_point: None,
         };
-        
+
         if input_data.ref_point.frame_index == frame_id {
             frame.reference_point = Some(input_data.ref_point);
         }
-        
+
         frame_map.insert(frame_id, frame);
     }
 
     // Add other contour types to frames
     for contour in eem_contours {
         if let Some(frame) = frame_map.get_mut(&contour.id) {
-            frame.extras.insert(ContourType::Eem, contour.compute_centroid());
+            frame
+                .extras
+                .insert(ContourType::Eem, contour.compute_centroid());
         }
     }
 
     for contour in calcification_contours {
         if let Some(frame) = frame_map.get_mut(&contour.id) {
-            frame.extras.insert(ContourType::Calcification, contour.compute_centroid());
+            frame
+                .extras
+                .insert(ContourType::Calcification, contour.compute_centroid());
         }
     }
 
     for contour in sidebranch_contours {
         if let Some(frame) = frame_map.get_mut(&contour.id) {
-            frame.extras.insert(ContourType::Sidebranch, contour.compute_centroid());
+            frame
+                .extras
+                .insert(ContourType::Sidebranch, contour.compute_centroid());
         }
     }
 
     // Create catheter contours if requested
     if n_points > 0 {
-        let all_points: Vec<ContourPoint> = frame_map.values()
+        let all_points: Vec<ContourPoint> = frame_map
+            .values()
             .flat_map(|frame| frame.lumen.points.iter().cloned())
             .collect();
-            
-        let catheter_points = Frame::create_catheter_points(&all_points, image_center, radius, n_points);
-        let catheter_contours = Contour::build_contour(catheter_points, None, ContourType::Catheter)?;
-        
+
+        let catheter_points =
+            Frame::create_catheter_points(&all_points, image_center, radius, n_points);
+        let catheter_contours =
+            Contour::build_contour(catheter_points, None, ContourType::Catheter)?;
+
         for contour in catheter_contours {
             if let Some(frame) = frame_map.get_mut(&contour.id) {
-                frame.extras.insert(ContourType::Catheter, contour.compute_centroid());
+                frame
+                    .extras
+                    .insert(ContourType::Catheter, contour.compute_centroid());
             }
         }
     }
@@ -186,7 +199,8 @@ mod input_tests {
             (4.5, 4.5),
             0.5,
             20,
-        ).expect("Failed to load geometry");
+        )
+        .expect("Failed to load geometry");
 
         let manifest = load_test_manifest("rest");
         let dia_config = &manifest["dia"];
@@ -201,11 +215,7 @@ mod input_tests {
         for (i, frame) in geometry.frames.iter().enumerate() {
             // Verify elliptic ratio for lumen
             let expected_ratio = dia_config["elliptic_ratios"][i].as_f64().unwrap();
-            assert_relative_eq!(
-                frame.lumen.elliptic_ratio(),
-                expected_ratio,
-                epsilon = 0.1
-            );
+            assert_relative_eq!(frame.lumen.elliptic_ratio(), expected_ratio, epsilon = 0.1);
 
             // Verify area for lumen
             let expected_area = dia_config["areas"][i].as_f64().unwrap();
@@ -233,7 +243,8 @@ mod input_tests {
             (4.5, 4.5),
             0.5,
             20,
-        ).expect("Failed to load geometry");
+        )
+        .expect("Failed to load geometry");
 
         // Verify catheter contours exist in frames
         for frame in &geometry.frames {
@@ -243,11 +254,11 @@ mod input_tests {
                     NUM_POINTS_CATHETER,
                     "Incorrect number of catheter points"
                 );
-                
+
                 // Verify z-coordinate consistency
                 assert_relative_eq!(
-                    catheter_contour.centroid.unwrap().2, 
-                    frame.lumen.centroid.unwrap().2, 
+                    catheter_contour.centroid.unwrap().2,
+                    frame.lumen.centroid.unwrap().2,
                     epsilon = 1e-6
                 );
             }

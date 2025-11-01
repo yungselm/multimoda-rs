@@ -89,7 +89,10 @@ fn distance_sq(a: &ContourPoint, b: &(f64, f64, f64)) -> f64 {
     dx * dx + dy * dy + dz * dz
 }
 
-fn resample_centerline_by_contours(centerline: &Centerline, ref_mesh: &Geometry) -> Result<Centerline, &'static str> {
+fn resample_centerline_by_contours(
+    centerline: &Centerline,
+    ref_mesh: &Geometry,
+) -> Result<Centerline, &'static str> {
     if centerline.points.is_empty() {
         return Err("Centerline is empty");
     }
@@ -128,7 +131,10 @@ fn resample_centerline_by_contours(centerline: &Centerline, ref_mesh: &Geometry)
         new_points.push(interpolate_centerline_at_s(centerline, &cum, target_s, k));
     }
 
-    eprintln!("resample_centerline_by_contours: produced {} points", new_points.len());
+    eprintln!(
+        "resample_centerline_by_contours: produced {} points",
+        new_points.len()
+    );
 
     Ok(Centerline { points: new_points })
 }
@@ -329,11 +335,23 @@ pub fn prepare_geometry_alignment(mut geom_pair: GeometryPair) -> GeometryPair {
         geom
     }
 
-    if geom_pair.dia_geom.reference_point.z == geom_pair.dia_geom.contours.last().map_or(f64::NAN, |c| c.centroid.2) {
+    if geom_pair.dia_geom.reference_point.z
+        == geom_pair
+            .dia_geom
+            .contours
+            .last()
+            .map_or(f64::NAN, |c| c.centroid.2)
+    {
         eprintln!("prepare_geometry_alignment: dia_geom reference_point.z matches last contour z, reversing dia_geom");
         geom_pair.dia_geom = align_geometry(geom_pair.dia_geom);
     }
-    if geom_pair.sys_geom.reference_point.z == geom_pair.sys_geom.contours.last().map_or(f64::NAN, |c| c.centroid.2) {
+    if geom_pair.sys_geom.reference_point.z
+        == geom_pair
+            .sys_geom
+            .contours
+            .last()
+            .map_or(f64::NAN, |c| c.centroid.2)
+    {
         eprintln!("prepare_geometry_alignment: sys_geom reference_point.z matches last contour z, reversing dia_geom");
         geom_pair.sys_geom = align_geometry(geom_pair.sys_geom);
     }
@@ -346,7 +364,7 @@ mod cl_preprocessing_tests {
     use super::*;
     use crate::intravascular::io::input::{Contour, ContourPoint};
     use approx::assert_relative_eq;
-    
+
     #[test]
     fn test_ensure_descending_z() {
         let mut cl = Centerline {
@@ -366,12 +384,12 @@ mod cl_preprocessing_tests {
                     contour_point: ContourPoint {
                         frame_index: 1,
                         point_index: 1,
-                        x: 0.0, 
+                        x: 0.0,
                         y: 0.0,
                         z: 0.0,
                         aortic: false,
-                },
-                normal: Vector3::new(0.0, 0.0, -1.0),
+                    },
+                    normal: Vector3::new(0.0, 0.0, -1.0),
                 },
             ],
         };
@@ -396,18 +414,18 @@ mod cl_preprocessing_tests {
                     contour_point: ContourPoint {
                         frame_index: 1,
                         point_index: 1,
-                        x: 0.0, 
+                        x: 0.0,
                         y: 0.0,
                         z: 1.0,
                         aortic: false,
-                },
-                normal: Vector3::new(0.0, 0.0, -1.0),
+                    },
+                    normal: Vector3::new(0.0, 0.0, -1.0),
                 },
             ],
         };
         ensure_descending_z(&mut cl);
         assert_eq!(cl.points[0].contour_point.z, 1.0);
-        assert_eq!(cl.points[1].contour_point.z, 0.0);     
+        assert_eq!(cl.points[1].contour_point.z, 0.0);
     }
 
     #[test]
@@ -570,10 +588,50 @@ mod cl_preprocessing_tests {
         // create a simple centerline along z = 0..3 with 4 points
         let cl = Centerline {
             points: vec![
-                CenterlinePoint { contour_point: ContourPoint { frame_index: 0, point_index: 0, x: 0.0, y: 0.0, z: 0.0, aortic: false }, normal: Vector3::new(0.0,0.0,1.0) },
-                CenterlinePoint { contour_point: ContourPoint { frame_index: 1, point_index: 1, x: 0.0, y: 0.0, z: 1.0, aortic: false }, normal: Vector3::new(0.0,0.0,1.0) },
-                CenterlinePoint { contour_point: ContourPoint { frame_index: 2, point_index: 2, x: 0.0, y: 0.0, z: 2.0, aortic: false }, normal: Vector3::new(0.0,0.0,1.0) },
-                CenterlinePoint { contour_point: ContourPoint { frame_index: 3, point_index: 3, x: 0.0, y: 0.0, z: 3.0, aortic: false }, normal: Vector3::new(0.0,0.0,1.0) },
+                CenterlinePoint {
+                    contour_point: ContourPoint {
+                        frame_index: 0,
+                        point_index: 0,
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                        aortic: false,
+                    },
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                },
+                CenterlinePoint {
+                    contour_point: ContourPoint {
+                        frame_index: 1,
+                        point_index: 1,
+                        x: 0.0,
+                        y: 0.0,
+                        z: 1.0,
+                        aortic: false,
+                    },
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                },
+                CenterlinePoint {
+                    contour_point: ContourPoint {
+                        frame_index: 2,
+                        point_index: 2,
+                        x: 0.0,
+                        y: 0.0,
+                        z: 2.0,
+                        aortic: false,
+                    },
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                },
+                CenterlinePoint {
+                    contour_point: ContourPoint {
+                        frame_index: 3,
+                        point_index: 3,
+                        x: 0.0,
+                        y: 0.0,
+                        z: 3.0,
+                        aortic: false,
+                    },
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                },
             ],
         };
 
@@ -591,10 +649,50 @@ mod cl_preprocessing_tests {
         // same centerline
         let cl = Centerline {
             points: vec![
-                CenterlinePoint { contour_point: ContourPoint { frame_index: 0, point_index: 0, x: 0.0, y: 0.0, z: 0.0, aortic: false }, normal: Vector3::new(0.0,0.0,1.0) },
-                CenterlinePoint { contour_point: ContourPoint { frame_index: 1, point_index: 1, x: 0.0, y: 0.0, z: 1.0, aortic: false }, normal: Vector3::new(0.0,0.0,1.0) },
-                CenterlinePoint { contour_point: ContourPoint { frame_index: 2, point_index: 2, x: 0.0, y: 0.0, z: 2.0, aortic: false }, normal: Vector3::new(0.0,0.0,1.0) },
-                CenterlinePoint { contour_point: ContourPoint { frame_index: 3, point_index: 3, x: 0.0, y: 0.0, z: 3.0, aortic: false }, normal: Vector3::new(0.0,0.0,1.0) },
+                CenterlinePoint {
+                    contour_point: ContourPoint {
+                        frame_index: 0,
+                        point_index: 0,
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                        aortic: false,
+                    },
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                },
+                CenterlinePoint {
+                    contour_point: ContourPoint {
+                        frame_index: 1,
+                        point_index: 1,
+                        x: 0.0,
+                        y: 0.0,
+                        z: 1.0,
+                        aortic: false,
+                    },
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                },
+                CenterlinePoint {
+                    contour_point: ContourPoint {
+                        frame_index: 2,
+                        point_index: 2,
+                        x: 0.0,
+                        y: 0.0,
+                        z: 2.0,
+                        aortic: false,
+                    },
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                },
+                CenterlinePoint {
+                    contour_point: ContourPoint {
+                        frame_index: 3,
+                        point_index: 3,
+                        x: 0.0,
+                        y: 0.0,
+                        z: 3.0,
+                        aortic: false,
+                    },
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                },
             ],
         };
 
@@ -610,7 +708,12 @@ mod cl_preprocessing_tests {
     }
 
     // ----------------------------------------------------------------------------------------------------------------
-    fn make_geometry_with_contours(ids_and_z: &[(u32, f64)], ref_frame: u32, ref_z: f64, label: &str) -> Geometry {
+    fn make_geometry_with_contours(
+        ids_and_z: &[(u32, f64)],
+        ref_frame: u32,
+        ref_z: f64,
+        label: &str,
+    ) -> Geometry {
         let contours: Vec<Contour> = ids_and_z
             .iter()
             .map(|(id, z)| Contour {
@@ -684,7 +787,6 @@ mod cl_preprocessing_tests {
         // sanity: points' frame_index updated to match new contour id
         assert_eq!(out.dia_geom.contours[0].points[0].frame_index, 0);
     }
-
 
     #[test]
     fn test_no_reverse_when_no_matching_z() {

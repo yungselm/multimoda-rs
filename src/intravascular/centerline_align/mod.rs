@@ -1,7 +1,9 @@
 pub mod align_algorithms;
 pub mod preprocessing;
 
-use crate::intravascular::centerline_align::align_algorithms::{get_transformations, FrameTransformation};
+use crate::intravascular::centerline_align::align_algorithms::{
+    get_transformations, FrameTransformation,
+};
 use crate::intravascular::io::{
     input::{Centerline, Contour},
     Geometry,
@@ -29,7 +31,8 @@ pub fn align_three_point_rs(
     case_name: &str,
 ) -> (GeometryPair, Centerline) {
     let mut geom = prepare_geometry_alignment(geometry_pair);
-    let resampled_centerline = preprocess_centerline(centerline, &aortic_ref_pt, &geom.dia_geom).unwrap();
+    let resampled_centerline =
+        preprocess_centerline(centerline, &aortic_ref_pt, &geom.dia_geom).unwrap();
 
     let best_rot = best_rotation_three_point(
         &geom.dia_geom.contours[0],
@@ -46,7 +49,14 @@ pub fn align_three_point_rs(
     geom = apply_transformations(geom, &resampled_centerline);
 
     if write {
-        write_aligned_meshes(geom.clone(), interpolation_steps, output_dir, case_name, watertight).unwrap();
+        write_aligned_meshes(
+            geom.clone(),
+            interpolation_steps,
+            output_dir,
+            case_name,
+            watertight,
+        )
+        .unwrap();
     }
 
     (geom, resampled_centerline)
@@ -68,14 +78,22 @@ pub fn align_manual_rs(
     let ref_pt = centerline.points[start_point].contour_point;
     let ref_coords = (ref_pt.x, ref_pt.y, ref_pt.z);
 
-    let resampled_centerline = preprocess_centerline(centerline, &ref_coords, &geom.dia_geom).unwrap();
+    let resampled_centerline =
+        preprocess_centerline(centerline, &ref_coords, &geom.dia_geom).unwrap();
 
     geom = rotate_by_best_rotation(geom, rotation_angle);
 
     geom = apply_transformations(geom, &resampled_centerline);
 
     if write {
-        write_aligned_meshes(geom.clone(), interpolation_steps, output_dir, case_name, watertight).unwrap();
+        write_aligned_meshes(
+            geom.clone(),
+            interpolation_steps,
+            output_dir,
+            case_name,
+            watertight,
+        )
+        .unwrap();
     }
 
     (geom, resampled_centerline)

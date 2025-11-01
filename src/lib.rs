@@ -1,12 +1,12 @@
-mod intravascular;
 mod ccta;
+mod intravascular;
 
 use crate::intravascular::binding::align::{align_manual, align_three_point};
 use crate::intravascular::binding::classes::*;
 use crate::intravascular::binding::{
-    from_file_full, from_file_doublepair, from_file_singlepair, from_file_single,
-    create_catheter_geometry, geometry_from_array, from_array_full,
-    from_array_doublepair, from_array_singlepair, to_obj,
+    create_catheter_geometry, from_array_doublepair, from_array_full, from_array_singlepair,
+    from_file_doublepair, from_file_full, from_file_single, from_file_singlepair,
+    geometry_from_array, to_obj,
 };
 
 use pyo3::prelude::*;

@@ -12,11 +12,11 @@ use std::path::Path;
 
 /// InputData stores raw data from typical AIVUS-CAA output
 /// where dataframes have the following order
-/// 
+///
 /// .. text::
 ///     
 ///     frame_idx, x, y, z
-/// 
+///
 /// not automatically kept in sync with geometry.rs
 pub struct InputData {
     pub lumen: Vec<ContourPoint>,
@@ -147,14 +147,19 @@ impl InputData {
                     let fname = "combined_sorted_manual.csv";
                     let p = path.join(fname);
                     if p.exists() {
-                        record = Some(read_records(&p).with_context(|| format!("reading {}", p.display()))?);
+                        record = Some(
+                            read_records(&p).with_context(|| format!("reading {}", p.display()))?,
+                        );
                     } else {
                         return Err(anyhow::anyhow!("expected records file missing: {:?}", p));
                     }
                 }
 
                 other => {
-                    eprintln!("process_directory: unknown mapping name '{}', skipping", other);
+                    eprintln!(
+                        "process_directory: unknown mapping name '{}', skipping",
+                        other
+                    );
                 }
             }
         }
@@ -170,7 +175,8 @@ impl InputData {
         }
 
         // Validate required fields
-        let lumen = lumen.ok_or_else(|| anyhow::anyhow!("lumen contours not found in directory"))?;
+        let lumen =
+            lumen.ok_or_else(|| anyhow::anyhow!("lumen contours not found in directory"))?;
         let ref_point =
             ref_point.ok_or_else(|| anyhow::anyhow!("reference point not found in directory"))?;
 

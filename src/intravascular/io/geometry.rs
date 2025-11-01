@@ -15,14 +15,18 @@ pub enum ContourType {
 
 impl fmt::Display for ContourType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", match self {
-            ContourType::Lumen => "Lumen",
-            ContourType::Eem => "Eem", 
-            ContourType::Calcification => "Calcification",
-            ContourType::Sidebranch => "Sidebranch",
-            ContourType::Catheter => "Catheter",
-            ContourType::Wall => "Wall",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                ContourType::Lumen => "Lumen",
+                ContourType::Eem => "Eem",
+                ContourType::Calcification => "Calcification",
+                ContourType::Sidebranch => "Sidebranch",
+                ContourType::Catheter => "Catheter",
+                ContourType::Wall => "Wall",
+            }
+        )
     }
 }
 
@@ -43,7 +47,7 @@ pub struct Frame {
     pub centroid: (f64, f64, f64),
     // groundtruth, must exist!
     pub lumen: Contour,
-    pub extras:  HashMap<ContourType, Contour>,
+    pub extras: HashMap<ContourType, Contour>,
     pub reference_point: Option<ContourPoint>,
 }
 
@@ -80,7 +84,7 @@ impl Contour {
             kind,
         }
     }
-    
+
     pub fn build_contour(
         points: Vec<ContourPoint>,
         records: Option<Vec<Record>>,
@@ -176,8 +180,8 @@ impl Contour {
         let (cx, cy, _) = match self.centroid {
             Some(c) => c,
             None => {
-            let computed = self.compute_centroid();
-            computed.centroid.unwrap()
+                let computed = self.compute_centroid();
+                computed.centroid.unwrap()
             }
         };
 
@@ -314,7 +318,7 @@ impl Contour {
             let y = point.y - cy;
             let cos_a = angle.cos();
             let sin_a = angle.sin();
-            
+
             point.x = x * cos_a - y * sin_a + cx;
             point.y = x * sin_a + y * cos_a + cy;
         }
@@ -377,11 +381,11 @@ impl Frame {
             for point in &mut self.lumen.points {
                 point.z = z_value;
             }
-            
+
             if let Some(ref mut centroid) = self.lumen.centroid {
                 centroid.2 = z_value;
             }
-            
+
             for contour in self.extras.values_mut() {
                 for point in &mut contour.points {
                     point.z = z_value;
@@ -391,11 +395,11 @@ impl Frame {
                     centroid.2 = z_value;
                 }
             }
-            
+
             if let Some(ref mut point) = self.reference_point {
                 point.z = z_value;
             }
-            
+
             self.centroid.2 = z_value;
         }
     }
@@ -403,14 +407,16 @@ impl Frame {
     pub fn rotate_frame(&mut self, angle: f64) {
         let center = (self.centroid.0, self.centroid.1);
 
-        self.lumen.points = self.lumen
+        self.lumen.points = self
+            .lumen
             .points
             .iter()
             .map(|p| p.rotate_point(angle, center))
             .collect();
 
         for contour in self.extras.values_mut() {
-            contour.points = contour.points
+            contour.points = contour
+                .points
                 .iter()
                 .map(|p| p.rotate_point(angle, center))
                 .collect();
@@ -423,13 +429,13 @@ impl Frame {
 
     pub fn translate_frame(&mut self, translation: (f64, f64, f64)) {
         let (dx, dy, dz) = translation;
-        
+
         for p in self.lumen.points.iter_mut() {
             p.x += dx;
             p.y += dy;
             p.z += dz;
         }
-        
+
         for contour in self.extras.values_mut() {
             for p in contour.points.iter_mut() {
                 p.x += dx;
@@ -437,7 +443,7 @@ impl Frame {
                 p.z += dz;
             }
         }
-        
+
         if let Some(ref_point) = &mut self.reference_point {
             ref_point.x += dx;
             ref_point.y += dy;
@@ -458,14 +464,16 @@ impl Frame {
     }
 
     pub fn rotate_frame_around_point(&mut self, angle: f64, center: (f64, f64)) {
-        self.lumen.points = self.lumen
+        self.lumen.points = self
+            .lumen
             .points
             .iter()
             .map(|p| p.rotate_point(angle, center))
             .collect();
 
         for contour in self.extras.values_mut() {
-            contour.points = contour.points
+            contour.points = contour
+                .points
                 .iter()
                 .map(|p| p.rotate_point(angle, center))
                 .collect();
@@ -551,13 +559,12 @@ impl Geometry {
         }
 
         // simple check for now, just take the frame from two ends with highest original frame id
-        let proximal_idx = if self.frames[0].lumen.original_frame
-            > self.frames[n - 1].lumen.original_frame
-        {
-            self.frames[0].lumen.id
-        } else {
-            self.frames[n - 1].lumen.id
-        };
+        let proximal_idx =
+            if self.frames[0].lumen.original_frame > self.frames[n - 1].lumen.original_frame {
+                self.frames[0].lumen.id
+            } else {
+                self.frames[n - 1].lumen.id
+            };
         proximal_idx
     }
 
@@ -568,7 +575,6 @@ impl Geometry {
             }
         }
         Err(anyhow::anyhow!("No reference point found in any frame"))
-
     }
 
     /// Reorder frames based on order of Vec<Record>
@@ -668,7 +674,7 @@ impl Geometry {
     /// For the first and last contours, the current contour is used twice to simulate a mirror effect.
     pub fn smooth_frames(mut self) -> Geometry {
         let mut smoothed_frames = Vec::with_capacity(self.frames.len());
-        
+
         for i in 0..self.frames.len() {
             let mut current_frame = self.frames[i].clone();
             let point_count = current_frame.lumen.points.len();
@@ -676,15 +682,15 @@ impl Geometry {
             // Helper closure to smooth a contour
             let smooth_contour = |current: &Contour, prev: &Contour, next: &Contour| -> Contour {
                 let mut new_points = Vec::with_capacity(point_count);
-                
+
                 for j in 0..point_count {
                     let curr_point = &current.points[j];
                     let prev_point = &prev.points[j];
                     let next_point = &next.points[j];
-                    
+
                     let avg_x = (prev_point.x + curr_point.x + next_point.x) / 3.0;
                     let avg_y = (prev_point.y + curr_point.y + next_point.y) / 3.0;
-                    
+
                     new_points.push(ContourPoint {
                         frame_index: curr_point.frame_index,
                         point_index: curr_point.point_index,
@@ -694,7 +700,7 @@ impl Geometry {
                         aortic: curr_point.aortic,
                     });
                 }
-                
+
                 Contour {
                     id: current.id,
                     original_frame: current.original_frame,
@@ -703,21 +709,30 @@ impl Geometry {
                     aortic_thickness: current.aortic_thickness,
                     pulmonary_thickness: current.pulmonary_thickness,
                     kind: current.kind,
-                }.compute_centroid()
+                }
+                .compute_centroid()
             };
 
             // Smooth lumen contour
-            let prev_frame = if i == 0 { &self.frames[i] } else { &self.frames[i-1] };
-            let next_frame = if i == self.frames.len()-1 { &self.frames[i] } else { &self.frames[i+1] };
-            current_frame.lumen = smooth_contour(&current_frame.lumen, &prev_frame.lumen, &next_frame.lumen);
+            let prev_frame = if i == 0 {
+                &self.frames[i]
+            } else {
+                &self.frames[i - 1]
+            };
+            let next_frame = if i == self.frames.len() - 1 {
+                &self.frames[i]
+            } else {
+                &self.frames[i + 1]
+            };
+            current_frame.lumen =
+                smooth_contour(&current_frame.lumen, &prev_frame.lumen, &next_frame.lumen);
 
             // Smooth EEM and Wall contours if they exist
             for kind in [ContourType::Eem, ContourType::Wall] {
                 if let Some(current_contour) = current_frame.extras.get(&kind) {
-                    if let (Some(prev_contour), Some(next_contour)) = (
-                        prev_frame.extras.get(&kind),
-                        next_frame.extras.get(&kind)
-                    ) {
+                    if let (Some(prev_contour), Some(next_contour)) =
+                        (prev_frame.extras.get(&kind), next_frame.extras.get(&kind))
+                    {
                         let smoothed = smooth_contour(current_contour, prev_contour, next_contour);
                         current_frame.extras.insert(kind, smoothed);
                     }
@@ -773,7 +788,7 @@ mod geometry_tests {
                 aortic: false,
             },
         ];
-        
+
         let contour = Contour {
             id: 1,
             original_frame: 1,
@@ -783,7 +798,7 @@ mod geometry_tests {
             pulmonary_thickness: None,
             kind: ContourType::Lumen,
         };
-        
+
         let contour_with_centroid = contour.compute_centroid();
         assert_eq!(contour_with_centroid.centroid, Some((1.0, 1.0, 0.0)));
     }
@@ -832,7 +847,7 @@ mod geometry_tests {
             pulmonary_thickness: None,
             kind: ContourType::Lumen,
         };
-        
+
         let (pair, distance) = contour.find_farthest_points();
         assert!((distance - (8.0_f64).sqrt()).abs() < 1e-6);
         assert!(
@@ -877,7 +892,7 @@ mod geometry_tests {
                 aortic: false,
             },
         ];
-        
+
         let contour = Contour {
             id: 1,
             original_frame: 1,
@@ -887,7 +902,7 @@ mod geometry_tests {
             pulmonary_thickness: None,
             kind: ContourType::Lumen,
         };
-        
+
         let (pair, distance) = contour.find_closest_opposite();
         assert!((distance - 1.5).abs() < 1e-6);
         let p0 = &contour.points[0];
@@ -945,9 +960,9 @@ mod geometry_tests {
             extras: HashMap::new(),
             reference_point: None,
         };
-        
+
         frame.rotate_frame(PI / 2.0);
-        
+
         let expected_points = vec![
             ContourPoint {
                 frame_index: 1,
@@ -982,7 +997,7 @@ mod geometry_tests {
                 aortic: false,
             },
         ];
-        
+
         for (i, point) in frame.lumen.points.iter().enumerate() {
             assert!((point.x - expected_points[i].x).abs() < 1e-6);
             assert!((point.y - expected_points[i].y).abs() < 1e-6);
@@ -1039,10 +1054,10 @@ mod geometry_tests {
             extras: HashMap::new(),
             reference_point: None,
         };
-        
+
         // Rotate 180 degrees (PI) around point (1, 1)
         frame.rotate_frame_around_point(PI, (1.0, 1.0));
-        
+
         let expected_points = vec![
             ContourPoint {
                 frame_index: 1,
@@ -1140,9 +1155,9 @@ mod geometry_tests {
             pulmonary_thickness: None,
             kind: ContourType::Lumen,
         };
-        
+
         contour.sort_contour_points();
-        
+
         for (i, point) in contour.points.iter().enumerate() {
             match i {
                 0 => {
@@ -1216,9 +1231,9 @@ mod geometry_tests {
             extras: HashMap::new(),
             reference_point: None,
         };
-        
+
         frame.translate_frame((1.0, 2.0, 3.0));
-        
+
         assert_eq!(frame.centroid, (2.0, 3.0, 3.0));
         for point in &frame.lumen.points {
             assert_eq!(point.z, 3.0);
@@ -1235,10 +1250,10 @@ mod geometry_tests {
             z: 5.0,
             aortic: false,
         }];
-        
+
         let catheter_points = Frame::create_catheter_points(&points, (4.5, 4.5), 0.5, 20);
         assert_eq!(catheter_points.len(), 20);
-        
+
         for point in catheter_points {
             assert_eq!(point.frame_index, 1);
             assert_eq!(point.z, 5.0);
@@ -1293,10 +1308,10 @@ mod geometry_tests {
             pulmonary_thickness: None,
             kind: ContourType::Lumen,
         };
-        
+
         let ratio = contour.elliptic_ratio();
         let area = contour.area();
-        
+
         // For a 4x2 rectangle, elliptic ratio should be ~2.0
         assert!((ratio - 2.0).abs() < 0.1);
         // Area should be 8.0

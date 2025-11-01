@@ -1,6 +1,6 @@
-use crate::intravascular::io::input::{Centerline, CenterlinePoint};
-use crate::intravascular::io::input::ContourPoint;
 use crate::intravascular::io::geometry::{Contour, Geometry};
+use crate::intravascular::io::input::ContourPoint;
+use crate::intravascular::io::input::{Centerline, CenterlinePoint};
 use nalgebra::{Point3, Rotation3, Unit, Vector3};
 
 #[derive(Debug, Clone, Copy)]

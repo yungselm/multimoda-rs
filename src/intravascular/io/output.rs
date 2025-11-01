@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use super::geometry::{Contour, Geometry, ContourType};
+use super::geometry::{Contour, ContourType, Geometry};
 use rayon::prelude::*;
 
 pub fn write_obj_mesh(
@@ -90,7 +90,7 @@ pub fn write_obj_mesh(
             let v2 = offset1 + j_next;
             let v3 = offset2 + j;
             writeln!(writer, "f {0}/{0}/{0} {1}/{1}/{1} {2}/{2}/{2}", v1, v2, v3)?;
-            
+
             let v1_t2 = offset2 + j;
             let v2_t2 = offset1 + j_next;
             let v3_t2 = offset2 + j_next;
@@ -124,9 +124,21 @@ pub fn write_obj_mesh(
         writeln!(writer, "vt 0.5 0.5")?;
         writeln!(writer, "vn 0.0 0.0 1.0")?; // Pointing inward
 
-        close_end(&mut writer, vertex_offsets[0], proximal_centroid_index, points_per_contour, false)?;
+        close_end(
+            &mut writer,
+            vertex_offsets[0],
+            proximal_centroid_index,
+            points_per_contour,
+            false,
+        )?;
         let last_contour_index = sorted_contours.len() - 1;
-        close_end(&mut writer, vertex_offsets[last_contour_index], distal_centroid_index, points_per_contour, true)?;
+        close_end(
+            &mut writer,
+            vertex_offsets[last_contour_index],
+            distal_centroid_index,
+            points_per_contour,
+            true,
+        )?;
     }
 
     writer.flush()?;
@@ -143,23 +155,15 @@ fn close_end(
 ) -> anyhow::Result<()> {
     for i in 0..points_per_contour {
         let next_i = (i + 1) % points_per_contour;
-        
+
         let v1 = vertex_offset + i;
         let v2 = vertex_offset + next_i;
         let v3 = centroid_vertex_index;
 
         if reverse_winding {
-            writeln!(
-                writer,
-                "f {0}/{0}/{0} {1}/{1}/{1} {2}/{2}/{2}",
-                v3, v2, v1
-            )?;
+            writeln!(writer, "f {0}/{0}/{0} {1}/{1}/{1} {2}/{2}/{2}", v3, v2, v1)?;
         } else {
-            writeln!(
-                writer,
-                "f {0}/{0}/{0} {1}/{1}/{1} {2}/{2}/{2}",
-                v1, v2, v3
-            )?;
+            writeln!(writer, "f {0}/{0}/{0} {1}/{1}/{1} {2}/{2}/{2}", v1, v2, v3)?;
         }
     }
     Ok(())
@@ -172,34 +176,52 @@ pub fn write_obj_mesh_without_uv(
     watertight: bool,
 ) -> anyhow::Result<()> {
     let empty_uv_coords = vec![(0.0, 0.0); contours.iter().map(|c| c.points.len()).sum()];
-    write_obj_mesh(contours, &empty_uv_coords, filename, mtl_filename, watertight)
-        .map_err(|e| anyhow!("Failed to write OBJ mesh without UV: {}", e))
+    write_obj_mesh(
+        contours,
+        &empty_uv_coords,
+        filename,
+        mtl_filename,
+        watertight,
+    )
+    .map_err(|e| anyhow!("Failed to write OBJ mesh without UV: {}", e))
 }
 
 impl ContourType {
     // Get the contour data from a Geometry based on the enum variant
     pub fn get_contours(&self, geometry: &Geometry) -> Vec<Contour> {
         match self {
-            ContourType::Lumen => geometry.frames.iter()
+            ContourType::Lumen => geometry
+                .frames
+                .iter()
                 .map(|frame| frame.lumen.clone())
                 .collect(),
-            ContourType::Catheter => geometry.frames.iter()
+            ContourType::Catheter => geometry
+                .frames
+                .iter()
                 .filter_map(|frame| frame.extras.get(&ContourType::Catheter))
                 .cloned()
                 .collect(),
-            ContourType::Wall => geometry.frames.iter()
+            ContourType::Wall => geometry
+                .frames
+                .iter()
                 .filter_map(|frame| frame.extras.get(&ContourType::Wall))
                 .cloned()
                 .collect(),
-            ContourType::Eem => geometry.frames.iter()
+            ContourType::Eem => geometry
+                .frames
+                .iter()
                 .filter_map(|frame| frame.extras.get(&ContourType::Eem))
                 .cloned()
                 .collect(),
-            ContourType::Calcification => geometry.frames.iter()
+            ContourType::Calcification => geometry
+                .frames
+                .iter()
                 .filter_map(|frame| frame.extras.get(&ContourType::Calcification))
                 .cloned()
                 .collect(),
-            ContourType::Sidebranch => geometry.frames.iter()
+            ContourType::Sidebranch => geometry
+                .frames
+                .iter()
                 .filter_map(|frame| frame.extras.get(&ContourType::Sidebranch))
                 .cloned()
                 .collect(),

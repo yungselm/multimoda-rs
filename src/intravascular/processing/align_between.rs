@@ -1,11 +1,11 @@
-use rayon::prelude::*;
 use anyhow::Context;
+use rayon::prelude::*;
 use std::f64::consts::PI;
 
-use crate::intravascular::io::Geometry;
 use crate::intravascular::io::input::{Contour, ContourPoint};
-use crate::intravascular::processing::process_utils::downsample_contour_points;
+use crate::intravascular::io::Geometry;
 use crate::intravascular::processing::align_within::hausdorff_distance;
+use crate::intravascular::processing::process_utils::downsample_contour_points;
 
 #[derive(Clone, Debug)]
 pub struct GeometryPair {
@@ -20,17 +20,12 @@ pub fn get_geometry_pair(
     radius: f64,
     n_points: u32,
 ) -> anyhow::Result<GeometryPair> {
-    let mut geometries = 
-    GeometryPair::new(
-        input_dir,
-        case_name.clone(),
-        image_center,
-        radius,
-        n_points)
-        .context(format!("Creating GeometryPair({}) failed", case_name))?;
+    let mut geometries =
+        GeometryPair::new(input_dir, case_name.clone(), image_center, radius, n_points)
+            .context(format!("Creating GeometryPair({}) failed", case_name))?;
     geometries = geometries.adjust_z_coordinates();
     geometries = geometries.trim_geometries_same_length();
-    
+
     Ok(geometries)
 }
 
@@ -64,24 +59,25 @@ impl GeometryPair {
         range_rotation_deg: f64,
     ) -> anyhow::Result<GeometryPair> {
         Self::translate_contours_to_match(&self.dia_geom, &mut self.sys_geom);
-    
+
         // Adjust the z-coordinates of systolic contours. (later replaceed by adjust_z_coordinates)
         Self::apply_z_transformation(&self.dia_geom, &mut self.sys_geom);
-    
+
         let best_rotation_angle = find_best_rotation_all(
             &self.dia_geom,
             &self.sys_geom,
             steps_rotation_deg, // number of candidate steps (e.g. 200 or 400)
-            range_rotation_deg,  // rotation range (e.g. 1.05 for ~±60°)
+            range_rotation_deg, // rotation range (e.g. 1.05 for ~±60°)
         );
-    
-        for ref mut contour in self.sys_geom
+
+        for ref mut contour in self
+            .sys_geom
             .contours
             .iter_mut()
             .chain(self.sys_geom.catheter.iter_mut())
         {
             contour.rotate_contour(best_rotation_angle);
-        };
+        }
         Ok(GeometryPair {
             dia_geom: self.dia_geom,
             sys_geom: self.sys_geom,
@@ -306,21 +302,26 @@ pub fn find_best_rotation_all(
         &diastole.label, &systole.label
     );
 
-    let dia_contours: Vec<_> = diastole.contours.iter()
+    let dia_contours: Vec<_> = diastole
+        .contours
+        .iter()
         .map(|c| {
             let points = downsample_contour_points(&c.points, 200);
             // since mostly interested in stenotic segments with non round lumens, give an addiitonal
-            // weight in the form of the elliptic ratio of the contour. 
+            // weight in the form of the elliptic ratio of the contour.
             // For mostly round weight doesn't influence much
             let ellip_ratio = c.elliptic_ratio();
             (c.id, points, c.centroid, ellip_ratio)
         })
         .collect();
 
-    let sys_contours: Vec<_> = systole.contours.iter()
+    let sys_contours: Vec<_> = systole
+        .contours
+        .iter()
         .map(|c| {
             let points = downsample_contour_points(&c.points, 200);
-            let rel_points: Vec<_> = points.iter()
+            let rel_points: Vec<_> = points
+                .iter()
                 .map(|p| (p.x - c.centroid.0, p.y - c.centroid.1))
                 .collect();
             let ellip_ratio = c.elliptic_ratio();
@@ -334,10 +335,10 @@ pub fn find_best_rotation_all(
     let coarse_angle = search_rotation(
         &dia_contours,
         &sys_contours,
-        1.0,          // step_deg
-        range_deg,    // range_deg
-        None,         // center_angle
-        range_deg,    // limes_deg
+        1.0,       // step_deg
+        range_deg, // range_deg
+        None,      // center_angle
+        range_deg, // limes_deg
     );
 
     let medium_range = if range_deg > 10.0 { 10.0 } else { range_deg };
@@ -460,49 +461,14 @@ fn calculate_avg_distance(
     let (total_weighted, total_weight) = dia_contours
         .par_iter()
         .zip(sys_contours.par_iter())
-        .map(|((dia_id, dia_points, _dia_centroid, dia_ellip), (sys_id, sys_rel, sys_centroid, sys_ellip))| {
-            assert_eq!(dia_id, sys_id, "Mismatched contour IDs");
+        .map(
+            |(
+                (dia_id, dia_points, _dia_centroid, dia_ellip),
+                (sys_id, sys_rel, sys_centroid, sys_ellip),
+            )| {
+                assert_eq!(dia_id, sys_id, "Mismatched contour IDs");
 
-            // Rotate sys relative points into absolute coordinates
-            let rotated: Vec<ContourPoint> = sys_rel
-                .iter()
-                .map(|(dx, dy)| {
-                    let x = dx * angle.cos() - dy * angle.sin() + sys_centroid.0;
-                    let y = dx * angle.sin() + dy * angle.cos() + sys_centroid.1;
-                    ContourPoint {
-                        frame_index: 0,
-                        point_index: 0,
-                        x,
-                        y,
-                        z: 0.0,
-                        aortic: false,
-                    }
-                })
-                .collect();
-
-            let dist = hausdorff_distance(dia_points, &rotated);
-            let mut weight = (dia_ellip + sys_ellip) / 2.0;
-            // hardcoded cutoff should be replaced in the future, however round lumen
-            // almost never has exactly 1.0 therefore some padding
-            weight = if weight > 2.0 { weight * 10.0} else { weight};
-
-            // If weight accidentally zero (defensive), fallback to 1.0
-            let weight = if weight.is_finite() && weight > 0.0 { weight } else { 1.0 };
-
-            (dist * weight, weight)
-        })
-        // reduce pairs (sum weighted distances, sum weights)
-        .reduce(|| (0.0_f64, 0.0_f64), |(wd1, w1), (wd2, w2)| (wd1 + wd2, w1 + w2));
-
-    if total_weight > 0.0 {
-        total_weighted / total_weight
-    } else {
-        // shouldn't happen, but fallback to unweighted mean of distances
-        dia_contours
-            .par_iter()
-            .zip(sys_contours.par_iter())
-            .map(|((dia_id, dia_points, _dia_centroid, _), (sys_id, sys_rel, sys_centroid, _))| {
-                assert_eq!(dia_id, sys_id, "Mismatched contour IDs (fallback)");
+                // Rotate sys relative points into absolute coordinates
                 let rotated: Vec<ContourPoint> = sys_rel
                     .iter()
                     .map(|(dx, dy)| {
@@ -518,8 +484,57 @@ fn calculate_avg_distance(
                         }
                     })
                     .collect();
-                hausdorff_distance(dia_points, &rotated)
-            })
+
+                let dist = hausdorff_distance(dia_points, &rotated);
+                let mut weight = (dia_ellip + sys_ellip) / 2.0;
+                // hardcoded cutoff should be replaced in the future, however round lumen
+                // almost never has exactly 1.0 therefore some padding
+                weight = if weight > 2.0 { weight * 10.0 } else { weight };
+
+                // If weight accidentally zero (defensive), fallback to 1.0
+                let weight = if weight.is_finite() && weight > 0.0 {
+                    weight
+                } else {
+                    1.0
+                };
+
+                (dist * weight, weight)
+            },
+        )
+        // reduce pairs (sum weighted distances, sum weights)
+        .reduce(
+            || (0.0_f64, 0.0_f64),
+            |(wd1, w1), (wd2, w2)| (wd1 + wd2, w1 + w2),
+        );
+
+    if total_weight > 0.0 {
+        total_weighted / total_weight
+    } else {
+        // shouldn't happen, but fallback to unweighted mean of distances
+        dia_contours
+            .par_iter()
+            .zip(sys_contours.par_iter())
+            .map(
+                |((dia_id, dia_points, _dia_centroid, _), (sys_id, sys_rel, sys_centroid, _))| {
+                    assert_eq!(dia_id, sys_id, "Mismatched contour IDs (fallback)");
+                    let rotated: Vec<ContourPoint> = sys_rel
+                        .iter()
+                        .map(|(dx, dy)| {
+                            let x = dx * angle.cos() - dy * angle.sin() + sys_centroid.0;
+                            let y = dx * angle.sin() + dy * angle.cos() + sys_centroid.1;
+                            ContourPoint {
+                                frame_index: 0,
+                                point_index: 0,
+                                x,
+                                y,
+                                z: 0.0,
+                                aortic: false,
+                            }
+                        })
+                        .collect();
+                    hausdorff_distance(dia_points, &rotated)
+                },
+            )
             .sum::<f64>()
             / dia_contours.len() as f64
     }

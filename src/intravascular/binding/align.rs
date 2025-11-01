@@ -15,8 +15,8 @@ use crate::intravascular::{
 ///     aortic_ref_pt: Reference point for aortic position
 ///     upper_ref_pt: Upper reference point
 ///     lower_ref_pt: Lower reference point
-///     angle_step_deg (default 1.0): step size in degrees for rotation search 
-///     write (default false): Wether to write aligned meshes to OBJ 
+///     angle_step_deg (default 1.0): step size in degrees for rotation search
+///     write (default false): Wether to write aligned meshes to OBJ
 ///     watertight (default true): Wether to write shell or watertight mesh to OBJ.
 ///     interpolation_steps: Number of interpolation steps
 ///     output_dir (default "output/aligned"): Output directory for aligned meshes
@@ -96,7 +96,7 @@ pub fn align_three_point(
 ///     geometry_pair: PyGeometryPair object
 ///     rotation_angle: Rotation angle in radians
 ///     start_point: Index of centerline point to use as reference point
-///     write (default false): Wether to write aligned meshes to OBJ 
+///     write (default false): Wether to write aligned meshes to OBJ
 ///     watertight (default true): Wether to write shell or watertight mesh to OBJ.
 ///     interpolation_steps: Number of interpolation steps
 ///     output_dir (default "output/aligned"): Output directory for aligned meshes

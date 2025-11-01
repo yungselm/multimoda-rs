@@ -1,7 +1,7 @@
 // File: src/python_bind.rs
 use super::entry_arr::refine_ordering;
+use crate::intravascular::io::geometry::{Contour, ContourType, Frame, Geometry};
 use crate::intravascular::io::input::{Centerline, CenterlinePoint, ContourPoint, Record};
-use crate::intravascular::io::geometry::{Contour, Frame, Geometry, ContourType};
 use crate::intravascular::processing::align_between::GeometryPair;
 use nalgebra::Vector3;
 use pyo3::prelude::*;
@@ -77,7 +77,7 @@ impl PyContourPoint {
     ///
     /// Args:
     ///     point (PyContourPoint): Any other PyContourPoint.
-    /// 
+    ///
     /// Example:
     ///     >>> p1.distance(p2)
     pub fn distance(&self, other: &PyContourPoint) -> f64 {
@@ -230,7 +230,10 @@ impl PyContour {
     pub fn find_farthest_points(&self) -> PyResult<((PyContourPoint, PyContourPoint), f64)> {
         let rust_contour = self.to_rust_contour()?;
         let ((p1, p2), distance) = rust_contour.find_farthest_points();
-        Ok(((PyContourPoint::from(&p1), PyContourPoint::from(&p2)), distance))
+        Ok((
+            (PyContourPoint::from(&p1), PyContourPoint::from(&p2)),
+            distance,
+        ))
     }
 
     /// Finds closest points on opposite sides of the contour
@@ -243,7 +246,10 @@ impl PyContour {
     pub fn find_closest_opposite(&self) -> PyResult<((PyContourPoint, PyContourPoint), f64)> {
         let rust_contour = self.to_rust_contour()?;
         let ((p1, p2), distance) = rust_contour.find_closest_opposite();
-        Ok(((PyContourPoint::from(&p1), PyContourPoint::from(&p2)), distance))
+        Ok((
+            (PyContourPoint::from(&p1), PyContourPoint::from(&p2)),
+            distance,
+        ))
     }
 
     /// Get the elliptic ratio of the current contour
@@ -285,7 +291,7 @@ impl PyContour {
         let angle_rad = angle_deg.to_radians();
         let mut rust_contour = self.to_rust_contour()?;
         rust_contour.rotate_contour(angle_rad);
-            
+
         Ok(PyContour::from(&rust_contour))
     }
 
@@ -295,7 +301,7 @@ impl PyContour {
     ///     dx (float): Translation in x-direction.
     ///     dy (float): Translation in y-direction.
     ///     dz (float): Translation in z-direction.
-    /// 
+    ///
     /// Returns:
     ///     PyContour:
     ///         Original Contour translated to (x, y, z)
@@ -305,7 +311,7 @@ impl PyContour {
     pub fn translate(&self, dx: f64, dy: f64, dz: f64) -> PyResult<PyContour> {
         let mut rust_contour = self.to_rust_contour()?;
         rust_contour.translate_contour((dx, dy, dz));
-            
+
         Ok(PyContour::from(&rust_contour))
     }
 
@@ -334,7 +340,12 @@ impl PyContour {
             "Sidebranch" => ContourType::Sidebranch,
             "Catheter" => ContourType::Catheter,
             "Wall" => ContourType::Wall,
-            _ => return Err(pyo3::exceptions::PyValueError::new_err(format!("Unknown contour type: {}", self.kind))),
+            _ => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "Unknown contour type: {}",
+                    self.kind
+                )))
+            }
         };
 
         Ok(Contour {
@@ -430,7 +441,8 @@ impl From<Frame> for PyFrame {
             id: frame.id,
             centroid: frame.centroid,
             lumen: PyContour::from(&frame.lumen),
-            extras: frame.extras
+            extras: frame
+                .extras
                 .into_iter()
                 .map(|(key, value)| (key.to_string(), PyContour::from(&value)))
                 .collect(),
@@ -442,7 +454,7 @@ impl From<Frame> for PyFrame {
 impl PyFrame {
     pub fn to_rust_frame(&self) -> PyResult<Frame> {
         let lumen = self.lumen.to_rust_contour()?;
-        
+
         let mut extras = HashMap::new();
         for (key, py_contour) in &self.extras {
             let contour_type = match key.as_str() {
@@ -526,7 +538,6 @@ impl PyGeometry {
         self.frames.len()
     }
 
-
     /// Get all contours of a specific type
     pub fn get_contours_by_type(&self, contour_type: &str) -> Vec<PyContour> {
         let target_type = match contour_type {
@@ -539,21 +550,24 @@ impl PyGeometry {
             _ => return Vec::new(),
         };
 
-        self.frames.iter().filter_map(|frame| {
-            if target_type == ContourType::Lumen {
-                Some(frame.lumen.clone())
-            } else {
-                let type_str = match target_type {
-                    ContourType::Eem => "Eem",
-                    ContourType::Calcification => "Calcification",
-                    ContourType::Sidebranch => "Sidebranch",
-                    ContourType::Catheter => "Catheter",
-                    ContourType::Wall => "Wall",
-                    _ => return None,
-                };
-                frame.extras.get(type_str).cloned()
-            }
-        }).collect()
+        self.frames
+            .iter()
+            .filter_map(|frame| {
+                if target_type == ContourType::Lumen {
+                    Some(frame.lumen.clone())
+                } else {
+                    let type_str = match target_type {
+                        ContourType::Eem => "Eem",
+                        ContourType::Calcification => "Calcification",
+                        ContourType::Sidebranch => "Sidebranch",
+                        ContourType::Catheter => "Catheter",
+                        ContourType::Wall => "Wall",
+                        _ => return None,
+                    };
+                    frame.extras.get(type_str).cloned()
+                }
+            })
+            .collect()
     }
 
     /// Get lumen contours (convenience method)
@@ -603,7 +617,7 @@ impl PyGeometry {
     }
 
     /// Applies smoothing to all contours using a threepoint moving average
-    /// 
+    ///
     /// Example:
     ///     >>> geom.smooth_frames()
     pub fn smooth_frames(&self) -> PyResult<PyGeometry> {
@@ -644,30 +658,36 @@ impl PyGeometry {
     ///     Otherwise we use a stricter threshold of 0.50 * biggest_area (50%).
     pub fn get_summary(&self) -> PyResult<(f64, f64, f64)> {
         let geometry = self.to_rust_geometry()?;
-        
+
         if geometry.frames.is_empty() {
             return Ok((0.0, 0.0, 0.0));
         }
 
         // Compute areas for all lumen contours
-        let areas: Vec<f64> = geometry.frames.iter()
-            .map(|f| f.lumen.area())
-            .collect();
+        let areas: Vec<f64> = geometry.frames.iter().map(|f| f.lumen.area()).collect();
 
         let biggest = areas.iter().cloned().fold(f64::NAN, f64::max);
         let mla = areas.iter().cloned().fold(f64::INFINITY, f64::min);
-        let max_stenosis = if biggest > 0.0 { 1.0 - (mla / biggest) } else { 0.0 };
+        let max_stenosis = if biggest > 0.0 {
+            1.0 - (mla / biggest)
+        } else {
+            0.0
+        };
 
         // Compute elliptic ratios to decide threshold
-        let all_elliptic = geometry.frames.iter()
+        let all_elliptic = geometry
+            .frames
+            .iter()
             .all(|f| f.lumen.elliptic_ratio() < 1.3);
 
-        let threshold = if all_elliptic { 0.70 * biggest } else { 0.50 * biggest };
+        let threshold = if all_elliptic {
+            0.70 * biggest
+        } else {
+            0.50 * biggest
+        };
 
         // Compute stenosis length using frame centroids
-        let centroids: Vec<(f64, f64, f64)> = geometry.frames.iter()
-            .map(|f| f.centroid)
-            .collect();
+        let centroids: Vec<(f64, f64, f64)> = geometry.frames.iter().map(|f| f.centroid).collect();
 
         let mut longest_mm = 0.0;
         let mut i = 0;
@@ -770,19 +790,20 @@ impl PyGeometryPair {
         let dia_lumen = self.dia_geom.get_lumen_contours();
         let sys_lumen = self.sys_geom.get_lumen_contours();
 
-        let areas_dia: Vec<f64> =
-            dia_lumen.iter().map(|c| c.get_area().unwrap()).collect();
-        let areas_sys: Vec<f64> =
-            sys_lumen.iter().map(|c| c.get_area().unwrap()).collect();
+        let areas_dia: Vec<f64> = dia_lumen.iter().map(|c| c.get_area().unwrap()).collect();
+        let areas_sys: Vec<f64> = sys_lumen.iter().map(|c| c.get_area().unwrap()).collect();
 
-        let ellip_dia: Vec<f64> =
-            dia_lumen.iter().map(|c| c.get_elliptic_ratio().unwrap()).collect();
-        let ellip_sys: Vec<f64> =
-            sys_lumen.iter().map(|c| c.get_elliptic_ratio().unwrap()).collect();
+        let ellip_dia: Vec<f64> = dia_lumen
+            .iter()
+            .map(|c| c.get_elliptic_ratio().unwrap())
+            .collect();
+        let ellip_sys: Vec<f64> = sys_lumen
+            .iter()
+            .map(|c| c.get_elliptic_ratio().unwrap())
+            .collect();
 
         let ids: Vec<u32> = dia_lumen.iter().map(|c| c.id).collect();
-        let z_coords: Vec<f64> =
-            dia_lumen.iter().map(|c| c.centroid.2).collect();
+        let z_coords: Vec<f64> = dia_lumen.iter().map(|c| c.centroid.2).collect();
 
         // Ensure all vectors have same length
         let n = ids.len();
@@ -813,12 +834,12 @@ impl PyGeometryPair {
         let rows: Vec<[String; 6]> = (0..n)
             .map(|i| {
                 [
-                    ids[i].to_string(),                      // id as integer
-                    format!("{:.2}", mat[i][1]),             // area_dia
-                    format!("{:.2}", mat[i][2]),             // ellip_dia
-                    format!("{:.2}", mat[i][3]),             // area_sys
-                    format!("{:.2}", mat[i][4]),             // ellip_sys
-                    format!("{:.2}", mat[i][5]),             // z
+                    ids[i].to_string(),          // id as integer
+                    format!("{:.2}", mat[i][1]), // area_dia
+                    format!("{:.2}", mat[i][2]), // ellip_dia
+                    format!("{:.2}", mat[i][3]), // area_sys
+                    format!("{:.2}", mat[i][4]), // ellip_sys
+                    format!("{:.2}", mat[i][5]), // z
                 ]
             })
             .collect();
@@ -1010,7 +1031,11 @@ impl PyCenterline {
     }
 
     fn __repr__(&self) -> String {
-        format!("Centerline(len={}, spacing={:.2} mm)", self.points.len(), self._spacing())
+        format!(
+            "Centerline(len={}, spacing={:.2} mm)",
+            self.points.len(),
+            self._spacing()
+        )
     }
 
     fn __str__(&self) -> String {
@@ -1174,7 +1199,8 @@ impl From<&Contour> for PyContour {
             ContourType::Sidebranch => "Sidebranch",
             ContourType::Catheter => "Catheter",
             ContourType::Wall => "Wall",
-        }.to_string();
+        }
+        .to_string();
 
         PyContour {
             id: contour.id,
