@@ -1,7 +1,6 @@
 pub mod input;
 pub mod output;
 pub mod geometry;
-pub mod wall;
 mod integrity_check;
 
 use input::{InputData, ContourPoint};
