@@ -3,14 +3,18 @@ use std::ops::RangeInclusive;
 use crate::intravascular::io::geometry::{Contour, ContourType, Frame};
 use crate::intravascular::io::input::ContourPoint;
 
-pub fn create_wall_frames(frames: &Vec<Frame>, with_pulmonary: bool) -> Vec<Frame> {
+pub fn create_wall_frames(frames: &Vec<Frame>, anomalous: bool, with_pulmonary: bool) -> Vec<Frame> {
     let mut new_frames = Vec::new();
 
     for frame in frames.iter() {
         let new_contour = if with_pulmonary {
             create_wall_contour_with_pulmonary(&frame.lumen)
         } else {
-            create_wall_contour_aortic_only(&frame.lumen)
+            if anomalous || frame.extras.get(&ContourType::Eem).is_none() {
+                create_wall_contour_aortic_only(&frame.lumen)
+            } else {
+                create_wall_contour_aortic_only(frame.extras.get(&ContourType::Eem).unwrap())
+            }
         };
 
         // clone extras and insert the wall contour under ContourType::Wall

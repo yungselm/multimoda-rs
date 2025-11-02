@@ -107,6 +107,10 @@ pub fn align_frames_in_geometry(
         };
         logger.lock().unwrap().push(new_log);
     }
+
+    let geometry_filled = fill_holes(geometry)?;
+    let mut geometry = fix_spacing(&geometry_filled);
+
     let anomalous_bool = is_anomalous_coronary(&geometry.frames[ref_idx]);
     let additional_rotation = angle_ref_point_to_right(&geometry.frames[ref_idx], anomalous_bool)?;
     for frame in geometry.frames.iter_mut() {
@@ -120,7 +124,7 @@ pub fn align_frames_in_geometry(
         geometry.clone()
     };
 
-    let wall_frames = create_wall_frames(&final_geometry.frames, false);
+    let wall_frames = create_wall_frames(&final_geometry.frames, false, anomalous_bool);
     final_geometry = Geometry {
         frames: wall_frames,
         label: final_geometry.label,
@@ -466,6 +470,44 @@ fn assign_aortic(mut geometry: Geometry) -> Geometry {
         }
     }
     geometry
+}
+
+fn fill_holes(geometry: &mut Geometry) -> anyhow::Result<Geometry> {
+    // TODO: implement hole filling logic; for now just return a cloned geometry to preserve behavior
+    let (hole, _avg_diff) = detect_holes(geometry);
+
+    if !hole {
+        return Ok(geometry.clone())
+    } else {
+        println!("⚠️ Hole detected! Attempting to fix")
+    }
+    
+    Ok(geometry.clone())
+}
+
+fn detect_holes(geometry: &Geometry) -> (bool, f64) {
+    let mut z_diffs = Vec::new();
+    for i in 1..geometry.frames.len() {
+        let z_prev = geometry.frames[i - 1].centroid.2;
+        let z_curr = geometry.frames[i].centroid.2;
+        let diff = (z_curr - z_prev).abs();
+        z_diffs.push(diff);
+    }
+    if z_diffs.is_empty() {
+        return (false, 0.0);
+    }
+    let avg_diff: f64 = z_diffs.iter().sum::<f64>() / z_diffs.len() as f64;
+    for &diff in &z_diffs {
+        if diff > 1.5 * avg_diff { // to catch 2x jumps since avg higher than one with holes
+            return (true, avg_diff);
+        }
+    }
+    (false, avg_diff)
+}
+
+fn fix_spacing(geometry: &Geometry) -> Geometry {
+    // TODO: implement spacing correction; currently return cloned input as placeholder
+    geometry.clone()
 }
 
 fn dump_table(logs: &[AlignLog]) {
