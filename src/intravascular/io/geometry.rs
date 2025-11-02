@@ -746,13 +746,13 @@ impl Geometry {
         self
     }
 
-    pub fn rotate_geometry(mut self, angle_rad: f64) {
+    pub fn rotate_geometry(&mut self, angle_rad: f64) {
         for frame in self.frames.iter_mut() {
             frame.rotate_frame(angle_rad);
         }
     }
 
-    pub fn translate_geometry(mut self, translation: (f64, f64, f64)) {
+    pub fn translate_geometry(&mut self, translation: (f64, f64, f64)) {
         for frame in self.frames.iter_mut() {
             frame.translate_frame(translation);
         }

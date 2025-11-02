@@ -24,8 +24,8 @@ impl GeometryPair {
 }
 
 pub fn align_between_geometries(
-    geom_a: Geometry, 
-    geom_b: Geometry,
+    geom_a: &mut Geometry, 
+    geom_b: &mut Geometry,
     rot_deg: f64,
     step_rot_deg: f64,
     sample_size: usize,
@@ -38,18 +38,38 @@ pub fn align_between_geometries(
         .unwrap_or(geom_b.find_proximal_end_idx()) as usize;
     let ref_frame_a = geom_a.frames[ref_frame_a_idx].clone();
     let ref_frame_b = geom_b.frames[ref_frame_b_idx].clone();
+    let n_frames_a = geom_a.frames.len();
+    let n_frames_b = geom_b.frames.len();
+    let n_frames = (n_frames_a + n_frames_b) / 2;
+    let internal_sample_size = sample_size * n_frames; 
+
     let translation = (
         ref_frame_a.centroid.0 - ref_frame_b.centroid.0,
-        ref_frame_a.centroid.0 - ref_frame_b.centroid.1,
-        ref_frame_a.centroid.0 - ref_frame_b.centroid.1,        
+        ref_frame_a.centroid.1 - ref_frame_b.centroid.1,
+        ref_frame_a.centroid.2 - ref_frame_b.centroid.2,        
     );
     geom_b.translate_geometry(translation);
+
+    let mut test_geom_a: Vec<ContourPoint> = Vec::new();
+    for frame in &geom_a.frames {
+        for point in frame.lumen.points.iter() {
+            test_geom_a.push(point.clone());
+        }
+    }
+
+    let mut test_geom_b: Vec<ContourPoint> = Vec::new();
+    for frame in &geom_b.frames {
+        for point in frame.lumen.points.iter() {
+            test_geom_b.push(point.clone());
+        }
+    }
+
+    
+    // TODO: trim to same number of contours, by matching on the reference contour
     
     // TODO: Check sample_rate of the two geoms, if different interpolate between frames
     
     // TODO: equalize spacing between frames to be same in both geoms
-
-    // TODO: trim to same number of contours, by matching on the reference contour
 
     // TODO: create two dummy geometries for finding best rotation, downsample both leave only
     // lumen contours, find minimal hausdorffdistance over all frames, return best angle
@@ -57,3 +77,4 @@ pub fn align_between_geometries(
 
     todo!()
 }
+
