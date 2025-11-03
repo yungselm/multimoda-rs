@@ -1,4 +1,4 @@
-use crate::intravascular::io::geometry::Contour;
+use crate::intravascular::io::geometry::{ContourType, Contour};
 use crate::intravascular::io::input::ContourPoint;
 use std::f64::consts::PI;
 
@@ -41,9 +41,11 @@ pub fn rotate_point(point: (f64, f64), angle: f64) -> (f64, f64) {
 pub fn new_dummy_contour(id: u32) -> Contour {
     Contour {
         id,
+        original_frame: 0,
         points: Vec::new(),
-        centroid: (0.0, 0.0, 0.0),
+        centroid: Some((0.0, 0.0, 0.0)),
         aortic_thickness: None,
         pulmonary_thickness: None,
+        kind: ContourType::Lumen,
     }
 }

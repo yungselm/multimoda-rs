@@ -26,19 +26,19 @@ pub fn compute_uv_coordinates(contours: &Vec<Contour>) -> Vec<(f64, f64)> {
 }
 
 /// This function takes in a baseline Geometry and a second Geometry, and
-/// then calculates the displacement for every point for the contours and
-/// the catheter seperately. Therefore returning a Vec<f64, f64> where the
-/// first entry is the displacements for the contours and the second for the
-/// catheter.
+/// then calculates the displacement for every point for the lumen contours.
+/// Therefore returning a Vec<f64, f64> where the first entry is the 
+/// displacements for the lumen contours.
 pub fn compute_displacements(mesh: &Geometry, diastole: &Geometry) -> Vec<f64> {
-    mesh.contours
+    mesh.frames
         .iter()
-        .zip(diastole.contours.iter())
-        .flat_map(|(contour, diastole_contour)| {
-            contour
+        .zip(diastole.frames.iter())
+        .flat_map(|(frame, diastole_frame)| {
+            frame
+                .lumen
                 .points
                 .iter()
-                .zip(diastole_contour.points.iter())
+                .zip(diastole_frame.lumen.points.iter())
                 .map(|(point, diastole_point)| {
                     let dx = point.x - diastole_point.x;
                     let dy = point.y - diastole_point.y;

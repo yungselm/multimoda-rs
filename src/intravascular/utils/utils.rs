@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use crate::intravascular::io::geometry::{Contour, Geometry};
+use crate::intravascular::io::geometry::{Contour, Geometry, ContourType};
 
 #[allow(dead_code)]
 pub fn write_geometry_to_csv<P: AsRef<Path>>(
@@ -59,8 +59,17 @@ pub fn write_geometry_to_csv<P: AsRef<Path>>(
         Ok(())
     };
 
-    write_contours("contour", &geometry.contours, &mut wtr)?;
-    write_contours("catheter", &geometry.catheter, &mut wtr)?;
+    let mut geometry_contours = Vec::new();
+    let mut geometry_catheter = Vec::new();
+    for frame in &geometry.frames {
+        geometry_contours.push(frame.lumen.clone());
+        if let Some(catheter) = frame.extras.get(&ContourType::Catheter) {
+            geometry_catheter.push(catheter.clone());
+        }
+    }
+
+    write_contours("contour", &geometry_contours, &mut wtr)?;
+    write_contours("catheter", &geometry_catheter, &mut wtr)?;
 
     wtr.flush()?;
     Ok(())

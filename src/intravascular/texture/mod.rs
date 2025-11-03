@@ -1,6 +1,6 @@
 pub mod texture;
 
-use crate::intravascular::io::geometry::Geometry;
+use crate::intravascular::io::geometry::{Contour, ContourType, Geometry};
 use ::std::fs::File;
 use ::std::io::Write;
 use std::path::Path;
@@ -35,11 +35,15 @@ pub fn write_mtl_geometry(
     let mut uv_coords_contours = Vec::new();
 
     for (i, mesh) in geometries_to_process.into_iter().enumerate() {
-        let uv_coords = compute_uv_coordinates(&mesh.contours);
+        let mut mesh_contours = Vec::new();
+        for frame in mesh.frames.clone() {
+            mesh_contours.push(frame.lumen)
+        }
+        let uv_coords = compute_uv_coordinates(&mesh_contours);
 
-        let texture_height = mesh.contours.len() as u32;
+        let texture_height = mesh_contours.len() as u32;
         let texture_width = if texture_height > 0 {
-            mesh.contours[0].points.len() as u32
+            mesh_contours[0].points.len() as u32
         } else {
             0
         };
@@ -76,15 +80,19 @@ pub fn write_mtl_geometry(
 
     // for catheter no displacement uv texture needed
     for (i, mesh) in geometries_to_process.into_iter().enumerate() {
-        if mesh.catheter.is_empty() {
+        let catheter_contours: Vec<Contour> = mesh.frames.iter()
+            .filter_map(|frame| frame.extras.get(&ContourType::Catheter).cloned())
+            .collect();
+
+        if catheter_contours.is_empty() {
             let uv_coord = Vec::new();
             uv_coords_catheter.push(uv_coord);
         } else {
-            let uv_coords = compute_uv_coordinates(&mesh.catheter);
+            let uv_coords = compute_uv_coordinates(&catheter_contours);
 
-            let texture_height = mesh.catheter.len() as u32;
+            let texture_height = catheter_contours.len() as u32;
             let texture_width = if texture_height > 0 {
-                mesh.catheter[0].points.len() as u32
+                catheter_contours[0].points.len() as u32
             } else {
                 0
             };
@@ -129,11 +137,14 @@ pub fn write_mtl_wall(
 
     // for catheter no displacement uv texture needed
     for (i, wall) in walls_to_process.into_iter().enumerate() {
-        let uv_coords = compute_uv_coordinates(&wall.contours);
+        let wall_contours: Vec<Contour> = wall.frames.iter()
+            .filter_map(|frame| frame.extras.get(&ContourType::Wall).cloned())
+            .collect();
+        let uv_coords = compute_uv_coordinates(&wall_contours);
 
-        let texture_height = wall.contours.len() as u32;
+        let texture_height = wall_contours.len() as u32;
         let texture_width = if texture_height > 0 {
-            wall.contours[0].points.len() as u32
+            wall_contours[0].points.len() as u32
         } else {
             0
         };

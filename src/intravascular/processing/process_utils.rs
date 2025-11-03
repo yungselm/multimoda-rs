@@ -50,7 +50,7 @@ pub fn process_case(
 
     // Write contours (mesh) and catheter using the enum
     write_geometry_vec_to_obj(
-        GeometryType::Contour,
+        ContourType::Lumen,
         case_name,
         output_dir,
         &interpolated_geometries,
@@ -60,7 +60,7 @@ pub fn process_case(
 
     if !dia_geom.catheter.is_empty() & !sys_geom.catheter.is_empty() {
         write_geometry_vec_to_obj(
-            GeometryType::Catheter,
+            ContourType::Catheter,
             case_name,
             output_dir,
             &interpolated_geometries,
@@ -70,7 +70,7 @@ pub fn process_case(
     }
 
     write_geometry_vec_to_obj(
-        GeometryType::Wall,
+        ContourType::Wall,
         case_name,
         output_dir,
         &interpolated_geometries,
@@ -148,6 +148,7 @@ fn interp_contour_list(a: &[Contour], b: &[Contour], t: f64) -> Vec<Contour> {
         .zip(b)
         .map(|(s, e)| Contour {
             id: s.id,
+            original_frame: s.original_frame,
             points: s
                 .points
                 .iter()
@@ -172,6 +173,7 @@ fn interp_contour_list(a: &[Contour], b: &[Contour], t: f64) -> Vec<Contour> {
                 &e.pulmonary_thickness,
                 t,
             ),
+            kind: s.kind,
         })
         .collect()
 }

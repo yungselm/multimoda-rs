@@ -1,6 +1,7 @@
 use rayon::prelude::*;
 use std::f64::consts::PI;
 use crate::intravascular::io::input::ContourPoint;
+use crate::intravascular::io::geometry::Geometry;
 
 pub fn downsample_contour_points(points: &[ContourPoint], n: usize) -> Vec<ContourPoint> {
     if points.len() <= n {
@@ -137,3 +138,12 @@ fn directed_hausdorff(contour_a: &[ContourPoint], contour_b: &[ContourPoint]) ->
 
 //     max_sq.sqrt()
 // }
+
+pub fn interpolate_geomteries(
+    start: &Geometry,
+    end: &Geometry,
+    steps: usize,
+) -> anyhow::Result<Vec<Geometry>> {
+    use std::cmp::min;
+
+}
