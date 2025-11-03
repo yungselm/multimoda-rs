@@ -3,7 +3,7 @@ use rayon::prelude::*;
 use std::sync::{Arc, Mutex};
 
 use super::wall::create_wall_frames;
-use crate::intravascular::io::geometry::{ContourType, Frame, Geometry};
+use crate::intravascular::io::geometry::{Contour, ContourType, Frame, Geometry};
 use crate::intravascular::io::input::ContourPoint;
 use crate::intravascular::neo_processing::process_utils::{
     downsample_contour_points,
@@ -312,6 +312,18 @@ fn fill_holes(geometry: &mut Geometry) -> anyhow::Result<Geometry> {
         return Ok(geometry.clone())
     } else {
         println!("⚠️ Hole detected! Attempting to fix")
+        for i in 1..geometry.frames.len() {
+            let diff = (geometry.frames[i].centroid.2 - geometry.frames[i - 1].centroid.2).abs();
+            if diff < 1.5 {
+                continue
+            } else if diff > 1.5 && diff < 2.5 {
+                fix_one_frame_hole(frame_1, frame_2)
+            } else if diff > 2.5 && diff < 3.5 {
+                fix_two_frame_hole(frame_1, frame2)
+            } else {
+                Err()
+            }
+        }
     }
     
     Ok(geometry.clone())
@@ -335,6 +347,195 @@ fn detect_holes(geometry: &Geometry) -> (bool, f64) {
         }
     }
     (false, avg_diff)
+}
+
+fn fix_one_frame_hole(frame_1: &Frame, frame_2: &Frame) -> Frame {
+    fn avg_opt(a: Option<f64>, b: Option<f64>) -> Option<f64> {
+        match (a, b) {
+            (Some(x), Some(y)) => Some((x + y) / 2.0),
+            (Some(x), None) => Some(x),
+            (None, Some(y)) => Some(y),
+            (None, None) => None,
+        }
+    }
+
+    fn avg_point(p1: &ContourPoint, p2: &ContourPoint, frame_index: u32, point_index: u32) -> ContourPoint {
+        ContourPoint {
+            frame_index,
+            point_index,
+            x: (p1.x + p2.x) / 2.0,
+            y: (p1.y + p2.y) / 2.0,
+            z: (p1.z + p2.z) / 2.0,
+            aortic: p1.aortic || p2.aortic,
+        }
+    }
+
+    fn avg_contour(c1: &Contour, c2: &Contour, id: u32, original_frame: u32) -> Contour {
+        let len = c1.points.len().min(c2.points.len());
+        let points: Vec<ContourPoint> = (0..len)
+            .map(|i| avg_point(&c1.points[i], &c2.points[i], original_frame, i as u32))
+            .collect();
+
+        Contour {
+            id,
+            original_frame,
+            points,
+            centroid: match (c1.centroid, c2.centroid) {
+                (Some(a), Some(b)) => Some((
+                    (a.0 + b.0) / 2.0,
+                    (a.1 + b.1) / 2.0,
+                    (a.2 + b.2) / 2.0,
+                )),
+                (Some(a), None) => Some(a),
+                (None, Some(b)) => Some(b),
+                (None, None) => None,
+            },
+            aortic_thickness: avg_opt(c1.aortic_thickness, c2.aortic_thickness),
+            pulmonary_thickness: avg_opt(c1.pulmonary_thickness, c2.pulmonary_thickness),
+            kind: c1.kind, // assume same kind
+        }
+    }
+
+    // Average centroid
+    let centroid = (
+        (frame_1.centroid.0 + frame_2.centroid.0) / 2.0,
+        (frame_1.centroid.1 + frame_2.centroid.1) / 2.0,
+        (frame_1.centroid.2 + frame_2.centroid.2) / 2.0,
+    );
+
+    // Average lumen
+    let lumen = avg_contour(&frame_1.lumen, &frame_2.lumen, frame_2.lumen.id, frame_2.lumen.original_frame);
+
+    // Average extras
+    let mut extras = std::collections::HashMap::new();
+    for key in frame_1.extras.keys().chain(frame_2.extras.keys()) {
+        if !extras.contains_key(key) {
+            match (frame_1.extras.get(key), frame_2.extras.get(key)) {
+                (Some(c1), Some(c2)) => {
+                    extras.insert(*key, avg_contour(c1, c2, c2.id, c2.original_frame));
+                }
+                (Some(c1), None) => {
+                    extras.insert(*key, c1.clone());
+                }
+                (None, Some(c2)) => {
+                    extras.insert(*key, c2.clone());
+                }
+                (None, None) => {}
+            }
+        }
+    }
+
+    // Average reference_point if both exist
+    let reference_point = match (&frame_1.reference_point, &frame_2.reference_point) {
+        (Some(p1), Some(p2)) => Some(avg_point(p1, p2, frame_2.id, 0)),
+        (Some(p1), None) => Some(p1.clone()),
+        (None, Some(p2)) => Some(p2.clone()),
+        (None, None) => None,
+    };
+
+    Frame {
+        id: frame_2.id,
+        centroid,
+        lumen,
+        extras,
+        reference_point,
+    }
+}
+
+fn fix_two_frame_hole(frame_1: &Frame, frame_2: &Frame) -> (Frame, Frame) {
+    fn interpolate_opt(a: Option<f64>, b: Option<f64>, t: f64) -> Option<f64> {
+        match (a, b) {
+            (Some(x), Some(y)) => Some(x + (y - x) * t),
+            (Some(x), None) => Some(x),
+            (None, Some(y)) => Some(y),
+            (None, None) => None,
+        }
+    }
+
+    fn interpolate_point(p1: &ContourPoint, p2: &ContourPoint, t: f64, frame_index: u32, point_index: u32) -> ContourPoint {
+        ContourPoint {
+            frame_index,
+            point_index,
+            x: p1.x + (p2.x - p1.x) * t,
+            y: p1.y + (p2.y - p1.y) * t,
+            z: p1.z + (p2.z - p1.z) * t,
+            aortic: p1.aortic || p2.aortic,
+        }
+    }
+
+    fn interpolate_contour(c1: &Contour, c2: &Contour, t: f64, id: u32, original_frame: u32) -> Contour {
+        let len = c1.points.len().min(c2.points.len());
+        let points: Vec<ContourPoint> = (0..len)
+            .map(|i| interpolate_point(&c1.points[i], &c2.points[i], t, original_frame, i as u32))
+            .collect();
+
+        Contour {
+            id,
+            original_frame,
+            points,
+            centroid: match (c1.centroid, c2.centroid) {
+                (Some(a), Some(b)) => Some((
+                    a.0 + (b.0 - a.0) * t,
+                    a.1 + (b.1 - a.1) * t,
+                    a.2 + (b.2 - a.2) * t,
+                )),
+                (Some(a), None) => Some(a),
+                (None, Some(b)) => Some(b),
+                (None, None) => None,
+            },
+            aortic_thickness: interpolate_opt(c1.aortic_thickness, c2.aortic_thickness, t),
+            pulmonary_thickness: interpolate_opt(c1.pulmonary_thickness, c2.pulmonary_thickness, t),
+            kind: c1.kind,
+        }
+    }
+
+    fn create_interpolated_frame(frame_1: &Frame, frame_2: &Frame, t: f64) -> Frame {
+        let centroid = (
+            frame_1.centroid.0 + (frame_2.centroid.0 - frame_1.centroid.0) * t,
+            frame_1.centroid.1 + (frame_2.centroid.1 - frame_1.centroid.1) * t,
+            frame_1.centroid.2 + (frame_2.centroid.2 - frame_1.centroid.2) * t,
+        );
+
+        let lumen = interpolate_contour(&frame_1.lumen, &frame_2.lumen, t, frame_2.lumen.id, frame_2.lumen.original_frame);
+
+        let mut extras = std::collections::HashMap::new();
+        for key in frame_1.extras.keys().chain(frame_2.extras.keys()) {
+            if !extras.contains_key(key) {
+                match (frame_1.extras.get(key), frame_2.extras.get(key)) {
+                    (Some(c1), Some(c2)) => {
+                        extras.insert(*key, interpolate_contour(c1, c2, t, c2.id, c2.original_frame));
+                    }
+                    (Some(c1), None) => {
+                        extras.insert(*key, c1.clone());
+                    }
+                    (None, Some(c2)) => {
+                        extras.insert(*key, c2.clone());
+                    }
+                    (None, None) => {}
+                }
+            }
+        }
+
+        let reference_point = match (&frame_1.reference_point, &frame_2.reference_point) {
+            (Some(p1), Some(p2)) => Some(interpolate_point(p1, p2, t, frame_2.id, 0)),
+            (Some(p1), None) => Some(p1.clone()),
+            (None, Some(p2)) => Some(p2.clone()),
+            (None, None) => None,
+        };
+
+        Frame {
+            id: frame_2.id,
+            centroid,
+            lumen,
+            extras,
+            reference_point,
+        }
+    }
+
+    let frame_one_third = create_interpolated_frame(frame_1, frame_2, 1.0/3.0);
+    let frame_two_thirds = create_interpolated_frame(frame_1, frame_2, 2.0/3.0);
+
+    (frame_one_third, frame_two_thirds)
 }
 
 fn fix_spacing(geometry: &Geometry) -> Geometry {

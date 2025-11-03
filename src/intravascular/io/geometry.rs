@@ -757,6 +757,42 @@ impl Geometry {
             frame.translate_frame(translation);
         }
     }
+
+    pub fn insert_frame(&mut self, frame: Frame, idx: Option<usize>) {
+        // Find insertion position based on z coordinate
+        let z = frame.centroid.2;
+        let pos: usize = if let Some(i) = idx {
+            i
+        } else {
+            self.frames
+                .iter()
+                .position(|f| f.centroid.2 > z)
+                .unwrap_or(self.frames.len())
+        };
+
+        self.frames.insert(pos, frame);
+
+        for (idx, frame) in self.frames.iter_mut().enumerate() {
+            let new_id = idx as u32;
+
+            frame.id = new_id;
+
+            frame.lumen.id = new_id;
+            for point in &mut frame.lumen.points {
+                point.frame_index = new_id;
+            }
+
+            for contour in frame.extras.values_mut() {
+                contour.id = new_id;
+                for point in &mut contour.points {
+                    point.frame_index = new_id;
+                }
+            }
+            if let Some(ref mut rp) = frame.reference_point {
+                rp.frame_index = new_id;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
