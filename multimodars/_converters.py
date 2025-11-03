@@ -1,6 +1,6 @@
 import numpy as np
 from typing import Union, Tuple
-from multimodars import PyGeometry, PyCenterline
+from multimodars import PyGeometry, PyCenterline, PyInputData
 
 
 def to_array(generic) -> Union[np.ndarray, dict, Tuple[dict, dict]]:
@@ -213,3 +213,184 @@ def numpy_to_centerline(
         )
 
     return PyCenterline.from_contour_points(pts)
+
+
+def array_to_pyinputdata(
+    lumen=None,
+    eem=None,
+    calcification=None,
+    sidebranch=None,
+    records=None,
+    reference=None,
+    diastole: bool = True,
+    label: str = "",
+) -> PyInputData:
+    """
+    Create a PyInputData from either Py* objects (no-op) or NumPy arrays.
+
+    Parameters mirror PyInputData fields. For layer arrays each row must be
+    (frame_index, x, y, z). `records` accepts structured array or list/array
+    of rows (frame, phase, m1, m2) or existing PyRecord instances. `reference`
+    is (1,4) or (4,) row with frame,x,y,z.
+
+    Returns
+    -------
+    PyInputData
+    """
+    from multimodars import (
+        PyContour,
+        PyContourPoint,
+        PyRecord,
+        PyInputData,
+    )
+
+    # Reuse the internal helpers already present in your file.
+    # If you keep the functions _to_numeric_array and build_layer, use them.
+    # Otherwise include the minimal versions below:
+
+    def _to_numeric_array(arr, layer_name: str):
+        if arr is None:
+            return np.zeros((0, 4), dtype=float)
+        if isinstance(arr, (list, tuple)):
+            arr = np.asarray(arr, dtype=object)
+        if isinstance(arr, np.ndarray) and arr.dtype.names:
+            try:
+                arr = np.vstack([arr[name] for name in arr.dtype.names]).T
+            except Exception as e:
+                raise ValueError(f"Could not convert structured array for {layer_name}: {e}")
+        arr = np.asarray(arr)
+        if arr.size == 0:
+            return np.zeros((0, 4), dtype=float)
+        if arr.ndim == 1:
+            if arr.shape[0] == 4:
+                arr = arr[np.newaxis, :]
+            else:
+                raise ValueError(f"{layer_name} 1D array must have length 4, got {arr.shape}")
+        return arr.astype(object)
+
+    def build_layer_from_array(arr, layer_name: str):
+        """Return list[PyContour] from a numeric array (frame,x,y,z) grouped by frame."""
+        arr = _to_numeric_array(arr, layer_name)
+        if arr.size == 0:
+            return []
+
+        if arr.ndim != 2 or arr.shape[1] < 4:
+            raise ValueError(f"{layer_name} must be (N,4)-like, got shape {arr.shape}")
+
+        frames = np.unique(arr[:, 0].astype(int))
+        contours = []
+        for frame in frames:
+            mask = arr[:, 0].astype(int) == frame
+            pts_arr = arr[mask]
+            pts = []
+            for i, row in enumerate(pts_arr):
+                fr = int(row[0])
+                x = float(row[1])
+                y = float(row[2])
+                z = float(row[3])
+                pts.append(PyContourPoint(frame_index=fr, point_index=i, x=x, y=y, z=z, aortic=False))
+            contours.append(PyContour(frame, pts))
+        return contours
+
+    def ensure_contours(maybe):
+        """Accept a list of PyContour already, or numpy arrays, or None."""
+        if maybe is None:
+            return []
+        if isinstance(maybe, list) and maybe and hasattr(maybe[0], "points") and hasattr(maybe[0], "id"):
+            return maybe
+        return build_layer_from_array(maybe, "layer")
+
+    lumen_contours = ensure_contours(lumen)
+    eem_contours = ensure_contours(eem)
+    calc_contours = ensure_contours(calcification)
+    sidebranch_contours = ensure_contours(sidebranch)
+
+    def parse_records(recs):
+        if recs is None:
+            return None
+        if isinstance(recs, (list, tuple)) and recs and hasattr(recs[0], "frame") and hasattr(recs[0], "phase"):
+            return list(recs)
+        if isinstance(recs, np.ndarray):
+            if recs.dtype.names:
+                names = recs.dtype.names
+                def get_field(name, default=None):
+                    for cand in [name, name.lower(), name.upper()]:
+                        if cand in names:
+                            return recs[cand]
+                    return None
+                frames = get_field("frame")
+                phases = get_field("phase")
+                m1 = get_field("measurement_1") or get_field("m1")
+                m2 = get_field("measurement_2") or get_field("m2")
+                if frames is None or phases is None:
+                    raise ValueError("Structured records must contain 'frame' and 'phase'")
+                out = []
+                for fr, ph, mm1, mm2 in zip(frames, phases, m1 if m1 is not None else [None]*len(frames), m2 if m2 is not None else [None]*len(frames)):
+                    out.append(PyRecord(int(fr), str(ph), None if mm1 is None else float(mm1), None if mm2 is None else float(mm2)))
+                return out
+            else:
+                arr = np.asarray(recs)
+                if arr.ndim == 1:
+                    arr = arr[np.newaxis, :]
+                out = []
+                for row in arr:
+                    fr = int(row[0])
+                    ph = str(row[1])
+                    m1 = None if (len(row) < 3 or row[2] is None or (isinstance(row[2], float) and np.isnan(row[2]))) else float(row[2])
+                    m2 = None if (len(row) < 4 or row[3] is None or (isinstance(row[3], float) and np.isnan(row[3]))) else float(row[3])
+                    out.append(PyRecord(fr, ph, m1, m2))
+                return out
+
+        if isinstance(recs, (list, tuple)):
+            out = []
+            for item in recs:
+                if hasattr(item, "frame") and hasattr(item, "phase"):
+                    out.append(item)
+                else:
+                    fr = int(item[0])
+                    ph = str(item[1])
+                    m1 = None if len(item) < 3 or item[2] is None else float(item[2])
+                    m2 = None if len(item) < 4 or item[3] is None else float(item[3])
+                    out.append(PyRecord(fr, ph, m1, m2))
+            return out
+        raise ValueError("Unsupported records format")
+
+    parsed_records = parse_records(records)
+
+    def parse_reference(ref):
+        if ref is None:
+            return PyContourPoint(frame_index=0, point_index=0, x=0.0, y=0.0, z=0.0, aortic=False)
+        arr = np.asarray(ref)
+        if arr.ndim == 1:
+            if arr.shape[0] >= 4:
+                fr, x, y, z = arr[:4]
+            else:
+                raise ValueError("reference must be length 4 or shape (1,4)")
+        else:
+            if arr.shape[1] < 4:
+                raise ValueError("reference must be (N,4)-like")
+            nonzero = np.any(arr != 0, axis=1)
+            if np.any(nonzero):
+                row = arr[nonzero][0]
+            else:
+                row = arr[0]
+            fr, x, y, z = row[:4]
+        return PyContourPoint(frame_index=int(fr), point_index=0, x=float(x), y=float(y), z=float(z), aortic=False)
+
+    ref_point = parse_reference(reference)
+
+    def none_if_empty(lst):
+        return None if not lst else lst
+
+    pyinput = PyInputData(
+        lumen=lumen_contours,
+        eem=none_if_empty(eem_contours),
+        calcification=none_if_empty(calc_contours),
+        sidebranch=none_if_empty(sidebranch_contours),
+        record=parsed_records,
+        ref_point=ref_point,
+        diastole=bool(diastole),
+        label=str(label),
+    )
+
+    return pyinput
