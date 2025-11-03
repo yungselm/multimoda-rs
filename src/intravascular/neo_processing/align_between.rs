@@ -36,10 +36,10 @@ pub fn align_between_geometries(
     println!("Aligning geometry '{}' to geometry '{}'", geom_b.label, geom_a.label);
     let ref_frame_a_idx = geom_a
         .find_ref_frame_idx()
-        .unwrap_or(geom_a.find_proximal_end_idx()) as usize;
+        .unwrap_or(geom_a.find_proximal_end_idx());
     let ref_frame_b_idx = geom_b
         .find_ref_frame_idx()
-        .unwrap_or(geom_b.find_proximal_end_idx()) as usize;
+        .unwrap_or(geom_b.find_proximal_end_idx());
     
     let ref_frame_a = &geom_a.frames[ref_frame_a_idx];
     let ref_frame_b = &geom_b.frames[ref_frame_b_idx];

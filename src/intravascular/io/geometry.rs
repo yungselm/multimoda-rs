@@ -548,14 +548,14 @@ impl Geometry {
         todo!("from files and from arrays")
     }
 
-    pub fn find_proximal_end_idx(&self) -> u32 {
+    pub fn find_proximal_end_idx(&self) -> usize {
         let n = self.frames.len();
         if n == 0 {
             return 0;
         }
 
         if n == 1 {
-            return self.frames[0].lumen.id;
+            return self.frames[0].lumen.id as usize;
         }
 
         // simple check for now, just take the frame from two ends with highest original frame id
@@ -565,13 +565,13 @@ impl Geometry {
             } else {
                 self.frames[n - 1].lumen.id
             };
-        proximal_idx
+        proximal_idx as usize
     }
 
-    pub fn find_ref_frame_idx(&self) -> anyhow::Result<u32> {
+    pub fn find_ref_frame_idx(&self) -> anyhow::Result<usize> {
         for frame in self.frames.iter() {
             if frame.reference_point.is_some() {
-                return Ok(frame.id);
+                return Ok(frame.id as usize);
             }
         }
         Err(anyhow::anyhow!("No reference point found in any frame"))

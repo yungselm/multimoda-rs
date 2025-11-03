@@ -139,11 +139,4 @@ fn directed_hausdorff(contour_a: &[ContourPoint], contour_b: &[ContourPoint]) ->
 //     max_sq.sqrt()
 // }
 
-pub fn interpolate_geomteries(
-    start: &Geometry,
-    end: &Geometry,
-    steps: usize,
-) -> anyhow::Result<Vec<Geometry>> {
-    use std::cmp::min;
-
-}
+// TODO: Move the interpolation to process_utils
