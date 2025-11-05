@@ -1,8 +1,8 @@
 pub mod align;
 pub mod classes;
+pub mod entry;
 pub mod entry_arr;
 pub mod entry_file;
-pub mod entry;
 
 use crate::intravascular::io::{
     input::{Contour, ContourPoint, Record},

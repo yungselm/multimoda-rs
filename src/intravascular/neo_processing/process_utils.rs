@@ -1,7 +1,6 @@
+use crate::intravascular::io::input::ContourPoint;
 use rayon::prelude::*;
 use std::f64::consts::PI;
-use crate::intravascular::io::input::ContourPoint;
-use crate::intravascular::io::geometry::Geometry;
 
 pub fn downsample_contour_points(points: &[ContourPoint], n: usize) -> Vec<ContourPoint> {
     if points.len() <= n {
@@ -22,7 +21,7 @@ pub fn search_range<F>(
     range_deg: f64,
     center_angle: Option<f64>,
     limes_deg: f64,
-) -> f64 
+) -> f64
 where
     F: Fn(f64) -> f64 + Sync + Send,
 {

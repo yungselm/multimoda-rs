@@ -1,4 +1,4 @@
-use crate::intravascular::io::geometry::{ContourType, Contour};
+use crate::intravascular::io::geometry::{Contour, ContourType};
 use crate::intravascular::io::input::ContourPoint;
 use std::f64::consts::PI;
 

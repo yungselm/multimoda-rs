@@ -80,7 +80,9 @@ pub fn write_mtl_geometry(
 
     // for catheter no displacement uv texture needed
     for (i, mesh) in geometries_to_process.into_iter().enumerate() {
-        let catheter_contours: Vec<Contour> = mesh.frames.iter()
+        let catheter_contours: Vec<Contour> = mesh
+            .frames
+            .iter()
             .filter_map(|frame| frame.extras.get(&ContourType::Catheter).cloned())
             .collect();
 
@@ -137,7 +139,9 @@ pub fn write_mtl_wall(
 
     // for catheter no displacement uv texture needed
     for (i, wall) in walls_to_process.into_iter().enumerate() {
-        let wall_contours: Vec<Contour> = wall.frames.iter()
+        let wall_contours: Vec<Contour> = wall
+            .frames
+            .iter()
             .filter_map(|frame| frame.extras.get(&ContourType::Wall).cloned())
             .collect();
         let uv_coords = compute_uv_coordinates(&wall_contours);

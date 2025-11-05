@@ -27,7 +27,7 @@ pub fn compute_uv_coordinates(contours: &Vec<Contour>) -> Vec<(f64, f64)> {
 
 /// This function takes in a baseline Geometry and a second Geometry, and
 /// then calculates the displacement for every point for the lumen contours.
-/// Therefore returning a Vec<f64, f64> where the first entry is the 
+/// Therefore returning a Vec<f64, f64> where the first entry is the
 /// displacements for the lumen contours.
 pub fn compute_displacements(mesh: &Geometry, diastole: &Geometry) -> Vec<f64> {
     mesh.frames

@@ -1,15 +1,17 @@
-use anyhow::{anyhow, Result};
 use super::entry_arr::refine_ordering;
 use crate::intravascular::io::geometry::{Contour, ContourType, Frame, Geometry};
-use crate::intravascular::io::input::{Centerline, CenterlinePoint, ContourPoint, Record, InputData};
+use crate::intravascular::io::input::{
+    Centerline, CenterlinePoint, ContourPoint, InputData, Record,
+};
 use crate::intravascular::processing::align_between::GeometryPair;
+use anyhow::{anyhow, Result};
 use nalgebra::Vector3;
 use pyo3::prelude::*;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 
 /// Python representation of InputData
-/// 
+///
 /// Attributes:
 ///    lumen (List[PyContour]): Vessel lumen contours
 ///    eem (List[PyContour] | None): Vessel EEM contours
@@ -102,7 +104,11 @@ impl TryFrom<&PyInputData> for InputData {
                 for c in contours {
                     // convert PyContour -> Contour (may return PyErr), use to_rust_contour()
                     let rust_contour = c.to_rust_contour().map_err(|e| {
-                        anyhow!("failed to convert PyContour(id={}) to Contour: {:?}", c.id, e)
+                        anyhow!(
+                            "failed to convert PyContour(id={}) to Contour: {:?}",
+                            c.id,
+                            e
+                        )
                     })?;
                     acc.extend(rust_contour.points.into_iter());
                 }
@@ -116,7 +122,11 @@ impl TryFrom<&PyInputData> for InputData {
         let mut lumen_points: Vec<ContourPoint> = Vec::new();
         for c in &py_in.lumen {
             let rust_contour = c.to_rust_contour().map_err(|e| {
-                anyhow!("failed to convert lumen PyContour(id={}) to Contour: {:?}", c.id, e)
+                anyhow!(
+                    "failed to convert lumen PyContour(id={}) to Contour: {:?}",
+                    c.id,
+                    e
+                )
             })?;
             lumen_points.extend(rust_contour.points.into_iter());
         }
@@ -159,14 +169,20 @@ impl TryFrom<&PyInputData> for InputData {
 impl From<&InputData> for PyInputData {
     fn from(input: &InputData) -> Self {
         // helper: build a single PyContour from a flattened Vec<ContourPoint>
-        fn make_pycontour_from_points(points: &Vec<ContourPoint>, id: u32, original_frame: u32) -> PyContour {
+        fn make_pycontour_from_points(
+            points: &Vec<ContourPoint>,
+            id: u32,
+            original_frame: u32,
+        ) -> PyContour {
             // compute centroid (average) if points non-empty
             let centroid = if points.is_empty() {
                 (0.0, 0.0, 0.0)
             } else {
-                let (sx, sy, sz) = points.iter().fold((0.0f64, 0.0f64, 0.0f64), |(sx, sy, sz), p| {
-                    (sx + p.x, sy + p.y, sz + p.z)
-                });
+                let (sx, sy, sz) = points
+                    .iter()
+                    .fold((0.0f64, 0.0f64, 0.0f64), |(sx, sy, sz), p| {
+                        (sx + p.x, sy + p.y, sz + p.z)
+                    });
                 let n = points.len() as f64;
                 (sx / n, sy / n, sz / n)
             };
@@ -190,18 +206,22 @@ impl From<&InputData> for PyInputData {
         let lumen_vec = vec![lumen_py];
 
         // Optional groups: wrap each existing flattened vec into a single PyContour (if present)
-        let wrap_opt = |opt_pts: &Option<Vec<ContourPoint>>, id_start: u32| -> Option<Vec<PyContour>> {
-            opt_pts.as_ref().map(|pts| vec![make_pycontour_from_points(pts, id_start, original_frame)])
-        };
+        let wrap_opt =
+            |opt_pts: &Option<Vec<ContourPoint>>, id_start: u32| -> Option<Vec<PyContour>> {
+                opt_pts
+                    .as_ref()
+                    .map(|pts| vec![make_pycontour_from_points(pts, id_start, original_frame)])
+            };
 
         let eem_py = wrap_opt(&input.eem, 0);
         let calc_py = wrap_opt(&input.calcification, 0);
         let sb_py = wrap_opt(&input.sidebranch, 0);
 
         // Records
-        let record_py: Option<Vec<PyRecord>> = input.record.as_ref().map(|records| {
-            records.iter().map(|r| PyRecord::from(r)).collect()
-        });
+        let record_py: Option<Vec<PyRecord>> = input
+            .record
+            .as_ref()
+            .map(|records| records.iter().map(|r| PyRecord::from(r)).collect());
 
         let ref_point_py = PyContourPoint::from(&input.ref_point);
 

@@ -6,9 +6,8 @@ use super::wall::create_wall_frames;
 use crate::intravascular::io::geometry::{Contour, ContourType, Frame, Geometry};
 use crate::intravascular::io::input::ContourPoint;
 use crate::intravascular::neo_processing::process_utils::{
-    downsample_contour_points,
-    search_range,
-    hausdorff_distance,};
+    downsample_contour_points, hausdorff_distance, search_range,
+};
 
 #[derive(Debug)]
 pub struct AlignLog {
@@ -199,14 +198,21 @@ pub fn find_best_rotation(
             } else {
                 range_deg
             };
-            search_range(cost_fn, step_deg, range_small, Some(medium_angle), range_deg)
+            search_range(
+                cost_fn,
+                step_deg,
+                range_small,
+                Some(medium_angle),
+                range_deg,
+            )
         }
         _ => {
             let coarse_angle = search_range(&cost_fn, 1.0, range_deg, None, range_deg);
             let range = if range_deg > 5.0 { 5.0 } else { range_deg };
             let medium_angle = search_range(&cost_fn, 0.1, range, Some(coarse_angle), range_deg);
             let range_small = if range_deg > 0.1 { 0.1 } else { range_deg };
-            let fine_angle = search_range(&cost_fn, 0.01, range_small, Some(medium_angle), range_deg);
+            let fine_angle =
+                search_range(&cost_fn, 0.01, range_small, Some(medium_angle), range_deg);
             let range_fine = if range_deg > 10.0 * step_deg {
                 10.0 * step_deg
             } else {
@@ -389,7 +395,12 @@ fn avg_opt(a: Option<f64>, b: Option<f64>) -> Option<f64> {
     }
 }
 
-fn avg_point(p1: &ContourPoint, p2: &ContourPoint, frame_index: u32, point_index: u32) -> ContourPoint {
+fn avg_point(
+    p1: &ContourPoint,
+    p2: &ContourPoint,
+    frame_index: u32,
+    point_index: u32,
+) -> ContourPoint {
     ContourPoint {
         frame_index,
         point_index,
@@ -429,7 +440,12 @@ fn fix_one_frame_hole(frame_1: &Frame, frame_2: &Frame) -> Frame {
         (frame_1.centroid.2 + frame_2.centroid.2) / 2.0,
     );
 
-    let lumen = avg_contour(&frame_1.lumen, &frame_2.lumen, frame_2.lumen.id, frame_2.lumen.original_frame);
+    let lumen = avg_contour(
+        &frame_1.lumen,
+        &frame_2.lumen,
+        frame_2.lumen.id,
+        frame_2.lumen.original_frame,
+    );
 
     // extras: union keys; interpolate when both present
     let mut extras = std::collections::HashMap::new();
@@ -478,7 +494,13 @@ fn interpolate_opt(a: Option<f64>, b: Option<f64>, t: f64) -> Option<f64> {
     }
 }
 
-fn interp_point(p1: &ContourPoint, p2: &ContourPoint, t: f64, frame_index: u32, point_index: u32) -> ContourPoint {
+fn interp_point(
+    p1: &ContourPoint,
+    p2: &ContourPoint,
+    t: f64,
+    frame_index: u32,
+    point_index: u32,
+) -> ContourPoint {
     ContourPoint {
         frame_index,
         point_index,
@@ -489,7 +511,13 @@ fn interp_point(p1: &ContourPoint, p2: &ContourPoint, t: f64, frame_index: u32, 
     }
 }
 
-fn interpolate_contour(c1: &Contour, c2: &Contour, t: f64, id: u32, original_frame: u32) -> Contour {
+fn interpolate_contour(
+    c1: &Contour,
+    c2: &Contour,
+    t: f64,
+    id: u32,
+    original_frame: u32,
+) -> Contour {
     let len = c1.points.len().min(c2.points.len());
     let points: Vec<ContourPoint> = (0..len)
         .map(|i| interp_point(&c1.points[i], &c2.points[i], t, original_frame, i as u32))
@@ -522,7 +550,13 @@ fn create_interpolated_frame(frame_1: &Frame, frame_2: &Frame, t: f64) -> Frame 
         frame_1.centroid.2 + (frame_2.centroid.2 - frame_1.centroid.2) * t,
     );
 
-    let lumen = interpolate_contour(&frame_1.lumen, &frame_2.lumen, t, frame_2.lumen.id, frame_2.lumen.original_frame);
+    let lumen = interpolate_contour(
+        &frame_1.lumen,
+        &frame_2.lumen,
+        t,
+        frame_2.lumen.id,
+        frame_2.lumen.original_frame,
+    );
 
     let mut extras = std::collections::HashMap::new();
     for key in frame_1.extras.keys().chain(frame_2.extras.keys()) {
@@ -531,7 +565,10 @@ fn create_interpolated_frame(frame_1: &Frame, frame_2: &Frame, t: f64) -> Frame 
         }
         match (frame_1.extras.get(key), frame_2.extras.get(key)) {
             (Some(c1), Some(c2)) => {
-                extras.insert(*key, interpolate_contour(c1, c2, t, c2.id, c2.original_frame));
+                extras.insert(
+                    *key,
+                    interpolate_contour(c1, c2, t, c2.id, c2.original_frame),
+                );
             }
             (Some(c1), None) => {
                 extras.insert(*key, c1.clone());
