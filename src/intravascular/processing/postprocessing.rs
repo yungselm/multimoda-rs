@@ -3,11 +3,11 @@ use anyhow::Context;
 use super::align_between::GeometryPair;
 use crate::intravascular::io::geometry::{Contour, ContourType, Frame, Geometry};
 use crate::intravascular::io::input::ContourPoint;
-use crate::intravascular::neo_processing::wall::create_wall_frames;
+use crate::intravascular::processing::wall::create_wall_frames;
 use std::collections::HashMap;
 use std::cmp::Ordering;
 
-pub fn postprocess_geom_pair(geom_pair: &GeometryPair, tol: f64) -> anyhow::Result<GeometryPair> {
+pub fn postprocess_geom_pair(geom_pair: &GeometryPair, tol: f64, anomalous: bool) -> anyhow::Result<GeometryPair> {
     let (same_sample_rate, avg_diff_a, avg_diff_b) =
         check_same_sample_rate_geompair(geom_pair, tol);
     let ref_idx_a = geom_pair.geom_a.find_ref_frame_idx()?;
@@ -63,7 +63,8 @@ pub fn postprocess_geom_pair(geom_pair: &GeometryPair, tol: f64) -> anyhow::Resu
             label: geom_pair.label.clone(),
         }
     };
-    let trimmed_geom_pair = trim_geom_pair(&geom_pair_resampled);
+    let mut trimmed_geom_pair = trim_geom_pair(&geom_pair_resampled);
+    trimmed_geom_pair = if anomalous { adjust_walls_anomalous_geom_pair(&trimmed_geom_pair) } else {trimmed_geom_pair};
     Ok(trimmed_geom_pair)
 }
 

@@ -1,8 +1,8 @@
 use crate::intravascular::io::geometry::Geometry;
 use crate::intravascular::io::input::InputData;
-use crate::intravascular::neo_processing::align_between::{align_between_geometries, GeometryPair};
-use crate::intravascular::neo_processing::align_within::{align_frames_in_geometry, AlignLog};
-use crate::intravascular::neo_processing::preprocessing::{
+use crate::intravascular::processing::align_between::{align_between_geometries, GeometryPair};
+use crate::intravascular::processing::align_within::{align_frames_in_geometry, AlignLog};
+use crate::intravascular::processing::preprocessing::{
     prepare_n_geometries, ProcessingOptions,
 };
 use anyhow::{anyhow, Context, Result};
