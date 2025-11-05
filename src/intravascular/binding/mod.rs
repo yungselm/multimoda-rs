@@ -1,19 +1,14 @@
 pub mod align;
 pub mod classes;
 pub mod entry;
-pub mod entry_arr;
-pub mod entry_file;
 
 use crate::intravascular::io::{
-    input::{Contour, ContourPoint, Record},
+    input::{InputData, ContourPoint, Record},
     output::write_obj_mesh_without_uv,
 };
 use crate::intravascular::processing::align_within::AlignLog;
-use classes::{PyContour, PyGeometry, PyGeometryPair, PyRecord};
-use entry_arr::*;
-use entry_file::{
-    from_file_doublepair_rs, from_file_full_rs, from_file_single_rs, from_file_singlepair_rs,
-};
+use classes::{PyContour, PyFrame, PyGeometry, PyGeometryPair, PyRecord, PyInputData};
+use entry::*;
 use pyo3::prelude::*;
 
 fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<(u32, u32, f64, f64, f64, f64, f64, f64)> {
@@ -135,7 +130,7 @@ pub fn from_file_full(
     let (
         (rest_pair, stress_pair, dia_pair, sys_pair),
         (dia_logs, sys_logs, dia_logs_stress, sys_logs_stress),
-    ) = from_file_full_rs(
+    ) = full_processing_rs(
         rest_input_path,
         stress_input_path,
         step_rotation_deg,

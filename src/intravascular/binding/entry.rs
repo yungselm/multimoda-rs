@@ -1,14 +1,32 @@
 use crate::intravascular::io::geometry::Geometry;
 use crate::intravascular::io::input::InputData;
-use crate::intravascular::processing::align_between::{align_between_geometries, GeometryPair};
-use crate::intravascular::processing::align_within::{align_frames_in_geometry, AlignLog};
 use crate::intravascular::processing::preprocessing::{
     prepare_n_geometries, ProcessingOptions,
 };
+use crate::intravascular::processing::align_within::{align_frames_in_geometry, AlignLog};
+use crate::intravascular::processing::align_between::{align_between_geometries, GeometryPair};
+use crate::intravascular::processing::postprocessing::postprocess_geom_pair;
 use anyhow::{anyhow, Context, Result};
 use crossbeam::thread;
 use rand::seq::index::sample;
 use std::path::Path;
+
+// tolerance of distance between frames [mm], that counts as 0
+const TOLERANCE: f64 = 0.03;
+
+fn maybe_postprocess(
+    pair: &GeometryPair,
+    tolerance: f64,
+    anomalous: bool,
+    postprocessing: bool,
+) -> anyhow::Result<GeometryPair> {
+    if postprocessing {
+        postprocess_geom_pair(pair, tolerance, anomalous)
+            .with_context(|| format!("Failed postprocessing of {}", pair.label))
+    } else {
+        Ok(pair.clone())
+    }
+}
 
 pub fn full_processing_rs(
     label: String,
@@ -23,12 +41,16 @@ pub fn full_processing_rs(
     input_data_d: Option<InputData>,
     write_obj: bool,
     watertight: bool,
-    output_path: &str,
+    output_path_a: &str,
+    output_file_b: &str,
+    output_file_c: &str,
+    output_file_d: &str,
     step_deg: f64,
     range_deg: f64,
     smooth: bool,
     bruteforce: bool,
     sample_size: usize,
+    postprocessing: bool,
 ) -> Result<()> {
     let mut geometries = prepare_n_geometries(
         &label,
@@ -59,7 +81,7 @@ pub fn full_processing_rs(
     let mut geom_c = geometries.remove(0);
     let mut geom_d = geometries.remove(0);
 
-    let (mut geom_a, mut geom_b, mut geom_c, mut geom_d, logs_a, logs_b, logs_c, logs_d) =
+    let (mut geom_a, mut geom_b, mut geom_c, mut geom_d, logs_a, logs_b, logs_c, logs_d, bool_a, bool_b, bool_c, bool_d) =
         thread::scope(
             |s| -> Result<(
                 Geometry,
@@ -70,9 +92,13 @@ pub fn full_processing_rs(
                 Vec<AlignLog>,
                 Vec<AlignLog>,
                 Vec<AlignLog>,
+                bool,
+                bool,
+                bool,
+                bool,
             )> {
                 let geom_a_handle = s.spawn(|_| -> anyhow::Result<_> {
-                    let (geom, logs) = align_frames_in_geometry(
+                    let (geom, logs, anomalous_bool) = align_frames_in_geometry(
                         &mut geom_a,
                         step_deg,
                         range_deg,
@@ -81,11 +107,11 @@ pub fn full_processing_rs(
                         sample_size,
                     )
                     .context("Failed to align frames within geometry A")?;
-                    Ok((geom, logs))
+                    Ok((geom, logs, anomalous_bool))
                 });
 
                 let geom_b_handle = s.spawn(|_| -> anyhow::Result<_> {
-                    let (geom, logs) = align_frames_in_geometry(
+                    let (geom, logs, anomalous_bool) = align_frames_in_geometry(
                         &mut geom_b,
                         step_deg,
                         range_deg,
@@ -94,11 +120,11 @@ pub fn full_processing_rs(
                         sample_size,
                     )
                     .context("Failed to align frames within geometry B")?;
-                    Ok((geom, logs))
+                    Ok((geom, logs, anomalous_bool))
                 });
 
                 let geom_c_handle = s.spawn(|_| -> anyhow::Result<_> {
-                    let (geom, logs) = align_frames_in_geometry(
+                    let (geom, logs, anomalous_bool) = align_frames_in_geometry(
                         &mut geom_c,
                         step_deg,
                         range_deg,
@@ -107,11 +133,11 @@ pub fn full_processing_rs(
                         sample_size,
                     )
                     .context("Failed to align frames within geometry C")?;
-                    Ok((geom, logs))
+                    Ok((geom, logs, anomalous_bool))
                 });
 
                 let geom_d_handle = s.spawn(|_| -> anyhow::Result<_> {
-                    let (geom, logs) = align_frames_in_geometry(
+                    let (geom, logs, anomalous_bool) = align_frames_in_geometry(
                         &mut geom_d,
                         step_deg,
                         range_deg,
@@ -120,16 +146,16 @@ pub fn full_processing_rs(
                         sample_size,
                     )
                     .context("Failed to align frames within geometry D")?;
-                    Ok((geom, logs))
+                    Ok((geom, logs, anomalous_bool))
                 });
 
-                let (geom_a, logs_a) = geom_a_handle.join().unwrap()?;
-                let (geom_b, logs_b) = geom_b_handle.join().unwrap()?;
-                let (geom_c, logs_c) = geom_c_handle.join().unwrap()?;
-                let (geom_d, logs_d) = geom_d_handle.join().unwrap()?;
+                let (geom_a, logs_a, bool_a) = geom_a_handle.join().unwrap()?;
+                let (geom_b, logs_b, bool_b) = geom_b_handle.join().unwrap()?;
+                let (geom_c, logs_c, bool_c) = geom_c_handle.join().unwrap()?;
+                let (geom_d, logs_d, bool_d) = geom_d_handle.join().unwrap()?;
 
                 Ok((
-                    geom_a, geom_b, geom_c, geom_d, logs_a, logs_b, logs_c, logs_d,
+                    geom_a, geom_b, geom_c, geom_d, logs_a, logs_b, logs_c, logs_d, bool_a, bool_b, bool_c, bool_d,
                 ))
             },
         )
@@ -185,7 +211,13 @@ pub fn full_processing_rs(
     })
     .map_err(|e| anyhow!("Thread execution failed: {:?}", e))??;
 
-    // TODO: postprocessing
+    // safety, if any pair is anomalous try to build wall with aortic thickness, fallback anyways just wall 1mm offset.
+    let anomalous = bool_a || bool_b || bool_c || bool_d;
+
+    let geom_ab_postprocessed = maybe_postprocess(&geom_pair_ab, TOLERANCE, anomalous, postprocessing)?;
+    let geom_cd_postprocessed= maybe_postprocess(&geom_pair_cd, TOLERANCE, anomalous, postprocessing)?;
+    let geom_ac_postprocessed = maybe_postprocess(&geom_pair_ac, TOLERANCE, anomalous, postprocessing)?;
+    let geom_bd_postprocessed= maybe_postprocess(&geom_pair_bd, TOLERANCE, anomalous, postprocessing)?;
 
     // TODO: writing to obj
 
@@ -203,12 +235,14 @@ pub fn double_pair_processing_rs(
     input_data_b: Option<InputData>,
     input_data_c: Option<InputData>,
     input_data_d: Option<InputData>,
-    output_path: &str,
+    output_file_a: &str,
+    output_file_b: &str,
     step_deg: f64,
     range_deg: f64,
     smooth: bool,
     bruteforce: bool,
     sample_size: usize,
+    postprocessing: bool,
 ) -> Result<()> {
     let mut geometries = prepare_n_geometries(
         &label,
@@ -239,7 +273,7 @@ pub fn double_pair_processing_rs(
     let mut geom_c = geometries.remove(0);
     let mut geom_d = geometries.remove(0);
 
-    let (mut geom_a, mut geom_b, mut geom_c, mut geom_d, logs_a, logs_b, logs_c, logs_d) =
+    let (mut geom_a, mut geom_b, mut geom_c, mut geom_d, logs_a, logs_b, logs_c, logs_d, bool_a, bool_b, bool_c, bool_d) =
         thread::scope(
             |s| -> Result<(
                 Geometry,
@@ -250,9 +284,13 @@ pub fn double_pair_processing_rs(
                 Vec<AlignLog>,
                 Vec<AlignLog>,
                 Vec<AlignLog>,
+                bool,
+                bool,
+                bool,
+                bool,
             )> {
                 let geom_a_handle = s.spawn(|_| -> anyhow::Result<_> {
-                    let (geom, logs) = align_frames_in_geometry(
+                    let (geom, logs, anomalous_bool) = align_frames_in_geometry(
                         &mut geom_a,
                         step_deg,
                         range_deg,
@@ -261,11 +299,11 @@ pub fn double_pair_processing_rs(
                         sample_size,
                     )
                     .context("Failed to align frames within geometry A")?;
-                    Ok((geom, logs))
+                    Ok((geom, logs, anomalous_bool))
                 });
 
                 let geom_b_handle = s.spawn(|_| -> anyhow::Result<_> {
-                    let (geom, logs) = align_frames_in_geometry(
+                    let (geom, logs, anomalous_bool) = align_frames_in_geometry(
                         &mut geom_b,
                         step_deg,
                         range_deg,
@@ -274,11 +312,11 @@ pub fn double_pair_processing_rs(
                         sample_size,
                     )
                     .context("Failed to align frames within geometry B")?;
-                    Ok((geom, logs))
+                    Ok((geom, logs, anomalous_bool))
                 });
 
                 let geom_c_handle = s.spawn(|_| -> anyhow::Result<_> {
-                    let (geom, logs) = align_frames_in_geometry(
+                    let (geom, logs, anomalous_bool) = align_frames_in_geometry(
                         &mut geom_c,
                         step_deg,
                         range_deg,
@@ -287,11 +325,11 @@ pub fn double_pair_processing_rs(
                         sample_size,
                     )
                     .context("Failed to align frames within geometry C")?;
-                    Ok((geom, logs))
+                    Ok((geom, logs, anomalous_bool))
                 });
 
                 let geom_d_handle = s.spawn(|_| -> anyhow::Result<_> {
-                    let (geom, logs) = align_frames_in_geometry(
+                    let (geom, logs, anomalous_bool) = align_frames_in_geometry(
                         &mut geom_d,
                         step_deg,
                         range_deg,
@@ -300,16 +338,16 @@ pub fn double_pair_processing_rs(
                         sample_size,
                     )
                     .context("Failed to align frames within geometry D")?;
-                    Ok((geom, logs))
+                    Ok((geom, logs, anomalous_bool))
                 });
 
-                let (geom_a, logs_a) = geom_a_handle.join().unwrap()?;
-                let (geom_b, logs_b) = geom_b_handle.join().unwrap()?;
-                let (geom_c, logs_c) = geom_c_handle.join().unwrap()?;
-                let (geom_d, logs_d) = geom_d_handle.join().unwrap()?;
+                let (geom_a, logs_a, bool_a) = geom_a_handle.join().unwrap()?;
+                let (geom_b, logs_b, bool_b) = geom_b_handle.join().unwrap()?;
+                let (geom_c, logs_c, bool_c) = geom_c_handle.join().unwrap()?;
+                let (geom_d, logs_d, bool_d) = geom_d_handle.join().unwrap()?;
 
                 Ok((
-                    geom_a, geom_b, geom_c, geom_d, logs_a, logs_b, logs_c, logs_d,
+                    geom_a, geom_b, geom_c, geom_d, logs_a, logs_b, logs_c, logs_d, bool_a, bool_b, bool_c, bool_d,
                 ))
             },
         )
@@ -340,7 +378,10 @@ pub fn double_pair_processing_rs(
     })
     .map_err(|e| anyhow!("Thread execution failed: {:?}", e))??;
 
-    // TODO: postprocessing
+    let anomalous = bool_a || bool_b || bool_c || bool_d;
+
+    let geom_ab_postprocessed = maybe_postprocess(&geom_pair_ab, TOLERANCE, anomalous, postprocessing)?;
+    let geom_cd_postprocessed= maybe_postprocess(&geom_pair_cd, TOLERANCE, anomalous, postprocessing)?;
 
     // TODO: writing to obj
 
@@ -361,6 +402,7 @@ pub fn pair_processing_rs(
     smooth: bool,
     bruteforce: bool,
     sample_size: usize,
+    postprocessing: bool,
 ) -> Result<()> {
     let mut geometries = prepare_n_geometries(
         &label,
@@ -389,10 +431,10 @@ pub fn pair_processing_rs(
     let mut geom_a = geometries.remove(0);
     let mut geom_b = geometries.remove(0);
 
-    let (mut geom_a, mut geom_b, logs_a, logs_b) = thread::scope(
-        |s| -> Result<(Geometry, Geometry, Vec<AlignLog>, Vec<AlignLog>)> {
+    let (mut geom_a, mut geom_b, logs_a, logs_b, bool_a, bool_b) = thread::scope(
+        |s| -> Result<(Geometry, Geometry, Vec<AlignLog>, Vec<AlignLog>, bool, bool)> {
             let geom_a_handle = s.spawn(|_| -> anyhow::Result<_> {
-                let (geom, logs) = align_frames_in_geometry(
+                let (geom, logs, anomalous_bool) = align_frames_in_geometry(
                     &mut geom_a,
                     step_deg,
                     range_deg,
@@ -401,11 +443,11 @@ pub fn pair_processing_rs(
                     sample_size,
                 )
                 .context("Failed to align frames within geometry A")?;
-                Ok((geom, logs))
+                Ok((geom, logs, anomalous_bool))
             });
 
             let geom_b_handle = s.spawn(|_| -> anyhow::Result<_> {
-                let (geom, logs) = align_frames_in_geometry(
+                let (geom, logs, anomalous_bool) = align_frames_in_geometry(
                     &mut geom_b,
                     step_deg,
                     range_deg,
@@ -414,13 +456,13 @@ pub fn pair_processing_rs(
                     sample_size,
                 )
                 .context("Failed to align frames within geometry B")?;
-                Ok((geom, logs))
+                Ok((geom, logs, anomalous_bool))
             });
 
-            let (geom_a, logs_a) = geom_a_handle.join().unwrap()?;
-            let (geom_b, logs_b) = geom_b_handle.join().unwrap()?;
+            let (geom_a, logs_a, bool_a) = geom_a_handle.join().unwrap()?;
+            let (geom_b, logs_b, bool_b) = geom_b_handle.join().unwrap()?;
 
-            Ok((geom_a, geom_b, logs_a, logs_b))
+            Ok((geom_a, geom_b, logs_a, logs_b, bool_a, bool_b))
         },
     )
     .map_err(|e| anyhow!("Thread execution failed: {:?}", e))??;
@@ -430,9 +472,11 @@ pub fn pair_processing_rs(
             .context(format!(
                 "Failed to align frames between geometry {} and {}",
                 geom_a.label, geom_b.label
-            ));
+            )).context("Failed to align geom_a and geom_b")?;
 
-    // TODO: postprocessing
+    let anomalous = bool_a || bool_b;
+
+    let geom_pair_postprocessed = maybe_postprocess(&geom_pair, TOLERANCE, anomalous, postprocessing)?;
 
     // TODO: writing to obj
 
@@ -472,7 +516,7 @@ pub fn single_processing_rs(
         ));
     }
 
-    let (geom, logs) = align_frames_in_geometry(
+    let (geom, logs, _) = align_frames_in_geometry(
         &mut geom[0],
         step_deg,
         range_deg,
@@ -482,7 +526,7 @@ pub fn single_processing_rs(
     )
     .context("Failed to align frames within geometry")?;
 
-    // TODO: postprocessing
+    // TODO: postprocessing geometry (resample)
 
     // TODO: writing to obj
 

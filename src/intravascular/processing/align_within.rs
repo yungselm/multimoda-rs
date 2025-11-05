@@ -26,7 +26,7 @@ pub fn align_frames_in_geometry(
     smooth: bool,
     bruteforce: bool,
     sample_size: usize,
-) -> anyhow::Result<(Geometry, Vec<AlignLog>)> {
+) -> anyhow::Result<(Geometry, Vec<AlignLog>, bool)> {
     if geometry.frames.is_empty() {
         return Err(anyhow!("Geometry contains no frames"));
     }
@@ -145,7 +145,7 @@ pub fn align_frames_in_geometry(
         .expect("Logger mutex was poisoned");
     dump_table(&logs);
 
-    Ok((final_geometry, logs))
+    Ok((final_geometry, logs, anomalous_bool))
 }
 
 fn catheter_lumen_vec_from_frames(

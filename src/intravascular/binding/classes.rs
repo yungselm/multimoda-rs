@@ -1,4 +1,3 @@
-use super::entry_arr::refine_ordering;
 use crate::intravascular::io::geometry::{Contour, ContourType, Frame, Geometry};
 use crate::intravascular::io::input::{
     Centerline, CenterlinePoint, ContourPoint, InputData, Record,
@@ -92,7 +91,6 @@ impl PyInputData {
     }
 }
 
-// ---------- PyInputData -> InputData (TryFrom) ----------
 impl TryFrom<&PyInputData> for InputData {
     type Error = anyhow::Error;
 
@@ -864,23 +862,6 @@ impl PyGeometry {
         Ok(PyGeometry::from(&smoothed))
     }
 
-    /// Re‑orders and realigns the sequence of contours to minimize a combined spatial + index‐jump cost.
-    ///
-    /// Args:
-    ///     delta (float): Jump penalty weight between contour IDs.
-    ///     max_rounds (int): Maximum refinement iterations.
-    ///     steps (int): Number of steps for frame alignment.
-    ///     range (float): Range parameter for frame alignment.
-    ///
-    /// Returns:
-    ///     PyGeometry: A new geometry with contours and catheter re‑ordered and aligned.
-    #[pyo3(signature = (delta, max_rounds))]
-    pub fn reorder(&self, delta: f64, max_rounds: usize) -> PyResult<PyGeometry> {
-        let mut rust_geometry = self.to_rust_geometry()?;
-        rust_geometry = refine_ordering(rust_geometry, delta, max_rounds);
-        Ok(PyGeometry::from(&rust_geometry))
-    }
-
     /// Get a compact summary of lumen properties for this geometry.
     ///
     /// Returns:
@@ -989,24 +970,27 @@ impl PyGeometry {
 #[derive(Debug, Clone)]
 pub struct PyGeometryPair {
     #[pyo3(get, set)]
-    pub dia_geom: PyGeometry,
+    pub geom_a: PyGeometry,
     #[pyo3(get, set)]
-    pub sys_geom: PyGeometry,
+    pub geom_b: PyGeometry,
+    #[pyo3(get, set)]
+    pub label: String,    
 }
 
 #[pymethods]
 impl PyGeometryPair {
     #[new]
-    fn new(dia_geom: PyGeometry, sys_geom: PyGeometry) -> Self {
-        Self { dia_geom, sys_geom }
+    fn new(geom_a: PyGeometry, geom_b: PyGeometry, label: String) -> Self {
+        Self { geom_a, geom_b, label }
     }
 
     // Add a __repr__ method
     fn __repr__(&self) -> String {
         format!(
-            "GeometryPair(diastolic: {} frames, systolic: {} frames)",
-            self.dia_geom.frames.len(),
-            self.sys_geom.frames.len()
+            "GeometryPair {} (diastolic: {} frames, systolic: {} frames)",
+            self.label,
+            self.geom_a.frames.len(),
+            self.geom_b.frames.len()
         )
     }
 
@@ -1018,15 +1002,15 @@ impl PyGeometryPair {
     /// This calls ``get_summary()`` on each contained PyGeometry and returns both results.
     /// and additionally assesses dynamic between the two PyGeometry object (area, elliptic ratio)
     pub fn get_summary(&self) -> PyResult<(((f64, f64, f64), (f64, f64, f64)), Vec<[f64; 6]>)> {
-        let dia = self.dia_geom.get_summary()?;
-        let sys = self.sys_geom.get_summary()?;
+        let dia = self.geom_a.get_summary()?;
+        let sys = self.geom_b.get_summary()?;
         let map = self.create_deformation_table();
         Ok(((dia, sys), map))
     }
 
     fn create_deformation_table(&self) -> Vec<[f64; 6]> {
-        let dia_lumen = self.dia_geom.get_lumen_contours();
-        let sys_lumen = self.sys_geom.get_lumen_contours();
+        let dia_lumen = self.geom_a.get_lumen_contours();
+        let sys_lumen = self.geom_b.get_lumen_contours();
 
         let areas_dia: Vec<f64> = dia_lumen.iter().map(|c| c.get_area().unwrap()).collect();
         let areas_sys: Vec<f64> = sys_lumen.iter().map(|c| c.get_area().unwrap()).collect();
@@ -1152,8 +1136,9 @@ impl PyGeometryPair {
 impl PyGeometryPair {
     pub fn to_rust_geometry_pair(&self) -> GeometryPair {
         GeometryPair {
-            dia_geom: self.dia_geom.to_rust_geometry(),
-            sys_geom: self.sys_geom.to_rust_geometry(),
+            geom_a: self.geom_a.to_rust_geometry().expect("could not convert geom_a"),
+            geom_b: self.geom_b.to_rust_geometry().expect("could not convert geom_b"),
+            label: self.label.clone(),
         }
     }
 }
@@ -1461,8 +1446,9 @@ impl From<Geometry> for PyGeometry {
 impl From<GeometryPair> for PyGeometryPair {
     fn from(pair: GeometryPair) -> Self {
         PyGeometryPair {
-            dia_geom: pair.dia_geom.into(),
-            sys_geom: pair.sys_geom.into(),
+            geom_a: pair.geom_a.into(),
+            geom_b: pair.geom_b.into(),
+            label:  pair.label.clone(),
         }
     }
 }
