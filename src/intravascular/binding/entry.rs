@@ -1,4 +1,8 @@
-use crate::intravascular::io::geometry::Geometry;
+use anyhow::{anyhow, Context, Result};
+use crossbeam::thread;
+use std::path::Path;
+
+use crate::intravascular::io::geometry::{ContourType, Geometry};
 use crate::intravascular::io::input::InputData;
 use crate::intravascular::processing::preprocessing::{
     prepare_n_geometries, ProcessingOptions,
@@ -6,10 +10,7 @@ use crate::intravascular::processing::preprocessing::{
 use crate::intravascular::processing::align_within::{align_frames_in_geometry, AlignLog};
 use crate::intravascular::processing::align_between::{align_between_geometries, GeometryPair};
 use crate::intravascular::processing::postprocessing::postprocess_geom_pair;
-use anyhow::{anyhow, Context, Result};
-use crossbeam::thread;
-use rand::seq::index::sample;
-use std::path::Path;
+use crate::intravascular::to_object::process_case;
 
 // tolerance of distance between frames [mm], that counts as 0
 const TOLERANCE: f64 = 0.03;
@@ -40,18 +41,20 @@ pub fn full_processing_rs(
     input_data_c: Option<InputData>,
     input_data_d: Option<InputData>,
     write_obj: bool,
+    interpolation_steps: usize,
+    contour_types: Vec<ContourType>,
     watertight: bool,
     output_path_a: &str,
-    output_file_b: &str,
-    output_file_c: &str,
-    output_file_d: &str,
+    output_path_b: &str,
+    output_path_c: &str,
+    output_path_d: &str,
     step_deg: f64,
     range_deg: f64,
     smooth: bool,
     bruteforce: bool,
     sample_size: usize,
     postprocessing: bool,
-) -> Result<()> {
+) -> Result<(GeometryPair, GeometryPair, GeometryPair, GeometryPair, Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>)> {
     let mut geometries = prepare_n_geometries(
         &label,
         image_center,
@@ -219,9 +222,35 @@ pub fn full_processing_rs(
     let geom_ac_postprocessed = maybe_postprocess(&geom_pair_ac, TOLERANCE, anomalous, postprocessing)?;
     let geom_bd_postprocessed= maybe_postprocess(&geom_pair_bd, TOLERANCE, anomalous, postprocessing)?;
 
-    // TODO: writing to obj
+    let geom_ab_final = if write_obj {
+        process_case(&label, geom_ab_postprocessed, output_path_a, interpolation_steps, watertight, &contour_types)
+            .context("process case failed for geom_ab")?
+    } else {
+        geom_ab_postprocessed
+    };
 
-    Ok(())
+    let geom_cd_final = if write_obj {
+        process_case(&label, geom_cd_postprocessed, output_path_b, interpolation_steps, watertight, &contour_types)
+            .context("process case failed for geom_cd")?
+    } else {
+        geom_cd_postprocessed
+    };
+
+    let geom_ac_final = if write_obj {
+        process_case(&label, geom_ac_postprocessed, output_path_c, interpolation_steps, watertight, &contour_types)
+            .context("process case failed for geom_ac")?
+    } else {
+        geom_ac_postprocessed
+    };
+
+    let geom_bd_final = if write_obj {
+        process_case(&label, geom_bd_postprocessed, output_path_d, interpolation_steps, watertight, &contour_types)
+            .context("process case failed for geom_bd")?
+    } else {
+        geom_bd_postprocessed
+    };
+
+    Ok((geom_ab_final, geom_cd_final, geom_ac_final, geom_bd_final, logs_a, logs_b, logs_c, logs_d))
 }
 
 pub fn double_pair_processing_rs(
@@ -235,15 +264,19 @@ pub fn double_pair_processing_rs(
     input_data_b: Option<InputData>,
     input_data_c: Option<InputData>,
     input_data_d: Option<InputData>,
-    output_file_a: &str,
-    output_file_b: &str,
+    write_obj: bool,
+    interpolation_steps: usize,
+    contour_types: Vec<ContourType>,
+    watertight: bool,
+    output_path_a: &str,
+    output_path_b: &str,
     step_deg: f64,
     range_deg: f64,
     smooth: bool,
     bruteforce: bool,
     sample_size: usize,
     postprocessing: bool,
-) -> Result<()> {
+) -> Result<(GeometryPair, GeometryPair, Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>, Vec<AlignLog>)> {
     let mut geometries = prepare_n_geometries(
         &label,
         image_center,
@@ -383,9 +416,21 @@ pub fn double_pair_processing_rs(
     let geom_ab_postprocessed = maybe_postprocess(&geom_pair_ab, TOLERANCE, anomalous, postprocessing)?;
     let geom_cd_postprocessed= maybe_postprocess(&geom_pair_cd, TOLERANCE, anomalous, postprocessing)?;
 
-    // TODO: writing to obj
+    let geom_ab_final = if write_obj {
+        process_case(&label, geom_ab_postprocessed, output_path_a, interpolation_steps, watertight, &contour_types)
+            .context("process case failed for geom_ab")?
+    } else {
+        geom_ab_postprocessed
+    };
 
-    Ok(())
+    let geom_cd_final = if write_obj {
+        process_case(&label, geom_cd_postprocessed, output_path_b, interpolation_steps, watertight, &contour_types)
+            .context("process case failed for geom_cd")?
+    } else {
+        geom_cd_postprocessed
+    };
+
+    Ok((geom_ab_final, geom_cd_final, logs_a, logs_b, logs_c, logs_d))
 }
 
 pub fn pair_processing_rs(
@@ -396,6 +441,10 @@ pub fn pair_processing_rs(
     input_path_a: Option<&str>,
     input_data_a: Option<InputData>,
     input_data_b: Option<InputData>,
+    write_obj: bool,
+    interpolation_steps: usize,
+    contour_types: Vec<ContourType>,
+    watertight: bool,
     output_path: &str,
     step_deg: f64,
     range_deg: f64,
@@ -403,7 +452,7 @@ pub fn pair_processing_rs(
     bruteforce: bool,
     sample_size: usize,
     postprocessing: bool,
-) -> Result<()> {
+) -> Result<(GeometryPair, Vec<AlignLog>, Vec<AlignLog>)> {
     let mut geometries = prepare_n_geometries(
         &label,
         image_center,
@@ -478,9 +527,14 @@ pub fn pair_processing_rs(
 
     let geom_pair_postprocessed = maybe_postprocess(&geom_pair, TOLERANCE, anomalous, postprocessing)?;
 
-    // TODO: writing to obj
+    let geom_pair_final = if write_obj {
+        process_case(&label, geom_pair_postprocessed, output_path, interpolation_steps, watertight, &contour_types)
+            .context("process case failed for geom_ab")?
+    } else {
+        geom_pair_postprocessed
+    };
 
-    Ok(())
+    Ok((geom_pair_final, logs_a, logs_b))
 }
 
 pub fn single_processing_rs(
@@ -490,6 +544,8 @@ pub fn single_processing_rs(
     n_points: u32,
     input_path_a: Option<&str>,
     input_data_a: Option<InputData>,
+    write_obj: bool,
+    contour_types: Vec<ContourType>,
     output_path: &str,
     step_deg: f64,
     range_deg: f64,
