@@ -13,7 +13,7 @@ use anyhow::Error;
 
 use crate::intravascular::io::output::{write_geometry_vec_to_obj, GeometryType};
 use crate::intravascular::processing::process_utils::interpolate_contours;
-use crate::intravascular::obj_preparation::write_mtl_geometry;
+use crate::intravascular::to_object::write_mtl_geometry;
 use align_algorithms::best_rotation_three_point;
 use preprocessing::{prepare_geometry_alignment, preprocess_centerline};
 

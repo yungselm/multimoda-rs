@@ -1,10 +1,8 @@
-pub mod texture;
-
 use crate::intravascular::io::geometry::{Contour, ContourType, Geometry};
 use ::std::fs::File;
 use ::std::io::Write;
 use std::path::Path;
-use texture::{
+use super::texture::{
     compute_displacements, compute_uv_coordinates, create_black_texture,
     create_displacement_texture, create_transparent_texture,
 };
