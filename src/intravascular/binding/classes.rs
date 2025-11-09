@@ -163,7 +163,14 @@ impl TryFrom<&PyInputData> for InputData {
     }
 }
 
-// ---------- InputData -> PyInputData (From) ----------
+impl TryFrom<PyInputData> for InputData {
+    type Error = anyhow::Error;
+
+    fn try_from(py_in: PyInputData) -> Result<Self> {
+        InputData::try_from(&py_in)
+    }
+}
+
 impl From<&InputData> for PyInputData {
     fn from(input: &InputData) -> Self {
         // helper: build a single PyContour from a flattened Vec<ContourPoint>
@@ -348,6 +355,13 @@ impl From<&PyContourPoint> for ContourPoint {
             z: point.z,
             aortic: point.aortic,
         }
+    }
+}
+
+// Implement conversion for references
+impl From<&&ContourPoint> for PyContourPoint {
+    fn from(point: &&ContourPoint) -> Self {
+        (*point).into()
     }
 }
 
@@ -596,10 +610,114 @@ impl PyContour {
     }
 }
 
-// Implement conversion for references
-impl From<&&ContourPoint> for PyContourPoint {
-    fn from(point: &&ContourPoint) -> Self {
-        (*point).into()
+/// Python representation of contour types
+///
+/// Example:
+///     >>> from multimodars import PyContourType
+///     >>> contour_type = PyContourType.Lumen
+///     >>> contour_type.name
+///     'Lumen'
+#[pyclass]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PyContourType {
+    Lumen,
+    Eem,
+    Calcification,
+    Sidebranch,
+    Catheter,
+    Wall,
+}
+
+#[pymethods]
+impl PyContourType {
+    #[new]
+    fn new() -> Self {
+        PyContourType::Lumen // Default to Lumen
+    }
+
+    /// Create from string name
+    #[staticmethod]
+    fn from_string(name: &str) -> PyResult<Self> {
+        match name.to_lowercase().as_str() {
+            "lumen" => Ok(PyContourType::Lumen),
+            "eem" => Ok(PyContourType::Eem),
+            "calcification" => Ok(PyContourType::Calcification),
+            "sidebranch" => Ok(PyContourType::Sidebranch),
+            "catheter" => Ok(PyContourType::Catheter),
+            "wall" => Ok(PyContourType::Wall),
+            _ => Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Unknown contour type: '{}'. Valid types are: lumen, eem, calcification, sidebranch, catheter, wall",
+                name
+            ))),
+        }
+    }
+
+    /// Get the string name of the contour type
+    #[getter]
+    fn name(&self) -> &'static str {
+        match self {
+            PyContourType::Lumen => "Lumen",
+            PyContourType::Eem => "Eem",
+            PyContourType::Calcification => "Calcification",
+            PyContourType::Sidebranch => "Sidebranch",
+            PyContourType::Catheter => "Catheter",
+            PyContourType::Wall => "Wall",
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!("PyContourType.{}", self.name())
+    }
+
+    fn __str__(&self) -> String {
+        self.name().to_string()
+    }
+
+    /// Get all available contour types
+    #[staticmethod]
+    fn all_types() -> Vec<PyContourType> {
+        vec![
+            PyContourType::Lumen,
+            PyContourType::Eem,
+            PyContourType::Calcification,
+            PyContourType::Sidebranch,
+            PyContourType::Catheter,
+            PyContourType::Wall,
+        ]
+    }
+}
+
+// Conversion between Rust ContourType and PyContourType
+impl From<ContourType> for PyContourType {
+    fn from(contour_type: ContourType) -> Self {
+        match contour_type {
+            ContourType::Lumen => PyContourType::Lumen,
+            ContourType::Eem => PyContourType::Eem,
+            ContourType::Calcification => PyContourType::Calcification,
+            ContourType::Sidebranch => PyContourType::Sidebranch,
+            ContourType::Catheter => PyContourType::Catheter,
+            ContourType::Wall => PyContourType::Wall,
+        }
+    }
+}
+
+impl From<PyContourType> for ContourType {
+    fn from(py_contour_type: PyContourType) -> Self {
+        match py_contour_type {
+            PyContourType::Lumen => ContourType::Lumen,
+            PyContourType::Eem => ContourType::Eem,
+            PyContourType::Calcification => ContourType::Calcification,
+            PyContourType::Sidebranch => ContourType::Sidebranch,
+            PyContourType::Catheter => ContourType::Catheter,
+            PyContourType::Wall => ContourType::Wall,
+        }
+    }
+}
+
+// Also implement for references
+impl From<&PyContourType> for ContourType {
+    fn from(py_contour_type: &PyContourType) -> Self {
+        (*py_contour_type).into()
     }
 }
 

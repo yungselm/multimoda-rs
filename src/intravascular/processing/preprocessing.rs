@@ -19,6 +19,7 @@ pub fn prepare_n_geometries(
     radius: f64,
     n_points: u32,
     mut input_data: Option<Vec<InputData>>,
+    _diastole: bool,
     path_a: Option<&Path>,
     path_b: Option<&Path>,
     processing: ProcessingOptions,
