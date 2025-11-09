@@ -4,9 +4,9 @@ mod intravascular;
 use crate::intravascular::binding::align::{align_manual, align_three_point};
 use crate::intravascular::binding::classes::*;
 use crate::intravascular::binding::{
-    create_catheter_geometry, from_array_doublepair, from_array_full, from_array_singlepair,
+    from_array_doublepair, from_array_full, from_array_singlepair,
     from_file_doublepair, from_file_full, from_file_single, from_file_singlepair,
-    geometry_from_array, to_obj,
+    from_array_single, to_obj,
 };
 
 use pyo3::prelude::*;
@@ -32,11 +32,10 @@ fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<(
     m.add_function(wrap_pyfunction!(align_three_point, m.clone())?)?;
     m.add_function(wrap_pyfunction!(align_manual, m.clone())?)?;
     // align hausdorff missing
-    m.add_function(wrap_pyfunction!(create_catheter_geometry, m.clone())?)?;
-    m.add_function(wrap_pyfunction!(geometry_from_array, m.clone())?)?;
     m.add_function(wrap_pyfunction!(from_array_full, m.clone())?)?;
     m.add_function(wrap_pyfunction!(from_array_doublepair, m.clone())?)?;
     m.add_function(wrap_pyfunction!(from_array_singlepair, m.clone())?)?;
+    m.add_function(wrap_pyfunction!(from_array_single, m.clone())?)?;
     m.add_function(wrap_pyfunction!(to_obj, m.clone())?)?;
 
     // Updated class registration

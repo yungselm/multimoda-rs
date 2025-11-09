@@ -1,7 +1,7 @@
 use nalgebra::Vector3;
 
 use crate::intravascular::io::input::{Centerline, CenterlinePoint, ContourPoint};
-use crate::intravascular::io::Geometry;
+use crate::intravascular::io::geometry::Geometry;
 use crate::intravascular::processing::align_between::GeometryPair;
 
 /// Resample `centerline` along its arc-length so that adjacent points are spaced at the
@@ -96,8 +96,8 @@ fn resample_centerline_by_contours(
     if centerline.points.is_empty() {
         return Err("Centerline is empty");
     }
-    if ref_mesh.contours.is_empty() {
-        return Err("Reference mesh has no contorus");
+    if ref_mesh.frames.is_empty() {
+        return Err("Reference mesh has no frames");
     }
 
     let (centroids, mean_spacing_opt) = calculate_mean_spacing(ref_mesh);
@@ -267,9 +267,9 @@ fn interpolate_centerline_at_s(
 fn calculate_mean_spacing(ref_mesh: &Geometry) -> (Vec<(f64, f64, f64)>, Option<f64>) {
     // 1) Compute centroid positions from ref_mesh
     let centroids: Vec<(f64, f64, f64)> = ref_mesh
-        .contours
+        .frames
         .iter()
-        .map(|c| (c.centroid.0, c.centroid.1, c.centroid.2))
+        .map(|f| (f.centroid.0, f.centroid.1, f.centroid.2))
         .collect();
 
     // 2) Compute distances between consecutive centroids (Euclidean)
@@ -362,7 +362,8 @@ pub fn prepare_geometry_alignment(mut geom_pair: GeometryPair) -> GeometryPair {
 #[cfg(test)]
 mod cl_preprocessing_tests {
     use super::*;
-    use crate::intravascular::io::input::{Contour, ContourPoint};
+    use crate::intravascular::io::input::ContourPoint;
+    use crate::intravascular::io::geometry::Contour;
     use approx::assert_relative_eq;
 
     #[test]
@@ -499,7 +500,8 @@ mod cl_preprocessing_tests {
 
     #[test]
     fn test_calculate_mean_spacing() {
-        use crate::intravascular::io::input::{Contour, ContourPoint};
+        use crate::intravascular::io::input::ContourPoint;
+        use crate::intravascular::io::geometry::{Contour, Frame, Geometry};
 
         // Case 1: multiple centroids → valid mean spacing
         let geom = Geometry {
@@ -793,16 +795,17 @@ mod cl_preprocessing_tests {
         // contours z 0,1,2 but reference z doesn't match any (10.0)
         let geom = make_geometry_with_contours(&[(0, 0.0), (1, 1.0), (2, 2.0)], 5, 10.0, "dia");
         let gp = GeometryPair {
-            dia_geom: geom.clone(),
-            sys_geom: geom.clone(),
+            geom_a: geom.clone(),
+            geom_b: geom.clone(),
+            label: geom.label.clone(),
         };
 
         let out = prepare_geometry_alignment(gp);
 
         // No reverse -> first contour still has z 0.0
-        assert_eq!(out.dia_geom.contours[0].centroid.2, 0.0);
+        assert_eq!(out.geom_a.frames[0].centroid.2, 0.0);
         // reference frame should remain unchanged (5)
-        assert_eq!(out.dia_geom.reference_point.frame_index, 5);
+        assert_eq!(out.geom_a.reference_point.frame_index, 5);
     }
 
     #[test]
@@ -810,15 +813,16 @@ mod cl_preprocessing_tests {
         // reference already points to id 0 (orientation OK) and z matches contour 0
         let geom = make_geometry_with_contours(&[(0, 0.0), (1, 1.0), (2, 2.0)], 0, 0.0, "dia");
         let gp = GeometryPair {
-            dia_geom: geom.clone(),
-            sys_geom: geom.clone(),
+            geom_a: geom.clone(),
+            geom_b: geom.clone(),
+            label: geom.label.clone(),
         };
 
         let out = prepare_geometry_alignment(gp);
 
         // No reverse performed: contour 0 remains z 0.0
-        assert_eq!(out.dia_geom.contours[0].centroid.2, 0.0);
+        assert_eq!(out.geom_a.contours[0].centroid.2, 0.0);
         // reference frame stays 0
-        assert_eq!(out.dia_geom.reference_point.frame_index, 0);
+        assert_eq!(out.geom_a.reference_point.frame_index, 0);
     }
 }

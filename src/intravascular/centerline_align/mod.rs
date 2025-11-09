@@ -5,15 +5,15 @@ use crate::intravascular::centerline_align::align_algorithms::{
     get_transformations, FrameTransformation,
 };
 use crate::intravascular::io::{
-    input::{Centerline, Contour},
-    Geometry,
+    input::Centerline,
+    geometry::{ContourType, Contour, Geometry},
 };
 use crate::intravascular::processing::align_between::GeometryPair;
-use anyhow::Error;
+use anyhow::{anyhow, Error};
 
-use crate::intravascular::io::output::{write_geometry_vec_to_obj, GeometryType};
-use crate::intravascular::processing::process_utils::interpolate_contours;
-use crate::intravascular::to_object::write_mtl_geometry;
+use crate::intravascular::io::output::write_geometry_vec_to_obj;
+use crate::intravascular::to_object::interpolation::interpolate_contours;
+use crate::intravascular::to_object::write_mtl::write_mtl_geometry;
 use align_algorithms::best_rotation_three_point;
 use preprocessing::{prepare_geometry_alignment, preprocess_centerline};
 
@@ -29,14 +29,20 @@ pub fn align_three_point_rs(
     interpolation_steps: usize,
     output_dir: &str,
     case_name: &str,
-) -> (GeometryPair, Centerline) {
+) -> anyhow::Result<(GeometryPair, Centerline)> {
     let mut geom = prepare_geometry_alignment(geometry_pair);
     let resampled_centerline =
-        preprocess_centerline(centerline, &aortic_ref_pt, &geom.dia_geom).unwrap();
+        preprocess_centerline(centerline, &aortic_ref_pt, &geom.geom_a).unwrap();
+
+    let ref_idx = geom.geom_a.find_ref_frame_idx().map_err(|e| anyhow!("Couldn't find ref frame idx: {:?}", e))?;
+    let ref_point = geom.geom_a.frames[ref_idx]
+        .reference_point
+        .as_ref()
+        .ok_or_else(|| anyhow!("missing reference point"))?;
 
     let best_rot = best_rotation_three_point(
-        &geom.dia_geom.contours[0],
-        &geom.dia_geom.reference_point,
+        &geom.geom_a.frames[ref_idx].lumen,
+        ref_point,
         aortic_ref_pt,
         upper_ref_pt,
         lower_ref_pt,
@@ -45,7 +51,6 @@ pub fn align_three_point_rs(
     );
 
     geom = rotate_by_best_rotation(geom, best_rot);
-
     geom = apply_transformations(geom, &resampled_centerline);
 
     if write {
@@ -59,7 +64,7 @@ pub fn align_three_point_rs(
         .unwrap();
     }
 
-    (geom, resampled_centerline)
+    Ok((geom, resampled_centerline))
 }
 
 pub fn align_manual_rs(
@@ -104,38 +109,14 @@ pub fn align_manual_rs(
 // }
 
 fn rotate_by_best_rotation(mut geom_pair: GeometryPair, angle: f64) -> GeometryPair {
-    fn rotate_geometry(mut geom: Geometry, angle: f64) -> Geometry {
-        for contour in &mut geom.contours {
-            contour.rotate_contour(angle);
-        }
-
-        for wall in &mut geom.walls {
-            wall.rotate_contour(angle);
-        }
-
-        for catheter in &mut geom.catheter {
-            if let Some(contour) = geom.contours.iter().find(|c| c.id == catheter.id) {
-                catheter
-                    .rotate_contour_around_point(angle, (contour.centroid.0, contour.centroid.1));
-            } else {
-                eprintln!(
-                    "No matching contour found for catheter with id {}",
-                    catheter.id
-                );
-            }
-        }
-
-        geom
-    }
-
-    geom_pair.dia_geom = rotate_geometry(geom_pair.dia_geom, angle);
-    geom_pair.sys_geom = rotate_geometry(geom_pair.sys_geom, angle);
+    geom_pair.geom_a.rotate_geometry(angle);
+    geom_pair.geom_b.rotate_geometry(angle);
 
     geom_pair
 }
 
 fn apply_transformations(mut geom_pair: GeometryPair, centerline: &Centerline) -> GeometryPair {
-    let reference = geom_pair.dia_geom.clone();
+    let reference = geom_pair.geom_a.clone();
     let transformations = get_transformations(reference, centerline);
 
     fn transform_geometry(
