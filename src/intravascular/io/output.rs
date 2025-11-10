@@ -307,31 +307,3 @@ pub fn write_geometry_vec_to_obj(
 
     Ok(())
 }
-
-// Additional helper function to write individual geometry
-pub fn write_geometry_to_obj(
-    contour_type: ContourType,
-    case_name: &str,
-    output_dir: impl AsRef<Path>,
-    geometry: &Geometry,
-    uv_coords: &[(f64, f64)],
-    watertight: bool,
-) -> anyhow::Result<()> {
-    let output_dir = output_dir.as_ref();
-    std::fs::create_dir_all(output_dir).context(format!(
-        "Could not create output directory: {:?}",
-        output_dir
-    ))?;
-
-    let obj_name = format!("{}_{}.obj", contour_type.as_str(), case_name);
-    let mtl_name = format!("{}_{}.mtl", contour_type.as_str(), case_name);
-
-    let obj_path = output_dir.join(&obj_name);
-    let obj_path_str = obj_path
-        .to_str()
-        .ok_or_else(|| anyhow!("Invalid path for OBJ file"))?;
-
-    let contours = contour_type.get_contours(geometry);
-    write_obj_mesh(&contours, uv_coords, obj_path_str, &mtl_name, watertight)
-        .map_err(|e| anyhow!("Failed to write {}: {}", obj_name, e))
-}

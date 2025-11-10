@@ -144,7 +144,8 @@ pub fn build_geometry_from_inputdata(
         frame.sort_frame_points();
     }
 
-    todo!("Ensure that proximal frame has id 0 and lowest z");
+    geometry.ensure_proximal_at_position_zero();
+
     check_geometry_integrity(&geometry)?;
 
     Ok(geometry)
@@ -155,6 +156,7 @@ fn print_success_message() {
 }
 
 // Helper function for backward compatibility
+#[allow(dead_code)]
 pub fn load_geometry(
     input_dir: &str,
     label: String,

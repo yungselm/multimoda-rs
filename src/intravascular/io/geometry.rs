@@ -545,7 +545,7 @@ impl Frame {
 
 impl Geometry {
     pub fn new() -> anyhow::Result<Self> {
-        todo!("from files and from arrays")
+        todo!()
     }
 
     pub fn find_proximal_end_idx(&self) -> usize {
@@ -790,6 +790,69 @@ impl Geometry {
             }
             if let Some(ref mut rp) = frame.reference_point {
                 rp.frame_index = new_id;
+            }
+        }
+    }
+
+    /// Rotate frames so proximal end is at index 0, then reassign z-values
+    /// (smallest z goes to frame 0) and propagate z/frame indices to all points
+    /// and contour centroids. Reassigns contour ids sequentially (but preserves
+    /// Contour::original_frame). Renumbers Frame.id to match new vector index.
+    pub fn ensure_proximal_at_position_zero(&mut self) {
+        use std::cmp::Ordering;
+
+        let n = self.frames.len();
+        if n == 0 {
+            return;
+        }
+
+        let proximal_idx = self.find_proximal_end_idx();
+        let proximal_idx = proximal_idx.min(self.frames.len() - 1);
+
+        if proximal_idx != 0 {
+            self.frames.rotate_left(proximal_idx);
+        }
+
+        let mut zs: Vec<f64> = self.frames.iter().map(|f| f.centroid.2).collect();
+
+        zs.sort_by(|a, b| {
+            a.partial_cmp(b).unwrap_or(Ordering::Equal)
+        });
+
+        let mut next_contour_id: u32 = 0;
+
+        for (idx, frame) in self.frames.iter_mut().enumerate() {
+            let new_frame_id = idx as u32;
+            frame.id = new_frame_id;
+
+            let assigned_z = zs.get(idx).copied().unwrap_or(frame.centroid.2);
+
+            frame.centroid.2 = assigned_z;
+
+            frame.lumen.id = next_contour_id;
+            next_contour_id = next_contour_id.wrapping_add(1);
+
+            for p in frame.lumen.points.iter_mut() {
+                p.z = assigned_z;
+            }
+            if let Some(ref mut c) = frame.lumen.centroid {
+                c.2 = assigned_z;
+            }
+
+            for contour in frame.extras.values_mut() {
+                contour.id = next_contour_id;
+                next_contour_id = next_contour_id.wrapping_add(1);
+
+                for p in contour.points.iter_mut() {
+                    p.z = assigned_z;
+                }
+                if let Some(ref mut c) = contour.centroid {
+                    c.2 = assigned_z;
+                }
+            }
+
+            if let Some(ref mut rp) = frame.reference_point {
+                rp.z = assigned_z;
             }
         }
     }

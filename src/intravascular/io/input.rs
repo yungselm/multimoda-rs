@@ -194,9 +194,9 @@ impl InputData {
         Ok(input)
     }
 
-    fn quick_check_integrity(&self) {
-        todo!()
-    }
+    // fn quick_check_integrity(&self) {
+    //     todo!()
+    // }
 }
 
 /// Utility: detect whether the file uses comma or tab as delimiter.
@@ -391,5 +391,27 @@ impl Centerline {
         self.points
             .iter()
             .find(|p| p.contour_point.frame_index == frame_index)
+    }
+
+    /// Finds the index of the centerline point closest to the reference point
+    pub fn find_reference_cl_point_idx(&self, reference_point: &(f64, f64, f64)) -> usize {
+        // Helper function to calculate squared distance (avoids sqrt for performance)
+        fn distance_sq(contour_point: &ContourPoint, reference: &(f64, f64, f64)) -> f64 {
+            let dx = contour_point.x - reference.0;
+            let dy = contour_point.y - reference.1;
+            let dz = contour_point.z - reference.2;
+            dx * dx + dy * dy + dz * dz
+        }
+
+        self.points
+            .iter()
+            .enumerate()
+            .min_by(|(_, a), (_, b)| {
+                distance_sq(&a.contour_point, reference_point)
+                    .partial_cmp(&distance_sq(&b.contour_point, reference_point))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|(idx, _)| idx)
+            .unwrap()
     }
 }

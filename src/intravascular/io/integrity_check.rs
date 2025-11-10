@@ -17,6 +17,7 @@ pub fn check_geometry_integrity(geometry: &Geometry) -> Result<()> {
     check_contour_point_counts(geometry)?;
     check_original_frame_consistency(geometry)?;
     check_proximal_end_index(geometry)?;
+    check_z_distribution(geometry)?;
 
     Ok(())
 }
@@ -206,6 +207,20 @@ fn check_proximal_end_index(geometry: &Geometry) -> Result<()> {
     Ok(())
 }
 
+fn check_z_distribution(geometry: &Geometry) -> Result<()> {
+    let n = geometry.frames.len();
+    let z_pos_zero = geometry.frames[0].centroid.2;
+    let z_pos_n = geometry.frames[n - 1].centroid.2;
+    if z_pos_zero > z_pos_n {
+        return Err(anyhow!(
+            "First frame has higher z-coords {} than last frame {}",
+            z_pos_zero,
+            z_pos_n,
+        ));
+    }
+    Ok(())
+}
+
 /// Helper function to compute centroid from contour points
 fn compute_centroid_from_points(points: &[ContourPoint]) -> (f64, f64, f64) {
     let (sum_x, sum_y, sum_z) = points.iter().fold((0.0, 0.0, 0.0), |(sx, sy, sz), p| {
@@ -223,6 +238,7 @@ fn points_approximately_equal(a: (f64, f64, f64), b: (f64, f64, f64)) -> bool {
 }
 
 /// Additional detailed checks that can be run separately
+#[allow(dead_code)]
 pub fn detailed_geometry_analysis(geometry: &Geometry) -> Result<()> {
     println!("=== Detailed Geometry Analysis ===");
     println!("Geometry label: {}", geometry.label);

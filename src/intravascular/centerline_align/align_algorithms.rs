@@ -1,4 +1,4 @@
-use crate::intravascular::io::geometry::{ContourType, Contour, Geometry};
+use crate::intravascular::io::geometry::{Contour, Geometry};
 use crate::intravascular::io::input::ContourPoint;
 use crate::intravascular::io::input::{Centerline, CenterlinePoint};
 use nalgebra::{Point3, Rotation3, Unit, Vector3};
@@ -34,22 +34,16 @@ impl FrameTransformation {
     }
 }
 
-pub fn get_transformations(geometry: Geometry, centerline: &Centerline) -> Vec<FrameTransformation> {
+pub fn get_transformations(geometry: Geometry, centerline: &Centerline, ref_pt: &(f64, f64, f64)) -> Vec<FrameTransformation> {
     let mut transformations = Vec::new();
 
+    let ref_id_cl = centerline.find_reference_cl_point_idx(ref_pt) as u32;
+
     for frame in geometry.frames.into_iter() {
-        if let Some(cl_point) = centerline.get_by_frame(frame.id) {
-            // Align the lumen contour
+        if let Some(cl_point) = centerline.get_by_frame(frame.id + ref_id_cl) {
+            // Create one transformation per frame using the lumen as reference
             let transformation = align_frame(&frame.lumen, cl_point);
             transformations.push(transformation);
-            
-            // Optionally align extra contours if needed
-            for (contour_type, contour) in frame.extras {
-                if matches!(contour_type, ContourType::Eem | ContourType::Wall) {
-                    let extra_transformation = align_frame(&contour, cl_point);
-                    transformations.push(extra_transformation);
-                }
-            }
         }
     }
     transformations

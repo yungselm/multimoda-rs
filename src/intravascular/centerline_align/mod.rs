@@ -6,20 +6,18 @@ use crate::intravascular::centerline_align::align_algorithms::{
 };
 use crate::intravascular::io::{
     input::Centerline,
-    geometry::{ContourType, Contour, Geometry},
+    geometry::{ContourType, Geometry},
 };
 use crate::intravascular::processing::align_between::GeometryPair;
-use anyhow::{anyhow, Error};
+use anyhow::anyhow;
 
-use crate::intravascular::io::output::write_geometry_vec_to_obj;
-use crate::intravascular::to_object::interpolation::interpolate_contours;
-use crate::intravascular::to_object::write_mtl::write_mtl_geometry;
+use crate::intravascular::to_object::process_case;
 use align_algorithms::best_rotation_three_point;
-use preprocessing::{prepare_geometry_alignment, preprocess_centerline};
+use preprocessing::preprocess_centerline;
 
 pub fn align_three_point_rs(
     centerline: Centerline,
-    geometry_pair: GeometryPair,
+    mut geom_pair: GeometryPair,
     aortic_ref_pt: (f64, f64, f64),
     upper_ref_pt: (f64, f64, f64),
     lower_ref_pt: (f64, f64, f64),
@@ -28,80 +26,79 @@ pub fn align_three_point_rs(
     watertight: bool,
     interpolation_steps: usize,
     output_dir: &str,
+    contour_types: Vec<ContourType>,
     case_name: &str,
 ) -> anyhow::Result<(GeometryPair, Centerline)> {
-    let mut geom = prepare_geometry_alignment(geometry_pair);
     let resampled_centerline =
-        preprocess_centerline(centerline, &aortic_ref_pt, &geom.geom_a).unwrap();
+        preprocess_centerline(centerline, &geom_pair.geom_a).map_err(|e| anyhow!(
+            "Couldn't resample the centerline: {}", e
+        ))?;
 
-    let ref_idx = geom.geom_a.find_ref_frame_idx().map_err(|e| anyhow!("Couldn't find ref frame idx: {:?}", e))?;
-    let ref_point = geom.geom_a.frames[ref_idx]
+    let ref_idx = geom_pair.geom_a.find_ref_frame_idx().map_err(|e| anyhow!("Couldn't find ref frame idx: {:?}", e))?;
+    let ref_point = geom_pair.geom_a.frames[ref_idx]
         .reference_point
         .as_ref()
         .ok_or_else(|| anyhow!("missing reference point"))?;
+    let cl_ref_idx = resampled_centerline.find_reference_cl_point_idx(&aortic_ref_pt);
 
     let best_rot = best_rotation_three_point(
-        &geom.geom_a.frames[ref_idx].lumen,
+        &geom_pair.geom_a.frames[ref_idx].lumen,
         ref_point,
         aortic_ref_pt,
         upper_ref_pt,
         lower_ref_pt,
         angle_step,
-        &resampled_centerline.points[0],
+        &resampled_centerline.points[cl_ref_idx],
     );
 
-    geom = rotate_by_best_rotation(geom, best_rot);
-    geom = apply_transformations(geom, &resampled_centerline);
+    geom_pair = rotate_by_best_rotation(geom_pair, best_rot);
+    geom_pair = apply_transformations(geom_pair, &resampled_centerline, &aortic_ref_pt);
 
-    if write {
-        write_aligned_meshes(
-            geom.clone(),
-            interpolation_steps,
-            output_dir,
-            case_name,
-            watertight,
-        )
-        .unwrap();
-    }
+    geom_pair = if write {
+        process_case(
+            case_name, 
+            geom_pair, 
+            output_dir, 
+            interpolation_steps, 
+            watertight, 
+            &contour_types).map_err(|e| anyhow!("Failed to write obj: {}", e))?
+    } else { geom_pair };
 
-    Ok((geom, resampled_centerline))
+    Ok((geom_pair, resampled_centerline))
 }
 
 pub fn align_manual_rs(
     centerline: Centerline,
-    geometry_pair: GeometryPair,
+    mut geom_pair: GeometryPair,
     rotation_angle: f64,
-    start_point: usize,
+    ref_pt: (f64, f64, f64),
     write: bool,
     watertight: bool,
     interpolation_steps: usize,
     output_dir: &str,
+    contour_types: Vec<ContourType>,
     case_name: &str,
-) -> (GeometryPair, Centerline) {
-    let mut geom = prepare_geometry_alignment(geometry_pair);
-    // maybe stupidly extensive, but can reuse remove_leading_points function
-    let ref_pt = centerline.points[start_point].contour_point;
-    let ref_coords = (ref_pt.x, ref_pt.y, ref_pt.z);
-
+) -> anyhow::Result<(GeometryPair, Centerline)> {
     let resampled_centerline =
-        preprocess_centerline(centerline, &ref_coords, &geom.dia_geom).unwrap();
+        preprocess_centerline(centerline, &geom_pair.geom_a).map_err(|e| anyhow!(
+            "Couldn't resample the centerline: {}", e
+        ))?;
 
-    geom = rotate_by_best_rotation(geom, rotation_angle);
+    geom_pair = rotate_by_best_rotation(geom_pair, rotation_angle);
 
-    geom = apply_transformations(geom, &resampled_centerline);
+    geom_pair = apply_transformations(geom_pair, &resampled_centerline, &ref_pt);
 
-    if write {
-        write_aligned_meshes(
-            geom.clone(),
-            interpolation_steps,
-            output_dir,
-            case_name,
-            watertight,
-        )
-        .unwrap();
-    }
+    geom_pair = if write {
+        process_case(
+            case_name, 
+            geom_pair, 
+            output_dir, 
+            interpolation_steps, 
+            watertight, 
+            &contour_types).map_err(|e| anyhow!("Failed to write obj: {}", e))?
+    } else { geom_pair };
 
-    (geom, resampled_centerline)
+    Ok((geom_pair, resampled_centerline))
 }
 
 // pub fn align_hausdorff() -> () {
@@ -115,102 +112,50 @@ fn rotate_by_best_rotation(mut geom_pair: GeometryPair, angle: f64) -> GeometryP
     geom_pair
 }
 
-fn apply_transformations(mut geom_pair: GeometryPair, centerline: &Centerline) -> GeometryPair {
+fn apply_transformations(mut geom_pair: GeometryPair, centerline: &Centerline, ref_pt: &(f64, f64, f64)) -> GeometryPair {
     let reference = geom_pair.geom_a.clone();
-    let transformations = get_transformations(reference, centerline);
+    let transformations = get_transformations(reference, centerline, ref_pt);
 
     fn transform_geometry(
         mut geometry: Geometry,
         transformations: &Vec<FrameTransformation>,
     ) -> Geometry {
-        // Sys contours
-        for contour in &mut geometry.contours {
-            if let Some(tr) = transformations.iter().find(|t| t.frame_index == contour.id) {
-                for pt in &mut contour.points {
+        // Transform each frame
+        for frame in &mut geometry.frames {
+            // Find transformation for this frame
+            if let Some(tr) = transformations.iter().find(|t| t.frame_index == frame.id) {
+                // Transform lumen contour
+                for pt in &mut frame.lumen.points {
                     *pt = tr.apply_to_point(pt);
                 }
-                contour.centroid = Contour::compute_centroid(&contour.points);
-            } else {
-                eprintln!("No transformation found for contour {}", contour.id);
-            }
-        }
+                // Update lumen centroid
+                frame.lumen.compute_centroid();
+                
+                // Transform extra contours (walls, catheter, etc.)
+                for (_, contour) in frame.extras.iter_mut() {
+                    for pt in &mut contour.points {
+                        *pt = tr.apply_to_point(pt);
+                    }
+                    contour.compute_centroid();
+                }
 
-        // Sys walls
-        for wall in &mut geometry.walls {
-            if let Some(tr) = transformations.iter().find(|t| t.frame_index == wall.id) {
-                for pt in &mut wall.points {
-                    *pt = tr.apply_to_point(pt);
+                // Transform reference point if it exists
+                if let Some(ref mut reference_pt) = frame.reference_point {
+                    *reference_pt = tr.apply_to_point(reference_pt);
                 }
-                wall.centroid = Contour::compute_centroid(&wall.points);
-            } else {
-                eprintln!("No transformation found for wall {}", wall.id);
-            }
-        }
 
-        // Sys catheter
-        for catheter in &mut geometry.catheter {
-            if let Some(tr) = transformations
-                .iter()
-                .find(|t| t.frame_index == catheter.id)
-            {
-                for pt in &mut catheter.points {
-                    *pt = tr.apply_to_point(pt);
-                }
+                // Update frame centroid
+                frame.centroid = frame.lumen.centroid.unwrap_or((0.0, 0.0, 0.0));
+            } else {
+                eprintln!("No transformation found for frame {}", frame.id);
             }
-            catheter.centroid = Contour::compute_centroid(&catheter.points);
         }
 
         geometry
     }
 
-    geom_pair.dia_geom = transform_geometry(geom_pair.dia_geom, &transformations);
-    geom_pair.sys_geom = transform_geometry(geom_pair.sys_geom, &transformations);
+    geom_pair.geom_a = transform_geometry(geom_pair.geom_a, &transformations);
+    geom_pair.geom_b = transform_geometry(geom_pair.geom_b, &transformations);
 
     geom_pair
-}
-
-fn write_aligned_meshes(
-    geom_pair: GeometryPair,
-    interpolation_steps: usize,
-    output_dir: &str,
-    case_name: &str,
-    watertight: bool,
-) -> Result<(), Error> {
-    let geometries = interpolate_contours(
-        &geom_pair.dia_geom,
-        &geom_pair.sys_geom,
-        interpolation_steps,
-    )?;
-
-    let (uv_coords_contours, uv_coords_catheter, uv_coords_walls) =
-        write_mtl_geometry(&geometries, output_dir, case_name);
-
-    write_geometry_vec_to_obj(
-        GeometryType::Contour,
-        case_name,
-        output_dir,
-        &geometries,
-        &uv_coords_contours,
-        watertight,
-    )?;
-
-    write_geometry_vec_to_obj(
-        GeometryType::Catheter,
-        case_name,
-        output_dir,
-        &geometries,
-        &uv_coords_catheter,
-        watertight,
-    )?;
-
-    write_geometry_vec_to_obj(
-        GeometryType::Wall,
-        case_name,
-        output_dir,
-        &geometries,
-        &uv_coords_walls,
-        watertight,
-    )?;
-
-    Ok(())
 }
