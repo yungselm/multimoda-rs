@@ -61,13 +61,9 @@ pub fn offset_contour(
     distance: f64,
     point_range: Option<RangeInclusive<u32>>,
 ) -> Contour {
-    let (cx, cy, cz) = match contour.centroid {
-        Some(c) => c,
-        None => {
-            let computed = contour.compute_centroid();
-            computed.centroid.unwrap()
-        }
-    };
+    let mut contour = contour.clone();
+    contour.compute_centroid();
+    let (cx, cy, cz) = contour.centroid.unwrap();
 
     let new_points = contour.points.iter().map(|pt| {
         let mut p = pt.clone();

@@ -113,7 +113,7 @@ fn resample_by_diff(geometry: &Geometry, diff: f64) -> Geometry {
 
     for i in 1..geometry.frames.len() {
         let z_value = start_z + i as f64 * diff;
-        geometry.frames[i].set_value(None, None, None, None, Some(z_value));
+        geometry.frames[i].set_value(None, None, None, Some(z_value));
     }
     geometry
 }

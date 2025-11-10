@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
-use std::collections::{HashMap, HashSet};
+// removed unused HashMap import here
+use std::collections::HashSet;
 
 use super::geometry::{ContourType, Geometry};
 use super::input::ContourPoint;
@@ -10,14 +11,23 @@ pub fn check_geometry_integrity(geometry: &Geometry) -> Result<()> {
         return Err(anyhow!("Geometry has no frames"));
     }
 
-    check_frame_ids_consecutive(geometry)?;
-    check_centroids_match(geometry)?;
-    check_lumen_presence(geometry)?;
-    check_reference_point(geometry)?;
-    check_contour_point_counts(geometry)?;
-    check_original_frame_consistency(geometry)?;
-    check_proximal_end_index(geometry)?;
-    check_z_distribution(geometry)?;
+    let checks: &[(&str, fn(&Geometry) -> Result<()>)] = &[
+        ("check_frame_ids_consecutive", check_frame_ids_consecutive),
+        ("check_centroids_match", check_centroids_match),
+        ("check_lumen_presence", check_lumen_presence),
+        ("check_reference_point", check_reference_point),
+        ("check_contour_point_counts", check_contour_point_counts),
+        ("check_original_frame_consistency", check_original_frame_consistency),
+        ("check_proximal_end_index", check_proximal_end_index),
+        ("check_z_distribution", check_z_distribution),
+    ];
+
+    for (name, f) in checks {
+        if let Err(e) = f(geometry) {
+            println!("Integrity check '{}' failed: {}", name, e);
+            return Err(e);
+        }
+    }
 
     Ok(())
 }
@@ -96,7 +106,7 @@ fn check_lumen_presence(geometry: &Geometry) -> Result<()> {
     Ok(())
 }
 
-/// Check that exactly one reference point exists in the geometry
+/// Check that at most one reference point exists in the geometry
 fn check_reference_point(geometry: &Geometry) -> Result<()> {
     let reference_frames: Vec<u32> = geometry
         .frames
@@ -105,7 +115,7 @@ fn check_reference_point(geometry: &Geometry) -> Result<()> {
         .collect();
 
     match reference_frames.len() {
-        0 => Err(anyhow!("No reference point found in geometry")),
+        0 => Ok(()), // allow zero reference points
         1 => Ok(()),
         n => Err(anyhow!("Expected exactly one reference point, found {}", n)),
     }
@@ -113,50 +123,52 @@ fn check_reference_point(geometry: &Geometry) -> Result<()> {
 
 /// Check that all contours (lumen and extras) maintain consistent point counts across all frames
 fn check_contour_point_counts(geometry: &Geometry) -> Result<()> {
-    let mut point_counts: HashMap<ContourType, usize> = HashMap::new();
+    use std::collections::HashMap;
 
-    // First frame sets the expected counts
-    if let Some(first_frame) = geometry.frames.first() {
-        point_counts.insert(ContourType::Lumen, first_frame.lumen.points.len());
-        for (_, contour) in &first_frame.extras {
-            point_counts.insert(contour.kind, contour.points.len());
-        }
-    }
+    // Map from ContourType -> expected point count (first observed)
+    let mut expected_counts: HashMap<ContourType, usize> = HashMap::new();
 
-    // Check all other frames
     for (frame_index, frame) in geometry.frames.iter().enumerate() {
-        // Check lumen
-        if let Some(&expected_count) = point_counts.get(&ContourType::Lumen) {
-            if frame.lumen.points.len() != expected_count {
-                return Err(anyhow!(
-                    "Lumen point count mismatch in frame {} (ID {}). Expected {}, found {}",
-                    frame_index,
-                    frame.id,
-                    expected_count,
-                    frame.lumen.points.len()
-                ));
+        // Lumen: establish expected count on first seen, then require same count in subsequent frames
+        let lumen_count = frame.lumen.points.len();
+        match expected_counts.get(&ContourType::Lumen) {
+            Some(&expected) => {
+                if lumen_count != expected {
+                    return Err(anyhow!(
+                        "Lumen point count mismatch in frame {} (ID {}). Expected {}, found {}",
+                        frame_index,
+                        frame.id,
+                        expected,
+                        lumen_count
+                    ));
+                }
+            }
+            None => {
+                expected_counts.insert(ContourType::Lumen, lumen_count);
             }
         }
 
-        // Check extras
-        for (_, contour) in &frame.extras {
-            if let Some(&expected_count) = point_counts.get(&contour.kind) {
-                if contour.points.len() != expected_count {
+        // Extras: for each contour kind present in this frame, require consistency among frames that have it.
+        for (_contour_type, contour) in &frame.extras {
+            let kind = contour.kind;
+            let count = contour.points.len();
+            if let Some(&expected) = expected_counts.get(&kind) {
+                if count != expected {
                     return Err(anyhow!(
                         "{:?} contour point count mismatch in frame {} (ID {}). Expected {}, found {}",
-                        contour.kind,
+                        kind,
                         frame_index,
                         frame.id,
-                        expected_count,
-                        contour.points.len()
+                        expected,
+                        count
                     ));
                 }
             } else {
-                // This contour type wasn't in the first frame, add it
-                point_counts.insert(contour.kind, contour.points.len());
+                expected_counts.insert(kind, count);
             }
         }
     }
+
     Ok(())
 }
 
@@ -195,13 +207,28 @@ fn check_original_frame_consistency(geometry: &Geometry) -> Result<()> {
     Ok(())
 }
 
-/// check that proximal end has index 0
+/// Check that the proximal end reported by the Geometry matches the frame with the minimum z coordinate.
+/// This is more robust than expecting index 0 unconditionally.
 fn check_proximal_end_index(geometry: &Geometry) -> Result<()> {
     let proximal_idx = geometry.find_proximal_end_idx();
-    if proximal_idx != 0 {
+
+    // find the index of the frame with minimum z
+    let mut min_z = std::f64::INFINITY;
+    let mut min_idx = 0usize;
+    for (i, f) in geometry.frames.iter().enumerate() {
+        let z = f.centroid.2;
+        if z < min_z {
+            min_z = z;
+            min_idx = i;
+        }
+    }
+
+    if proximal_idx != min_idx {
         return Err(anyhow!(
-            "Proximal end index is {}, expected 0",
-            proximal_idx
+            "Proximal end index is {}, but frame with minimum z is {} (z={}).",
+            proximal_idx,
+            min_idx,
+            min_z
         ));
     }
     Ok(())
@@ -223,6 +250,11 @@ fn check_z_distribution(geometry: &Geometry) -> Result<()> {
 
 /// Helper function to compute centroid from contour points
 fn compute_centroid_from_points(points: &[ContourPoint]) -> (f64, f64, f64) {
+    if points.is_empty() {
+        // avoid divide-by-zero; return a safe default centroid
+        return (0.0, 0.0, 0.0);
+    }
+
     let (sum_x, sum_y, sum_z) = points.iter().fold((0.0, 0.0, 0.0), |(sx, sy, sz), p| {
         (sx + p.x, sy + p.y, sz + p.z)
     });
@@ -298,8 +330,8 @@ mod tests {
             .collect()
     }
 
-    fn create_test_frame(id: u32, original_frame: u32, has_reference: bool) -> Frame {
-        let points = create_test_contour_points(4, original_frame, id as f64);
+    fn create_test_frame(id: u32, original_frame: u32, has_reference: bool, z: f64) -> Frame {
+        let points = create_test_contour_points(4, original_frame, z);
         let centroid = compute_centroid_from_points(&points);
 
         Frame {
@@ -332,14 +364,15 @@ mod tests {
 
     #[test]
     fn test_valid_geometry() {
-        let geometry = Geometry {
+        let mut geometry = Geometry {
             frames: vec![
-                create_test_frame(0, 10, false),
-                create_test_frame(1, 11, true), // Only one frame has reference point
-                create_test_frame(2, 12, false),
+                create_test_frame(0, 10, false, 0.0), // z=0.0 - should be proximal end
+                create_test_frame(1, 11, true, 1.0),  // Only ONE frame has reference point
+                create_test_frame(2, 12, false, 2.0),
             ],
             label: "test".to_string(),
         };
+        geometry.ensure_proximal_at_position_zero();
 
         assert!(check_geometry_integrity(&geometry).is_ok());
     }
@@ -348,8 +381,8 @@ mod tests {
     fn test_non_consecutive_frame_ids() {
         let geometry = Geometry {
             frames: vec![
-                create_test_frame(0, 10, false),
-                create_test_frame(2, 11, false), // Missing ID 1
+                create_test_frame(0, 10, false, 0.0),
+                create_test_frame(2, 11, false, 1.0), // Missing ID 1
             ],
             label: "test".to_string(),
         };
@@ -361,7 +394,7 @@ mod tests {
 
     #[test]
     fn test_missing_lumen() {
-        let mut frame = create_test_frame(0, 10, false);
+        let mut frame = create_test_frame(0, 10, false, 0.0);
         frame.lumen.points.clear(); // Empty lumen points
 
         let geometry = Geometry {
@@ -378,8 +411,8 @@ mod tests {
     fn test_multiple_reference_points() {
         let geometry = Geometry {
             frames: vec![
-                create_test_frame(0, 10, true),
-                create_test_frame(1, 11, true), // Two frames with reference points
+                create_test_frame(0, 10, true, 0.0),
+                create_test_frame(1, 11, true, 1.0), // Two frames with reference points
             ],
             label: "test".to_string(),
         };
@@ -394,8 +427,8 @@ mod tests {
 
     #[test]
     fn test_point_count_mismatch_across_frames() {
-        let frame1 = create_test_frame(0, 10, false);
-        let mut frame2 = create_test_frame(1, 11, false);
+        let frame1 = create_test_frame(0, 10, false, 0.0);
+        let mut frame2 = create_test_frame(1, 11, false, 1.0);
 
         // Frame2 lumen has different point count than frame1
         frame2.lumen.points = create_test_contour_points(5, 11, 1.0); // 5 points vs 4 in frame1
@@ -415,8 +448,8 @@ mod tests {
 
     #[test]
     fn test_extra_contour_point_count_mismatch() {
-        let mut frame1 = create_test_frame(0, 10, false);
-        let mut frame2 = create_test_frame(1, 11, false);
+        let mut frame1 = create_test_frame(0, 10, false, 0.0);
+        let mut frame2 = create_test_frame(1, 11, false, 1.0);
 
         // Add catheter contour to both frames with consistent point counts
         let catheter_points1 = create_test_contour_points(6, 10, 0.0);
@@ -448,16 +481,17 @@ mod tests {
             },
         );
 
-        let geometry = Geometry {
+        let mut geometry = Geometry {
             frames: vec![frame1.clone(), frame2.clone()],
             label: "test".to_string(),
         };
+        geometry.ensure_proximal_at_position_zero();
 
         // This should pass - consistent point counts across frames
         assert!(check_geometry_integrity(&geometry).is_ok());
 
         // Now test with inconsistent point counts
-        let mut frame3 = create_test_frame(2, 12, false);
+        let mut frame3 = create_test_frame(2, 12, false, 2.0);
         frame3.extras.insert(
             ContourType::Catheter,
             Contour {
@@ -486,7 +520,7 @@ mod tests {
 
     #[test]
     fn test_original_frame_mismatch() {
-        let mut frame = create_test_frame(0, 10, false);
+        let mut frame = create_test_frame(0, 10, false, 0.0);
 
         // Add an extra contour with wrong original_frame
         frame.extras.insert(

@@ -76,7 +76,7 @@ pub fn align_between_geometries(
 #[derive(Debug, Clone)]
 struct PointWithFrameInfo {
     pub point: ContourPoint,
-    pub frame_id: u32,
+    pub _frame_id: u32,
     pub frame_centroid: (f64, f64, f64),
 }
 
@@ -96,7 +96,7 @@ fn extract_geometry_points_with_frame_info(
         for point in sampled {
             all_points.push(PointWithFrameInfo {
                 point,
-                frame_id: frame.id,
+                _frame_id: frame.id,
                 frame_centroid: frame.centroid,
             });
         }

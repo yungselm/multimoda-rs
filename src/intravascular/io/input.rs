@@ -18,6 +18,7 @@ use std::path::Path;
 ///     frame_idx, x, y, z
 ///
 /// not automatically kept in sync with geometry.rs
+#[derive(Debug, Clone)]
 pub struct InputData {
     pub lumen: Vec<ContourPoint>,
     pub eem: Option<Vec<ContourPoint>>,
@@ -69,39 +70,41 @@ impl InputData {
 
         let phase = if diastole { "diastolic" } else { "systolic" };
 
-        // iterate over provided names and attempt to build/read the corresponding files
+        // Read required files - these will crash if missing
+        let contours_fname = format!("{}_contours.csv", phase);
+        let contours_path = path.join(&contours_fname);
+        if contours_path.exists() {
+            lumen = Some(
+                ContourPoint::read_contour_data(&contours_path)
+                    .with_context(|| format!("reading {}", contours_path.display()))?,
+            );
+        } else {
+            return Err(anyhow::anyhow!(
+                "required contours file missing: {:?}",
+                contours_path
+            ));
+        }
+
+        let ref_fname = format!("{}_reference_points.csv", phase);
+        let ref_path = path.join(&ref_fname);
+        if ref_path.exists() {
+            ref_point = Some(
+                ContourPoint::read_reference_point(&ref_path)
+                    .with_context(|| format!("reading {}", ref_path.display()))?,
+            );
+        } else {
+            return Err(anyhow::anyhow!(
+                "required reference-point file missing: {:?}",
+                ref_path
+            ));
+        }
+
+        // Process optional files from names mapping - skip if missing
         for (_ctype, raw_name) in names.iter() {
             let name = raw_name.trim().to_lowercase();
             match name.as_str() {
                 "" | "lumen" => {
-                    // main contour files: "<phase>_contours.csv" and "<phase>_reference_points.csv"
-                    let contours_fname = format!("{}_contours.csv", phase);
-                    let contours_path = path.join(&contours_fname);
-                    if contours_path.exists() {
-                        lumen = Some(
-                            ContourPoint::read_contour_data(&contours_path)
-                                .with_context(|| format!("reading {}", contours_path.display()))?,
-                        );
-                    } else {
-                        return Err(anyhow::anyhow!(
-                            "expected lumen contours file missing: {:?}",
-                            contours_path
-                        ));
-                    }
-
-                    let ref_fname = format!("{}_reference_points.csv", phase);
-                    let ref_path = path.join(&ref_fname);
-                    if ref_path.exists() {
-                        ref_point = Some(
-                            ContourPoint::read_reference_point(&ref_path)
-                                .with_context(|| format!("reading {}", ref_path.display()))?,
-                        );
-                    } else {
-                        return Err(anyhow::anyhow!(
-                            "expected reference-point file missing: {:?}",
-                            ref_path
-                        ));
-                    }
+                    // Already handled above, skip
                 }
 
                 "branch" | "sidebranch" => {
@@ -113,7 +116,7 @@ impl InputData {
                                 .with_context(|| format!("reading {}", p.display()))?,
                         );
                     } else {
-                        return Err(anyhow::anyhow!("expected file missing: {:?}", p));
+                        eprintln!("sidebranch file not found, skipping: {:?}", p);
                     }
                 }
 
@@ -126,7 +129,7 @@ impl InputData {
                                 .with_context(|| format!("reading {}", p.display()))?,
                         );
                     } else {
-                        return Err(anyhow::anyhow!("expected file missing: {:?}", p));
+                        eprintln!("calcification file not found, skipping: {:?}", p);
                     }
                 }
 
@@ -139,7 +142,7 @@ impl InputData {
                                 .with_context(|| format!("reading {}", p.display()))?,
                         );
                     } else {
-                        return Err(anyhow::anyhow!("expected file missing: {:?}", p));
+                        eprintln!("eem file not found, skipping: {:?}", p);
                     }
                 }
 
@@ -151,7 +154,7 @@ impl InputData {
                             read_records(&p).with_context(|| format!("reading {}", p.display()))?,
                         );
                     } else {
-                        return Err(anyhow::anyhow!("expected records file missing: {:?}", p));
+                        eprintln!("records file not found, skipping: {:?}", p);
                     }
                 }
 
@@ -174,11 +177,9 @@ impl InputData {
             }
         }
 
-        // Validate required fields
-        let lumen =
-            lumen.ok_or_else(|| anyhow::anyhow!("lumen contours not found in directory"))?;
-        let ref_point =
-            ref_point.ok_or_else(|| anyhow::anyhow!("reference point not found in directory"))?;
+        // Validate required fields (should always be Some at this point due to earlier checks)
+        let lumen = lumen.expect("lumen contours should be set");
+        let ref_point = ref_point.expect("reference point should be set");
 
         let input = InputData {
             lumen,
@@ -413,5 +414,138 @@ impl Centerline {
             })
             .map(|(idx, _)| idx)
             .unwrap()
+    }
+}
+
+#[cfg(test)]
+mod input_tests {
+    use super::*;
+
+    #[test]
+    fn test_process_directory_runs_with_example_data() -> anyhow::Result<()> {
+        use crate::intravascular::io::geometry::ContourType;
+
+        let mut names: HashMap<ContourType, &str> = HashMap::new();
+        names.insert(ContourType::Lumen, "lumen");
+        names.insert(ContourType::Eem, "eem");
+        names.insert(ContourType::Calcification, "calcification");
+        names.insert(ContourType::Sidebranch, "sidebranch");
+
+        let data_path = Path::new("./data/ivus_full");
+        let input = InputData::process_directory(data_path, names, true)?;
+
+        assert!(!input.lumen.is_empty(), "lumen contour vector should not be empty");
+        assert!(input.eem.is_some(), "eem contour vector should not be empty");
+        assert!(input.calcification.is_some(), "calcification contour vector should not be empty");
+        assert!(input.record.is_none(), "record vector should be empty");
+        assert!(input.ref_point.x > 0.0, "ref_point should not be empty");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_contour_point_distance() {
+        let p1 = ContourPoint {
+            frame_index: 1,
+            point_index: 0,
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            aortic: false,
+        };
+        let p2 = ContourPoint {
+            frame_index: 1,
+            point_index: 1,
+            x: 3.0,
+            y: 4.0,
+            z: 0.0,
+            aortic: false,
+        };
+        assert!((p1.distance_to(&p2) - 5.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_rotate_point() {
+        use std::f64::consts::PI;
+
+        let p = ContourPoint {
+            frame_index: 1,
+            point_index: 0,
+            x: 1.0,
+            y: 0.0,
+            z: 0.0,
+            aortic: false,
+        };
+        let rotated = p.rotate_point(PI / 2.0, (0.0, 0.0));
+        assert!((rotated.x - 0.0).abs() < 1e-6);
+        assert!((rotated.y - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_centerline_normals() {
+        let points = vec![
+            ContourPoint {
+                frame_index: 1,
+                point_index: 0,
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 2,
+                point_index: 1,
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 3,
+                point_index: 2,
+                x: 2.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+        ];
+        let centerline = Centerline::from_contour_points(points);
+        assert_eq!(centerline.points[0].normal, Vector3::new(1.0, 0.0, 0.0));
+        assert_eq!(centerline.points[1].normal, Vector3::new(1.0, 0.0, 0.0));
+        assert_eq!(centerline.points[2].normal, Vector3::new(1.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn test_cl_find_ref_pt() {
+        let points = vec![
+            ContourPoint {
+                frame_index: 1,
+                point_index: 0,
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 2,
+                point_index: 1,
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 3,
+                point_index: 2,
+                x: 2.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+        ];
+        let centerline = Centerline::from_contour_points(points);
+        let ref_pt = (0.0, 0.0, 0.0);
+        let ref_id = centerline.find_reference_cl_point_idx(&ref_pt);
+        assert_eq!(centerline.points[0], centerline.points[ref_id]);        
     }
 }
