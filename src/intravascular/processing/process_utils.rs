@@ -79,63 +79,63 @@ pub fn hausdorff_distance(set1: &[ContourPoint], set2: &[ContourPoint]) -> f64 {
     forward.max(backward)
 }
 
-/// Computes directed Hausdorff distance from A to B
-fn directed_hausdorff(contour_a: &[ContourPoint], contour_b: &[ContourPoint]) -> f64 {
-    contour_a
-        .par_iter() // Use parallel iteration
-        .map(|pa| {
-            contour_b
-                .iter()
-                .map(|pb| {
-                    let dx = pa.x - pb.x;
-                    let dy = pa.y - pb.y;
-                    (dx * dx + dy * dy).sqrt()
-                })
-                .fold(std::f64::MAX, f64::min) // Directly find min without storing a Vec
-        })
-        .reduce(|| 0.0, f64::max) // Directly find max without extra allocation
-}
-
-// // TODO implement this more efficient hausdorff version
+// /// Computes directed Hausdorff distance from A to B
 // fn directed_hausdorff(contour_a: &[ContourPoint], contour_b: &[ContourPoint]) -> f64 {
-//     // Keep behavior simple for empty inputs (match prior behavior -> 0.0)
-//     if contour_a.is_empty() || contour_b.is_empty() {
-//         return 0.0;
-//     }
-
-//     // Decide chunk size based on number of threads to create many tasks but not too many
-//     let threads = rayon::current_num_threads().max(1);
-//     // make several chunks per thread for load balancing
-//     let chunks_per_thread = 4;
-//     let chunk_size = ((contour_a.len() + threads * chunks_per_thread - 1)
-//         / (threads * chunks_per_thread))
-//         .max(1);
-
-//     // For each chunk, compute the local maximum of the minimum squared distances
-//     let max_sq = contour_a
-//         .par_chunks(chunk_size)
-//         .map(|chunk| {
-//             let mut local_max_sq = 0.0_f64;
-//             for pa in chunk {
-//                 // find min squared distance from pa to any pb (sequential inside chunk)
-//                 let mut min_sq = f64::INFINITY;
-//                 for pb in contour_b.iter() {
+//     contour_a
+//         .par_iter() // Use parallel iteration
+//         .map(|pa| {
+//             contour_b
+//                 .iter()
+//                 .map(|pb| {
 //                     let dx = pa.x - pb.x;
 //                     let dy = pa.y - pb.y;
-//                     let d2 = dx * dx + dy * dy;
-//                     if d2 < min_sq {
-//                         min_sq = d2;
-//                     }
-//                 }
-//                 if min_sq.is_finite() && min_sq > local_max_sq {
-//                     local_max_sq = min_sq;
-//                 }
-//             }
-//             local_max_sq
+//                     (dx * dx + dy * dy).sqrt()
+//                 })
+//                 .fold(std::f64::MAX, f64::min) // Directly find min without storing a Vec
 //         })
-//         .reduce(|| 0.0_f64, f64::max);
-
-//     max_sq.sqrt()
+//         .reduce(|| 0.0, f64::max) // Directly find max without extra allocation
 // }
+
+// TODO implement this more efficient hausdorff version
+fn directed_hausdorff(contour_a: &[ContourPoint], contour_b: &[ContourPoint]) -> f64 {
+    // Keep behavior simple for empty inputs (match prior behavior -> 0.0)
+    if contour_a.is_empty() || contour_b.is_empty() {
+        return 0.0;
+    }
+
+    // Decide chunk size based on number of threads to create many tasks but not too many
+    let threads = rayon::current_num_threads().max(1);
+    // make several chunks per thread for load balancing
+    let chunks_per_thread = 4;
+    let chunk_size = ((contour_a.len() + threads * chunks_per_thread - 1)
+        / (threads * chunks_per_thread))
+        .max(1);
+
+    // For each chunk, compute the local maximum of the minimum squared distances
+    let max_sq = contour_a
+        .par_chunks(chunk_size)
+        .map(|chunk| {
+            let mut local_max_sq = 0.0_f64;
+            for pa in chunk {
+                // find min squared distance from pa to any pb (sequential inside chunk)
+                let mut min_sq = f64::INFINITY;
+                for pb in contour_b.iter() {
+                    let dx = pa.x - pb.x;
+                    let dy = pa.y - pb.y;
+                    let d2 = dx * dx + dy * dy;
+                    if d2 < min_sq {
+                        min_sq = d2;
+                    }
+                }
+                if min_sq.is_finite() && min_sq > local_max_sq {
+                    local_max_sq = min_sq;
+                }
+            }
+            local_max_sq
+        })
+        .reduce(|| 0.0_f64, f64::max);
+
+    max_sq.sqrt()
+}
 
 // TODO: Move the interpolation to process_utils

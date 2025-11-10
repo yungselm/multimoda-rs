@@ -57,13 +57,27 @@ pub fn align_frames_in_geometry(
     };
 
     let logger = Arc::new(Mutex::new(Vec::<AlignLog>::new()));
+    
+    let mut cumulative_rotation = 0.0;
+
+    // Helper function to wrap rotation to [-PI, PI]
+    fn wrap_rotation(angle: f64) -> f64 {
+        use std::f64::consts::PI;
+        let two_pi = 2.0 * PI;
+        let mut wrapped = angle % two_pi;
+        if wrapped > PI {
+            wrapped -= two_pi;
+        } else if wrapped < -PI {
+            wrapped += two_pi;
+        }
+        wrapped
+    }
 
     for i in 1..geometry.frames.len() {
         let (prev_frames, curr_frames) = geometry.frames.split_at_mut(i);
         let current = &mut curr_frames[0];
         let previous = &prev_frames[i - 1];
 
-        // TODO: Later maybe add option to move first contour to (0.0, 0.0, 0.0)
         let translation = (
             previous.centroid.0 - current.centroid.0,
             previous.centroid.1 - current.centroid.1,
@@ -77,6 +91,7 @@ pub fn align_frames_in_geometry(
         let _reference_points =
             catheter_lumen_vec_from_frames(&previous, sample_size, sample_size_catheter);
 
+        current.rotate_frame(cumulative_rotation);
         let best_rotation = if bruteforce {
             search_range(
                 |angle: f64| {
@@ -101,6 +116,7 @@ pub fn align_frames_in_geometry(
             )
         };
         current.rotate_frame(best_rotation);
+        cumulative_rotation = wrap_rotation(cumulative_rotation + best_rotation);
 
         let new_log = AlignLog {
             contour_id: current.id,
@@ -129,7 +145,7 @@ pub fn align_frames_in_geometry(
         geometry.clone()
     };
 
-    let wall_frames = create_wall_frames(&final_geometry.frames, false, anomalous_bool);
+    let wall_frames = create_wall_frames(&final_geometry.frames, anomalous_bool, false);
     final_geometry = Geometry {
         frames: wall_frames,
         label: final_geometry.label,
@@ -692,4 +708,39 @@ fn dump_table(logs: &[AlignLog]) {
         print!("{}+", "-".repeat(w + 2));
     }
     println!();
+}
+
+#[cfg(test)]
+mod align_within_tests {
+    use super::*;
+
+    #[test]
+    fn test_align_frames_in_geometry() -> anyhow::Result<()> {
+        use crate::intravascular::io::build_geometry_from_inputdata;
+        use std::path::Path;
+
+        let mut geometry = build_geometry_from_inputdata(
+            None, 
+            // Some(Path::new("data/fixtures/idealized_geometry")), 
+            Some(Path::new("data/ivus_stress")), 
+            "stress", 
+            true, 
+            (4.5, 4.5), 
+            0.5, 
+            20)?;
+
+        let (geom, logs, anomalous) = align_frames_in_geometry(
+            &mut geometry, 
+            0.01, 
+            45.0, 
+            true, 
+            false, 
+            200)?;
+
+        println!("Logs content: {:?}", logs);
+
+        assert!(!geom.frames.is_empty());
+        assert_eq!(anomalous, true);
+        Ok(())
+    }
 }
