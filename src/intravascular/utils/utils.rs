@@ -1,3 +1,4 @@
+// src/utils/utils.rs this module contains only debugging functions
 use csv::Writer;
 use std::error::Error;
 use std::fs::File;

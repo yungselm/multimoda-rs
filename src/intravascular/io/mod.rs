@@ -40,36 +40,30 @@ pub fn build_geometry_from_inputdata(
     // First, collect all unique original frame IDs from ALL contour types
     let mut all_original_frames: HashSet<u32> = HashSet::new();
 
-    // Add lumen frames
     for point in &input_data.lumen {
         all_original_frames.insert(point.frame_index);
     }
 
-    // Add eem frames if present
     if let Some(eem_points) = &input_data.eem {
         for point in eem_points {
             all_original_frames.insert(point.frame_index);
         }
     }
 
-    // Add calcification frames if present
     if let Some(calc_points) = &input_data.calcification {
         for point in calc_points {
             all_original_frames.insert(point.frame_index);
         }
     }
 
-    // Add sidebranch frames if present
     if let Some(side_points) = &input_data.sidebranch {
         for point in side_points {
             all_original_frames.insert(point.frame_index);
         }
     }
 
-    // Add reference point frame
     all_original_frames.insert(input_data.ref_point.frame_index);
 
-    // Create sorted list of original frames and mapping to sequential IDs
     let mut sorted_original_frames: Vec<u32> = all_original_frames.into_iter().collect();
     sorted_original_frames.sort();
 
@@ -107,7 +101,6 @@ pub fn build_geometry_from_inputdata(
 
     let mut frame_map: HashMap<u32, Frame> = HashMap::new();
 
-    // Process lumen contours (mandatory)
     for mut contour in lumen_contours {
         contour.compute_centroid();
         let frame_id = contour.id;
@@ -119,7 +112,6 @@ pub fn build_geometry_from_inputdata(
             reference_point: None,
         };
 
-        // Map reference point using the same mapping
         if let Some(&mapped_frame_id) = frame_mapping.get(&input_data.ref_point.frame_index) {
             if mapped_frame_id == frame_id {
                 frame.reference_point = Some(input_data.ref_point);
@@ -129,7 +121,6 @@ pub fn build_geometry_from_inputdata(
         frame_map.insert(frame_id, frame);
     }
 
-    // Add other contour types to frames using the same mapping
     for mut contour in eem_contours {
         contour.compute_centroid();
         if let Some(frame) = frame_map.get_mut(&contour.id) {
@@ -151,7 +142,6 @@ pub fn build_geometry_from_inputdata(
         }
     }
 
-    // Create catheter contours if requested
     if n_points > 0 {
         let all_points: Vec<ContourPoint> = frame_map
             .values()
@@ -161,7 +151,6 @@ pub fn build_geometry_from_inputdata(
         let catheter_points =
             Frame::create_catheter_points(&all_points, image_center, radius, n_points);
         
-        // Use the same mapping for catheter contours
         let catheter_contours =
             Contour::build_contour_with_mapping(catheter_points, None, ContourType::Catheter, &frame_mapping)?;
 
@@ -173,7 +162,6 @@ pub fn build_geometry_from_inputdata(
         }
     }
 
-    // Convert frame map to sorted vector
     let mut frames: Vec<Frame> = frame_map.into_values().collect();
     frames.sort_by_key(|f| f.id);
 
@@ -262,7 +250,6 @@ mod input_tests {
         let mut orig_map: HashMap<ContourType, Vec<u32>> = HashMap::new();
 
         for (idx, frame) in geometry.frames.iter().enumerate() {
-            // Lumen
             ids_map
                 .entry(ContourType::Lumen)
                 .or_default()
@@ -272,7 +259,6 @@ mod input_tests {
                 .or_default()
                 .push(frame.lumen.original_frame);
 
-            // For Eem and Catheter we must find them in extras — fail early if missing
             for wanted_type in &wanted {
                 if *wanted_type == ContourType::Lumen {
                     continue;
@@ -293,7 +279,6 @@ mod input_tests {
             }
         }
 
-        // As before, verify lengths and per-frame equality
         for (ctype, vec) in &ids_map {
             assert_eq!(vec.len(), n_frames, "ids vector for {:?} has length {}, expected {}", ctype, vec.len(), n_frames);
         }
@@ -339,42 +324,28 @@ mod input_tests {
         let (_, long) = geometry.frames[0].lumen.find_farthest_points();
         let (_, short) = geometry.frames[0].lumen.find_closest_opposite();
 
-        let n = geometry.frames.len();
-        println!("Longest distance: {:?}", long);
-        println!("Shortest distance: {:?}", short);
-        println!("elliptic ratio: {:?}", long / short);
-        println!("measurement_1: {:?}", geometry.frames[0].lumen.aortic_thickness);
-        println!("measurement_1: {:?}", geometry.frames[1].lumen.aortic_thickness);
-        println!("measurement_1: {:?}", geometry.frames[2].lumen.aortic_thickness);
-        println!("measurement_1: {:?}", geometry.frames[3].lumen.aortic_thickness);
-        println!("measurement_1: {:?}", geometry.frames[4].lumen.aortic_thickness);
-        println!("measurement_1: {:?}", geometry.frames[5].lumen.aortic_thickness);
-        println!("measurement_1: {:?}", geometry.frames[n - 3].lumen.aortic_thickness);
-        println!("measurement_1: {:?}", geometry.frames[n - 2].lumen.aortic_thickness);
-        println!("measurement_1: {:?}", geometry.frames[n - 1].lumen.aortic_thickness);
-
         assert_eq!(geometry.frames[0].lumen.original_frame, 385);
         assert_relative_eq!(geometry.frames[0].lumen.area(), 5.42, epsilon=0.1);
         assert_relative_eq!(long, 5.2, epsilon=0.1);
         assert_relative_eq!(short, 1.15, epsilon=0.1);
         assert_relative_eq!(geometry.frames[0].lumen.elliptic_ratio(), 4.52, epsilon=0.1);
         assert_eq!(geometry.frames[0].lumen.aortic_thickness, Some(0.96));
-        assert_eq!(geometry.frames[0].lumen.pulmonary_thickness, Some(1.68));        
+        assert_eq!(geometry.frames[0].lumen.pulmonary_thickness, Some(1.68));
+        assert_eq!(geometry.frames[0].reference_point.unwrap().frame_index, geometry.frames[0].lumen.original_frame); 
     }
 
     #[test]
     fn test_catheter_contour_properties() {
         let geometry = build_geometry_from_inputdata(
-            None, // No InputData provided, use path
+            None,
             Some(Path::new("data/fixtures/rest_csv_files")),
             "test",
-            true, // diastole
-            (4.5, 4.5), // image_center
-            0.5, // radius
-            NUM_POINTS_CATHETER, // n_points
+            true,
+            (4.5, 4.5),
+            0.5,
+            NUM_POINTS_CATHETER,
         ).expect("Failed to load geometry");
 
-        // Verify catheter contours exist in frames
         for frame in &geometry.frames {
             if let Some(catheter_contour) = frame.extras.get(&ContourType::Catheter) {
                 assert_eq!(
@@ -383,7 +354,6 @@ mod input_tests {
                     "Incorrect number of catheter points"
                 );
 
-                // Verify z-coordinate consistency
                 assert_relative_eq!(
                     catheter_contour.centroid.unwrap().2,
                     frame.lumen.centroid.unwrap().2,
@@ -395,10 +365,8 @@ mod input_tests {
 
     #[test]
     fn test_build_geometry_with_input_data() {
-        // Test building geometry with explicit InputData
         use input::InputData;
         
-        // Create minimal test data
         let test_points = vec![ContourPoint {
             frame_index: 0,
             point_index: 0,
@@ -442,7 +410,6 @@ mod input_tests {
 
     #[test]
     fn test_build_geometry_with_path() {
-        // Test building geometry from path
         let geometry = build_geometry_from_inputdata(
             None,
             Some(Path::new("data/fixtures/rest_csv_files")),
@@ -461,7 +428,6 @@ mod input_tests {
 
     #[test]
     fn test_error_on_no_input() {
-        // Test that function returns error when neither input_data nor path is provided
         let result = build_geometry_from_inputdata(
             None,
             None,

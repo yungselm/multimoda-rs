@@ -10,6 +10,8 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
+const RECORD_FILE_NAME: &str = "combined_sorted_manual.csv";
+
 /// InputData stores raw data from typical AIVUS-CAA output
 /// where dataframes have the following order
 ///
@@ -54,6 +56,7 @@ impl InputData {
         Ok(input)
     }
 
+    // #[allow(unused_assignments)]
     pub fn process_directory<P: AsRef<Path>>(
         path: P,
         names: HashMap<ContourType, &str>,
@@ -61,12 +64,13 @@ impl InputData {
     ) -> anyhow::Result<InputData> {
         let path = path.as_ref();
 
-        let mut lumen: Option<Vec<ContourPoint>> = None;
+        let lumen: Vec<ContourPoint>;
+        let ref_point: ContourPoint;
+
         let mut eem: Option<Vec<ContourPoint>> = None;
         let mut calcification: Option<Vec<ContourPoint>> = None;
         let mut sidebranch: Option<Vec<ContourPoint>> = None;
         let mut record: Option<Vec<Record>> = None;
-        let mut ref_point: Option<ContourPoint> = None;
 
         let phase = if diastole { "diastolic" } else { "systolic" };
 
@@ -74,10 +78,8 @@ impl InputData {
         let contours_fname = format!("{}_contours.csv", phase);
         let contours_path = path.join(&contours_fname);
         if contours_path.exists() {
-            lumen = Some(
-                ContourPoint::read_contour_data(&contours_path)
-                    .with_context(|| format!("reading {}", contours_path.display()))?,
-            );
+            lumen = ContourPoint::read_contour_data(&contours_path)
+                .with_context(|| format!("reading {}", contours_path.display()))?;
         } else {
             return Err(anyhow::anyhow!(
                 "required contours file missing: {:?}",
@@ -88,10 +90,8 @@ impl InputData {
         let ref_fname = format!("{}_reference_points.csv", phase);
         let ref_path = path.join(&ref_fname);
         if ref_path.exists() {
-            ref_point = Some(
-                ContourPoint::read_reference_point(&ref_path)
-                    .with_context(|| format!("reading {}", ref_path.display()))?,
-            );
+            ref_point = ContourPoint::read_reference_point(&ref_path)
+                .with_context(|| format!("reading {}", ref_path.display()))?;
         } else {
             return Err(anyhow::anyhow!(
                 "required reference-point file missing: {:?}",
@@ -99,7 +99,6 @@ impl InputData {
             ));
         }
 
-        // Process optional files from names mapping - skip if missing
         for (_ctype, raw_name) in names.iter() {
             let name = raw_name.trim().to_lowercase();
             match name.as_str() {
@@ -169,17 +168,13 @@ impl InputData {
 
         // Also attempt to read records.csv if present even if not requested explicitly
         if record.is_none() {
-            let maybe_records = path.join("records.csv");
+            let maybe_records = path.join(RECORD_FILE_NAME);
             if maybe_records.exists() {
                 record = Some(read_records(&maybe_records).with_context(|| {
                     format!("reading optional records file {}", maybe_records.display())
                 })?);
             }
         }
-
-        // Validate required fields (should always be Some at this point due to earlier checks)
-        let lumen = lumen.expect("lumen contours should be set");
-        let ref_point = ref_point.expect("reference point should be set");
 
         let input = InputData {
             lumen,
