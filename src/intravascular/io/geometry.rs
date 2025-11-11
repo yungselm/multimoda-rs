@@ -1179,9 +1179,6 @@ mod geometry_tests {
 
         extras.insert(ContourType::Eem, eem);
 
-        // check here that rotates around the frame centroid, however maybe better
-        // to have rotate_frame automatically adjust the centroid if does not match
-        // lumen centroid.
         let mut frame = Frame {
             id: 1,
             centroid: (1.0, 1.0, 0.0),
@@ -1210,6 +1207,16 @@ mod geometry_tests {
             }),
         };
 
+        // --- store originals before any rotation ---
+        let original_lumen: Vec<(f64, f64)> = frame.lumen.points.iter().map(|p| (p.x, p.y)).collect();
+        let original_eem: Vec<(f64, f64)> = frame.extras
+            .get(&ContourType::Eem)
+            .expect("eem should exist")
+            .points.iter()
+            .map(|p| (p.x, p.y))
+            .collect();
+        let original_ref = frame.reference_point.map(|rp| (rp.x, rp.y));
+
         // Rotate by 90 degrees (pi/2) about frame.centroid (1.0,1.0)
         frame.rotate_frame(PI / 2.0);
 
@@ -1231,7 +1238,7 @@ mod geometry_tests {
 
         let eps = 1e-6;
 
-        // Check lumen
+        // Check lumen after first rotation
         for (i, p) in frame.lumen.points.iter().enumerate() {
             assert!((p.x - expected_lumen[i].0).abs() < eps, "lumen x[{}] mismatch: {} vs {}", i, p.x, expected_lumen[i].0);
             assert!((p.y - expected_lumen[i].1).abs() < eps, "lumen y[{}] mismatch: {} vs {}", i, p.y, expected_lumen[i].1);
@@ -1252,6 +1259,58 @@ mod geometry_tests {
             // x' = 1 - (4-1) = -2 ; y' = 1 + (0-1) = 0  => (-2, 0)
             assert!((rp.x - (-2.0)).abs() < eps, "reference_point x mismatch");
             assert!((rp.y - 0.0).abs() < eps, "reference_point y mismatch");
+        }
+
+        // --- rotate back by -90 degrees and check we return to originals ---
+        frame.rotate_frame(- (PI / 2.0));
+
+        // Check lumen returned to original positions
+        for (i, p) in frame.lumen.points.iter().enumerate() {
+            let (ox, oy) = original_lumen[i];
+            assert!(
+                (p.x - ox).abs() < eps,
+                "lumen after back-rotation x[{}] mismatch: {} vs original {}",
+                i,
+                p.x,
+                ox
+            );
+            assert!(
+                (p.y - oy).abs() < eps,
+                "lumen after back-rotation y[{}] mismatch: {} vs original {}",
+                i,
+                p.y,
+                oy
+            );
+        }
+
+        // Check eem returned to original positions
+        let eem_after = frame.extras.get(&ContourType::Eem).expect("eem must exist");
+        for (i, p) in eem_after.points.iter().enumerate() {
+            let (ox, oy) = original_eem[i];
+            assert!(
+                (p.x - ox).abs() < eps,
+                "eem after back-rotation x[{}] mismatch: {} vs original {}",
+                i,
+                p.x,
+                ox
+            );
+            assert!(
+                (p.y - oy).abs() < eps,
+                "eem after back-rotation y[{}] mismatch: {} vs original {}",
+                i,
+                p.y,
+                oy
+            );
+        }
+
+        // Check reference point returned to original (if present)
+        match (original_ref, frame.reference_point) {
+            (Some((ox, oy)), Some(rp)) => {
+                assert!((rp.x - ox).abs() < eps, "reference_point x not restored");
+                assert!((rp.y - oy).abs() < eps, "reference_point y not restored");
+            }
+            (None, None) => {}
+            _ => panic!("reference_point presence/absence changed during rotations"),
         }
     }
 

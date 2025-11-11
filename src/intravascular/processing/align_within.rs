@@ -712,7 +712,35 @@ fn dump_table(logs: &[AlignLog]) {
 
 #[cfg(test)]
 mod align_within_tests {
+    use anyhow::Ok;
+    use approx::assert_relative_eq;
+
     use super::*;
+    use crate::intravascular::utils::test_utils::dummy_geometry;
+
+    #[test]
+    fn test_simple_geometry() -> anyhow::Result<()> {
+        let mut dummy = dummy_geometry();
+
+        let (geom, logs, _) = align_frames_in_geometry(
+            &mut dummy, 
+            0.01, 
+            20.0, 
+            false, 
+            false, 
+            5)?;
+        
+        println!("ID of Point at position 0 Frame 0: {:?}", geom.frames[0].lumen.points[0].point_index);
+        println!("ID of Point at position 0 Frame 1: {:?}", geom.frames[1].lumen.points[0].point_index);
+
+        assert!(!geom.frames.is_empty());
+        assert_relative_eq!(geom.frames[0].lumen.points[0].x, geom.frames[1].lumen.points[0].x, epsilon=1e-6);
+        assert_relative_eq!(geom.frames[0].lumen.points[0].y, geom.frames[1].lumen.points[0].y, epsilon=1e-6);
+        assert_relative_eq!(geom.frames[0].lumen.points[0].x, geom.frames[2].lumen.points[0].x, epsilon=1e-6);
+        assert_relative_eq!(geom.frames[0].lumen.points[0].y, geom.frames[2].lumen.points[0].y, epsilon=1e-6);
+        Ok(())
+    }
+
 
     #[test]
     fn test_align_frames_in_geometry() -> anyhow::Result<()> {
