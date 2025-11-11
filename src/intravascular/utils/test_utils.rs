@@ -1,7 +1,6 @@
 use crate::intravascular::io::geometry::{Contour, ContourType, Frame, Geometry};
 use crate::intravascular::io::input::ContourPoint;
 use std::collections::HashMap;
-use std::f64::consts::PI;
 
 pub fn dummy_geometry() -> Geometry {
     let points_a = vec![
@@ -200,5 +199,27 @@ pub fn dummy_geometry() -> Geometry {
     Geometry {
         frames: vec![frame_a, frame_b, frame_c],
         label: "dummy_geometry".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod test_utils_tests {
+    use super::*;
+
+    #[test]
+    fn test_reverse_dummy_geometry() {
+        let mut geometry = dummy_geometry();
+
+        let rotation_deg: f64 = -15.0;
+
+        geometry.frames[1].translate_frame((1.0, 1.0, 0.0));
+        geometry.frames[2].translate_frame((2.0, 2.0, 0.0));
+        geometry.frames[1].rotate_frame(rotation_deg.to_radians());
+        geometry.frames[2].rotate_frame(rotation_deg.to_radians() * 2.0);
+
+        assert_eq!(geometry.frames[1].lumen.points[0].x, 0.0);
+        assert_eq!(geometry.frames[1].lumen.points[0].y, 0.0);
+        assert_eq!(geometry.frames[1].lumen.points[1].x, 0.0);
+        assert_eq!(geometry.frames[1].lumen.points[1].y, 2.0);      
     }
 }

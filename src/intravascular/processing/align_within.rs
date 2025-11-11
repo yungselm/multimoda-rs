@@ -732,6 +732,9 @@ mod align_within_tests {
         
         println!("ID of Point at position 0 Frame 0: {:?}", geom.frames[0].lumen.points[0].point_index);
         println!("ID of Point at position 0 Frame 1: {:?}", geom.frames[1].lumen.points[0].point_index);
+        
+        println!("Frame 0 after rotation (should be same): {:?}", geom.frames[0]);
+        println!("Frame 1 after rotation: {:?}", geom.frames[1]);
 
         assert!(!geom.frames.is_empty());
         assert_relative_eq!(geom.frames[0].lumen.points[0].x, geom.frames[1].lumen.points[0].x, epsilon=1e-6);
