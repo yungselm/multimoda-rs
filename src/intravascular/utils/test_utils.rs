@@ -7,8 +7,8 @@ pub fn dummy_geometry() -> Geometry {
             ContourPoint {
                 frame_index: 1,
                 point_index: 0,
-                x: 0.0,
-                y: 0.0,
+                x: 1.0,
+                y: 3.0,
                 z: 0.0,
                 aortic: false,
             },
@@ -23,16 +23,16 @@ pub fn dummy_geometry() -> Geometry {
             ContourPoint {
                 frame_index: 1,
                 point_index: 2,
-                x: 3.0,
-                y: 1.0,
+                x: 0.0,
+                y: 0.0,
                 z: 0.0,
                 aortic: false,
             },
             ContourPoint {
                 frame_index: 1,
                 point_index: 3,
-                x: 2.0,
-                y: 2.0,
+                x: 1.0,
+                y: 0.0,
                 z: 0.0,
                 aortic: false,
             },
@@ -43,14 +43,22 @@ pub fn dummy_geometry() -> Geometry {
                 y: 0.0,
                 z: 0.0,
                 aortic: false,
-            },           
+            },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 5,
+                x: 2.0,
+                y: 2.0,
+                z: 0.0,
+                aortic: false,
+            },
     ];
     let points_b = vec![
             ContourPoint {
                 frame_index: 2,
                 point_index: 0,
-                x: 0.0,
-                y: 0.0,
+                x: 1.0,
+                y: 3.0,
                 z: 1.0,
                 aortic: false,
             },
@@ -65,16 +73,16 @@ pub fn dummy_geometry() -> Geometry {
             ContourPoint {
                 frame_index: 2,
                 point_index: 2,
-                x: 3.0,
-                y: 1.0,
+                x: 0.0,
+                y: 0.0,
                 z: 1.0,
                 aortic: false,
             },
             ContourPoint {
                 frame_index: 2,
                 point_index: 3,
-                x: 2.0,
-                y: 2.0,
+                x: 1.0,
+                y: 0.0,
                 z: 1.0,
                 aortic: false,
             },
@@ -85,14 +93,22 @@ pub fn dummy_geometry() -> Geometry {
                 y: 0.0,
                 z: 1.0,
                 aortic: false,
-            },           
+            },
+            ContourPoint {
+                frame_index: 2,
+                point_index: 5,
+                x: 2.0,
+                y: 2.0,
+                z: 1.0,
+                aortic: false,
+            },
     ];
     let points_c = vec![
             ContourPoint {
                 frame_index: 3,
                 point_index: 0,
-                x: 0.0,
-                y: 0.0,
+                x: 1.0,
+                y: 3.0,
                 z: 2.0,
                 aortic: false,
             },
@@ -107,16 +123,16 @@ pub fn dummy_geometry() -> Geometry {
             ContourPoint {
                 frame_index: 3,
                 point_index: 2,
-                x: 3.0,
-                y: 1.0,
+                x: 0.0,
+                y: 0.0,
                 z: 2.0,
                 aortic: false,
             },
             ContourPoint {
                 frame_index: 3,
                 point_index: 3,
-                x: 2.0,
-                y: 2.0,
+                x: 1.0,
+                y: 0.0,
                 z: 2.0,
                 aortic: false,
             },
@@ -127,7 +143,15 @@ pub fn dummy_geometry() -> Geometry {
                 y: 0.0,
                 z: 2.0,
                 aortic: false,
-            },           
+            },
+            ContourPoint {
+                frame_index: 3,
+                point_index: 5,
+                x: 2.0,
+                y: 2.0,
+                z: 2.0,
+                aortic: false,
+            },
     ];
     let mut contour_a = Contour {
             id: 0,
@@ -204,6 +228,8 @@ pub fn dummy_geometry() -> Geometry {
 
 #[cfg(test)]
 mod test_utils_tests {
+    use approx::assert_relative_eq;
+
     use super::*;
 
     #[test]
@@ -212,14 +238,14 @@ mod test_utils_tests {
 
         let rotation_deg: f64 = -15.0;
 
-        geometry.frames[1].translate_frame((1.0, 1.0, 0.0));
-        geometry.frames[2].translate_frame((2.0, 2.0, 0.0));
+        geometry.frames[1].translate_frame((-1.0, -1.0, 0.0));
+        geometry.frames[2].translate_frame((-2.0, -2.0, 0.0));
         geometry.frames[1].rotate_frame(rotation_deg.to_radians());
         geometry.frames[2].rotate_frame(rotation_deg.to_radians() * 2.0);
 
-        assert_eq!(geometry.frames[1].lumen.points[0].x, 0.0);
-        assert_eq!(geometry.frames[1].lumen.points[0].y, 0.0);
-        assert_eq!(geometry.frames[1].lumen.points[1].x, 0.0);
-        assert_eq!(geometry.frames[1].lumen.points[1].y, 2.0);      
+        assert_relative_eq!(geometry.frames[1].lumen.points[0].x, 1.0, epsilon=1e-6);
+        assert_relative_eq!(geometry.frames[1].lumen.points[0].y, 3.0, epsilon=1e-6);
+        assert_relative_eq!(geometry.frames[1].lumen.points[1].x, 0.0, epsilon=1e-6);
+        assert_relative_eq!(geometry.frames[1].lumen.points[1].y, 2.0, epsilon=1e-6);      
     }
 }

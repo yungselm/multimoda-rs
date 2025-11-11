@@ -58,48 +58,43 @@ pub fn align_frames_in_geometry(
 
     let logger = Arc::new(Mutex::new(Vec::<AlignLog>::new()));
     
-    let mut cumulative_rotation = 0.0;
+    let mut cumulative_rotation: f64 = 0.0;
 
-    // Helper function to wrap rotation to [-PI, PI]
-    fn wrap_rotation(angle: f64) -> f64 {
-        use std::f64::consts::PI;
-        let two_pi = 2.0 * PI;
-        let mut wrapped = angle % two_pi;
-        if wrapped > PI {
-            wrapped -= two_pi;
-        } else if wrapped < -PI {
-            wrapped += two_pi;
-        }
-        wrapped
-    }
-
+    // Use sequential alignment (frame to previous frame)
     for i in 1..geometry.frames.len() {
-        let (prev_frames, curr_frames) = geometry.frames.split_at_mut(i);
-        let current = &mut curr_frames[0];
-        let previous = &prev_frames[i - 1];
+        let prev_frame = geometry.frames[i - 1].clone(); // Clone to avoid borrowing issues
+        let current = &mut geometry.frames[i];
 
+        println!("Aligning Frame {} to previous Frame {}", current.id, prev_frame.id);
+
+        // 1) Apply cumulative rotation accumulated from earlier frames
+        if cumulative_rotation != 0.0 {
+            // rotate around current centroid (preserves the frame's own local center)
+            current.rotate_frame(cumulative_rotation);
+        }
+
+        // 2) Translate current frame to match previous frame centroid
         let translation = (
-            previous.centroid.0 - current.centroid.0,
-            previous.centroid.1 - current.centroid.1,
+            prev_frame.centroid.0 - current.centroid.0,
+            prev_frame.centroid.1 - current.centroid.1,
             0.0,
         );
-
         current.translate_frame(translation);
 
-        let _testing_points =
-            catheter_lumen_vec_from_frames(current, sample_size, sample_size_catheter);
-        let _reference_points =
-            catheter_lumen_vec_from_frames(&previous, sample_size, sample_size_catheter);
+        // 3) Prepare points for alignment (after rotation+translation)
+        let testing_points = catheter_lumen_vec_from_frames(current, sample_size, sample_size_catheter);
+        let reference_points = catheter_lumen_vec_from_frames(&prev_frame, sample_size, sample_size_catheter);
 
-        current.rotate_frame(cumulative_rotation);
+        // 4) Find best rotation — IMPORTANT: rotate testing_points around current.centroid
+        // (not prev_frame.centroid). That matches the old behaviour.
         let best_rotation = if bruteforce {
             search_range(
                 |angle: f64| {
-                    let rotated: Vec<ContourPoint> = _testing_points
+                    let rotated: Vec<ContourPoint> = testing_points
                         .par_iter()
                         .map(|p| p.rotate_point(angle, (current.centroid.0, current.centroid.1)))
                         .collect();
-                    hausdorff_distance(&_reference_points, &rotated)
+                    hausdorff_distance(&reference_points, &rotated)
                 },
                 step_deg,
                 range_deg,
@@ -108,19 +103,22 @@ pub fn align_frames_in_geometry(
             )
         } else {
             find_best_rotation(
-                &_reference_points,
-                &_testing_points,
+                &reference_points,
+                &testing_points,
                 step_deg,
                 range_deg,
-                &current.centroid,
+                &current.centroid, // <-- use current frame centroid
             )
         };
-        current.rotate_frame(best_rotation);
-        cumulative_rotation = wrap_rotation(cumulative_rotation + best_rotation);
 
+        // 5) Apply best rotation to current frame (around its centroid) and accumulate
+        current.rotate_frame(best_rotation);
+        cumulative_rotation += best_rotation;
+
+        // 6) Log
         let new_log = AlignLog {
             contour_id: current.id,
-            matched_to: previous.id,
+            matched_to: prev_frame.id,
             rot_deg: best_rotation.to_degrees(),
             tx: translation.0,
             ty: translation.1,
@@ -714,21 +712,36 @@ fn dump_table(logs: &[AlignLog]) {
 mod align_within_tests {
     use anyhow::Ok;
     use approx::assert_relative_eq;
+    use std::collections::HashMap;
 
     use super::*;
     use crate::intravascular::utils::test_utils::dummy_geometry;
 
+    fn pt(x: f64, y: f64, z: f64, frame_index: u32, point_index: u32) -> ContourPoint {
+        ContourPoint {
+            frame_index,
+            point_index,
+            x,
+            y,
+            z,
+            aortic: false,
+        }
+    }
+
     #[test]
     fn test_simple_geometry() -> anyhow::Result<()> {
         let mut dummy = dummy_geometry();
+        let ref_frame_idx = dummy.find_ref_frame_idx()?;
 
-        let (geom, logs, _) = align_frames_in_geometry(
+        assert_eq!(ref_frame_idx, 0);
+
+        let (geom, _logs, _) = align_frames_in_geometry(
             &mut dummy, 
             0.01, 
-            20.0, 
+            30.0, 
             false, 
             false, 
-            5)?;
+            6)?;
         
         println!("ID of Point at position 0 Frame 0: {:?}", geom.frames[0].lumen.points[0].point_index);
         println!("ID of Point at position 0 Frame 1: {:?}", geom.frames[1].lumen.points[0].point_index);
@@ -744,16 +757,15 @@ mod align_within_tests {
         Ok(())
     }
 
-
     #[test]
-    fn test_align_frames_in_geometry() -> anyhow::Result<()> {
+    fn test_idealized_geometry() -> anyhow::Result<()> {
         use crate::intravascular::io::build_geometry_from_inputdata;
         use std::path::Path;
 
         let mut geometry = build_geometry_from_inputdata(
             None, 
             // Some(Path::new("data/fixtures/idealized_geometry")), 
-            Some(Path::new("data/ivus_stress")), 
+            Some(Path::new("data/fixtures/idealized_geometry")), 
             "stress", 
             true, 
             (4.5, 4.5), 
@@ -768,10 +780,91 @@ mod align_within_tests {
             false, 
             200)?;
 
-        println!("Logs content: {:?}", logs);
-
         assert!(!geom.frames.is_empty());
         assert_eq!(anomalous, true);
+
+        for log in &logs {
+            assert_relative_eq!(log.rot_deg.abs(), 15.0, epsilon=1.0)
+        }
+        for (i, log) in logs.iter().enumerate() {
+            let idx = i as f64 + 1.0;
+            let expected_tx = -0.01 * idx;
+            let expected_ty =  0.01 * idx;
+            assert_relative_eq!(log.tx, expected_tx, epsilon = 0.001);
+            assert_relative_eq!(log.ty, expected_ty, epsilon = 0.001);
+        }
+        Ok(())        
+    }
+
+    #[test]
+    fn test_detect_holes_and_fill_one_frame() -> anyhow::Result<()> {
+        // Build small geometry: 3 frames, with a z-gap between frame 1 and 2
+        let c0 = Contour {
+            id: 0,
+            original_frame: 0,
+            points: vec![pt(0.0, 0.0, 0.0, 0, 0)],
+            centroid: Some((0.0, 0.0, 0.0)),
+            aortic_thickness: None,
+            pulmonary_thickness: None,
+            kind: ContourType::Lumen,
+        };
+        let c1 = Contour {
+            id: 1,
+            original_frame: 1,
+            points: vec![pt(0.0, 0.0, 1.0, 1, 0)],
+            centroid: Some((0.0, 0.0, 1.0)),
+            aortic_thickness: None,
+            pulmonary_thickness: None,
+            kind: ContourType::Lumen,
+        };
+        // create a gap: next frame at z = 4.0 (diff = 3.0)
+        let c2 = Contour {
+            id: 2,
+            original_frame: 2,
+            points: vec![pt(0.0, 0.0, 4.0, 2, 0)],
+            centroid: Some((0.0, 0.0, 4.0)),
+            aortic_thickness: None,
+            pulmonary_thickness: None,
+            kind: ContourType::Lumen,
+        };
+
+        let f0 = Frame {
+            id: 0,
+            centroid: (0.0, 0.0, 0.0),
+            lumen: c0.clone(),
+            extras: HashMap::new(),
+            reference_point: None,
+        };
+        let f1 = Frame {
+            id: 1,
+            centroid: (0.0, 0.0, 1.0),
+            lumen: c1.clone(),
+            extras: HashMap::new(),
+            reference_point: None,
+        };
+        let f2 = Frame {
+            id: 2,
+            centroid: (0.0, 0.0, 4.0),
+            lumen: c2.clone(),
+            extras: HashMap::new(),
+            reference_point: None,
+        };
+
+        let mut geometry = Geometry {
+            frames: vec![f0, f1, f2],
+            label: "test".to_string(),
+        };
+
+        // detect_holes should see a hole
+        let (hole_found, avg) = detect_holes(&geometry);
+        assert!(hole_found);
+        assert!(avg > 0.0);
+
+        // fill_holes should attempt to insert frames or return an error if too big.
+        // For our gap of 3.0, logic in fill_holes will treat it as two missing frames (2.5..3.5)
+        let fixed = fill_holes(&mut geometry)?;
+        // after fill, expect frames.len() > original (>= 4)
+        assert!(fixed.frames.len() >= 4);
         Ok(())
     }
 }

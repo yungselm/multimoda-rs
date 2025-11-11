@@ -364,6 +364,9 @@ impl Contour {
 
     /// Rotates a contour around its centroid by the specified angle (in radians)
     pub fn rotate_contour(&mut self, angle: f64) {
+        if angle == 0.0 {
+            return;
+        }
         // Get centroid or compute if not present
         self.compute_centroid();
         let (cx, cy, _) =self.centroid.unwrap();
@@ -452,6 +455,9 @@ impl Frame {
     }
 
     pub fn rotate_frame(&mut self, angle: f64) {
+        if angle == 0.0 {
+            return;
+        }
         let center = (self.centroid.0, self.centroid.1);
 
         self.lumen.points = self
@@ -511,6 +517,9 @@ impl Frame {
     }
 
     pub fn rotate_frame_around_point(&mut self, angle: f64, center: (f64, f64)) {
+        if angle == 0.0 {
+            return;
+        }
         self.lumen.points = self
             .lumen
             .points
@@ -791,6 +800,9 @@ impl Geometry {
     }
 
     pub fn rotate_geometry(&mut self, angle_rad: f64) {
+        if angle_rad == 0.0 {
+            return;
+        }
         for frame in self.frames.iter_mut() {
             frame.rotate_frame(angle_rad);
         }
@@ -905,6 +917,7 @@ impl Geometry {
 mod geometry_tests {
     use super::*;
     use std::f64::consts::PI;
+    use crate::intravascular::utils::test_utils::dummy_geometry;
 
     // test for contours
     #[test]
@@ -1151,6 +1164,34 @@ mod geometry_tests {
         let p0 = &contour.points[0];
         let p2 = &contour.points[2];
         assert!((pair.0 == p0 && pair.1 == p2) || (pair.0 == p2 && pair.1 == p0));
+    }
+
+    #[test]
+    fn rotate_contour_back_and_forth() {
+        let geometry = dummy_geometry();
+        let mut geometry_rotate = geometry.clone();
+        let rotation_deg: f64 = 15.0;
+
+        geometry_rotate.rotate_geometry(rotation_deg.to_radians());
+        geometry_rotate.rotate_geometry(-1.0 * rotation_deg.to_radians());
+
+        assert_eq!(geometry.frames[0].lumen.points[0], geometry_rotate.frames[0].lumen.points[0]);
+
+        geometry_rotate.frames[0].rotate_frame(rotation_deg.to_radians());
+        geometry_rotate.frames[0].rotate_frame(-1.0 * rotation_deg.to_radians()); 
+
+        assert_eq!(geometry.frames[0].lumen.points[0], geometry_rotate.frames[0].lumen.points[0]);
+
+        geometry_rotate.frames[0].lumen.rotate_contour(rotation_deg.to_radians());
+        geometry_rotate.frames[0].lumen.rotate_contour(-1.0 * rotation_deg.to_radians());
+
+        assert_eq!(geometry.frames[0].lumen.points[0], geometry_rotate.frames[0].lumen.points[0]);
+
+        let center = geometry_rotate.frames[0].centroid;
+        geometry_rotate.frames[0].lumen.points[0].rotate_point(rotation_deg.to_radians(), (center.0, center.1));
+        geometry_rotate.frames[0].lumen.points[0].rotate_point(-1.0 * rotation_deg.to_radians(), (center.0, center.1));
+
+        assert_eq!(geometry.frames[0].lumen.points[0], geometry_rotate.frames[0].lumen.points[0]);
     }
 
     #[test]
