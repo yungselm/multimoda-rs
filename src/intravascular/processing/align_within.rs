@@ -62,18 +62,15 @@ pub fn align_frames_in_geometry(
 
     // Use sequential alignment (frame to previous frame)
     for i in 1..geometry.frames.len() {
-        let prev_frame = geometry.frames[i - 1].clone(); // Clone to avoid borrowing issues
+        let prev_frame = geometry.frames[i - 1].clone();
         let current = &mut geometry.frames[i];
 
         println!("Aligning Frame {} to previous Frame {}", current.id, prev_frame.id);
 
-        // 1) Apply cumulative rotation accumulated from earlier frames
         if cumulative_rotation != 0.0 {
-            // rotate around current centroid (preserves the frame's own local center)
             current.rotate_frame(cumulative_rotation);
         }
 
-        // 2) Translate current frame to match previous frame centroid
         let translation = (
             prev_frame.centroid.0 - current.centroid.0,
             prev_frame.centroid.1 - current.centroid.1,
@@ -81,12 +78,9 @@ pub fn align_frames_in_geometry(
         );
         current.translate_frame(translation);
 
-        // 3) Prepare points for alignment (after rotation+translation)
         let testing_points = catheter_lumen_vec_from_frames(current, sample_size, sample_size_catheter);
         let reference_points = catheter_lumen_vec_from_frames(&prev_frame, sample_size, sample_size_catheter);
 
-        // 4) Find best rotation — IMPORTANT: rotate testing_points around current.centroid
-        // (not prev_frame.centroid). That matches the old behaviour.
         let best_rotation = if bruteforce {
             search_range(
                 |angle: f64| {
@@ -107,15 +101,13 @@ pub fn align_frames_in_geometry(
                 &testing_points,
                 step_deg,
                 range_deg,
-                &current.centroid, // <-- use current frame centroid
+                &current.centroid,
             )
         };
 
-        // 5) Apply best rotation to current frame (around its centroid) and accumulate
         current.rotate_frame(best_rotation);
         cumulative_rotation += best_rotation;
 
-        // 6) Log
         let new_log = AlignLog {
             contour_id: current.id,
             matched_to: prev_frame.id,
@@ -132,6 +124,7 @@ pub fn align_frames_in_geometry(
 
     let anomalous_bool = is_anomalous_coronary(&geometry.frames[ref_idx]);
     let additional_rotation = angle_ref_point_to_right(&geometry.frames[ref_idx], anomalous_bool)?;
+
     for frame in geometry.frames.iter_mut() {
         frame.rotate_frame(additional_rotation);
         frame.sort_frame_points();
@@ -338,7 +331,7 @@ fn detect_holes(geometry: &Geometry) -> (bool, f64) {
     }
     let avg_diff: f64 = z_diffs.iter().sum::<f64>() / z_diffs.len() as f64;
     for &diff in &z_diffs {
-        if diff > 1.5 * avg_diff {
+        if diff >= 1.5 * avg_diff {
             return (true, avg_diff);
         }
     }
@@ -358,7 +351,7 @@ pub fn fill_holes(geometry: &mut Geometry) -> anyhow::Result<Geometry> {
         return Ok(geometry.clone());
     }
 
-    println!("⚠️ Hole detected! Attempting to fix using Geometry::insert_frame(...)");
+    println!("⚠️\tHole detected! Attempting to fix using Geometry::insert_frame(...)");
 
     // Walk through frames; insert when we see a gap
     let mut i: usize = 1;
@@ -375,20 +368,20 @@ pub fn fill_holes(geometry: &mut Geometry) -> anyhow::Result<Geometry> {
         } else if diff >= 1.5 && diff < 2.5 {
             // one missing frame: insert averaged frame at position i
             let mid = fix_one_frame_hole(prev, curr);
-            geometry.insert_frame(mid, Some(curr.id as usize));
+            geometry.insert_frame(mid, Some(i));
             // After insertion, the previously-curr frame moved to i+1, so skip past curr
             i += 2;
         } else if diff >= 2.5 && diff < 3.5 {
             // two missing frames: insert two interpolated frames at position i
             let (f1, f2) = fix_two_frame_hole(prev, curr);
-            geometry.insert_frame(f1, Some(curr.id as usize));
+            geometry.insert_frame(f1, Some(i));
             // second frame should go after the first inserted frame -> index i+1
-            geometry.insert_frame(f2, Some(curr.id as usize + 1));
+            geometry.insert_frame(f2, Some(i + 1));
             // skip past the two inserted frames and original curr
             i += 3;
         } else {
             return Err(anyhow!(
-                "🛑 Detected a very large z-gap between frames at indices {} and {} (dz = {:.2} (avg diff: {:.2})) — refusing to auto-fix",
+                "🛑\tDetected a very large z-gap between frames at indices {} and {} (dz = {:.2} (avg diff: {:.2})) — refusing to auto-fix",
                 i - 1,
                 i,
                 diff,
@@ -712,21 +705,9 @@ fn dump_table(logs: &[AlignLog]) {
 mod align_within_tests {
     use anyhow::Ok;
     use approx::assert_relative_eq;
-    use std::collections::HashMap;
 
     use super::*;
-    use crate::intravascular::utils::test_utils::dummy_geometry;
-
-    fn pt(x: f64, y: f64, z: f64, frame_index: u32, point_index: u32) -> ContourPoint {
-        ContourPoint {
-            frame_index,
-            point_index,
-            x,
-            y,
-            z,
-            aortic: false,
-        }
-    }
+    use crate::intravascular::utils::test_utils::{dummy_geometry, dummy_geometry_aligned_long, dummy_geometry_center_reference};
 
     #[test]
     fn test_simple_geometry() -> anyhow::Result<()> {
@@ -735,7 +716,48 @@ mod align_within_tests {
 
         assert_eq!(ref_frame_idx, 0);
 
-        let (geom, _logs, _) = align_frames_in_geometry(
+        let (geom, logs, _) = align_frames_in_geometry(
+            &mut dummy, 
+            0.01, 
+            30.0, 
+            false, 
+            false, 
+            6)?;
+
+        assert!(!geom.frames.is_empty());
+        assert_relative_eq!(geom.frames[0].lumen.points[0].x, geom.frames[1].lumen.points[0].x, epsilon=1e-6);
+        assert_relative_eq!(geom.frames[0].lumen.points[0].y, geom.frames[1].lumen.points[0].y, epsilon=1e-6);
+        assert_relative_eq!(geom.frames[0].lumen.points[0].x, geom.frames[2].lumen.points[0].x, epsilon=1e-6);
+        assert_relative_eq!(geom.frames[0].lumen.points[0].y, geom.frames[2].lumen.points[0].y, epsilon=1e-6);
+        for (i, log) in logs.iter().enumerate() {
+            let idx = i as f64 + 1.0;
+            let expected_tx = -1.0 * idx;
+            let expected_ty =  -1.0 * idx;
+            assert_relative_eq!(log.rot_deg, -15.0, epsilon=1e-6);
+            assert_relative_eq!(log.tx, expected_tx, epsilon=1e-6);
+            assert_relative_eq!(log.ty, expected_ty, epsilon=1e-6);            
+        };
+        Ok(())
+    }
+
+    #[test]
+    fn test_simple_geometry_middle_ref() -> anyhow::Result<()> {
+        let mut dummy = dummy_geometry_center_reference();
+        let ref_frame_idx = dummy.find_ref_frame_idx();
+        println!("Reference idx: {:?}", ref_frame_idx);
+
+        for frame in dummy.frames.iter() {
+            println!("Frame {:?}:\nz.position:{:?}, point0 x: {:?}, point0 y: {:?}, point0 z: {:?}, ref_point present?: {:?}",
+                frame.id,
+                frame.centroid.2,
+                frame.lumen.points[0].x,
+                frame.lumen.points[0].y,
+                frame.lumen.points[0].z,
+                frame.reference_point.is_some(),
+            );
+        }
+
+        let (geom, _, _) = align_frames_in_geometry(
             &mut dummy, 
             0.01, 
             30.0, 
@@ -743,17 +765,8 @@ mod align_within_tests {
             false, 
             6)?;
         
-        println!("ID of Point at position 0 Frame 0: {:?}", geom.frames[0].lumen.points[0].point_index);
-        println!("ID of Point at position 0 Frame 1: {:?}", geom.frames[1].lumen.points[0].point_index);
-        
-        println!("Frame 0 after rotation (should be same): {:?}", geom.frames[0]);
-        println!("Frame 1 after rotation: {:?}", geom.frames[1]);
+        println!("Geometry: {:?}", geom);
 
-        assert!(!geom.frames.is_empty());
-        assert_relative_eq!(geom.frames[0].lumen.points[0].x, geom.frames[1].lumen.points[0].x, epsilon=1e-6);
-        assert_relative_eq!(geom.frames[0].lumen.points[0].y, geom.frames[1].lumen.points[0].y, epsilon=1e-6);
-        assert_relative_eq!(geom.frames[0].lumen.points[0].x, geom.frames[2].lumen.points[0].x, epsilon=1e-6);
-        assert_relative_eq!(geom.frames[0].lumen.points[0].y, geom.frames[2].lumen.points[0].y, epsilon=1e-6);
         Ok(())
     }
 
@@ -763,8 +776,7 @@ mod align_within_tests {
         use std::path::Path;
 
         let mut geometry = build_geometry_from_inputdata(
-            None, 
-            // Some(Path::new("data/fixtures/idealized_geometry")), 
+            None,
             Some(Path::new("data/fixtures/idealized_geometry")), 
             "stress", 
             true, 
@@ -798,73 +810,34 @@ mod align_within_tests {
 
     #[test]
     fn test_detect_holes_and_fill_one_frame() -> anyhow::Result<()> {
-        // Build small geometry: 3 frames, with a z-gap between frame 1 and 2
-        let c0 = Contour {
-            id: 0,
-            original_frame: 0,
-            points: vec![pt(0.0, 0.0, 0.0, 0, 0)],
-            centroid: Some((0.0, 0.0, 0.0)),
-            aortic_thickness: None,
-            pulmonary_thickness: None,
-            kind: ContourType::Lumen,
-        };
-        let c1 = Contour {
-            id: 1,
-            original_frame: 1,
-            points: vec![pt(0.0, 0.0, 1.0, 1, 0)],
-            centroid: Some((0.0, 0.0, 1.0)),
-            aortic_thickness: None,
-            pulmonary_thickness: None,
-            kind: ContourType::Lumen,
-        };
-        // create a gap: next frame at z = 4.0 (diff = 3.0)
-        let c2 = Contour {
-            id: 2,
-            original_frame: 2,
-            points: vec![pt(0.0, 0.0, 4.0, 2, 0)],
-            centroid: Some((0.0, 0.0, 4.0)),
-            aortic_thickness: None,
-            pulmonary_thickness: None,
-            kind: ContourType::Lumen,
-        };
+        let mut geometry = dummy_geometry_aligned_long();
+        geometry.frames[5].translate_frame((0.0, 0.0, 1.0));
 
-        let f0 = Frame {
-            id: 0,
-            centroid: (0.0, 0.0, 0.0),
-            lumen: c0.clone(),
-            extras: HashMap::new(),
-            reference_point: None,
-        };
-        let f1 = Frame {
-            id: 1,
-            centroid: (0.0, 0.0, 1.0),
-            lumen: c1.clone(),
-            extras: HashMap::new(),
-            reference_point: None,
-        };
-        let f2 = Frame {
-            id: 2,
-            centroid: (0.0, 0.0, 4.0),
-            lumen: c2.clone(),
-            extras: HashMap::new(),
-            reference_point: None,
-        };
+        let (bool_hole, avg_dist) = detect_holes(&geometry);
 
-        let mut geometry = Geometry {
-            frames: vec![f0, f1, f2],
-            label: "test".to_string(),
-        };
+        assert_eq!(bool_hole, true);
+        assert_relative_eq!(avg_dist, 1.2, epsilon=1e-6);
 
-        // detect_holes should see a hole
-        let (hole_found, avg) = detect_holes(&geometry);
-        assert!(hole_found);
-        assert!(avg > 0.0);
+        let new_frame = fix_one_frame_hole(&geometry.frames[1], &geometry.frames[2]);
 
-        // fill_holes should attempt to insert frames or return an error if too big.
-        // For our gap of 3.0, logic in fill_holes will treat it as two missing frames (2.5..3.5)
-        let fixed = fill_holes(&mut geometry)?;
-        // after fill, expect frames.len() > original (>= 4)
-        assert!(fixed.frames.len() >= 4);
+        assert_relative_eq!(new_frame.centroid.2, 1.5, epsilon=1e-6);
+        for point in new_frame.lumen.points {
+            assert_relative_eq!(point.z, 1.5, epsilon=1e-6);
+        }
+
+        let new_geom = fill_holes(&mut geometry)?;
+
+        assert_eq!(new_geom.frames.len(), 7);
+        for (i, frame) in new_geom.frames.iter().enumerate() {
+            println!("Frame has id {:?}", frame.id);
+            assert_eq!(frame.id, i as u32);
+            assert_eq!(frame.lumen.id, i as u32);
+            assert_eq!(frame.centroid.2, i as f64);
+            assert_eq!(frame.lumen.centroid.unwrap().2, i as f64);
+            for point in frame.lumen.points.iter() {
+                assert_eq!(point.z, i as f64);
+            }
+        }
         Ok(())
     }
 }

@@ -226,6 +226,86 @@ pub fn dummy_geometry() -> Geometry {
     }
 }
 
+#[allow(dead_code)]
+pub fn dummy_geometry_aligned_short() -> Geometry {
+    let mut geometry = dummy_geometry();
+
+    let rotation_deg: f64 = -15.0;
+
+    geometry.frames[1].translate_frame((-1.0, -1.0, 0.0));
+    geometry.frames[2].translate_frame((-2.0, -2.0, 0.0));
+    geometry.frames[1].rotate_frame(rotation_deg.to_radians());
+    geometry.frames[2].rotate_frame(rotation_deg.to_radians() * 2.0);
+
+    geometry
+}
+
+pub fn dummy_geometry_aligned_long() -> Geometry {
+    let mut g1 = dummy_geometry();
+
+    let rotation_deg: f64 = -15.0;
+
+    g1.frames[1].translate_frame((-1.0, -1.0, 0.0));
+    g1.frames[2].translate_frame((-2.0, -2.0, 0.0));
+    g1.frames[1].rotate_frame(rotation_deg.to_radians());
+    g1.frames[2].rotate_frame(rotation_deg.to_radians() * 2.0);
+
+    let mut g2 = g1.clone();
+    let translation = (0.0, 0.0, 4.0);
+    for (i, frame) in g2.frames.iter_mut().enumerate() {
+        let idx = i as u32 + 3;
+        frame.translate_frame(translation);
+        frame.lumen.compute_centroid();
+        frame.set_value(Some(idx), None, frame.lumen.centroid, Some(idx as f64));
+    }
+
+    let mut frames = g1.frames;
+    frames.extend(g2.frames.into_iter());
+
+    frames[3].reference_point = None;
+
+    Geometry {
+        frames,
+        label: "dummy_geometry_center_reference".to_string(),
+    }
+}
+
+pub fn dummy_geometry_center_reference() -> Geometry {
+    let g1 = dummy_geometry();
+    let mut g2 = dummy_geometry();
+
+    let translation = (0.0, 0.0, 4.0);
+    for (i, frame) in g2.frames.iter_mut().enumerate() {
+        let idx = i as u32 + 3;
+        frame.translate_frame(translation);
+        frame.lumen.compute_centroid();
+        frame.set_value(Some(idx), None, frame.lumen.centroid, Some(idx as f64));
+    }
+
+    let mut frames = g1.frames;
+    frames.extend(g2.frames.into_iter());
+
+    let mid_idx = frames.len() / 2;
+    let ref_frame_id = frames[mid_idx].lumen.original_frame;
+    let ref_point = ContourPoint {
+        frame_index: ref_frame_id,
+        point_index: 0,
+        x: 3.0,
+        y: 1.0,
+        z: frames[mid_idx].centroid.2,
+        aortic: false,
+    };
+
+    frames[0].reference_point = None;
+    frames[mid_idx].reference_point = Some(ref_point);
+
+    Geometry {
+        frames,
+        label: "dummy_geometry_center_reference".to_string(),
+    }
+}
+
+
 #[cfg(test)]
 mod test_utils_tests {
     use approx::assert_relative_eq;
@@ -247,5 +327,30 @@ mod test_utils_tests {
         assert_relative_eq!(geometry.frames[1].lumen.points[0].y, 3.0, epsilon=1e-6);
         assert_relative_eq!(geometry.frames[1].lumen.points[1].x, 0.0, epsilon=1e-6);
         assert_relative_eq!(geometry.frames[1].lumen.points[1].y, 2.0, epsilon=1e-6);      
+    }
+
+    #[test]
+    fn test_dummy_geometry_ref_middle() {
+        let geometry = dummy_geometry_center_reference();
+        println!("Geometry: {:?}", geometry);
+        assert_eq!(geometry.frames.len(), 6);
+        assert!(geometry.frames[0].reference_point.is_none());
+
+        let mid_idx = geometry.frames.len() / 2;
+        let mid_frame = &geometry.frames[mid_idx];
+
+        let rp = mid_frame
+            .reference_point
+            .as_ref()
+            .expect("expected middle frame to have a reference_point");
+
+        assert_eq!(rp.frame_index, mid_frame.lumen.original_frame);
+        assert_eq!(rp.point_index, 0);
+
+        assert_relative_eq!(rp.x, 3.0, epsilon = 1e-6);
+        assert_relative_eq!(rp.y, 1.0, epsilon = 1e-6);
+
+        assert_relative_eq!(rp.z, mid_frame.centroid.2, epsilon = 1e-6);
+        assert_relative_eq!(mid_frame.centroid.2, 4.0, epsilon = 1e-6);
     }
 }

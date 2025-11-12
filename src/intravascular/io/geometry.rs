@@ -489,12 +489,16 @@ impl Frame {
             p.z += dz;
         }
 
+        self.lumen.compute_centroid();
+
         for contour in self.extras.values_mut() {
             for p in contour.points.iter_mut() {
                 p.x += dx;
                 p.y += dy;
                 p.z += dz;
             }
+
+            contour.compute_centroid();
         }
 
         if let Some(ref_point) = &mut self.reference_point {
