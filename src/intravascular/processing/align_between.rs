@@ -169,3 +169,72 @@ fn find_best_rotation_between(
         }
     }
 }
+
+#[cfg(test)]
+mod align_between_tests {
+    use approx::assert_relative_eq;
+
+    use super::*;
+    use crate::intravascular::utils::test_utils::dummy_geometry_aligned_long;
+
+    #[test]
+    fn test_align_between_simple_geometries() -> anyhow::Result<()>{
+        let mut geom_a = dummy_geometry_aligned_long();
+        let mut geom_b = dummy_geometry_aligned_long();
+        let rotation: f64 = 15.0;
+        geom_b.rotate_geometry(rotation.to_radians());
+
+        let geom_pair = align_between_geometries(&mut geom_a, &mut geom_b, 30.0, 0.01, 6)?;
+
+        for (frame_a, frame_b) in geom_pair.geom_a.frames.iter().zip(geom_pair.geom_b.frames.iter()) {
+            assert_relative_eq!(frame_a.centroid.2, frame_b.centroid.2, epsilon=1e-6);
+            for (point_a, point_b) in frame_a.lumen.points.iter().zip(frame_b.lumen.points.iter()) {
+                assert_relative_eq!(point_a.x, point_b.x, epsilon=1e-6);
+                assert_relative_eq!(point_a.y, point_b.y, epsilon=1e-6);
+                assert_relative_eq!(point_a.z, point_b.z, epsilon=1e-6);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_align_between_optimized_geometries() -> anyhow::Result<()>{
+        use crate::intravascular::io::build_geometry_from_inputdata;
+        use crate::intravascular::processing::align_within::align_frames_in_geometry;
+        use std::path::Path;
+
+        let mut geometry = build_geometry_from_inputdata(
+            None,
+            Some(Path::new("data/fixtures/idealized_geometry")), 
+            "stress", 
+            true, 
+            (4.5, 4.5), 
+            0.5, 
+            20)?;
+
+        let (geom, _, _) = align_frames_in_geometry(
+            &mut geometry, 
+            0.01, 
+            45.0, 
+            true, 
+            false, 
+            200)?;
+
+        let rotation: f64 = 15.0;
+        let mut geom_a = geom.clone();
+        let mut geom_b = geom.clone();
+        geom_b.rotate_geometry(rotation.to_radians());
+
+        let geom_pair = align_between_geometries(&mut geom_a, &mut geom_b, 30.0, 0.01, 200)?;
+        
+        for (frame_a, frame_b) in geom_pair.geom_a.frames.iter().zip(geom_pair.geom_b.frames.iter()) {
+            assert_relative_eq!(frame_a.centroid.2, frame_b.centroid.2, epsilon=1e-6);
+            for (point_a, point_b) in frame_a.lumen.points.iter().zip(frame_b.lumen.points.iter()) {
+                assert_relative_eq!(point_a.x, point_b.x, epsilon=1e-6);
+                assert_relative_eq!(point_a.y, point_b.y, epsilon=1e-6);
+                assert_relative_eq!(point_a.z, point_b.z, epsilon=1e-6);
+            }
+        }
+        Ok(())
+    }
+}
