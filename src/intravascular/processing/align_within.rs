@@ -60,7 +60,6 @@ pub fn align_frames_in_geometry(
     
     let mut cumulative_rotation: f64 = 0.0;
 
-    // Use sequential alignment (frame to previous frame)
     for i in 1..geometry.frames.len() {
         let prev_frame = geometry.frames[i - 1].clone();
         let current = &mut geometry.frames[i];
@@ -238,7 +237,6 @@ fn is_anomalous_coronary(ref_frame: &Frame) -> bool {
 }
 
 fn angle_ref_point_to_right(ref_frame: &Frame, anomalous: bool) -> anyhow::Result<f64> {
-    // make sure the ref_frame has a ref_point, otherwise return error
     let ref_point = ref_frame
         .reference_point
         .ok_or(anyhow!("No reference point found in frame"))?;
@@ -317,7 +315,6 @@ fn assign_aortic(mut geometry: Geometry) -> Geometry {
     geometry
 }
 
-/// Detect z-gaps larger than expected and return (hole_found, avg_diff)
 fn detect_holes(geometry: &Geometry) -> (bool, f64) {
     let mut z_diffs = Vec::new();
     for i in 1..geometry.frames.len() {
@@ -474,13 +471,8 @@ fn fix_one_frame_hole(frame_1: &Frame, frame_2: &Frame) -> Frame {
         }
     }
 
-    // average reference_point if both exist
-    let reference_point = match (&frame_1.reference_point, &frame_2.reference_point) {
-        (Some(p1), Some(p2)) => Some(avg_point(p1, p2, frame_2.id, 0)),
-        (Some(p1), None) => Some(p1.clone()),
-        (None, Some(p2)) => Some(p2.clone()),
-        (None, None) => None,
-    };
+    // for other algorithms only one reference opint can exist
+    let reference_point = None;
 
     Frame {
         id: frame_2.id, // placeholder; Geometry::insert_frame will reassign IDs
@@ -757,16 +749,15 @@ mod align_within_tests {
             );
         }
 
-        let (geom, _, _) = align_frames_in_geometry(
+        let result = align_frames_in_geometry(
             &mut dummy, 
             0.01, 
             30.0, 
             false, 
             false, 
-            6)?;
-        
-        println!("Geometry: {:?}", geom);
+            6);
 
+        assert!(result.is_ok());
         Ok(())
     }
 
@@ -829,7 +820,6 @@ mod align_within_tests {
 
         assert_eq!(new_geom.frames.len(), 7);
         for (i, frame) in new_geom.frames.iter().enumerate() {
-            println!("Frame has id {:?}", frame.id);
             assert_eq!(frame.id, i as u32);
             assert_eq!(frame.lumen.id, i as u32);
             assert_eq!(frame.centroid.2, i as f64);
@@ -838,6 +828,84 @@ mod align_within_tests {
                 assert_eq!(point.z, i as f64);
             }
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_detect_holes_and_fill_two_frame() -> anyhow::Result<()> {
+        let mut geometry = dummy_geometry_aligned_long();
+        geometry.frames[5].translate_frame((0.0, 0.0, 2.0));
+
+        let new_geom = fill_holes(&mut geometry)?;
+
+        assert_eq!(new_geom.frames.len(), 8);
+        for (i, frame) in new_geom.frames.iter().enumerate() {
+            println!("Frame id {:?} and z-coord {:?}", frame.id, frame.centroid.2);
+            assert_eq!(frame.id, i as u32);
+            assert_eq!(frame.lumen.id, i as u32);
+            assert_eq!(frame.centroid.2, i as f64);
+            assert_eq!(frame.lumen.centroid.unwrap().2, i as f64);
+            for point in frame.lumen.points.iter() {
+                assert_eq!(point.z, i as f64);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_detec_holes_fail_on_big_gap() -> anyhow::Result<()> {
+        let mut geometry = dummy_geometry_aligned_long();
+        geometry.frames[5].translate_frame((0.0, 0.0, 3.0));
+
+        let new_geom = fill_holes(&mut geometry);
+        assert!(new_geom.is_err());
+        Ok(())     
+    }
+
+    #[test]
+    fn test_smoothing_effect() -> anyhow::Result<()> {
+        let mut geometry = dummy_geometry();
+        
+        let (geom_unsmoothed, _, _) = align_frames_in_geometry(
+            &mut geometry.clone(), 0.1, 30.0, false, false, 10)?;
+        
+        let (geom_smoothed, _, _) = align_frames_in_geometry(
+            &mut geometry, 0.1, 30.0, true, false, 10)?;
+        
+        // Smoothed geometry should have same number of frames but potentially different point coordinates
+        assert_eq!(geom_unsmoothed.frames.len(), geom_smoothed.frames.len());
+        Ok(())
+    }
+
+    #[test]
+    fn test_with_and_without_catheter() -> anyhow::Result<()> {
+        let mut geometry_with_cath = dummy_geometry();
+        // Add catheter points to frames
+        for frame in &mut geometry_with_cath.frames {
+            let catheter_contour = Contour {
+                id: frame.id + 100,
+                original_frame: frame.id,
+                points: vec![
+                    ContourPoint { frame_index: frame.id, point_index: 0, x: 0.0, y: 0.0, z: frame.centroid.2, aortic: false },
+                    ContourPoint { frame_index: frame.id, point_index: 1, x: 1.0, y: 0.0, z: frame.centroid.2, aortic: false },
+                ],
+                centroid: Some((0.5, 0.0, frame.centroid.2)),
+                aortic_thickness: None,
+                pulmonary_thickness: None,
+                kind: ContourType::Catheter,
+            };
+            frame.extras.insert(ContourType::Catheter, catheter_contour);
+        }
+        
+        let (geom_with_cath, _, _) = align_frames_in_geometry(
+            &mut geometry_with_cath, 0.1, 30.0, false, false, 10)?;
+        
+        let mut geometry_without_cath = dummy_geometry();
+        let (geom_without_cath, _, _) = align_frames_in_geometry(
+            &mut geometry_without_cath, 0.1, 30.0, false, false, 10)?;
+        
+        // Both should complete successfully
+        assert_eq!(geom_with_cath.frames.len(), geom_without_cath.frames.len());
         Ok(())
     }
 }
