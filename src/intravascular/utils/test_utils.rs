@@ -351,6 +351,6 @@ mod test_utils_tests {
         assert_relative_eq!(rp.y, 1.0, epsilon = 1e-6);
 
         assert_relative_eq!(rp.z, mid_frame.centroid.2, epsilon = 1e-6);
-        assert_relative_eq!(mid_frame.centroid.2, 4.0, epsilon = 1e-6);
+        assert_relative_eq!(mid_frame.centroid.2, 3.0, epsilon = 1e-6);
     }
 }

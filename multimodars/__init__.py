@@ -24,7 +24,7 @@ __all__ = [
     "from_file_singlepair",
     "from_file_single",
     "create_catheter_geometry",
-    "geometry_from_array",
+    "from_array_single",
     "from_array_full",
     "from_array_doublepair",
     "from_array_singlepair",

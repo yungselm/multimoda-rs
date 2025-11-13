@@ -1,6 +1,5 @@
 import numpy as np
 from typing import Union, Tuple
-from multimodars import PyGeometry, PyCenterline, PyInputData
 
 
 def to_array(generic) -> Union[np.ndarray, dict, Tuple[dict, dict]]:
@@ -34,7 +33,7 @@ def to_array(generic) -> Union[np.ndarray, dict, Tuple[dict, dict]]:
     TypeError
         If the input type is not one of the supported multimodars types.
     """
-    from multimodars import PyContour, PyCenterline, PyGeometry, PyGeometryPair
+    from . import PyContour, PyCenterline, PyGeometry, PyGeometryPair
 
     if isinstance(generic, PyContour):
         pts = [(p.frame_index, p.x, p.y, p.z) for p in generic.points]
@@ -102,7 +101,7 @@ def numpy_to_geometry(
     catheters_arr: np.ndarray,
     walls_arr: np.ndarray,
     reference_arr: np.ndarray,
-) -> PyGeometry:
+) -> "PyGeometry":
     """
     Build a PyGeometry from four (M, 4) NumPy arrays or structured arrays, one per layer, grouping by frame_index.
 
@@ -114,7 +113,7 @@ def numpy_to_geometry(
       - walls:    list of PyContour (one per frame in walls_arr)
       - reference: single PyContourPoint from reference_arr[0]
     """
-    from multimodars import PyContour, PyContourPoint
+    from . import PyContour, PyContourPoint, PyGeometry
 
     def _to_numeric_array(arr: np.ndarray, layer_name: str) -> np.ndarray:
         # Handle structured arrays (e.g. from np.genfromtxt with names)
@@ -181,7 +180,7 @@ def numpy_to_geometry(
 def numpy_to_centerline(
     arr: np.ndarray,
     aortic: bool = False,
-) -> PyCenterline:
+) -> "PyCenterline":
     """
     Build a PyCenterline from a numpy array of shape (N,3),
     where each row is (x, y, z).
@@ -193,7 +192,7 @@ def numpy_to_centerline(
     Returns:
         PyCenterline
     """
-    from multimodars import PyContourPoint, PyCenterline
+    from . import PyContourPoint, PyCenterline
 
     if arr.ndim != 2 or arr.shape[1] != 3:
         raise ValueError("Input must be a (N,3) array")
@@ -224,7 +223,7 @@ def array_to_pyinputdata(
     reference=None,
     diastole: bool = True,
     label: str = "",
-) -> PyInputData:
+) -> "PyInputData":
     """
     Create a PyInputData from either Py* objects (no-op) or NumPy arrays.
 
@@ -237,7 +236,7 @@ def array_to_pyinputdata(
     -------
     PyInputData
     """
-    from multimodars import (
+    from . import (
         PyContour,
         PyContourPoint,
         PyRecord,
