@@ -915,6 +915,128 @@ impl Geometry {
             }
         }
     }
+
+    pub fn center_to_contour(&mut self, contour_type: ContourType) {
+        let n = self.frames.len();
+        if n == 0 {
+            return;
+        }
+
+        let first_frame = &mut self.frames[0];
+        let mut reference_centroid = match contour_type {
+            ContourType::Lumen => {
+                first_frame.lumen.compute_centroid();
+                first_frame.lumen.centroid.unwrap_or(first_frame.centroid)
+            }
+            _ => {
+                if let Some(contour) = first_frame.extras.get_mut(&contour_type) {
+                    contour.compute_centroid();
+                    contour.centroid.unwrap_or(first_frame.centroid)
+                } else {
+                    first_frame.centroid
+                }
+            }
+        };
+
+        for i in 1..n {
+            let current_frame = &mut self.frames[i];
+            
+            let current_centroid = match contour_type {
+                ContourType::Lumen => {
+                    current_frame.lumen.compute_centroid();
+                    current_frame.lumen.centroid.unwrap_or(current_frame.centroid)
+                }
+                _ => {
+                    if let Some(contour) = current_frame.extras.get_mut(&contour_type) {
+                        contour.compute_centroid();
+                        contour.centroid.unwrap_or(current_frame.centroid)
+                    } else {
+                        current_frame.centroid
+                    }
+                }
+            };
+
+            let translation = (
+                reference_centroid.0 - current_centroid.0,
+                reference_centroid.1 - current_centroid.1,
+                0.0,
+            );
+
+            current_frame.translate_frame(translation);
+
+            reference_centroid = (
+                reference_centroid.0,
+                reference_centroid.1,
+                reference_centroid.2,
+            );
+        }
+    }
+    // pub fn center_to_contour(&mut self, contour_type: ContourType) {
+    //     for frame in self.frames.iter_mut() {
+    //         frame.lumen.compute_centroid();
+    //         let x = frame.lumen.centroid.unwrap().0.clone();
+    //         let y = frame.lumen.centroid.unwrap().1.clone();
+    //         let z = frame.lumen.centroid.unwrap().2.clone();
+    //         frame.centroid = (x, y, z);
+    //         // Get the target contour and ensure its centroid is calculated
+    //         let target_centroid = match contour_type {
+    //             ContourType::Lumen => {
+    //                 frame.lumen.compute_centroid();
+    //                 frame.lumen.centroid
+    //             }
+    //             ContourType::Eem => {
+    //                 if let Some(contour) = frame.extras.get_mut(&ContourType::Eem) {
+    //                     contour.compute_centroid();
+    //                     contour.centroid
+    //                 } else {
+    //                     continue; // Skip this frame if EEM contour doesn't exist
+    //                 }
+    //             }
+    //             ContourType::Calcification => {
+    //                 if let Some(contour) = frame.extras.get_mut(&ContourType::Calcification) {
+    //                     contour.compute_centroid();
+    //                     contour.centroid
+    //                 } else {
+    //                     continue;
+    //                 }
+    //             }
+    //             ContourType::Sidebranch => {
+    //                 if let Some(contour) = frame.extras.get_mut(&ContourType::Sidebranch) {
+    //                     contour.compute_centroid();
+    //                     contour.centroid
+    //                 } else {
+    //                     continue;
+    //                 }
+    //             }
+    //             ContourType::Catheter => {
+    //                 if let Some(contour) = frame.extras.get_mut(&ContourType::Catheter) {
+    //                     contour.compute_centroid();
+    //                     contour.centroid
+    //                 } else {
+    //                     continue;
+    //                 }
+    //             }
+    //             ContourType::Wall => {
+    //                 if let Some(contour) = frame.extras.get_mut(&ContourType::Wall) {
+    //                     contour.compute_centroid();
+    //                     contour.centroid
+    //                 } else {
+    //                     continue;
+    //                 }
+    //             }
+    //         };
+
+    //         if let Some(target_centroid) = target_centroid {
+    //             let frame_centroid = frame.centroid;
+    //             let translation = (
+    //                 target_centroid.0 - frame_centroid.0,
+    //                 target_centroid.1 - frame_centroid.1,
+    //                 target_centroid.2 - frame_centroid.2,
+    //             );
+    //             frame.translate_frame(translation);
+    //         }
+    //     }
+    // }
 }
 
 #[cfg(test)]

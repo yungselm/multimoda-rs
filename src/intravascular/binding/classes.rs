@@ -736,7 +736,28 @@ pub struct PyFrame {
     pub reference_point: Option<PyContourPoint>,
 }
 
-/// TODO: Write the header
+/// Python representation of a full geometry set
+///
+/// Contains:
+///     - Vessel contours
+///     - Catheter points
+///     - Wall contours
+///     - Reference point
+///
+/// Attributes:
+///     id /int): Frame id
+///     centroid ((float, float, float)): (x, y, z)
+///     extras (Dict[str, PyContour]): "Eem", "Calcification", "Sidebranch", "Catheter", "Wall"
+///     reference_point (PyContourPoint): Reference position
+///
+/// Example:
+///     >>> geom = PyFrame(
+///     ...     id=0,
+///     ...     centroid=(0.0, 0.0, 0.0),
+///     ...     lumen=lumen_contour,
+///     ...     extras={"Eem": eem_contour}
+///     ...     reference_point=ref_point
+///     ... )
 #[pymethods]
 impl PyFrame {
     #[new]
@@ -1056,6 +1077,22 @@ impl PyGeometry {
         }
 
         Ok((mla, max_stenosis, longest_mm))
+    }
+
+    /// Centers the entire geometry to a specific contour type
+    ///
+    /// Args:
+    ///     contour_type (str): Type of contour to center on ("Lumen", "Eem", "Wall", etc.)
+    ///
+    /// Returns:
+    ///     PyGeometry: A new geometry centered on the specified contour type
+    #[pyo3(signature = (contour_type))]
+    pub fn center_to_contour(&self, contour_type: PyContourType) -> PyResult<PyGeometry> {
+        let rust_contour_type: crate::intravascular::io::geometry::ContourType = contour_type.into();
+
+        let mut rust_geometry = self.to_rust_geometry()?;
+        rust_geometry.center_to_contour(rust_contour_type);
+        Ok(PyGeometry::from(&rust_geometry))
     }
 }
 

@@ -30,8 +30,10 @@ __all__ = [
     "from_array_singlepair",
     # rust class bound methods
     ## PyContourPoint
+    "PyContourPoint",
     "distance",
     ## PyContour
+    "PyContour",
     "compute_centroid",
     "points_as_tuples",
     "find_farthest_points",
@@ -41,12 +43,21 @@ __all__ = [
     "rotate",
     "translate",
     "sort_contour_points",
+    ## PyFrame
+    "PyFrame",
+    "rotate",
+    "translate",
+    "sort_frame_points",
     ## PyGeometry
+    "PyGeometry",
+    "PyGeometryPair",
     "rotate",
     "translate",
     "smooth_contours",
     "reorder",
     ## PyCenterline
+    "PyCenterlinePoint",
+    "PyCenterline",
     "from_contour_points",
     # converters
     "to_array",

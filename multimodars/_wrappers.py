@@ -1,5 +1,5 @@
 from typing import Literal, Any, Dict, Tuple, Union
-
+import multimodars as mm
 Mode = Literal["full", "doublepair", "singlepair", "single"]
 
 
@@ -9,10 +9,10 @@ def from_file(
 ) -> Union[
     # full returns 4 geometry pairs + 4 log-lists
     Tuple[
-        "PyGeometryPair",
-        "PyGeometryPair",
-        "PyGeometryPair",
-        "PyGeometryPair",
+        mm.PyGeometryPair,
+        mm.PyGeometryPair,
+        mm.PyGeometryPair,
+        mm.PyGeometryPair,
         list,
         list,
         list,
@@ -20,8 +20,8 @@ def from_file(
     ],
     # doublepair returns 2 geom + 4 log-lists
     Tuple[
-        "PyGeometryPair",
-        "PyGeometryPair",
+        mm.PyGeometryPair,
+        mm.PyGeometryPair,
         list,
         list,
         list,
@@ -29,14 +29,14 @@ def from_file(
     ],
     # singlepair returns 1 geom‐pair + 2 log-lists
     Tuple[
-        "PyGeometryPair",
-        "PyGeometryPair",
+        mm.PyGeometryPair,
+        mm.PyGeometryPair,
         list,
         list,
     ],
     # single returns 1 geom + 1 log-list
     Tuple[
-        "PyGeometryPair",
+        mm.PyGeometryPair,
         list,
     ],
 ]:
@@ -267,7 +267,6 @@ def from_file(
             "diastole",
             "step_rotation_deg",
             "range_rotation_deg",
-            "diastole",
             "image_center",
             "radius",
             "n_points",
@@ -278,7 +277,6 @@ def from_file(
             "sample_size",
             "contour_types",
             "smooth",
-            "postprocessing",
         )
         args = {k: merged[k] for k in required}
         return from_file_single(
@@ -287,7 +285,6 @@ def from_file(
             args["diastole"],
             args["step_rotation_deg"],
             args["range_rotation_deg"],
-            args["diastole"],
             args["image_center"],
             args["radius"],
             args["n_points"],
@@ -298,7 +295,6 @@ def from_file(
             args["sample_size"],
             args["contour_types"],
             args["smooth"],
-            args["postprocessing"],
         )
 
     else:
@@ -311,22 +307,22 @@ def from_array(
 ) -> Union[
     # full → 4 geometries + 4 log‐lists
     Tuple[
-        "PyGeometryPair",
-        "PyGeometryPair",
-        "PyGeometryPair",
-        "PyGeometryPair",
+        mm.PyGeometryPair,
+        mm.PyGeometryPair,
+        mm.PyGeometryPair,
+        mm.PyGeometryPair,
         list,
         list,
         list,
         list,
     ],
     # doublepair → 2 geometries + 4 log‐lists
-    Tuple["PyGeometryPair", "PyGeometryPair", list, list, list, list],
+    Tuple[mm.PyGeometryPair, mm.PyGeometryPair, list, list, list, list],
     # singlepair → 1 pair + 2 log‐lists
-    Tuple["PyGeometryPair", "PyGeometryPair", list, list],
+    Tuple[mm.PyGeometryPair, mm.PyGeometryPair, list, list],
     # single → 1 geometry + 1 log‐list
     Tuple[
-        "PyGeometry",
+        mm.PyGeometry,
         list,
     ],
 ]:
@@ -568,7 +564,6 @@ def from_array(
             "diastole",
             "step_rotation_deg",
             "range_rotation_deg",
-            "diastole",
             "image_center",
             "radius",
             "n_points",
@@ -579,7 +574,6 @@ def from_array(
             "sample_size",
             "contour_types",
             "smooth",
-            "postprocessing",
         )
         args = {k: merged[k] for k in required}
         return from_array_single(
@@ -588,7 +582,6 @@ def from_array(
             args["diastole"],
             args["step_rotation_deg"],
             args["range_rotation_deg"],
-            args["diastole"],
             args["image_center"],
             args["radius"],
             args["n_points"],
@@ -599,7 +592,6 @@ def from_array(
             args["sample_size"],
             args["contour_types"],
             args["smooth"],
-            args["postprocessing"],
         )
 
     else:
@@ -612,7 +604,7 @@ Mode_cl = Literal["three_pt", "manual"]
 def to_centerline(
     mode: Mode_cl,
     **kwargs: Any,
-) -> Tuple["PyGeometryPair", "PyCenterline"]:
+) -> Tuple[mm.PyGeometryPair, mm.PyCenterline]:
     """
     Unified entry for all to_centerline pipelines.
 

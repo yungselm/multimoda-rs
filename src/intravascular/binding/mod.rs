@@ -1126,7 +1126,7 @@ pub fn from_array_singlepair(
 #[pyo3(signature = (
     input_data,
     label = "single",
-    _diastole = true,
+    diastole = true,
     step_rotation_deg = 0.5f64,
     range_rotation_deg = 90.0f64,
     image_center = (4.5f64, 4.5f64),
@@ -1143,7 +1143,7 @@ pub fn from_array_singlepair(
 pub fn from_array_single(
     input_data: PyInputData,
     label: &str,
-    _diastole: bool,
+    diastole: bool,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
@@ -1170,7 +1170,7 @@ pub fn from_array_single(
         n_points,
         None,
         Some(input_data_rust),
-        _diastole,
+        diastole,
         write_obj,
         watertight,
         rust_contour_types,

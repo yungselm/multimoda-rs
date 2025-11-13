@@ -43,6 +43,7 @@ fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<(
     m.add_class::<PyContourPoint>()?;
     m.add_class::<PyContour>()?;
     m.add_class::<PyContourType>()?;
+    m.add_class::<PyFrame>()?;
     m.add_class::<PyGeometry>()?;
     m.add_class::<PyGeometryPair>()?;
     m.add_class::<PyCenterlinePoint>()?;
