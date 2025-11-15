@@ -57,14 +57,17 @@ pub fn align_frames_in_geometry(
     };
 
     let logger = Arc::new(Mutex::new(Vec::<AlignLog>::new()));
-    
+
     let mut cumulative_rotation: f64 = 0.0;
 
     for i in 1..geometry.frames.len() {
         let prev_frame = geometry.frames[i - 1].clone();
         let current = &mut geometry.frames[i];
 
-        println!("Aligning Frame {} to previous Frame {}", current.id, prev_frame.id);
+        println!(
+            "Aligning Frame {} to previous Frame {}",
+            current.id, prev_frame.id
+        );
 
         if cumulative_rotation != 0.0 {
             current.rotate_frame(cumulative_rotation);
@@ -77,8 +80,10 @@ pub fn align_frames_in_geometry(
         );
         current.translate_frame(translation);
 
-        let testing_points = catheter_lumen_vec_from_frames(current, sample_size, sample_size_catheter);
-        let reference_points = catheter_lumen_vec_from_frames(&prev_frame, sample_size, sample_size_catheter);
+        let testing_points =
+            catheter_lumen_vec_from_frames(current, sample_size, sample_size_catheter);
+        let reference_points =
+            catheter_lumen_vec_from_frames(&prev_frame, sample_size, sample_size_catheter);
 
         let best_rotation = if bruteforce {
             search_range(
@@ -699,7 +704,9 @@ mod align_within_tests {
     use approx::assert_relative_eq;
 
     use super::*;
-    use crate::intravascular::utils::test_utils::{dummy_geometry, dummy_geometry_aligned_long, dummy_geometry_center_reference};
+    use crate::intravascular::utils::test_utils::{
+        dummy_geometry, dummy_geometry_aligned_long, dummy_geometry_center_reference,
+    };
 
     #[test]
     fn test_simple_geometry() -> anyhow::Result<()> {
@@ -708,27 +715,37 @@ mod align_within_tests {
 
         assert_eq!(ref_frame_idx, 0);
 
-        let (geom, logs, _) = align_frames_in_geometry(
-            &mut dummy, 
-            0.01, 
-            30.0, 
-            false, 
-            false, 
-            6)?;
+        let (geom, logs, _) = align_frames_in_geometry(&mut dummy, 0.01, 30.0, false, false, 6)?;
 
         assert!(!geom.frames.is_empty());
-        assert_relative_eq!(geom.frames[0].lumen.points[0].x, geom.frames[1].lumen.points[0].x, epsilon=1e-6);
-        assert_relative_eq!(geom.frames[0].lumen.points[0].y, geom.frames[1].lumen.points[0].y, epsilon=1e-6);
-        assert_relative_eq!(geom.frames[0].lumen.points[0].x, geom.frames[2].lumen.points[0].x, epsilon=1e-6);
-        assert_relative_eq!(geom.frames[0].lumen.points[0].y, geom.frames[2].lumen.points[0].y, epsilon=1e-6);
+        assert_relative_eq!(
+            geom.frames[0].lumen.points[0].x,
+            geom.frames[1].lumen.points[0].x,
+            epsilon = 1e-6
+        );
+        assert_relative_eq!(
+            geom.frames[0].lumen.points[0].y,
+            geom.frames[1].lumen.points[0].y,
+            epsilon = 1e-6
+        );
+        assert_relative_eq!(
+            geom.frames[0].lumen.points[0].x,
+            geom.frames[2].lumen.points[0].x,
+            epsilon = 1e-6
+        );
+        assert_relative_eq!(
+            geom.frames[0].lumen.points[0].y,
+            geom.frames[2].lumen.points[0].y,
+            epsilon = 1e-6
+        );
         for (i, log) in logs.iter().enumerate() {
             let idx = i as f64 + 1.0;
             let expected_tx = -1.0 * idx;
-            let expected_ty =  -1.0 * idx;
-            assert_relative_eq!(log.rot_deg, -15.0, epsilon=1e-6);
-            assert_relative_eq!(log.tx, expected_tx, epsilon=1e-6);
-            assert_relative_eq!(log.ty, expected_ty, epsilon=1e-6);            
-        };
+            let expected_ty = -1.0 * idx;
+            assert_relative_eq!(log.rot_deg, -15.0, epsilon = 1e-6);
+            assert_relative_eq!(log.tx, expected_tx, epsilon = 1e-6);
+            assert_relative_eq!(log.ty, expected_ty, epsilon = 1e-6);
+        }
         Ok(())
     }
 
@@ -749,13 +766,7 @@ mod align_within_tests {
             );
         }
 
-        let result = align_frames_in_geometry(
-            &mut dummy, 
-            0.01, 
-            30.0, 
-            false, 
-            false, 
-            6);
+        let result = align_frames_in_geometry(&mut dummy, 0.01, 30.0, false, false, 6);
 
         assert!(result.is_ok());
         Ok(())
@@ -768,35 +779,31 @@ mod align_within_tests {
 
         let mut geometry = build_geometry_from_inputdata(
             None,
-            Some(Path::new("data/fixtures/idealized_geometry")), 
-            "stress", 
-            true, 
-            (4.5, 4.5), 
-            0.5, 
-            20)?;
+            Some(Path::new("data/fixtures/idealized_geometry")),
+            "stress",
+            true,
+            (4.5, 4.5),
+            0.5,
+            20,
+        )?;
 
-        let (geom, logs, anomalous) = align_frames_in_geometry(
-            &mut geometry, 
-            0.01, 
-            45.0, 
-            true, 
-            false, 
-            200)?;
+        let (geom, logs, anomalous) =
+            align_frames_in_geometry(&mut geometry, 0.01, 45.0, true, false, 200)?;
 
         assert!(!geom.frames.is_empty());
         assert_eq!(anomalous, true);
 
         for log in &logs {
-            assert_relative_eq!(log.rot_deg.abs(), 15.0, epsilon=1.0)
+            assert_relative_eq!(log.rot_deg.abs(), 15.0, epsilon = 1.0)
         }
         for (i, log) in logs.iter().enumerate() {
             let idx = i as f64 + 1.0;
             let expected_tx = -0.01 * idx;
-            let expected_ty =  0.01 * idx;
+            let expected_ty = 0.01 * idx;
             assert_relative_eq!(log.tx, expected_tx, epsilon = 0.001);
             assert_relative_eq!(log.ty, expected_ty, epsilon = 0.001);
         }
-        Ok(())        
+        Ok(())
     }
 
     #[test]
@@ -807,13 +814,13 @@ mod align_within_tests {
         let (bool_hole, avg_dist) = detect_holes(&geometry);
 
         assert_eq!(bool_hole, true);
-        assert_relative_eq!(avg_dist, 1.2, epsilon=1e-6);
+        assert_relative_eq!(avg_dist, 1.2, epsilon = 1e-6);
 
         let new_frame = fix_one_frame_hole(&geometry.frames[1], &geometry.frames[2]);
 
-        assert_relative_eq!(new_frame.centroid.2, 1.5, epsilon=1e-6);
+        assert_relative_eq!(new_frame.centroid.2, 1.5, epsilon = 1e-6);
         for point in new_frame.lumen.points {
-            assert_relative_eq!(point.z, 1.5, epsilon=1e-6);
+            assert_relative_eq!(point.z, 1.5, epsilon = 1e-6);
         }
 
         let new_geom = fill_holes(&mut geometry)?;
@@ -859,19 +866,19 @@ mod align_within_tests {
 
         let new_geom = fill_holes(&mut geometry);
         assert!(new_geom.is_err());
-        Ok(())     
+        Ok(())
     }
 
     #[test]
     fn test_smoothing_effect() -> anyhow::Result<()> {
         let mut geometry = dummy_geometry();
-        
-        let (geom_unsmoothed, _, _) = align_frames_in_geometry(
-            &mut geometry.clone(), 0.1, 30.0, false, false, 10)?;
-        
-        let (geom_smoothed, _, _) = align_frames_in_geometry(
-            &mut geometry, 0.1, 30.0, true, false, 10)?;
-        
+
+        let (geom_unsmoothed, _, _) =
+            align_frames_in_geometry(&mut geometry.clone(), 0.1, 30.0, false, false, 10)?;
+
+        let (geom_smoothed, _, _) =
+            align_frames_in_geometry(&mut geometry, 0.1, 30.0, true, false, 10)?;
+
         // Smoothed geometry should have same number of frames but potentially different point coordinates
         assert_eq!(geom_unsmoothed.frames.len(), geom_smoothed.frames.len());
         Ok(())
@@ -886,8 +893,22 @@ mod align_within_tests {
                 id: frame.id + 100,
                 original_frame: frame.id,
                 points: vec![
-                    ContourPoint { frame_index: frame.id, point_index: 0, x: 0.0, y: 0.0, z: frame.centroid.2, aortic: false },
-                    ContourPoint { frame_index: frame.id, point_index: 1, x: 1.0, y: 0.0, z: frame.centroid.2, aortic: false },
+                    ContourPoint {
+                        frame_index: frame.id,
+                        point_index: 0,
+                        x: 0.0,
+                        y: 0.0,
+                        z: frame.centroid.2,
+                        aortic: false,
+                    },
+                    ContourPoint {
+                        frame_index: frame.id,
+                        point_index: 1,
+                        x: 1.0,
+                        y: 0.0,
+                        z: frame.centroid.2,
+                        aortic: false,
+                    },
                 ],
                 centroid: Some((0.5, 0.0, frame.centroid.2)),
                 aortic_thickness: None,
@@ -896,14 +917,14 @@ mod align_within_tests {
             };
             frame.extras.insert(ContourType::Catheter, catheter_contour);
         }
-        
-        let (geom_with_cath, _, _) = align_frames_in_geometry(
-            &mut geometry_with_cath, 0.1, 30.0, false, false, 10)?;
-        
+
+        let (geom_with_cath, _, _) =
+            align_frames_in_geometry(&mut geometry_with_cath, 0.1, 30.0, false, false, 10)?;
+
         let mut geometry_without_cath = dummy_geometry();
-        let (geom_without_cath, _, _) = align_frames_in_geometry(
-            &mut geometry_without_cath, 0.1, 30.0, false, false, 10)?;
-        
+        let (geom_without_cath, _, _) =
+            align_frames_in_geometry(&mut geometry_without_cath, 0.1, 30.0, false, false, 10)?;
+
         // Both should complete successfully
         assert_eq!(geom_with_cath.frames.len(), geom_without_cath.frames.len());
         Ok(())

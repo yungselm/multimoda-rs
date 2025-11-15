@@ -2,10 +2,7 @@ pub mod align;
 pub mod classes;
 pub mod entry;
 
-use crate::intravascular::io::{
-    input::InputData,
-    output::write_obj_mesh_without_uv,
-};
+use crate::intravascular::io::{input::InputData, output::write_obj_mesh_without_uv};
 use crate::intravascular::processing::align_within::AlignLog;
 use classes::{PyContourType, PyGeometry, PyGeometryPair, PyInputData};
 use entry::*;
@@ -85,7 +82,7 @@ fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<(u32, u32, f64, f64, f64, f64, f64
         input_path_a,
         input_path_b,
         label = "full",
-        _diastole = true,
+        diastole = true,
         step_rotation_deg = 0.5f64,
         range_rotation_deg = 90.0f64,
         image_center = (4.5f64, 4.5f64),
@@ -109,7 +106,7 @@ pub fn from_file_full(
     input_path_a: &str,
     input_path_b: &str,
     label: &str,
-    _diastole: bool,
+    diastole: bool,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
@@ -139,17 +136,18 @@ pub fn from_file_full(
         Vec<(u32, u32, f64, f64, f64, f64, f64)>,
     ),
 )> {
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> = contour_types.iter().map(|ct| ct.into()).collect();
+    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+        contour_types.iter().map(|ct| ct.into()).collect();
 
     let (
-        geom_ab_final, 
-        geom_cd_final, 
-        geom_ac_final, 
-        geom_bd_final, 
-        logs_a, 
-        logs_b, 
-        logs_c, 
-        logs_d
+        geom_ab_final,
+        geom_cd_final,
+        geom_ac_final,
+        geom_bd_final,
+        logs_a,
+        logs_b,
+        logs_c,
+        logs_d,
     ) = full_processing_rs(
         label.to_string(),
         image_center,
@@ -161,7 +159,7 @@ pub fn from_file_full(
         None,
         None,
         None,
-        _diastole,
+        diastole,
         write_obj,
         interpolation_steps,
         rust_contour_types, // Use converted types
@@ -251,7 +249,7 @@ pub fn from_file_full(
     input_path_a,
     input_path_b,
     label = "double_pair",
-    _diastole = true,
+    diastole = true,
     step_rotation_deg = 0.5f64,
     range_rotation_deg = 90.0f64,
     image_center = (4.5f64, 4.5f64),
@@ -272,7 +270,7 @@ pub fn from_file_doublepair(
     input_path_a: &str,
     input_path_b: &str,
     label: &str,
-    _diastole: bool,
+    diastole: bool,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
@@ -298,16 +296,10 @@ pub fn from_file_doublepair(
         Vec<(u32, u32, f64, f64, f64, f64, f64)>,
     ),
 )> {
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> = contour_types.iter().map(|ct| ct.into()).collect();
+    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+        contour_types.iter().map(|ct| ct.into()).collect();
 
-    let (
-        geom_ab_final, 
-        geom_cd_final, 
-        logs_a, 
-        logs_b, 
-        logs_c, 
-        logs_d
-    ) = double_pair_processing_rs(
+    let (geom_ab_final, geom_cd_final, logs_a, logs_b, logs_c, logs_d) = double_pair_processing_rs(
         label.to_string(),
         image_center,
         radius,
@@ -318,7 +310,7 @@ pub fn from_file_doublepair(
         None,
         None,
         None,
-        _diastole,
+        diastole,
         write_obj,
         interpolation_steps,
         rust_contour_types,
@@ -401,8 +393,8 @@ pub fn from_file_doublepair(
 #[pyfunction]
 #[pyo3(signature = (
     input_path,
-    _diastole = true,
     label = "single_pair",
+    diastole = true,
     step_rotation_deg = 0.5f64,
     range_rotation_deg = 90.0f64,
     image_center = (4.5f64, 4.5f64),
@@ -420,8 +412,8 @@ pub fn from_file_doublepair(
 ))]
 pub fn from_file_singlepair(
     input_path: &str,
-    _diastole: bool,
     label: &str,
+    diastole: bool,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
@@ -443,13 +435,10 @@ pub fn from_file_singlepair(
         Vec<(u32, u32, f64, f64, f64, f64, f64)>,
     ),
 )> {
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> = contour_types.iter().map(|ct| ct.into()).collect();
+    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+        contour_types.iter().map(|ct| ct.into()).collect();
 
-    let (
-        geom_pair_final, 
-        logs_a, 
-        logs_b, 
-    ) = pair_processing_rs(
+    let (geom_pair_final, logs_a, logs_b) = pair_processing_rs(
         label.to_string(),
         image_center,
         radius,
@@ -457,7 +446,7 @@ pub fn from_file_singlepair(
         Some(input_path),
         None,
         None,
-        _diastole,
+        diastole,
         write_obj,
         interpolation_steps,
         rust_contour_types,
@@ -475,10 +464,7 @@ pub fn from_file_singlepair(
     let py_geom_ab = geom_pair_final.into();
     let py_logs_a = logs_to_tuples(logs_a);
     let py_logs_b = logs_to_tuples(logs_b);
-    Ok((
-        py_geom_ab,
-        (py_logs_a, py_logs_b),
-    ))
+    Ok((py_geom_ab, (py_logs_a, py_logs_b)))
 }
 
 /// Processes a single geometry (either diastole or systole) from an IVUS CSV file.
@@ -557,7 +543,8 @@ pub fn from_file_single(
     contour_types: Vec<PyContourType>,
     smooth: bool,
 ) -> PyResult<(PyGeometry, Vec<(u32, u32, f64, f64, f64, f64, f64)>)> {
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> = contour_types.iter().map(|ct| ct.into()).collect();
+    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+        contour_types.iter().map(|ct| ct.into()).collect();
 
     let (geom, logs) = single_processing_rs(
         label.to_string(),
@@ -648,7 +635,7 @@ pub fn from_file_single(
         input_data_c,
         input_data_d,
         label = "full",
-        _diastole = true,
+        diastole = true,
         step_rotation_deg = 0.5f64,
         range_rotation_deg = 90.0f64,
         image_center = (4.5f64, 4.5f64),
@@ -656,10 +643,10 @@ pub fn from_file_single(
         n_points = 20u32,
         write_obj = true,
         watertight = true,
-        rest_output_path = "output/rest",
-        stress_output_path = "output/stress",
-        diastole_output_path = "output/diastole",
-        systole_output_path = "output/systole",
+        output_path_a = "output/rest",
+        output_path_b = "output/stress",
+        output_path_c = "output/diastole",
+        output_path_d = "output/systole",
         interpolation_steps = 28usize,
         bruteforce = false,
         sample_size= 200,
@@ -674,7 +661,7 @@ pub fn from_array_full(
     input_data_c: PyInputData,
     input_data_d: PyInputData,
     label: &str,
-    _diastole: bool,
+    diastole: bool,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
@@ -682,10 +669,10 @@ pub fn from_array_full(
     n_points: u32,
     write_obj: bool,
     watertight: bool,
-    rest_output_path: &str,
-    stress_output_path: &str,
-    diastole_output_path: &str,
-    systole_output_path: &str,
+    output_path_a: &str,
+    output_path_b: &str,
+    output_path_c: &str,
+    output_path_d: &str,
     interpolation_steps: usize,
     bruteforce: bool,
     sample_size: usize,
@@ -704,27 +691,31 @@ pub fn from_array_full(
         Vec<(u32, u32, f64, f64, f64, f64, f64)>,
     ),
 )> {
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> = 
+    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
-    let input_data_a_rust: InputData = input_data_a.try_into()
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_a: {}", e)))?;
-    let input_data_b_rust: InputData = input_data_b.try_into()
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_b: {}", e)))?;
-    let input_data_c_rust: InputData = input_data_c.try_into()
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_c: {}", e)))?;
-    let input_data_d_rust: InputData = input_data_d.try_into()
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_d: {}", e)))?;
+    let input_data_a_rust: InputData = input_data_a.try_into().map_err(|e| {
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_a: {}", e))
+    })?;
+    let input_data_b_rust: InputData = input_data_b.try_into().map_err(|e| {
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_b: {}", e))
+    })?;
+    let input_data_c_rust: InputData = input_data_c.try_into().map_err(|e| {
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_c: {}", e))
+    })?;
+    let input_data_d_rust: InputData = input_data_d.try_into().map_err(|e| {
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_d: {}", e))
+    })?;
 
     let (
-        geom_ab_final, 
-        geom_cd_final, 
-        geom_ac_final, 
-        geom_bd_final, 
-        logs_a, 
-        logs_b, 
-        logs_c, 
-        logs_d
+        geom_ab_final,
+        geom_cd_final,
+        geom_ac_final,
+        geom_bd_final,
+        logs_a,
+        logs_b,
+        logs_c,
+        logs_d,
     ) = full_processing_rs(
         label.to_string(),
         image_center,
@@ -736,15 +727,15 @@ pub fn from_array_full(
         Some(input_data_b_rust),
         Some(input_data_c_rust),
         Some(input_data_d_rust),
-        _diastole,
+        diastole,
         write_obj,
         interpolation_steps,
         rust_contour_types,
         watertight,
-        rest_output_path,
-        stress_output_path,
-        diastole_output_path,
-        systole_output_path,
+        output_path_a,
+        output_path_b,
+        output_path_c,
+        output_path_d,
         step_rotation_deg,
         range_rotation_deg,
         smooth,
@@ -762,7 +753,7 @@ pub fn from_array_full(
     let py_logs_b = logs_to_tuples(logs_b);
     let py_logs_c = logs_to_tuples(logs_c);
     let py_logs_d = logs_to_tuples(logs_d);
-    
+
     Ok((
         py_geom_ab,
         py_geom_cd,
@@ -801,7 +792,7 @@ pub fn from_array_full(
 ///     contour_type (default [PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall])
 ///     smooth (default true): bool smooth after alignment with 3-point moving average
 ///     postprocessing (default true): adjusts spacing within/between geometry/geometries to have equal offsets
-/// 
+///
 /// Returns:
 ///     A tuple ``(rest_pair, stress_pair)`` of type ``(PyGeometryPair, PyGeometryPair)``,
 ///     containing the interpolated diastole/systole geometries for REST and STRESS.
@@ -822,8 +813,8 @@ pub fn from_array_full(
 ///        stress_dia, stress_sys,
 ///        steps_best_rotation=0.2,
 ///        interpolation_steps=32,
-///        rest_output_path="out/rest",
-///        stress_output_path="out/stress"
+///        output_path_a="out/rest",
+///        output_path_b="out/stress"
 ///    )
 ///
 #[pyfunction]
@@ -834,7 +825,7 @@ pub fn from_array_full(
         input_data_c,
         input_data_d,
         label = "double_pair",
-        _diastole = true,
+        diastole = true,
         step_rotation_deg = 0.5f64,
         range_rotation_deg = 90.0f64,
         image_center = (4.5f64, 4.5f64),
@@ -842,8 +833,8 @@ pub fn from_array_full(
         n_points = 20u32,
         write_obj = true,
         watertight = true,
-        rest_output_path = "output/rest",
-        stress_output_path = "output/stress",
+        output_path_a = "output/rest",
+        output_path_b = "output/stress",
         interpolation_steps = 28usize,
         bruteforce = false,
         sample_size= 200,
@@ -858,7 +849,7 @@ pub fn from_array_doublepair(
     input_data_c: PyInputData,
     input_data_d: PyInputData,
     label: &str,
-    _diastole: bool,
+    diastole: bool,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
@@ -866,8 +857,8 @@ pub fn from_array_doublepair(
     n_points: u32,
     write_obj: bool,
     watertight: bool,
-    rest_output_path: &str,
-    stress_output_path: &str,
+    output_path_a: &str,
+    output_path_b: &str,
     interpolation_steps: usize,
     bruteforce: bool,
     sample_size: usize,
@@ -884,26 +875,23 @@ pub fn from_array_doublepair(
         Vec<(u32, u32, f64, f64, f64, f64, f64)>,
     ),
 )> {
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> = 
+    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
-    let input_data_a_rust: InputData = input_data_a.try_into()
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_a: {}", e)))?;
-    let input_data_b_rust: InputData = input_data_b.try_into()
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_b: {}", e)))?;
-    let input_data_c_rust: InputData = input_data_c.try_into()
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_c: {}", e)))?;
-    let input_data_d_rust: InputData = input_data_d.try_into()
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_d: {}", e)))?;
+    let input_data_a_rust: InputData = input_data_a.try_into().map_err(|e| {
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_a: {}", e))
+    })?;
+    let input_data_b_rust: InputData = input_data_b.try_into().map_err(|e| {
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_b: {}", e))
+    })?;
+    let input_data_c_rust: InputData = input_data_c.try_into().map_err(|e| {
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_c: {}", e))
+    })?;
+    let input_data_d_rust: InputData = input_data_d.try_into().map_err(|e| {
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_d: {}", e))
+    })?;
 
-    let (
-        geom_ab_final, 
-        geom_cd_final,
-        logs_a, 
-        logs_b, 
-        logs_c, 
-        logs_d
-    ) = double_pair_processing_rs(
+    let (geom_ab_final, geom_cd_final, logs_a, logs_b, logs_c, logs_d) = double_pair_processing_rs(
         label.to_string(),
         image_center,
         radius,
@@ -914,13 +902,13 @@ pub fn from_array_doublepair(
         Some(input_data_b_rust),
         Some(input_data_c_rust),
         Some(input_data_d_rust),
-        _diastole,
+        diastole,
         write_obj,
         interpolation_steps,
         rust_contour_types,
         watertight,
-        rest_output_path,
-        stress_output_path,
+        output_path_a,
+        output_path_b,
         step_rotation_deg,
         range_rotation_deg,
         smooth,
@@ -936,7 +924,7 @@ pub fn from_array_doublepair(
     let py_logs_b = logs_to_tuples(logs_b);
     let py_logs_c = logs_to_tuples(logs_c);
     let py_logs_d = logs_to_tuples(logs_d);
-    
+
     Ok((
         py_geom_ab,
         py_geom_cd,
@@ -993,8 +981,8 @@ pub fn from_array_doublepair(
     signature = (
         input_data_a,
         input_data_b,
-        _diastole = true,
         label = "single_pair",
+        diastole = true,
         step_rotation_deg = 0.5f64,
         range_rotation_deg = 90.0f64,
         image_center = (4.5f64, 4.5f64),
@@ -1014,8 +1002,8 @@ pub fn from_array_doublepair(
 pub fn from_array_singlepair(
     input_data_a: PyInputData,
     input_data_b: PyInputData,
-    _diastole: bool,
     label: &str,
+    diastole: bool,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
@@ -1037,19 +1025,17 @@ pub fn from_array_singlepair(
         Vec<(u32, u32, f64, f64, f64, f64, f64)>,
     ),
 )> {
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> = 
+    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
-    let input_data_a_rust: InputData = input_data_a.try_into()
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_a: {}", e)))?;
-    let input_data_b_rust: InputData = input_data_b.try_into()
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_b: {}", e)))?;
+    let input_data_a_rust: InputData = input_data_a.try_into().map_err(|e| {
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_a: {}", e))
+    })?;
+    let input_data_b_rust: InputData = input_data_b.try_into().map_err(|e| {
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_b: {}", e))
+    })?;
 
-    let (
-        geom_ab_final, 
-        logs_a, 
-        logs_b,
-    ) = pair_processing_rs(
+    let (geom_ab_final, logs_a, logs_b) = pair_processing_rs(
         label.to_string(),
         image_center,
         radius,
@@ -1057,7 +1043,7 @@ pub fn from_array_singlepair(
         None,
         Some(input_data_a_rust),
         Some(input_data_b_rust),
-        _diastole,
+        diastole,
         write_obj,
         interpolation_steps,
         rust_contour_types,
@@ -1075,11 +1061,8 @@ pub fn from_array_singlepair(
     let py_geom_ab = geom_ab_final.into();
     let py_logs_a = logs_to_tuples(logs_a);
     let py_logs_b = logs_to_tuples(logs_b);
-    
-    Ok((
-        py_geom_ab,
-        (py_logs_a, py_logs_b),
-    ))
+
+    Ok((py_geom_ab, (py_logs_a, py_logs_b)))
 }
 
 /// Processes a single geometry (either diastole or systole) from an IVUS CSV file.
@@ -1157,11 +1140,12 @@ pub fn from_array_single(
     contour_types: Vec<PyContourType>,
     smooth: bool,
 ) -> PyResult<(PyGeometry, Vec<(u32, u32, f64, f64, f64, f64, f64)>)> {
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> = 
+    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
-    let input_data_rust: InputData = input_data.try_into()
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_a: {}", e)))?;
+    let input_data_rust: InputData = input_data.try_into().map_err(|e| {
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_a: {}", e))
+    })?;
 
     let (geom_rs, logs) = single_processing_rs(
         label.to_string(),
@@ -1191,8 +1175,8 @@ pub fn from_array_single(
 /// Convert a ``PyGeometry`` object into one or more OBJ files and write them to disk.
 ///
 /// This function takes a Python-exposed geometry (``PyGeometry``), converts it into the
-/// corresponding Rust geometry, and writes the specified contour types as OBJ meshes 
-/// without UV coordinates. Each contour type is written to its own file, with a 
+/// corresponding Rust geometry, and writes the specified contour types as OBJ meshes
+/// without UV coordinates. Each contour type is written to its own file, with a
 /// corresponding MTL material file.
 ///
 /// Args:
@@ -1222,8 +1206,9 @@ pub fn to_obj(
     filename_prefix: &str,
 ) -> PyResult<()> {
     // Convert the Python geometry to Rust representation
-    let geometry_rs = geometry.to_rust_geometry()
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert geometry: {}", e)))?;
+    let geometry_rs = geometry.to_rust_geometry().map_err(|e| {
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert geometry: {}", e))
+    })?;
 
     // Ensure output directory exists
     std::fs::create_dir_all(output_path).map_err(|e| {
@@ -1236,9 +1221,12 @@ pub fn to_obj(
     // Write each requested contour type
     for contour_type in contour_types {
         let contours = extract_contours_by_type(&geometry_rs, contour_type.into());
-        
+
         if contours.is_empty() {
-            eprintln!("Warning: No contours found for type {:?}, skipping", contour_type);
+            eprintln!(
+                "Warning: No contours found for type {:?}, skipping",
+                contour_type
+            );
             continue;
         }
 
@@ -1258,8 +1246,12 @@ pub fn to_obj(
         let mtl_path = Path::new(output_path).join(&material_name);
 
         // Create appropriate MTL file based on contour type
-        create_mtl_for_contour_type(contour_type.into(), &mtl_path, &filename)
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to create mtl for geometry: {}", e)))?;
+        create_mtl_for_contour_type(contour_type.into(), &mtl_path, &filename).map_err(|e| {
+            pyo3::exceptions::PyRuntimeError::new_err(format!(
+                "Failed to create mtl for geometry: {}",
+                e
+            ))
+        })?;
 
         // Write OBJ without UV coordinates
         write_obj_mesh_without_uv(

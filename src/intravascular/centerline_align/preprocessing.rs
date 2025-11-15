@@ -1,7 +1,7 @@
 use nalgebra::Vector3;
 
-use crate::intravascular::io::input::{Centerline, CenterlinePoint, ContourPoint};
 use crate::intravascular::io::geometry::Geometry;
+use crate::intravascular::io::input::{Centerline, CenterlinePoint, ContourPoint};
 
 /// Resample `centerline` along its arc-length so that adjacent points are spaced at the
 /// mean Euclidean distance between consecutive contour centroids in `ref_mesh`.

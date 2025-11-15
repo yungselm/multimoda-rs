@@ -113,23 +113,23 @@ impl Contour {
         let mut sorted_groups: Vec<(u32, Vec<ContourPoint>)> = groups.into_iter().collect();
         sorted_groups.sort_by_key(|(frame_idx, _)| *frame_idx);
 
-    for (i, (frame_idx, points)) in sorted_groups.into_iter().enumerate() {
-        let (aortic, pulmonary) = if let Some(ref meas) = measurements {
-            meas.get(&frame_idx)
-                .map(|&(m1, m2)| (Some(m1), Some(m2)))
-                .unwrap_or((None, None))
-        } else {
-            (None, None)
-        };
+        for (i, (frame_idx, points)) in sorted_groups.into_iter().enumerate() {
+            let (aortic, pulmonary) = if let Some(ref meas) = measurements {
+                meas.get(&frame_idx)
+                    .map(|&(m1, m2)| (Some(m1), Some(m2)))
+                    .unwrap_or((None, None))
+            } else {
+                (None, None)
+            };
 
-        contours.push(Contour {
-            id: i as u32,
-            original_frame: frame_idx,
-            points,
-            centroid: None,
-            aortic_thickness: aortic.flatten(),
-            pulmonary_thickness: pulmonary.flatten(),
-            kind,
+            contours.push(Contour {
+                id: i as u32,
+                original_frame: frame_idx,
+                points,
+                centroid: None,
+                aortic_thickness: aortic.flatten(),
+                pulmonary_thickness: pulmonary.flatten(),
+                kind,
             });
         }
 
@@ -165,8 +165,9 @@ impl Contour {
         sorted_groups.sort_by_key(|(frame_idx, _)| *frame_idx);
 
         for (original_frame_idx, points) in sorted_groups {
-            let sequential_id = *frame_mapping.get(&original_frame_idx)
-                .ok_or_else(|| anyhow::anyhow!("No mapping found for original frame {}", original_frame_idx))?;
+            let sequential_id = *frame_mapping.get(&original_frame_idx).ok_or_else(|| {
+                anyhow::anyhow!("No mapping found for original frame {}", original_frame_idx)
+            })?;
 
             let (aortic, pulmonary) = if let Some(ref meas) = measurements {
                 meas.get(&original_frame_idx)
@@ -177,8 +178,8 @@ impl Contour {
             };
 
             contours.push(Contour {
-                id: sequential_id,  // Use the shared sequential ID
-                original_frame: original_frame_idx,  // Keep original frame for reference
+                id: sequential_id,                  // Use the shared sequential ID
+                original_frame: original_frame_idx, // Keep original frame for reference
                 points,
                 centroid: None,
                 aortic_thickness: aortic.flatten(),
@@ -233,10 +234,8 @@ impl Contour {
         let (cx, cy, _) = if let Some(c) = self.centroid {
             c
         } else {
-            let (sum_x, sum_y, sum_z) = self
-                .points
-                .iter()
-                .fold((0.0, 0.0, 0.0), |(sx, sy, sz), p| {
+            let (sum_x, sum_y, sum_z) =
+                self.points.iter().fold((0.0, 0.0, 0.0), |(sx, sy, sz), p| {
                     (sx + p.x, sy + p.y, sz + p.z)
                 });
             let n_f = n as f64;
@@ -369,7 +368,7 @@ impl Contour {
         }
         // Get centroid or compute if not present
         self.compute_centroid();
-        let (cx, cy, _) =self.centroid.unwrap();
+        let (cx, cy, _) = self.centroid.unwrap();
 
         // Rotate each point around the centroid
         for point in self.points.iter_mut() {
@@ -664,7 +663,8 @@ impl Geometry {
             }
         }
 
-        let mut remaining_frames: Vec<Frame> = frame_map.into_iter().map(|(_, frame)| frame).collect();
+        let mut remaining_frames: Vec<Frame> =
+            frame_map.into_iter().map(|(_, frame)| frame).collect();
         remaining_frames.sort_by_key(|frame| frame.lumen.original_frame);
         new_frames.extend(remaining_frames);
 
@@ -872,7 +872,7 @@ impl Geometry {
         if proximal_idx != 0 {
             let mut temp_frames = self.frames.clone();
             temp_frames.reverse();
-            
+
             self.frames = temp_frames;
         }
 
@@ -940,11 +940,14 @@ impl Geometry {
 
         for i in 1..n {
             let current_frame = &mut self.frames[i];
-            
+
             let current_centroid = match contour_type {
                 ContourType::Lumen => {
                     current_frame.lumen.compute_centroid();
-                    current_frame.lumen.centroid.unwrap_or(current_frame.centroid)
+                    current_frame
+                        .lumen
+                        .centroid
+                        .unwrap_or(current_frame.centroid)
                 }
                 _ => {
                     if let Some(contour) = current_frame.extras.get_mut(&contour_type) {
@@ -1042,9 +1045,9 @@ impl Geometry {
 #[cfg(test)]
 mod geometry_tests {
     use super::*;
-    use std::f64::consts::PI;
     use crate::intravascular::utils::test_utils::dummy_geometry;
     use approx::assert_relative_eq;
+    use std::f64::consts::PI;
 
     // test for contours
     #[test]
@@ -1053,9 +1056,30 @@ mod geometry_tests {
 
         // create points: two points for frame 1, one point for frame 2
         let pts = vec![
-            ContourPoint { frame_index: 1, point_index: 0, x: 0.0, y: 0.0, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 1, point_index: 1, x: 1.0, y: 0.0, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 2, point_index: 0, x: 2.0, y: 0.0, z: 0.0, aortic: false },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 0,
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 1,
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 2,
+                point_index: 0,
+                x: 2.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
         ];
 
         let contours = Contour::build_contour(pts, None, ContourType::Lumen)?;
@@ -1063,10 +1087,18 @@ mod geometry_tests {
         let mut contours = contours;
         contours.sort_by_key(|c| c.id);
 
-        assert_eq!(contours.len(), 2, "should produce two contours (frames 1 and 2)");
+        assert_eq!(
+            contours.len(),
+            2,
+            "should produce two contours (frames 1 and 2)"
+        );
         assert_eq!(contours[0].id, 0);
         assert_eq!(contours[0].original_frame, 1);
-        assert_eq!(contours[0].points.len(), 2, "frame 1 should have two points");
+        assert_eq!(
+            contours[0].points.len(),
+            2,
+            "frame 1 should have two points"
+        );
         assert_eq!(contours[1].id, 1);
         assert_eq!(contours[1].original_frame, 2);
         assert_eq!(contours[1].points.len(), 1, "frame 2 should have one point");
@@ -1079,19 +1111,22 @@ mod geometry_tests {
         use super::*;
 
         // points for frame 1
-        let pts = vec![
-            ContourPoint { frame_index: 1, point_index: 0, x: 0.0, y: 0.0, z: 0.0, aortic: false },
-        ];
+        let pts = vec![ContourPoint {
+            frame_index: 1,
+            point_index: 0,
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            aortic: false,
+        }];
 
         // create a Record that contains measurement_1 and measurement_2 for frame 1
-        let records = vec![
-            Record {
-                frame: 1,
-                phase: "systolic".to_string(),
-                measurement_1: Some(1.23),
-                measurement_2: Some(4.56),
-            },
-        ];
+        let records = vec![Record {
+            frame: 1,
+            phase: "systolic".to_string(),
+            measurement_1: Some(1.23),
+            measurement_2: Some(4.56),
+        }];
 
         let mut contours = Contour::build_contour(pts, Some(records), ContourType::Lumen)?;
         assert_eq!(contours.len(), 1);
@@ -1109,19 +1144,22 @@ mod geometry_tests {
         use super::*;
 
         // points for frame 1
-        let pts = vec![
-            ContourPoint { frame_index: 1, point_index: 0, x: 0.0, y: 0.0, z: 0.0, aortic: false },
-        ];
+        let pts = vec![ContourPoint {
+            frame_index: 1,
+            point_index: 0,
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            aortic: false,
+        }];
 
         // create a Record that contains measurement_1 and measurement_2 for frame 1
-        let records = vec![
-            Record {
-                frame: 1,
-                phase: "systolic".to_string(),
-                measurement_1: Some(7.0),
-                measurement_2: Some(8.0),
-            },
-        ];
+        let records = vec![Record {
+            frame: 1,
+            phase: "systolic".to_string(),
+            measurement_1: Some(7.0),
+            measurement_2: Some(8.0),
+        }];
 
         // Use a non-lumen kind — measurements should not be applied
         let mut contours = Contour::build_contour(pts, Some(records), ContourType::Eem)?;
@@ -1129,7 +1167,10 @@ mod geometry_tests {
         let c = contours.pop().unwrap();
 
         assert_eq!(c.id, 0);
-        assert_eq!(c.aortic_thickness, None, "non-lumen contours shouldn't pick up measurements");
+        assert_eq!(
+            c.aortic_thickness, None,
+            "non-lumen contours shouldn't pick up measurements"
+        );
         assert_eq!(c.pulmonary_thickness, None);
 
         Ok(())
@@ -1302,23 +1343,41 @@ mod geometry_tests {
         geometry_rotate.rotate_geometry(rotation_deg.to_radians());
         geometry_rotate.rotate_geometry(-1.0 * rotation_deg.to_radians());
 
-        assert_eq!(geometry.frames[0].lumen.points[0], geometry_rotate.frames[0].lumen.points[0]);
+        assert_eq!(
+            geometry.frames[0].lumen.points[0],
+            geometry_rotate.frames[0].lumen.points[0]
+        );
 
         geometry_rotate.frames[0].rotate_frame(rotation_deg.to_radians());
-        geometry_rotate.frames[0].rotate_frame(-1.0 * rotation_deg.to_radians()); 
+        geometry_rotate.frames[0].rotate_frame(-1.0 * rotation_deg.to_radians());
 
-        assert_eq!(geometry.frames[0].lumen.points[0], geometry_rotate.frames[0].lumen.points[0]);
+        assert_eq!(
+            geometry.frames[0].lumen.points[0],
+            geometry_rotate.frames[0].lumen.points[0]
+        );
 
-        geometry_rotate.frames[0].lumen.rotate_contour(rotation_deg.to_radians());
-        geometry_rotate.frames[0].lumen.rotate_contour(-1.0 * rotation_deg.to_radians());
+        geometry_rotate.frames[0]
+            .lumen
+            .rotate_contour(rotation_deg.to_radians());
+        geometry_rotate.frames[0]
+            .lumen
+            .rotate_contour(-1.0 * rotation_deg.to_radians());
 
-        assert_eq!(geometry.frames[0].lumen.points[0], geometry_rotate.frames[0].lumen.points[0]);
+        assert_eq!(
+            geometry.frames[0].lumen.points[0],
+            geometry_rotate.frames[0].lumen.points[0]
+        );
 
         let center = geometry_rotate.frames[0].centroid;
-        geometry_rotate.frames[0].lumen.points[0].rotate_point(rotation_deg.to_radians(), (center.0, center.1));
-        geometry_rotate.frames[0].lumen.points[0].rotate_point(-1.0 * rotation_deg.to_radians(), (center.0, center.1));
+        geometry_rotate.frames[0].lumen.points[0]
+            .rotate_point(rotation_deg.to_radians(), (center.0, center.1));
+        geometry_rotate.frames[0].lumen.points[0]
+            .rotate_point(-1.0 * rotation_deg.to_radians(), (center.0, center.1));
 
-        assert_eq!(geometry.frames[0].lumen.points[0], geometry_rotate.frames[0].lumen.points[0]);
+        assert_eq!(
+            geometry.frames[0].lumen.points[0],
+            geometry_rotate.frames[0].lumen.points[0]
+        );
     }
 
     #[test]
@@ -1334,10 +1393,38 @@ mod geometry_tests {
             id: 2,
             original_frame: 2,
             points: vec![
-                ContourPoint { frame_index: 2, point_index: 0, x: -1.0, y: 2.0, z: 0.0, aortic: false },
-                ContourPoint { frame_index: 2, point_index: 1, x:  2.0, y: 5.0, z: 0.0, aortic: false },
-                ContourPoint { frame_index: 2, point_index: 2, x:  5.0, y: 2.0, z: 0.0, aortic: false },
-                ContourPoint { frame_index: 2, point_index: 3, x:  0.0, y: -1.0, z: 0.0, aortic: false },
+                ContourPoint {
+                    frame_index: 2,
+                    point_index: 0,
+                    x: -1.0,
+                    y: 2.0,
+                    z: 0.0,
+                    aortic: false,
+                },
+                ContourPoint {
+                    frame_index: 2,
+                    point_index: 1,
+                    x: 2.0,
+                    y: 5.0,
+                    z: 0.0,
+                    aortic: false,
+                },
+                ContourPoint {
+                    frame_index: 2,
+                    point_index: 2,
+                    x: 5.0,
+                    y: 2.0,
+                    z: 0.0,
+                    aortic: false,
+                },
+                ContourPoint {
+                    frame_index: 2,
+                    point_index: 3,
+                    x: 0.0,
+                    y: -1.0,
+                    z: 0.0,
+                    aortic: false,
+                },
             ],
             centroid: Some((2.0, 2.0, 0.0)),
             aortic_thickness: None,
@@ -1354,10 +1441,38 @@ mod geometry_tests {
                 id: 1,
                 original_frame: 1,
                 points: vec![
-                    ContourPoint { frame_index: 1, point_index: 0, x: 0.0, y: 2.0, z: 0.0, aortic: false },
-                    ContourPoint { frame_index: 1, point_index: 1, x: 2.0, y: 4.0, z: 0.0, aortic: false },
-                    ContourPoint { frame_index: 1, point_index: 2, x: 4.0, y: 2.0, z: 0.0, aortic: false },
-                    ContourPoint { frame_index: 1, point_index: 3, x: 2.0, y: 0.0, z: 0.0, aortic: false },
+                    ContourPoint {
+                        frame_index: 1,
+                        point_index: 0,
+                        x: 0.0,
+                        y: 2.0,
+                        z: 0.0,
+                        aortic: false,
+                    },
+                    ContourPoint {
+                        frame_index: 1,
+                        point_index: 1,
+                        x: 2.0,
+                        y: 4.0,
+                        z: 0.0,
+                        aortic: false,
+                    },
+                    ContourPoint {
+                        frame_index: 1,
+                        point_index: 2,
+                        x: 4.0,
+                        y: 2.0,
+                        z: 0.0,
+                        aortic: false,
+                    },
+                    ContourPoint {
+                        frame_index: 1,
+                        point_index: 3,
+                        x: 2.0,
+                        y: 0.0,
+                        z: 0.0,
+                        aortic: false,
+                    },
                 ],
                 centroid: Some((2.0, 2.0, 0.0)),
                 aortic_thickness: None,
@@ -1376,11 +1491,14 @@ mod geometry_tests {
         };
 
         // --- store originals before any rotation ---
-        let original_lumen: Vec<(f64, f64)> = frame.lumen.points.iter().map(|p| (p.x, p.y)).collect();
-        let original_eem: Vec<(f64, f64)> = frame.extras
+        let original_lumen: Vec<(f64, f64)> =
+            frame.lumen.points.iter().map(|p| (p.x, p.y)).collect();
+        let original_eem: Vec<(f64, f64)> = frame
+            .extras
             .get(&ContourType::Eem)
             .expect("eem should exist")
-            .points.iter()
+            .points
+            .iter()
             .map(|p| (p.x, p.y))
             .collect();
         let original_ref = frame.reference_point.map(|rp| (rp.x, rp.y));
@@ -1389,36 +1507,52 @@ mod geometry_tests {
         frame.rotate_frame(PI / 2.0);
 
         // Expected lumen points after rotation around (1,1):
-        let expected_lumen = vec![
-            (0.0, 0.0),
-            (-2.0, 2.0),
-            (0.0, 4.0),
-            (2.0, 2.0),
-        ];
+        let expected_lumen = vec![(0.0, 0.0), (-2.0, 2.0), (0.0, 4.0), (2.0, 2.0)];
 
         // Expected eem points after rotation around (1,1):
-        let expected_eem = vec![
-            (0.0, -1.0),
-            (-3.0, 2.0),
-            (0.0, 5.0),
-            (3.0, 0.0),
-        ];
+        let expected_eem = vec![(0.0, -1.0), (-3.0, 2.0), (0.0, 5.0), (3.0, 0.0)];
 
         let eps = 1e-6;
 
         // Check lumen after first rotation
         for (i, p) in frame.lumen.points.iter().enumerate() {
-            assert!((p.x - expected_lumen[i].0).abs() < eps, "lumen x[{}] mismatch: {} vs {}", i, p.x, expected_lumen[i].0);
-            assert!((p.y - expected_lumen[i].1).abs() < eps, "lumen y[{}] mismatch: {} vs {}", i, p.y, expected_lumen[i].1);
+            assert!(
+                (p.x - expected_lumen[i].0).abs() < eps,
+                "lumen x[{}] mismatch: {} vs {}",
+                i,
+                p.x,
+                expected_lumen[i].0
+            );
+            assert!(
+                (p.y - expected_lumen[i].1).abs() < eps,
+                "lumen y[{}] mismatch: {} vs {}",
+                i,
+                p.y,
+                expected_lumen[i].1
+            );
         }
 
         // Retrieve rotated eem from extras and check
-        let rotated_eem = frame.extras.get(&ContourType::Eem)
+        let rotated_eem = frame
+            .extras
+            .get(&ContourType::Eem)
             .expect("eem contour should exist in frame.extras");
 
         for (i, p) in rotated_eem.points.iter().enumerate() {
-            assert!((p.x - expected_eem[i].0).abs() < eps, "eem x[{}] mismatch: {} vs {}", i, p.x, expected_eem[i].0);
-            assert!((p.y - expected_eem[i].1).abs() < eps, "eem y[{}] mismatch: {} vs {}", i, p.y, expected_eem[i].1);
+            assert!(
+                (p.x - expected_eem[i].0).abs() < eps,
+                "eem x[{}] mismatch: {} vs {}",
+                i,
+                p.x,
+                expected_eem[i].0
+            );
+            assert!(
+                (p.y - expected_eem[i].1).abs() < eps,
+                "eem y[{}] mismatch: {} vs {}",
+                i,
+                p.y,
+                expected_eem[i].1
+            );
         }
 
         // Also check reference point rotated correctly (optional)
@@ -1430,7 +1564,7 @@ mod geometry_tests {
         }
 
         // --- rotate back by -90 degrees and check we return to originals ---
-        frame.rotate_frame(- (PI / 2.0));
+        frame.rotate_frame(-(PI / 2.0));
 
         // Check lumen returned to original positions
         for (i, p) in frame.lumen.points.iter().enumerate() {
@@ -1669,10 +1803,38 @@ mod geometry_tests {
             id: 2,
             original_frame: 2,
             points: vec![
-                ContourPoint { frame_index: 2, point_index: 0, x: -1.0, y: 2.0, z: 0.0, aortic: false },
-                ContourPoint { frame_index: 2, point_index: 1, x:  2.0, y: 5.0, z: 0.0, aortic: false },
-                ContourPoint { frame_index: 2, point_index: 2, x:  5.0, y: 2.0, z: 0.0, aortic: false },
-                ContourPoint { frame_index: 2, point_index: 3, x:  0.0, y: -1.0, z: 0.0, aortic: false },
+                ContourPoint {
+                    frame_index: 2,
+                    point_index: 0,
+                    x: -1.0,
+                    y: 2.0,
+                    z: 0.0,
+                    aortic: false,
+                },
+                ContourPoint {
+                    frame_index: 2,
+                    point_index: 1,
+                    x: 2.0,
+                    y: 5.0,
+                    z: 0.0,
+                    aortic: false,
+                },
+                ContourPoint {
+                    frame_index: 2,
+                    point_index: 2,
+                    x: 5.0,
+                    y: 2.0,
+                    z: 0.0,
+                    aortic: false,
+                },
+                ContourPoint {
+                    frame_index: 2,
+                    point_index: 3,
+                    x: 0.0,
+                    y: -1.0,
+                    z: 0.0,
+                    aortic: false,
+                },
             ],
             centroid: Some((1.5, 2.0, 0.0)),
             aortic_thickness: None,
@@ -1688,10 +1850,38 @@ mod geometry_tests {
                 id: 1,
                 original_frame: 1,
                 points: vec![
-                    ContourPoint { frame_index: 1, point_index: 0, x: 0.0, y: 0.0, z: 0.0, aortic: false },
-                    ContourPoint { frame_index: 1, point_index: 1, x: 2.0, y: 0.0, z: 0.0, aortic: false },
-                    ContourPoint { frame_index: 1, point_index: 2, x: 2.0, y: 2.0, z: 0.0, aortic: false },
-                    ContourPoint { frame_index: 1, point_index: 3, x: 0.0, y: 2.0, z: 0.0, aortic: false },
+                    ContourPoint {
+                        frame_index: 1,
+                        point_index: 0,
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                        aortic: false,
+                    },
+                    ContourPoint {
+                        frame_index: 1,
+                        point_index: 1,
+                        x: 2.0,
+                        y: 0.0,
+                        z: 0.0,
+                        aortic: false,
+                    },
+                    ContourPoint {
+                        frame_index: 1,
+                        point_index: 2,
+                        x: 2.0,
+                        y: 2.0,
+                        z: 0.0,
+                        aortic: false,
+                    },
+                    ContourPoint {
+                        frame_index: 1,
+                        point_index: 3,
+                        x: 0.0,
+                        y: 2.0,
+                        z: 0.0,
+                        aortic: false,
+                    },
                 ],
                 centroid: Some((1.0, 1.0, 0.0)),
                 aortic_thickness: None,
@@ -1719,10 +1909,18 @@ mod geometry_tests {
             (1.0, 4.0, 3.0),
         ];
         for (i, p) in frame.lumen.points.iter().enumerate() {
-            assert_eq!((p.x, p.y, p.z), expected_lumen[i], "lumen point {} mismatch", i);
+            assert_eq!(
+                (p.x, p.y, p.z),
+                expected_lumen[i],
+                "lumen point {} mismatch",
+                i
+            );
         }
 
-        let rotated_eem = frame.extras.get(&ContourType::Eem).expect("eem contour present");
+        let rotated_eem = frame
+            .extras
+            .get(&ContourType::Eem)
+            .expect("eem contour present");
         let expected_eem = vec![
             (0.0, 4.0, 3.0),
             (3.0, 7.0, 3.0),
@@ -1769,9 +1967,30 @@ mod geometry_tests {
     fn test_area_triangle() {
         // Right triangle with base 3 and height 4 -> area = 6
         let points = vec![
-            ContourPoint { frame_index: 1, point_index: 0, x: 0.0, y: 0.0, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 1, point_index: 1, x: 3.0, y: 0.0, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 1, point_index: 2, x: 0.0, y: 4.0, z: 0.0, aortic: false },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 0,
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 1,
+                x: 3.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 2,
+                x: 0.0,
+                y: 4.0,
+                z: 0.0,
+                aortic: false,
+            },
         ];
         let c = Contour {
             id: 1,
@@ -1784,16 +2003,48 @@ mod geometry_tests {
         };
 
         let area = c.area();
-        assert!((area - 6.0).abs() < 1e-6, "triangle area should be 6.0, got {}", area);
+        assert!(
+            (area - 6.0).abs() < 1e-6,
+            "triangle area should be 6.0, got {}",
+            area
+        );
     }
 
     #[test]
     fn test_area_square_ccw_and_cw() {
         let pts_ccw = vec![
-            ContourPoint { frame_index: 1, point_index: 0, x: 0.0, y: 0.0, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 1, point_index: 1, x: 1.0, y: 0.0, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 1, point_index: 2, x: 1.0, y: 1.0, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 1, point_index: 3, x: 0.0, y: 1.0, z: 0.0, aortic: false },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 0,
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 1,
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 2,
+                x: 1.0,
+                y: 1.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 3,
+                x: 0.0,
+                y: 1.0,
+                z: 0.0,
+                aortic: false,
+            },
         ];
         let c_ccw = Contour {
             id: 1,
@@ -1804,11 +2055,20 @@ mod geometry_tests {
             pulmonary_thickness: None,
             kind: ContourType::Lumen,
         };
-        assert!((c_ccw.area() - 1.0).abs() < 1e-6, "ccw square area should be 1.0");
+        assert!(
+            (c_ccw.area() - 1.0).abs() < 1e-6,
+            "ccw square area should be 1.0"
+        );
 
         let pts_cw = c_ccw.points.iter().rev().cloned().collect::<Vec<_>>();
-        let c_cw = Contour { points: pts_cw, ..c_ccw.clone() };
-        assert!((c_cw.area() - 1.0).abs() < 1e-6, "cw square area should be 1.0");
+        let c_cw = Contour {
+            points: pts_cw,
+            ..c_ccw.clone()
+        };
+        assert!(
+            (c_cw.area() - 1.0).abs() < 1e-6,
+            "cw square area should be 1.0"
+        );
     }
 
     #[test]
@@ -1828,8 +2088,22 @@ mod geometry_tests {
             id: 1,
             original_frame: 1,
             points: vec![
-                ContourPoint { frame_index: 1, point_index: 0, x: 0.0, y: 0.0, z: 0.0, aortic: false },
-                ContourPoint { frame_index: 1, point_index: 1, x: 1.0, y: 0.0, z: 0.0, aortic: false },
+                ContourPoint {
+                    frame_index: 1,
+                    point_index: 0,
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                    aortic: false,
+                },
+                ContourPoint {
+                    frame_index: 1,
+                    point_index: 1,
+                    x: 1.0,
+                    y: 0.0,
+                    z: 0.0,
+                    aortic: false,
+                },
             ],
             centroid: None,
             aortic_thickness: None,
@@ -1901,9 +2175,14 @@ mod geometry_tests {
         let initial_eem = Contour {
             id: 7,
             original_frame: 723,
-            points: vec![
-                ContourPoint { frame_index: 723, point_index: 0, x: 0.0, y: 0.0, z: 0.0, aortic: false },
-            ],
+            points: vec![ContourPoint {
+                frame_index: 723,
+                point_index: 0,
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            }],
             centroid: Some((0.0, 0.0, 0.0)),
             aortic_thickness: None,
             pulmonary_thickness: None,
@@ -1917,9 +2196,14 @@ mod geometry_tests {
             lumen: Contour {
                 id: 1,
                 original_frame: 723,
-                points: vec![
-                    ContourPoint { frame_index: 1, point_index: 0, x: 10.0, y: 10.0, z: 10.0, aortic: false },
-                ],
+                points: vec![ContourPoint {
+                    frame_index: 1,
+                    point_index: 0,
+                    x: 10.0,
+                    y: 10.0,
+                    z: 10.0,
+                    aortic: false,
+                }],
                 centroid: Some((10.0, 10.0, 10.0)),
                 aortic_thickness: None,
                 pulmonary_thickness: None,
@@ -1939,8 +2223,22 @@ mod geometry_tests {
         // New values to set
         let new_id = 42;
         let new_points = vec![
-            ContourPoint { frame_index: 5, point_index: 0, x: 1.0, y: 2.0, z: 3.0, aortic: false },
-            ContourPoint { frame_index: 5, point_index: 1, x: 4.0, y: 5.0, z: 6.0, aortic: false },
+            ContourPoint {
+                frame_index: 5,
+                point_index: 0,
+                x: 1.0,
+                y: 2.0,
+                z: 3.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 5,
+                point_index: 1,
+                x: 4.0,
+                y: 5.0,
+                z: 6.0,
+                aortic: false,
+            },
         ];
         let new_centroid = (7.0_f64, 8.0_f64, 9.0_f64);
         let new_z_value = 123.0_f64;
@@ -1975,8 +2273,14 @@ mod geometry_tests {
             assert_eq!(p.z, new_z_value);
         }
 
-        assert_eq!(frame.lumen.centroid.unwrap(), (new_centroid.0, new_centroid.1, new_z_value));
-        assert_eq!(frame.centroid, (new_centroid.0, new_centroid.1, new_z_value));
+        assert_eq!(
+            frame.lumen.centroid.unwrap(),
+            (new_centroid.0, new_centroid.1, new_z_value)
+        );
+        assert_eq!(
+            frame.centroid,
+            (new_centroid.0, new_centroid.1, new_z_value)
+        );
         let eem_centroid = eem.centroid.expect("eem centroid present");
         assert_eq!(eem_centroid, (new_centroid.0, new_centroid.1, new_z_value));
 
@@ -1987,48 +2291,67 @@ mod geometry_tests {
     #[test]
     fn test_geometry_idx_and_ensure() {
         let frames = vec![
-            Frame {id: 0, centroid: (1.0, 1.0, 0.0), lumen: Contour {
+            Frame {
                 id: 0,
-                original_frame: 621,
-                points: Vec::new(),
-                centroid: None,
-                aortic_thickness: None,
-                pulmonary_thickness: None,
-                kind: ContourType::Lumen,
+                centroid: (1.0, 1.0, 0.0),
+                lumen: Contour {
+                    id: 0,
+                    original_frame: 621,
+                    points: Vec::new(),
+                    centroid: None,
+                    aortic_thickness: None,
+                    pulmonary_thickness: None,
+                    kind: ContourType::Lumen,
+                },
+                extras: HashMap::new(),
+                reference_point: None,
             },
-            extras: HashMap::new(),
-            reference_point: None,
-            },
-            Frame {id: 1, centroid: (1.0, 1.0, 1.0), lumen: Contour {
+            Frame {
                 id: 1,
-                original_frame: 678,
-                points: Vec::new(),
-                centroid: None,
-                aortic_thickness: None,
-                pulmonary_thickness: None,
-                kind: ContourType::Lumen,
+                centroid: (1.0, 1.0, 1.0),
+                lumen: Contour {
+                    id: 1,
+                    original_frame: 678,
+                    points: Vec::new(),
+                    centroid: None,
+                    aortic_thickness: None,
+                    pulmonary_thickness: None,
+                    kind: ContourType::Lumen,
+                },
+                extras: HashMap::new(),
+                reference_point: Some(ContourPoint {
+                    frame_index: 678,
+                    point_index: 2,
+                    x: 1.0,
+                    y: 3.0,
+                    z: 2.0,
+                    aortic: false,
+                }),
             },
-            extras: HashMap::new(),
-            reference_point: Some(ContourPoint {frame_index: 678, point_index: 2, x: 1.0, y: 3.0, z: 2.0, aortic: false}),
-            },
-            Frame {id: 2, centroid: (1.0, 1.0, 2.0), lumen: Contour {
+            Frame {
                 id: 2,
-                original_frame: 717,
-                points: Vec::new(),
-                centroid: None,
-                aortic_thickness: None,
-                pulmonary_thickness: None,
-                kind: ContourType::Lumen,
-            },
-            extras: HashMap::new(),
-            reference_point: None,
+                centroid: (1.0, 1.0, 2.0),
+                lumen: Contour {
+                    id: 2,
+                    original_frame: 717,
+                    points: Vec::new(),
+                    centroid: None,
+                    aortic_thickness: None,
+                    pulmonary_thickness: None,
+                    kind: ContourType::Lumen,
+                },
+                extras: HashMap::new(),
+                reference_point: None,
             },
         ];
 
-        let mut geom = Geometry { frames: frames, label: "test".to_string() };
+        let mut geom = Geometry {
+            frames: frames,
+            label: "test".to_string(),
+        };
         let prox_idx = geom.find_proximal_end_idx();
         let ref_idx = geom.find_ref_frame_idx().unwrap();
-        
+
         assert_eq!(prox_idx, 2);
         assert_eq!(geom.frames[prox_idx].lumen.original_frame, 717);
         assert_eq!(geom.frames[prox_idx].centroid.2, 2.0);
@@ -2051,44 +2374,63 @@ mod geometry_tests {
     fn test_reorder_geometry() {
         use crate::intravascular::io::input::Record;
         let frames = vec![
-            Frame {id: 0, centroid: (1.0, 1.0, 0.0), lumen: Contour {
+            Frame {
                 id: 0,
-                original_frame: 621,
-                points: Vec::new(),
-                centroid: None,
-                aortic_thickness: None,
-                pulmonary_thickness: None,
-                kind: ContourType::Lumen,
+                centroid: (1.0, 1.0, 0.0),
+                lumen: Contour {
+                    id: 0,
+                    original_frame: 621,
+                    points: Vec::new(),
+                    centroid: None,
+                    aortic_thickness: None,
+                    pulmonary_thickness: None,
+                    kind: ContourType::Lumen,
+                },
+                extras: HashMap::new(),
+                reference_point: None,
             },
-            extras: HashMap::new(),
-            reference_point: None,
-            },
-            Frame {id: 1, centroid: (1.0, 1.0, 1.0), lumen: Contour {
+            Frame {
                 id: 1,
-                original_frame: 678,
-                points: Vec::new(),
-                centroid: None,
-                aortic_thickness: None,
-                pulmonary_thickness: None,
-                kind: ContourType::Lumen,
+                centroid: (1.0, 1.0, 1.0),
+                lumen: Contour {
+                    id: 1,
+                    original_frame: 678,
+                    points: Vec::new(),
+                    centroid: None,
+                    aortic_thickness: None,
+                    pulmonary_thickness: None,
+                    kind: ContourType::Lumen,
+                },
+                extras: HashMap::new(),
+                reference_point: Some(ContourPoint {
+                    frame_index: 678,
+                    point_index: 2,
+                    x: 1.0,
+                    y: 3.0,
+                    z: 2.0,
+                    aortic: false,
+                }),
             },
-            extras: HashMap::new(),
-            reference_point: Some(ContourPoint {frame_index: 678, point_index: 2, x: 1.0, y: 3.0, z: 2.0, aortic: false}),
-            },
-            Frame {id: 2, centroid: (1.0, 1.0, 2.0), lumen: Contour {
+            Frame {
                 id: 2,
-                original_frame: 717,
-                points: Vec::new(),
-                centroid: None,
-                aortic_thickness: None,
-                pulmonary_thickness: None,
-                kind: ContourType::Lumen,
-            },
-            extras: HashMap::new(),
-            reference_point: None,
+                centroid: (1.0, 1.0, 2.0),
+                lumen: Contour {
+                    id: 2,
+                    original_frame: 717,
+                    points: Vec::new(),
+                    centroid: None,
+                    aortic_thickness: None,
+                    pulmonary_thickness: None,
+                    kind: ContourType::Lumen,
+                },
+                extras: HashMap::new(),
+                reference_point: None,
             },
         ];
-        let mut geom = Geometry { frames: frames, label: "test".to_string() };
+        let mut geom = Geometry {
+            frames: frames,
+            label: "test".to_string(),
+        };
 
         let records = vec![
             Record {
@@ -2114,7 +2456,7 @@ mod geometry_tests {
                 phase: "D".to_string(),
                 measurement_1: Some(1.5),
                 measurement_2: Some(2.1),
-            }
+            },
         ];
         geom.reorder_frames(&records, false);
 
@@ -2136,7 +2478,10 @@ mod geometry_tests {
 
         assert!(geom.frames[0].reference_point.is_some());
         assert_eq!(geom.frames[0].reference_point.as_ref().unwrap().z, 0.0);
-        assert_eq!(geom.frames[0].reference_point.as_ref().unwrap().frame_index,678);
+        assert_eq!(
+            geom.frames[0].reference_point.as_ref().unwrap().frame_index,
+            678
+        );
     }
 
     #[test]
@@ -2146,15 +2491,43 @@ mod geometry_tests {
 
         // Create 3 frames with square contours of different sizes
         let mut frames = Vec::new();
-        
+
         // Frame 0: Square with edge length 2, centered at (0,0)
         let frame0_points = vec![
-            ContourPoint { frame_index: 0, point_index: 0, x: -1.0, y: -1.0, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 0, point_index: 1, x: 1.0, y: -1.0, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 0, point_index: 2, x: 1.0, y: 1.0, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 0, point_index: 3, x: -1.0, y: 1.0, z: 0.0, aortic: false },
+            ContourPoint {
+                frame_index: 0,
+                point_index: 0,
+                x: -1.0,
+                y: -1.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 0,
+                point_index: 1,
+                x: 1.0,
+                y: -1.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 0,
+                point_index: 2,
+                x: 1.0,
+                y: 1.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 0,
+                point_index: 3,
+                x: -1.0,
+                y: 1.0,
+                z: 0.0,
+                aortic: false,
+            },
         ];
-        
+
         let mut lumen0 = Contour {
             id: 0,
             original_frame: 0,
@@ -2165,7 +2538,7 @@ mod geometry_tests {
             kind: ContourType::Lumen,
         };
         lumen0.compute_centroid();
-        
+
         let frame0 = Frame {
             id: 0,
             centroid: lumen0.centroid.unwrap(),
@@ -2173,15 +2546,43 @@ mod geometry_tests {
             extras: HashMap::new(),
             reference_point: None,
         };
-        
-        // Frame 1: Square with edge length 1, centered at (0,0)  
+
+        // Frame 1: Square with edge length 1, centered at (0,0)
         let frame1_points = vec![
-            ContourPoint { frame_index: 1, point_index: 0, x: -0.5, y: -0.5, z: 1.0, aortic: false },
-            ContourPoint { frame_index: 1, point_index: 1, x: 0.5, y: -0.5, z: 1.0, aortic: false },
-            ContourPoint { frame_index: 1, point_index: 2, x: 0.5, y: 0.5, z: 1.0, aortic: false },
-            ContourPoint { frame_index: 1, point_index: 3, x: -0.5, y: 0.5, z: 1.0, aortic: false },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 0,
+                x: -0.5,
+                y: -0.5,
+                z: 1.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 1,
+                x: 0.5,
+                y: -0.5,
+                z: 1.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 2,
+                x: 0.5,
+                y: 0.5,
+                z: 1.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 3,
+                x: -0.5,
+                y: 0.5,
+                z: 1.0,
+                aortic: false,
+            },
         ];
-        
+
         let mut lumen1 = Contour {
             id: 1,
             original_frame: 1,
@@ -2192,7 +2593,7 @@ mod geometry_tests {
             kind: ContourType::Lumen,
         };
         lumen1.compute_centroid();
-        
+
         let frame1 = Frame {
             id: 1,
             centroid: lumen1.centroid.unwrap(),
@@ -2200,15 +2601,43 @@ mod geometry_tests {
             extras: HashMap::new(),
             reference_point: None,
         };
-        
+
         // Frame 2: Square with edge length 2, centered at (0,0) - same as frame 0
         let frame2_points = vec![
-            ContourPoint { frame_index: 2, point_index: 0, x: -1.0, y: -1.0, z: 2.0, aortic: false },
-            ContourPoint { frame_index: 2, point_index: 1, x: 1.0, y: -1.0, z: 2.0, aortic: false },
-            ContourPoint { frame_index: 2, point_index: 2, x: 1.0, y: 1.0, z: 2.0, aortic: false },
-            ContourPoint { frame_index: 2, point_index: 3, x: -1.0, y: 1.0, z: 2.0, aortic: false },
+            ContourPoint {
+                frame_index: 2,
+                point_index: 0,
+                x: -1.0,
+                y: -1.0,
+                z: 2.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 2,
+                point_index: 1,
+                x: 1.0,
+                y: -1.0,
+                z: 2.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 2,
+                point_index: 2,
+                x: 1.0,
+                y: 1.0,
+                z: 2.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 2,
+                point_index: 3,
+                x: -1.0,
+                y: 1.0,
+                z: 2.0,
+                aortic: false,
+            },
         ];
-        
+
         let mut lumen2 = Contour {
             id: 2,
             original_frame: 2,
@@ -2219,7 +2648,7 @@ mod geometry_tests {
             kind: ContourType::Lumen,
         };
         lumen2.compute_centroid();
-        
+
         let frame2 = Frame {
             id: 2,
             centroid: lumen2.centroid.unwrap(),
@@ -2227,16 +2656,16 @@ mod geometry_tests {
             extras: HashMap::new(),
             reference_point: None,
         };
-        
+
         frames.push(frame0);
         frames.push(frame1);
         frames.push(frame2);
-        
+
         let geometry = Geometry {
             frames,
             label: "test_smoothing".to_string(),
         };
-        
+
         println!("Before smoothing:");
         for (i, frame) in geometry.frames.iter().enumerate() {
             println!("Frame {}:", i);
@@ -2244,10 +2673,10 @@ mod geometry_tests {
                 println!("  Point: ({:.2}, {:.2}, {:.2})", point.x, point.y, point.z);
             }
         }
-        
+
         // Apply smoothing
         let smoothed_geometry = geometry.clone().smooth_frames();
-        
+
         println!("\nAfter smoothing:");
         for (i, frame) in smoothed_geometry.frames.iter().enumerate() {
             println!("Frame {}:", i);
@@ -2255,27 +2684,27 @@ mod geometry_tests {
                 println!("  Point: ({:.2}, {:.2}, {:.2})", point.x, point.y, point.z);
             }
         }
-        
+
         // Verify results
-        
+
         // Frame 0 (first frame) - should be average of frame0, frame0, frame1
         // For first point (-1,-1): (-1 + -1 + -0.5)/3 = -2.5/3 ≈ -0.833
         let frame0_smoothed = &smoothed_geometry.frames[0];
         assert_relative_eq!(frame0_smoothed.lumen.points[0].x, -0.8333, epsilon = 0.01);
         assert_relative_eq!(frame0_smoothed.lumen.points[0].y, -0.8333, epsilon = 0.01);
-        
-        // Frame 1 (middle frame) - should be average of frame0, frame1, frame2  
+
+        // Frame 1 (middle frame) - should be average of frame0, frame1, frame2
         // For first point: (-1 + -0.5 + -1)/3 = -2.5/3 ≈ -0.833
         let frame1_smoothed = &smoothed_geometry.frames[1];
         assert_relative_eq!(frame1_smoothed.lumen.points[0].x, -0.8333, epsilon = 0.01);
         assert_relative_eq!(frame1_smoothed.lumen.points[0].y, -0.8333, epsilon = 0.01);
-        
+
         // Frame 2 (last frame) - should be average of frame1, frame2, frame2
         // For first point: (-0.5 + -1 + -1)/3 = -2.5/3 ≈ -0.833
         let frame2_smoothed = &smoothed_geometry.frames[2];
         assert_relative_eq!(frame2_smoothed.lumen.points[0].x, -0.8333, epsilon = 0.01);
         assert_relative_eq!(frame2_smoothed.lumen.points[0].y, -0.8333, epsilon = 0.01);
-        
+
         // Verify that z-coordinates remain unchanged
         for (i, frame) in smoothed_geometry.frames.iter().enumerate() {
             assert_relative_eq!(frame.centroid.2, i as f64, epsilon = 1e-6);
@@ -2283,20 +2712,23 @@ mod geometry_tests {
                 assert_relative_eq!(point.z, i as f64, epsilon = 1e-6);
             }
         }
-        
+
         // Verify that all points in the same frame moved consistently
         // (all should have the same amount of smoothing applied)
-        let frame1_points: Vec<(f64, f64)> = smoothed_geometry.frames[1].lumen.points.iter()
+        let frame1_points: Vec<(f64, f64)> = smoothed_geometry.frames[1]
+            .lumen
+            .points
+            .iter()
             .map(|p| (p.x, p.y))
             .collect();
-        
+
         // All points in frame1 should have moved toward the average of frame0 and frame2
         for point in frame1_points {
             // Original frame1 points were at ±0.5, now should be around ±0.833
             assert!(point.0.abs() > 0.5 && point.0.abs() < 1.0);
             assert!(point.1.abs() > 0.5 && point.1.abs() < 1.0);
         }
-        
+
         Ok(())
     }
 
@@ -2307,29 +2739,113 @@ mod geometry_tests {
 
         // Create a simple geometry with EEM and Wall contours to test they get smoothed too
         let mut frames = Vec::new();
-        
+
         // Create frame with lumen, EEM, and wall
         let lumen_points = vec![
-            ContourPoint { frame_index: 0, point_index: 0, x: -1.0, y: -1.0, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 0, point_index: 1, x: 1.0, y: -1.0, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 0, point_index: 2, x: 1.0, y: 1.0, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 0, point_index: 3, x: -1.0, y: 1.0, z: 0.0, aortic: false },
+            ContourPoint {
+                frame_index: 0,
+                point_index: 0,
+                x: -1.0,
+                y: -1.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 0,
+                point_index: 1,
+                x: 1.0,
+                y: -1.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 0,
+                point_index: 2,
+                x: 1.0,
+                y: 1.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 0,
+                point_index: 3,
+                x: -1.0,
+                y: 1.0,
+                z: 0.0,
+                aortic: false,
+            },
         ];
-        
+
         let eem_points = vec![
-            ContourPoint { frame_index: 0, point_index: 0, x: -2.0, y: -2.0, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 0, point_index: 1, x: 2.0, y: -2.0, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 0, point_index: 2, x: 2.0, y: 2.0, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 0, point_index: 3, x: -2.0, y: 2.0, z: 0.0, aortic: false },
+            ContourPoint {
+                frame_index: 0,
+                point_index: 0,
+                x: -2.0,
+                y: -2.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 0,
+                point_index: 1,
+                x: 2.0,
+                y: -2.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 0,
+                point_index: 2,
+                x: 2.0,
+                y: 2.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 0,
+                point_index: 3,
+                x: -2.0,
+                y: 2.0,
+                z: 0.0,
+                aortic: false,
+            },
         ];
-        
+
         let wall_points = vec![
-            ContourPoint { frame_index: 0, point_index: 0, x: -1.5, y: -1.5, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 0, point_index: 1, x: 1.5, y: -1.5, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 0, point_index: 2, x: 1.5, y: 1.5, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 0, point_index: 3, x: -1.5, y: 1.5, z: 0.0, aortic: false },
+            ContourPoint {
+                frame_index: 0,
+                point_index: 0,
+                x: -1.5,
+                y: -1.5,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 0,
+                point_index: 1,
+                x: 1.5,
+                y: -1.5,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 0,
+                point_index: 2,
+                x: 1.5,
+                y: 1.5,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 0,
+                point_index: 3,
+                x: -1.5,
+                y: 1.5,
+                z: 0.0,
+                aortic: false,
+            },
         ];
-        
+
         let mut lumen = Contour {
             id: 0,
             original_frame: 0,
@@ -2340,7 +2856,7 @@ mod geometry_tests {
             kind: ContourType::Lumen,
         };
         lumen.compute_centroid();
-        
+
         let mut eem = Contour {
             id: 0,
             original_frame: 0,
@@ -2351,7 +2867,7 @@ mod geometry_tests {
             kind: ContourType::Eem,
         };
         eem.compute_centroid();
-        
+
         let mut wall = Contour {
             id: 0,
             original_frame: 0,
@@ -2362,11 +2878,11 @@ mod geometry_tests {
             kind: ContourType::Wall,
         };
         wall.compute_centroid();
-        
+
         let mut extras = HashMap::new();
         extras.insert(ContourType::Eem, eem);
         extras.insert(ContourType::Wall, wall);
-        
+
         let frame = Frame {
             id: 0,
             centroid: lumen.centroid.unwrap(),
@@ -2374,32 +2890,116 @@ mod geometry_tests {
             extras,
             reference_point: None,
         };
-        
+
         frames.push(frame);
-        
+
         // Create two more similar frames with slight variations
         for i in 1..3 {
             let lumen_points = vec![
-                ContourPoint { frame_index: i, point_index: 0, x: -1.0 + i as f64 * 0.1, y: -1.0, z: i as f64, aortic: false },
-                ContourPoint { frame_index: i, point_index: 1, x: 1.0, y: -1.0, z: i as f64, aortic: false },
-                ContourPoint { frame_index: i, point_index: 2, x: 1.0, y: 1.0, z: i as f64, aortic: false },
-                ContourPoint { frame_index: i, point_index: 3, x: -1.0, y: 1.0, z: i as f64, aortic: false },
+                ContourPoint {
+                    frame_index: i,
+                    point_index: 0,
+                    x: -1.0 + i as f64 * 0.1,
+                    y: -1.0,
+                    z: i as f64,
+                    aortic: false,
+                },
+                ContourPoint {
+                    frame_index: i,
+                    point_index: 1,
+                    x: 1.0,
+                    y: -1.0,
+                    z: i as f64,
+                    aortic: false,
+                },
+                ContourPoint {
+                    frame_index: i,
+                    point_index: 2,
+                    x: 1.0,
+                    y: 1.0,
+                    z: i as f64,
+                    aortic: false,
+                },
+                ContourPoint {
+                    frame_index: i,
+                    point_index: 3,
+                    x: -1.0,
+                    y: 1.0,
+                    z: i as f64,
+                    aortic: false,
+                },
             ];
-            
+
             let eem_points = vec![
-                ContourPoint { frame_index: i, point_index: 0, x: -2.0 + i as f64 * 0.1, y: -2.0, z: i as f64, aortic: false },
-                ContourPoint { frame_index: i, point_index: 1, x: 2.0, y: -2.0, z: i as f64, aortic: false },
-                ContourPoint { frame_index: i, point_index: 2, x: 2.0, y: 2.0, z: i as f64, aortic: false },
-                ContourPoint { frame_index: i, point_index: 3, x: -2.0, y: 2.0, z: i as f64, aortic: false },
+                ContourPoint {
+                    frame_index: i,
+                    point_index: 0,
+                    x: -2.0 + i as f64 * 0.1,
+                    y: -2.0,
+                    z: i as f64,
+                    aortic: false,
+                },
+                ContourPoint {
+                    frame_index: i,
+                    point_index: 1,
+                    x: 2.0,
+                    y: -2.0,
+                    z: i as f64,
+                    aortic: false,
+                },
+                ContourPoint {
+                    frame_index: i,
+                    point_index: 2,
+                    x: 2.0,
+                    y: 2.0,
+                    z: i as f64,
+                    aortic: false,
+                },
+                ContourPoint {
+                    frame_index: i,
+                    point_index: 3,
+                    x: -2.0,
+                    y: 2.0,
+                    z: i as f64,
+                    aortic: false,
+                },
             ];
-            
+
             let wall_points = vec![
-                ContourPoint { frame_index: i, point_index: 0, x: -1.5 + i as f64 * 0.1, y: -1.5, z: i as f64, aortic: false },
-                ContourPoint { frame_index: i, point_index: 1, x: 1.5, y: -1.5, z: i as f64, aortic: false },
-                ContourPoint { frame_index: i, point_index: 2, x: 1.5, y: 1.5, z: i as f64, aortic: false },
-                ContourPoint { frame_index: i, point_index: 3, x: -1.5, y: 1.5, z: i as f64, aortic: false },
+                ContourPoint {
+                    frame_index: i,
+                    point_index: 0,
+                    x: -1.5 + i as f64 * 0.1,
+                    y: -1.5,
+                    z: i as f64,
+                    aortic: false,
+                },
+                ContourPoint {
+                    frame_index: i,
+                    point_index: 1,
+                    x: 1.5,
+                    y: -1.5,
+                    z: i as f64,
+                    aortic: false,
+                },
+                ContourPoint {
+                    frame_index: i,
+                    point_index: 2,
+                    x: 1.5,
+                    y: 1.5,
+                    z: i as f64,
+                    aortic: false,
+                },
+                ContourPoint {
+                    frame_index: i,
+                    point_index: 3,
+                    x: -1.5,
+                    y: 1.5,
+                    z: i as f64,
+                    aortic: false,
+                },
             ];
-            
+
             let mut lumen = Contour {
                 id: i as u32,
                 original_frame: i as u32,
@@ -2410,7 +3010,7 @@ mod geometry_tests {
                 kind: ContourType::Lumen,
             };
             lumen.compute_centroid();
-            
+
             let mut eem = Contour {
                 id: i as u32,
                 original_frame: i as u32,
@@ -2421,7 +3021,7 @@ mod geometry_tests {
                 kind: ContourType::Eem,
             };
             eem.compute_centroid();
-            
+
             let mut wall = Contour {
                 id: i as u32,
                 original_frame: i as u32,
@@ -2432,11 +3032,11 @@ mod geometry_tests {
                 kind: ContourType::Wall,
             };
             wall.compute_centroid();
-            
+
             let mut extras = HashMap::new();
             extras.insert(ContourType::Eem, eem);
             extras.insert(ContourType::Wall, wall);
-            
+
             let frame = Frame {
                 id: i as u32,
                 centroid: lumen.centroid.unwrap(),
@@ -2444,17 +3044,17 @@ mod geometry_tests {
                 extras,
                 reference_point: None,
             };
-            
+
             frames.push(frame);
         }
-        
+
         let geometry = Geometry {
             frames,
             label: "test_smoothing_with_extras".to_string(),
         };
-        
+
         let smoothed_geometry = geometry.smooth_frames();
-        
+
         // Verify that EEM and Wall contours were also smoothed
         for frame in &smoothed_geometry.frames {
             // Check EEM exists and was smoothed
@@ -2462,14 +3062,14 @@ mod geometry_tests {
                 // EEM points should have been averaged with adjacent frames
                 assert!(eem.points[0].x > -2.1 && eem.points[0].x < 2.1);
             }
-            
-            // Check Wall exists and was smoothed  
+
+            // Check Wall exists and was smoothed
             if let Some(wall) = frame.extras.get(&ContourType::Wall) {
                 // Wall points should have been averaged with adjacent frames
                 assert!(wall.points[0].x > -1.6 && wall.points[0].x < 1.6);
             }
         }
-        
+
         Ok(())
     }
 }

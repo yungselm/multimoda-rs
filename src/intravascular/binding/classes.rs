@@ -1088,7 +1088,8 @@ impl PyGeometry {
     ///     PyGeometry: A new geometry centered on the specified contour type
     #[pyo3(signature = (contour_type))]
     pub fn center_to_contour(&self, contour_type: PyContourType) -> PyResult<PyGeometry> {
-        let rust_contour_type: crate::intravascular::io::geometry::ContourType = contour_type.into();
+        let rust_contour_type: crate::intravascular::io::geometry::ContourType =
+            contour_type.into();
 
         let mut rust_geometry = self.to_rust_geometry()?;
         rust_geometry.center_to_contour(rust_contour_type);
@@ -1129,14 +1130,18 @@ pub struct PyGeometryPair {
     #[pyo3(get, set)]
     pub geom_b: PyGeometry,
     #[pyo3(get, set)]
-    pub label: String,    
+    pub label: String,
 }
 
 #[pymethods]
 impl PyGeometryPair {
     #[new]
     fn new(geom_a: PyGeometry, geom_b: PyGeometry, label: String) -> Self {
-        Self { geom_a, geom_b, label }
+        Self {
+            geom_a,
+            geom_b,
+            label,
+        }
     }
 
     // Add a __repr__ method
@@ -1291,8 +1296,14 @@ impl PyGeometryPair {
 impl PyGeometryPair {
     pub fn to_rust_geometry_pair(&self) -> GeometryPair {
         GeometryPair {
-            geom_a: self.geom_a.to_rust_geometry().expect("could not convert geom_a"),
-            geom_b: self.geom_b.to_rust_geometry().expect("could not convert geom_b"),
+            geom_a: self
+                .geom_a
+                .to_rust_geometry()
+                .expect("could not convert geom_a"),
+            geom_b: self
+                .geom_b
+                .to_rust_geometry()
+                .expect("could not convert geom_b"),
             label: self.label.clone(),
         }
     }
@@ -1603,7 +1614,7 @@ impl From<GeometryPair> for PyGeometryPair {
         PyGeometryPair {
             geom_a: pair.geom_a.into(),
             geom_b: pair.geom_b.into(),
-            label:  pair.label.clone(),
+            label: pair.label.clone(),
         }
     }
 }

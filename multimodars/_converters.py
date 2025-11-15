@@ -333,6 +333,10 @@ def numpy_to_centerline(
     Build a PyCenterline from a numpy array of shape (N,3),
     where each row is (x, y, z).
 
+    This function will linearly interpolate NaN values along each coordinate
+    axis. If an entire coordinate column is NaN, or result has fewer than 2
+    points after processing, a ValueError is raised.
+
     Args:
         arr: np.ndarray of shape (N,3)
         aortic: whether to mark each point as aortic
@@ -340,24 +344,54 @@ def numpy_to_centerline(
     Returns:
         PyCenterline
     """
+    import numpy as np
     from . import PyContourPoint, PyCenterline
+
+    arr = np.asarray(arr, dtype=float)
 
     if arr.ndim != 2 or arr.shape[1] != 3:
         raise ValueError("Input must be a (N,3) array")
 
+    n = arr.shape[0]
+    if n == 0:
+        raise ValueError("Input array must contain at least one point")
+
+    # If there are NaNs, try linear interpolation along the index axis.
+    if np.isnan(arr).any():
+        idx = np.arange(n)
+        arr_interp = arr.copy()
+        for col in range(3):
+            col_vals = arr[:, col]
+            valid_mask = ~np.isnan(col_vals)
+            if valid_mask.sum() == 0:
+                # Can't interpolate if whole column is missing
+                raise ValueError(f"All values are NaN for coordinate column {col}; cannot build centerline.")
+            if valid_mask.sum() < n:
+                # np.interp will fill leading and trailing NaNs by extrapolating the first/last valid values
+                arr_interp[:, col] = np.interp(idx, idx[valid_mask], col_vals[valid_mask])
+        arr = arr_interp
+
+    # After interpolation, ensure we have at least two distinct points to form a centerline
+    if arr.shape[0] < 2:
+        raise ValueError("Centerline must contain at least two points after cleaning/interpolation.")
+
     pts = []
     for i, (x, y, z) in enumerate(arr.tolist()):
-        # point_index here is meaningless for a centerline; set to 0
         pts.append(
             PyContourPoint(
                 frame_index=i,
-                point_index=0,
+                point_index=i,  # point_index can be meaningful; set to i instead of 0
                 x=float(x),
                 y=float(y),
                 z=float(z),
                 aortic=aortic,
             )
         )
+
+    # Optionally validate that no NaNs remain
+    for p in pts:
+        if any(np.isnan((p.x, p.y, p.z))):
+            raise ValueError("NaN coordinate found after interpolation — aborting.")
 
     return PyCenterline.from_contour_points(pts)
 

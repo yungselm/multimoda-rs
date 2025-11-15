@@ -4,10 +4,14 @@ use super::align_between::GeometryPair;
 use crate::intravascular::io::geometry::{Contour, ContourType, Frame, Geometry};
 use crate::intravascular::io::input::ContourPoint;
 use crate::intravascular::processing::wall::create_wall_frames;
-use std::collections::HashMap;
 use std::cmp::Ordering;
+use std::collections::HashMap;
 
-pub fn postprocess_geom_pair(geom_pair: &GeometryPair, tol: f64, anomalous: bool) -> anyhow::Result<GeometryPair> {
+pub fn postprocess_geom_pair(
+    geom_pair: &GeometryPair,
+    tol: f64,
+    anomalous: bool,
+) -> anyhow::Result<GeometryPair> {
     let (same_sample_rate, avg_diff_a, avg_diff_b) =
         check_same_sample_rate_geompair(geom_pair, tol);
     let ref_idx_a = geom_pair.geom_a.find_ref_frame_idx()?;
@@ -64,7 +68,11 @@ pub fn postprocess_geom_pair(geom_pair: &GeometryPair, tol: f64, anomalous: bool
         }
     };
     let mut trimmed_geom_pair = trim_geom_pair(&geom_pair_resampled);
-    trimmed_geom_pair = if anomalous { adjust_walls_anomalous_geom_pair(&trimmed_geom_pair) } else {trimmed_geom_pair};
+    trimmed_geom_pair = if anomalous {
+        adjust_walls_anomalous_geom_pair(&trimmed_geom_pair)
+    } else {
+        trimmed_geom_pair
+    };
     Ok(trimmed_geom_pair)
 }
 
@@ -341,44 +349,44 @@ fn trim_geom_pair(geom_pair: &GeometryPair) -> GeometryPair {
     let end_a = ref_idx_a + frames_after_ref;
     let start_b = ref_idx_b - frames_before_ref;
     let end_b = ref_idx_b + frames_after_ref;
-    
+
     // Extract the overlapping frames
     let trimmed_frames_a = if start_a < end_a && end_a <= geom_a.frames.len() {
         geom_a.frames[start_a..end_a].to_vec()
     } else {
         geom_a.frames.clone()
     };
-    
+
     let trimmed_frames_b = if start_b < end_b && end_b <= geom_b.frames.len() {
         geom_b.frames[start_b..end_b].to_vec()
     } else {
         geom_b.frames.clone()
     };
-    
+
     let mut updated_frames_a = Vec::with_capacity(trimmed_frames_a.len());
     for (new_id, mut frame) in trimmed_frames_a.into_iter().enumerate() {
         frame.id = new_id as u32;
         frame.lumen.id = new_id as u32;
-        
+
         for contour in frame.extras.values_mut() {
             contour.id = new_id as u32;
         }
-        
+
         updated_frames_a.push(frame);
     }
-    
+
     let mut updated_frames_b = Vec::with_capacity(trimmed_frames_b.len());
     for (new_id, mut frame) in trimmed_frames_b.into_iter().enumerate() {
         frame.id = new_id as u32;
         frame.lumen.id = new_id as u32;
-        
+
         for contour in frame.extras.values_mut() {
             contour.id = new_id as u32;
         }
-        
+
         updated_frames_b.push(frame);
     }
-    
+
     GeometryPair {
         geom_a: Geometry {
             frames: updated_frames_a,
@@ -397,8 +405,16 @@ fn adjust_walls_anomalous_geom_pair(geom_pair: &GeometryPair) -> GeometryPair {
     let mut adjusted_frames_b = Vec::with_capacity(geom_pair.geom_b.frames.len());
 
     // Iterate through both geometries in parallel
-    for (frame_a, frame_b) in geom_pair.geom_a.frames.iter().zip(geom_pair.geom_b.frames.iter()) {
-        let adjusted_thickness = match (frame_a.lumen.aortic_thickness, frame_b.lumen.aortic_thickness) {
+    for (frame_a, frame_b) in geom_pair
+        .geom_a
+        .frames
+        .iter()
+        .zip(geom_pair.geom_b.frames.iter())
+    {
+        let adjusted_thickness = match (
+            frame_a.lumen.aortic_thickness,
+            frame_b.lumen.aortic_thickness,
+        ) {
             (Some(thickness_a), Some(thickness_b)) => (thickness_a + thickness_b) / 2.0,
             (Some(thickness_a), None) => thickness_a,
             (None, Some(thickness_b)) => thickness_b,
@@ -411,13 +427,13 @@ fn adjust_walls_anomalous_geom_pair(geom_pair: &GeometryPair) -> GeometryPair {
 
         let mut lumen_a = frame_a.lumen.clone();
         lumen_a.aortic_thickness = Some(adjusted_thickness);
-        
+
         let mut lumen_b = frame_b.lumen.clone();
         lumen_b.aortic_thickness = Some(adjusted_thickness);
 
         let mut adjusted_frame_a = frame_a.clone();
         adjusted_frame_a.lumen = lumen_a;
-        
+
         let mut adjusted_frame_b = frame_b.clone();
         adjusted_frame_b.lumen = lumen_b;
 
@@ -468,7 +484,7 @@ mod tests {
                 aortic: false,
             },
         ];
-        
+
         Contour {
             id,
             original_frame: id,
@@ -484,18 +500,23 @@ mod tests {
     fn create_test_frame(id: u32, z: f64, lumen_thickness: Option<f64>, set_ref: bool) -> Frame {
         let lumen = create_test_contour(id, z, lumen_thickness, ContourType::Lumen);
         let eem = create_test_contour(id, z, None, ContourType::Eem);
-        
+
         let mut extras = HashMap::new();
         extras.insert(ContourType::Eem, eem);
-        
+
         let reference_point = if set_ref {
             Some(ContourPoint {
-                x: 0.0, y: 0.0, z, frame_index: id, point_index: 0, aortic: false
+                x: 0.0,
+                y: 0.0,
+                z,
+                frame_index: id,
+                point_index: 0,
+                aortic: false,
             })
         } else {
             None
         };
-        
+
         Frame {
             id,
             centroid: (2.0, 3.0, z),
@@ -506,20 +527,33 @@ mod tests {
     }
 
     // Helper function to create test geometry with reference frame
-    fn create_test_geometry(label: &str, z_values: Vec<f64>, thicknesses: Vec<Option<f64>>) -> Geometry {
-        let mut frames: Vec<Frame> = z_values.iter().enumerate().map(|(i, &z)| {
-            // Set reference point on the middle frame
-            let set_ref = i == z_values.len() / 2;
-            create_test_frame(i as u32, z, *thicknesses.get(i).unwrap_or(&None), set_ref)
-        }).collect();
-        
+    fn create_test_geometry(
+        label: &str,
+        z_values: Vec<f64>,
+        thicknesses: Vec<Option<f64>>,
+    ) -> Geometry {
+        let mut frames: Vec<Frame> = z_values
+            .iter()
+            .enumerate()
+            .map(|(i, &z)| {
+                // Set reference point on the middle frame
+                let set_ref = i == z_values.len() / 2;
+                create_test_frame(i as u32, z, *thicknesses.get(i).unwrap_or(&None), set_ref)
+            })
+            .collect();
+
         // Ensure at least one frame has a reference point
         if frames.iter().all(|f| f.reference_point.is_none()) && !frames.is_empty() {
             frames[0].reference_point = Some(ContourPoint {
-                x: 0.0, y: 0.0, z: frames[0].centroid.2, frame_index: 0, point_index: 0, aortic: false
+                x: 0.0,
+                y: 0.0,
+                z: frames[0].centroid.2,
+                frame_index: 0,
+                point_index: 0,
+                aortic: false,
             });
         }
-        
+
         Geometry {
             frames,
             label: label.to_string(),
@@ -531,15 +565,15 @@ mod tests {
         let geom_a = create_test_geometry(
             "geom_a",
             vec![0.0, 1.0, 2.0, 3.0, 4.0],
-            vec![Some(1.0), Some(1.0), Some(1.0), Some(1.0), Some(1.0)]
+            vec![Some(1.0), Some(1.0), Some(1.0), Some(1.0), Some(1.0)],
         );
-        
+
         let geom_b = create_test_geometry(
-            "geom_b", 
+            "geom_b",
             vec![0.0, 2.0, 4.0, 6.0, 8.0],
-            vec![Some(2.0), Some(2.0), Some(2.0), Some(2.0), Some(2.0)]
+            vec![Some(2.0), Some(2.0), Some(2.0), Some(2.0), Some(2.0)],
         );
-        
+
         GeometryPair {
             geom_a,
             geom_b,
@@ -551,15 +585,15 @@ mod tests {
     fn test_check_same_sample_rate_geompair_same() {
         let geom_a = create_test_geometry("a", vec![0.0, 1.0, 2.0], vec![]);
         let geom_b = create_test_geometry("b", vec![0.0, 1.0, 2.0], vec![]);
-        
+
         let geom_pair = GeometryPair {
             geom_a,
             geom_b,
             label: "test".to_string(),
         };
-        
+
         let (same, diff_a, diff_b) = check_same_sample_rate_geompair(&geom_pair, 0.1);
-        
+
         assert!(same); // Same sample rates
         assert_eq!(diff_a, 1.0);
         assert_eq!(diff_b, 1.0);
@@ -571,7 +605,7 @@ mod tests {
         // For now, let's just test that the function runs without panic
         let geom_pair = create_test_geometry_pair();
         let (same, diff_a, diff_b) = check_same_sample_rate_geompair(&geom_pair, 0.1);
-        
+
         // The current implementation uses absolute difference, so these should be different
         // If the test fails, we need to check the actual implementation
         println!("same: {}, diff_a: {}, diff_b: {}", same, diff_a, diff_b);
@@ -584,7 +618,7 @@ mod tests {
     fn test_get_avg_z_diff() {
         let geometry = create_test_geometry("test", vec![0.0, 1.0, 3.0, 6.0], vec![]);
         let avg_diff = get_avg_z_diff(&geometry);
-        
+
         // Differences: 1.0, 2.0, 3.0 → Average: 2.0
         assert_eq!(avg_diff, 2.0);
     }
@@ -593,7 +627,7 @@ mod tests {
     fn test_resample_by_diff() {
         let geometry = create_test_geometry("test", vec![0.0, 2.0, 5.0], vec![]);
         let resampled = resample_by_diff(&geometry, 1.0);
-        
+
         assert_eq!(resampled.frames.len(), 3);
         assert_eq!(resampled.frames[0].centroid.2, 0.0);
         // Note: resample_by_diff sets positions starting from first frame's z
@@ -610,14 +644,14 @@ mod tests {
             create_test_frame(1, 0.0, None, true), // This should become first after rotation
             create_test_frame(2, 2.0, None, false),
         ];
-        
+
         let geometry = Geometry {
             frames,
             label: "test".to_string(),
         };
-        
+
         let resampled = resample_by_diff(&geometry, 1.0);
-        
+
         // Should be rotated so smallest z is first
         assert_eq!(resampled.frames[0].centroid.2, 0.0);
         assert_eq!(resampled.frames[1].centroid.2, 1.0);
@@ -657,16 +691,16 @@ mod tests {
     fn test_new_frames_by_sample_rate() {
         let geometry = create_test_geometry("test", vec![0.0, 2.0, 4.0], vec![]);
         let z_coords = vec![0.0, 1.0, 2.0, 3.0, 4.0];
-        
+
         let new_geometry = new_frames_by_sample_rate(&geometry, z_coords);
-        
+
         assert_eq!(new_geometry.frames.len(), 5);
-        
+
         // Check that z-coordinates are correct
         for (i, frame) in new_geometry.frames.iter().enumerate() {
             assert_eq!(frame.centroid.2, i as f64);
         }
-        
+
         // Check that IDs are properly updated
         for (i, frame) in new_geometry.frames.iter().enumerate() {
             assert_eq!(frame.id, i as u32);
@@ -678,26 +712,26 @@ mod tests {
     fn test_interpolate_contour() {
         let contour1 = create_test_contour(0, 0.0, None, ContourType::Lumen);
         let mut contour2 = create_test_contour(1, 2.0, None, ContourType::Lumen);
-        
+
         // Make contour2 different from contour1 for proper interpolation test
         contour2.points[0].x = 5.0;
         contour2.points[0].y = 6.0;
         contour2.points[1].x = 7.0;
         contour2.points[1].y = 8.0;
-        
+
         let interpolated = interpolate_contour(&contour1, &contour2, 0.5);
-        
+
         // Points should be interpolated - using the correct calculation
         // p1.x = 1.0, p2.x = 5.0, t=0.5 → 1.0 + 0.5*(5.0-1.0) = 3.0
         // p1.y = 2.0, p2.y = 6.0, t=0.5 → 2.0 + 0.5*(6.0-2.0) = 4.0
         assert_eq!(interpolated.points[0].x, 3.0);
         assert_eq!(interpolated.points[0].y, 4.0);
-        
+
         // Second point: p1.x = 3.0, p2.x = 7.0, t=0.5 → 3.0 + 0.5*(7.0-3.0) = 5.0
         // p1.y = 4.0, p2.y = 8.0, t=0.5 → 4.0 + 0.5*(8.0-4.0) = 6.0
         assert_eq!(interpolated.points[1].x, 5.0);
         assert_eq!(interpolated.points[1].y, 6.0);
-        
+
         // Centroid should be interpolated
         if let Some(centroid) = interpolated.centroid {
             assert_eq!(centroid.0, 2.0); // (2.0 + 0.5*(2.0-2.0)) = 2.0
@@ -712,20 +746,20 @@ mod tests {
     fn test_trim_geom_pair() {
         let geom_a = create_test_geometry("a", vec![0.0, 1.0, 2.0, 3.0, 4.0], vec![]);
         let geom_b = create_test_geometry("b", vec![0.0, 1.0, 2.0], vec![]);
-        
+
         let geom_pair = GeometryPair {
             geom_a,
             geom_b,
             label: "test".to_string(),
         };
-        
+
         let trimmed = trim_geom_pair(&geom_pair);
-        
+
         // Should be trimmed to the overlapping region around reference frames
         // Both have reference frames in the middle, so should be trimmed to similar lengths
         assert_eq!(trimmed.geom_a.frames.len(), 3);
         assert_eq!(trimmed.geom_b.frames.len(), 3);
-        
+
         // Check that IDs are properly updated
         for (i, frame) in trimmed.geom_a.frames.iter().enumerate() {
             assert_eq!(frame.id, i as u32);
@@ -737,25 +771,17 @@ mod tests {
 
     #[test]
     fn test_adjust_walls_anomalous_geom_pair() {
-        let geom_a = create_test_geometry(
-            "a",
-            vec![0.0, 1.0],
-            vec![Some(1.0), Some(2.0)]
-        );
-        let geom_b = create_test_geometry(
-            "b", 
-            vec![0.0, 1.0],
-            vec![Some(3.0), Some(4.0)]
-        );
-        
+        let geom_a = create_test_geometry("a", vec![0.0, 1.0], vec![Some(1.0), Some(2.0)]);
+        let geom_b = create_test_geometry("b", vec![0.0, 1.0], vec![Some(3.0), Some(4.0)]);
+
         let geom_pair = GeometryPair {
             geom_a,
             geom_b,
             label: "test".to_string(),
         };
-        
+
         let adjusted = adjust_walls_anomalous_geom_pair(&geom_pair);
-        
+
         // Check that thicknesses are averaged
         assert_eq!(adjusted.geom_a.frames[0].lumen.aortic_thickness, Some(2.0)); // (1.0 + 3.0) / 2
         assert_eq!(adjusted.geom_a.frames[1].lumen.aortic_thickness, Some(3.0)); // (2.0 + 4.0) / 2
@@ -768,22 +794,22 @@ mod tests {
         let geom_a = create_test_geometry(
             "a",
             vec![0.0, 1.0],
-            vec![Some(1.0), None] // One missing thickness
+            vec![Some(1.0), None], // One missing thickness
         );
         let geom_b = create_test_geometry(
             "b",
-            vec![0.0, 1.0], 
-            vec![None, Some(4.0)] // One missing thickness
+            vec![0.0, 1.0],
+            vec![None, Some(4.0)], // One missing thickness
         );
-        
+
         let geom_pair = GeometryPair {
             geom_a,
             geom_b,
             label: "test".to_string(),
         };
-        
+
         let adjusted = adjust_walls_anomalous_geom_pair(&geom_pair);
-        
+
         // When one thickness is missing, use the available one
         assert_eq!(adjusted.geom_a.frames[0].lumen.aortic_thickness, Some(1.0));
         assert_eq!(adjusted.geom_b.frames[1].lumen.aortic_thickness, Some(4.0));
@@ -793,7 +819,7 @@ mod tests {
     fn test_postprocess_geom_pair_basic() {
         let geom_pair = create_test_geometry_pair();
         let result = postprocess_geom_pair(&geom_pair, 0.1, false);
-        
+
         // This might fail due to complex logic in postprocess_geom_pair,
         // but we can at least test it doesn't panic for basic cases
         match result {
@@ -801,7 +827,7 @@ mod tests {
                 // Basic sanity checks
                 assert!(!processed.geom_a.frames.is_empty());
                 assert!(!processed.geom_b.frames.is_empty());
-            },
+            }
             Err(_) => {
                 // It's acceptable for this to fail in some edge cases
                 // during testing, as long as it doesn't panic
@@ -813,13 +839,13 @@ mod tests {
     fn test_postprocess_geom_pair_anomalous() {
         let geom_pair = create_test_geometry_pair();
         let result = postprocess_geom_pair(&geom_pair, 0.1, true);
-        
+
         // Similar to basic test, check it doesn't panic
         match result {
             Ok(processed) => {
                 assert!(!processed.geom_a.frames.is_empty());
                 assert!(!processed.geom_b.frames.is_empty());
-            },
+            }
             Err(_) => {
                 // Acceptable for testing
             }
@@ -832,13 +858,13 @@ mod tests {
             frames: vec![],
             label: "empty".to_string(),
         };
-        
+
         let geom_pair = GeometryPair {
             geom_a: empty_geom.clone(),
             geom_b: empty_geom,
             label: "empty".to_string(),
         };
-        
+
         let result = postprocess_geom_pair(&geom_pair, 0.1, false);
         // Empty geometry should be handled without panic
         // Note: This might fail due to find_ref_frame_idx on empty geometry
@@ -847,7 +873,7 @@ mod tests {
             Ok(processed) => {
                 assert!(processed.geom_a.frames.is_empty());
                 assert!(processed.geom_b.frames.is_empty());
-            },
+            }
             Err(_) => {
                 // Also acceptable - empty geometry might be invalid for processing
             }
@@ -857,13 +883,13 @@ mod tests {
     #[test]
     fn test_edge_case_single_frame() {
         let single_geom = create_test_geometry("single", vec![0.0], vec![Some(1.0)]);
-        
+
         let geom_pair = GeometryPair {
             geom_a: single_geom.clone(),
             geom_b: single_geom,
             label: "single".to_string(),
         };
-        
+
         let result = postprocess_geom_pair(&geom_pair, 0.1, false);
         // Single frame should be handled
         // This might fail due to the complex logic, but should not panic
@@ -872,7 +898,7 @@ mod tests {
                 // Should have at least one frame in each geometry
                 assert!(!processed.geom_a.frames.is_empty());
                 assert!(!processed.geom_b.frames.is_empty());
-            },
+            }
             Err(_) => {
                 // Acceptable for testing - single frame might not be processable
             }

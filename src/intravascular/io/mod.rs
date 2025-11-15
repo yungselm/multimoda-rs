@@ -6,7 +6,7 @@ pub mod output;
 use geometry::{Contour, ContourType, Frame, Geometry};
 use input::{ContourPoint, InputData};
 use integrity_check::check_geometry_integrity;
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 pub fn build_geometry_from_inputdata(
@@ -88,13 +88,23 @@ pub fn build_geometry_from_inputdata(
     };
 
     let calcification_contours = if let Some(calc_points) = input_data.calcification {
-        Contour::build_contour_with_mapping(calc_points, None, ContourType::Calcification, &frame_mapping)?
+        Contour::build_contour_with_mapping(
+            calc_points,
+            None,
+            ContourType::Calcification,
+            &frame_mapping,
+        )?
     } else {
         Vec::new()
     };
 
     let sidebranch_contours = if let Some(side_points) = input_data.sidebranch {
-        Contour::build_contour_with_mapping(side_points, None, ContourType::Sidebranch, &frame_mapping)?
+        Contour::build_contour_with_mapping(
+            side_points,
+            None,
+            ContourType::Sidebranch,
+            &frame_mapping,
+        )?
     } else {
         Vec::new()
     };
@@ -150,9 +160,13 @@ pub fn build_geometry_from_inputdata(
 
         let catheter_points =
             Frame::create_catheter_points(&all_points, image_center, radius, n_points);
-        
-        let catheter_contours =
-            Contour::build_contour_with_mapping(catheter_points, None, ContourType::Catheter, &frame_mapping)?;
+
+        let catheter_contours = Contour::build_contour_with_mapping(
+            catheter_points,
+            None,
+            ContourType::Catheter,
+            &frame_mapping,
+        )?;
 
         for mut contour in catheter_contours {
             contour.compute_centroid();
@@ -184,7 +198,7 @@ pub fn build_geometry_from_inputdata(
         let id = frame.id;
         frame.set_value(Some(id), None, None, None);
     }
-    
+
     check_geometry_integrity(&geometry)?;
 
     let from_path = path.is_some();
@@ -196,7 +210,8 @@ pub fn build_geometry_from_inputdata(
 fn print_success_message(input_data: InputData, from_path: bool) {
     use ContourType::*;
 
-    println!("\n✅ Successfully built geometry from {}",
+    println!(
+        "\n✅ Successfully built geometry from {}",
         if from_path { "path" } else { "input data" }
     );
 
@@ -205,12 +220,19 @@ fn print_success_message(input_data: InputData, from_path: bool) {
     println!("-----------------------------------------");
     println!("{} {}", check(!input_data.lumen.is_empty()), Lumen);
     println!("{} {}", check(input_data.eem.is_some()), Eem);
-    println!("{} {}", check(input_data.calcification.is_some()), Calcification);
+    println!(
+        "{} {}",
+        check(input_data.calcification.is_some()),
+        Calcification
+    );
     println!("{} {}", check(input_data.sidebranch.is_some()), Sidebranch);
     println!("{} {}", check(true), Catheter);
     println!("-----------------------------------------");
     println!("Label: {}", input_data.label);
-    println!("Diastole phase: {}", if input_data.diastole { "Yes" } else { "No" });
+    println!(
+        "Diastole phase: {}",
+        if input_data.diastole { "Yes" } else { "No" }
+    );
     println!();
 }
 
@@ -265,7 +287,10 @@ mod input_tests {
                 }
                 match frame.extras.get(wanted_type) {
                     Some(contour) => {
-                        ids_map.entry(wanted_type.clone()).or_default().push(contour.id);
+                        ids_map
+                            .entry(wanted_type.clone())
+                            .or_default()
+                            .push(contour.id);
                         orig_map
                             .entry(wanted_type.clone())
                             .or_default()
@@ -280,10 +305,24 @@ mod input_tests {
         }
 
         for (ctype, vec) in &ids_map {
-            assert_eq!(vec.len(), n_frames, "ids vector for {:?} has length {}, expected {}", ctype, vec.len(), n_frames);
+            assert_eq!(
+                vec.len(),
+                n_frames,
+                "ids vector for {:?} has length {}, expected {}",
+                ctype,
+                vec.len(),
+                n_frames
+            );
         }
         for (ctype, vec) in &orig_map {
-            assert_eq!(vec.len(), n_frames, "original_frame vector for {:?} has length {}, expected {}", ctype, vec.len(), n_frames);
+            assert_eq!(
+                vec.len(),
+                n_frames,
+                "original_frame vector for {:?} has length {}, expected {}",
+                ctype,
+                vec.len(),
+                n_frames
+            );
         }
 
         let types: Vec<ContourType> = ids_map.keys().cloned().collect();
@@ -295,8 +334,16 @@ mod input_tests {
             for t in &types[1..] {
                 let id = ids_map.get(t).unwrap()[i];
                 let of = orig_map.get(t).unwrap()[i];
-                assert_eq!(id, first_id, "mismatched id at frame {}: {:?} has id {}, but {:?} has {}", i, first_type, first_id, t, id);
-                assert_eq!(of, first_of, "mismatched original_frame at frame {}: {:?} has {}, but {:?} has {}", i, first_type, first_of, t, of);
+                assert_eq!(
+                    id, first_id,
+                    "mismatched id at frame {}: {:?} has id {}, but {:?} has {}",
+                    i, first_type, first_id, t, id
+                );
+                assert_eq!(
+                    of, first_of,
+                    "mismatched original_frame at frame {}: {:?} has {}, but {:?} has {}",
+                    i, first_type, first_of, t, of
+                );
             }
         }
 
@@ -319,19 +366,27 @@ mod input_tests {
             (4.5, 4.5),
             0.5,
             NUM_POINTS_CATHETER,
-        ).unwrap();
+        )
+        .unwrap();
 
         let (_, long) = geometry.frames[0].lumen.find_farthest_points();
         let (_, short) = geometry.frames[0].lumen.find_closest_opposite();
 
         assert_eq!(geometry.frames[0].lumen.original_frame, 385);
-        assert_relative_eq!(geometry.frames[0].lumen.area(), 5.42, epsilon=0.1);
-        assert_relative_eq!(long, 5.2, epsilon=0.1);
-        assert_relative_eq!(short, 1.15, epsilon=0.1);
-        assert_relative_eq!(geometry.frames[0].lumen.elliptic_ratio(), 4.52, epsilon=0.1);
+        assert_relative_eq!(geometry.frames[0].lumen.area(), 5.42, epsilon = 0.1);
+        assert_relative_eq!(long, 5.2, epsilon = 0.1);
+        assert_relative_eq!(short, 1.15, epsilon = 0.1);
+        assert_relative_eq!(
+            geometry.frames[0].lumen.elliptic_ratio(),
+            4.52,
+            epsilon = 0.1
+        );
         assert_eq!(geometry.frames[0].lumen.aortic_thickness, Some(0.96));
         assert_eq!(geometry.frames[0].lumen.pulmonary_thickness, Some(1.68));
-        assert_eq!(geometry.frames[0].reference_point.unwrap().frame_index, geometry.frames[0].lumen.original_frame); 
+        assert_eq!(
+            geometry.frames[0].reference_point.unwrap().frame_index,
+            geometry.frames[0].lumen.original_frame
+        );
     }
 
     #[test]
@@ -344,7 +399,8 @@ mod input_tests {
             (4.5, 4.5),
             0.5,
             NUM_POINTS_CATHETER,
-        ).expect("Failed to load geometry");
+        )
+        .expect("Failed to load geometry");
 
         for frame in &geometry.frames {
             if let Some(catheter_contour) = frame.extras.get(&ContourType::Catheter) {
@@ -366,7 +422,7 @@ mod input_tests {
     #[test]
     fn test_build_geometry_with_input_data() {
         use input::InputData;
-        
+
         let test_points = vec![ContourPoint {
             frame_index: 0,
             point_index: 0,
@@ -402,7 +458,8 @@ mod input_tests {
             (0.0, 0.0),
             1.0,
             10,
-        ).expect("Failed to build geometry from InputData");
+        )
+        .expect("Failed to build geometry from InputData");
 
         assert!(!geometry.frames.is_empty());
         assert_eq!(geometry.label, "test_label");
@@ -428,17 +485,12 @@ mod input_tests {
 
     #[test]
     fn test_error_on_no_input() {
-        let result = build_geometry_from_inputdata(
-            None,
-            None,
-            "test",
-            true,
-            (0.0, 0.0),
-            1.0,
-            10,
-        );
+        let result = build_geometry_from_inputdata(None, None, "test", true, (0.0, 0.0), 1.0, 10);
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Either input_data or path must be provided"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Either input_data or path must be provided"));
     }
 }

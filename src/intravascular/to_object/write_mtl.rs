@@ -1,12 +1,12 @@
+use super::texture::{
+    compute_displacements, compute_uv_coordinates, create_black_texture,
+    create_displacement_texture, create_transparent_texture,
+};
 use crate::intravascular::io::geometry::{Contour, ContourType, Geometry};
 use ::std::fs::File;
 use ::std::io::Write;
 use std::collections::HashMap;
 use std::path::Path;
-use super::texture::{
-    compute_displacements, compute_uv_coordinates, create_black_texture,
-    create_displacement_texture, create_transparent_texture,
-};
 
 /// Creates UV-maps and textures for different contour types based on their requirements:
 /// - Lumen and EEM: displacement texture
@@ -21,12 +21,8 @@ pub fn write_mtl_geometry(
     let mut uv_coords_map = HashMap::new();
 
     for &contour_type in contour_types {
-        let uv_coords = write_mtl_for_contour_type(
-            geometries_to_process,
-            output_dir,
-            case_name,
-            contour_type,
-        );
+        let uv_coords =
+            write_mtl_for_contour_type(geometries_to_process, output_dir, case_name, contour_type);
         uv_coords_map.insert(contour_type, uv_coords);
     }
 
@@ -43,30 +39,15 @@ fn write_mtl_for_contour_type(
     match contour_type {
         ContourType::Lumen | ContourType::Eem => {
             // For lumen and EEM: displacement texture
-            write_displacement_texture(
-                geometries_to_process,
-                output_dir,
-                case_name,
-                contour_type,
-            )
+            write_displacement_texture(geometries_to_process, output_dir, case_name, contour_type)
         }
         ContourType::Catheter | ContourType::Calcification => {
             // For catheter and calcification: black texture
-            write_black_texture(
-                geometries_to_process,
-                output_dir,
-                case_name,
-                contour_type,
-            )
+            write_black_texture(geometries_to_process, output_dir, case_name, contour_type)
         }
         ContourType::Wall | ContourType::Sidebranch => {
             // For wall and sidebranch: transparent texture
-            write_transparent_texture(
-                geometries_to_process,
-                output_dir,
-                case_name,
-                contour_type,
-            )
+            write_transparent_texture(geometries_to_process, output_dir, case_name, contour_type)
         }
     }
 }
@@ -84,8 +65,9 @@ fn write_displacement_texture(
     // Calculate max displacements between first and last geometry for normalization
     let max_disp = if geometries_to_process.len() > 1 {
         let start_contours = extract_contours_by_type(&geometries_to_process[0], contour_type);
-        let end_contours = extract_contours_by_type(geometries_to_process.last().unwrap(), contour_type);
-        
+        let end_contours =
+            extract_contours_by_type(geometries_to_process.last().unwrap(), contour_type);
+
         if !start_contours.is_empty() && !end_contours.is_empty() {
             let displacements = compute_displacements_for_contours(&start_contours, &end_contours);
             displacements.iter().cloned().fold(0.0, f64::max)
@@ -98,7 +80,7 @@ fn write_displacement_texture(
 
     for (i, geometry) in geometries_to_process.iter().enumerate() {
         let contours = extract_contours_by_type(geometry, contour_type);
-        
+
         if contours.is_empty() {
             uv_coords.push(Vec::new());
             continue;
@@ -121,7 +103,7 @@ fn write_displacement_texture(
         let type_name = get_contour_type_name(contour_type);
         let tex_filename = format!("{}_{:03}_{}.png", type_name, i, case_name);
         let texture_path = Path::new(output_dir).join(&tex_filename);
-        
+
         if let Err(e) = create_displacement_texture(
             &displacements,
             texture_width,
@@ -129,14 +111,17 @@ fn write_displacement_texture(
             max_disp,
             texture_path.to_str().unwrap(),
         ) {
-            eprintln!("Failed to create displacement texture for {}: {}", type_name, e);
+            eprintln!(
+                "Failed to create displacement texture for {}: {}",
+                type_name, e
+            );
             continue;
         }
 
         // Write MTL file
         let mtl_filename = format!("{}_{:03}_{}.mtl", type_name, i, case_name);
         let mtl_path = Path::new(output_dir).join(&mtl_filename);
-        
+
         if let Ok(mut mtl_file) = File::create(&mtl_path) {
             writeln!(
                 mtl_file,
@@ -161,7 +146,7 @@ fn write_black_texture(
 
     for (i, geometry) in geometries_to_process.iter().enumerate() {
         let contours = extract_contours_by_type(geometry, contour_type);
-        
+
         if contours.is_empty() {
             uv_coords.push(Vec::new());
             continue;
@@ -181,7 +166,7 @@ fn write_black_texture(
         let type_name = get_contour_type_name(contour_type);
         let tex_filename = format!("{}_{:03}_{}.png", type_name, i, case_name);
         let texture_path = Path::new(output_dir).join(&tex_filename);
-        
+
         if let Err(e) = create_black_texture(
             texture_width,
             texture_height,
@@ -194,7 +179,7 @@ fn write_black_texture(
         // Write MTL file
         let mtl_filename = format!("{}_{:03}_{}.mtl", type_name, i, case_name);
         let mtl_path = Path::new(output_dir).join(&mtl_filename);
-        
+
         if let Ok(mut mtl_file) = File::create(&mtl_path) {
             writeln!(
                 mtl_file,
@@ -219,7 +204,7 @@ fn write_transparent_texture(
 
     for (i, geometry) in geometries_to_process.iter().enumerate() {
         let contours = extract_contours_by_type(geometry, contour_type);
-        
+
         if contours.is_empty() {
             uv_coords.push(Vec::new());
             continue;
@@ -239,21 +224,24 @@ fn write_transparent_texture(
         let type_name = get_contour_type_name(contour_type);
         let tex_filename = format!("{}_{:03}_{}.png", type_name, i, case_name);
         let texture_path = Path::new(output_dir).join(&tex_filename);
-        
+
         if let Err(e) = create_transparent_texture(
             texture_width,
             texture_height,
             0.7, // alpha value
             texture_path.to_str().unwrap(),
         ) {
-            eprintln!("Failed to create transparent texture for {}: {}", type_name, e);
+            eprintln!(
+                "Failed to create transparent texture for {}: {}",
+                type_name, e
+            );
             continue;
         }
 
         // Write MTL file
         let mtl_filename = format!("{}_{:03}_{}.mtl", type_name, i, case_name);
         let mtl_path = Path::new(output_dir).join(&mtl_filename);
-        
+
         if let Ok(mut mtl_file) = File::create(&mtl_path) {
             writeln!(
                 mtl_file,
@@ -270,15 +258,16 @@ fn write_transparent_texture(
 /// Extracts contours of a specific type from a geometry
 fn extract_contours_by_type(geometry: &Geometry, contour_type: ContourType) -> Vec<Contour> {
     match contour_type {
-        ContourType::Lumen => {
-            geometry.frames.iter().map(|frame| frame.lumen.clone()).collect()
-        }
-        _ => {
-            geometry.frames
-                .iter()
-                .filter_map(|frame| frame.extras.get(&contour_type).cloned())
-                .collect()
-        }
+        ContourType::Lumen => geometry
+            .frames
+            .iter()
+            .map(|frame| frame.lumen.clone())
+            .collect(),
+        _ => geometry
+            .frames
+            .iter()
+            .filter_map(|frame| frame.extras.get(&contour_type).cloned())
+            .collect(),
     }
 }
 

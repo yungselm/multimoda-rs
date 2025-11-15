@@ -4,9 +4,8 @@ mod intravascular;
 use crate::intravascular::binding::align::{align_manual, align_three_point};
 use crate::intravascular::binding::classes::*;
 use crate::intravascular::binding::{
-    from_array_doublepair, from_array_full, from_array_singlepair,
-    from_file_doublepair, from_file_full, from_file_single, from_file_singlepair,
-    from_array_single, to_obj,
+    from_array_doublepair, from_array_full, from_array_single, from_array_singlepair,
+    from_file_doublepair, from_file_full, from_file_single, from_file_singlepair, to_obj,
 };
 
 use pyo3::prelude::*;

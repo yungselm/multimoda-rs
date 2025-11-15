@@ -1,8 +1,8 @@
-use pyo3::prelude::*;
 use crate::intravascular::{
-    binding::classes::{PyContourType, PyCenterline, PyGeometryPair},
+    binding::classes::{PyCenterline, PyContourType, PyGeometryPair},
     centerline_align::{align_manual_rs, align_three_point_rs},
 };
+use pyo3::prelude::*;
 
 /// Creates centerline-aligned meshes for diastolic and systolic geometries
 /// based on three reference points (aorta, upper section, lower section).
@@ -64,7 +64,8 @@ pub fn align_three_point(
     contour_types: Vec<PyContourType>,
     case_name: &str,
 ) -> PyResult<(PyGeometryPair, PyCenterline)> {
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> = contour_types.iter().map(|ct| ct.into()).collect();
+    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+        contour_types.iter().map(|ct| ct.into()).collect();
     let cl_rs = centerline.to_rust_centerline();
     let geom_pair_rs = geometry_pair.to_rust_geometry_pair();
     let angle_step = angle_step_deg.to_radians();
@@ -82,7 +83,8 @@ pub fn align_three_point(
         output_dir,
         rust_contour_types,
         case_name,
-    ).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    )
+    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
     let aligned_py: PyGeometryPair = geom_pair.into();
     let resampled_cl: PyCenterline = cl.into();
@@ -144,7 +146,8 @@ pub fn align_manual(
     contour_types: Vec<PyContourType>,
     case_name: &str,
 ) -> PyResult<(PyGeometryPair, PyCenterline)> {
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> = contour_types.iter().map(|ct| ct.into()).collect();
+    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+        contour_types.iter().map(|ct| ct.into()).collect();
     let cl_rs = centerline.to_rust_centerline();
     let geom_pair_rs = geometry_pair.to_rust_geometry_pair();
 
@@ -159,7 +162,8 @@ pub fn align_manual(
         output_dir,
         rust_contour_types,
         case_name,
-    ).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    )
+    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
     let aligned_py: PyGeometryPair = geom_pair.into();
     let resampled_cl: PyCenterline = cl.into();

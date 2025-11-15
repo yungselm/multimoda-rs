@@ -1,11 +1,9 @@
 use anyhow::{anyhow, Result};
-// removed unused HashMap import here
 use std::collections::HashSet;
 
 use super::geometry::{ContourType, Geometry};
 use super::input::ContourPoint;
 
-/// Performs integrity checks on a Geometry structure
 pub fn check_geometry_integrity(geometry: &Geometry) -> Result<()> {
     if geometry.frames.is_empty() {
         return Err(anyhow!("Geometry has no frames"));
@@ -17,7 +15,10 @@ pub fn check_geometry_integrity(geometry: &Geometry) -> Result<()> {
         ("check_lumen_presence", check_lumen_presence),
         ("check_reference_point", check_reference_point),
         ("check_contour_point_counts", check_contour_point_counts),
-        ("check_original_frame_consistency", check_original_frame_consistency),
+        (
+            "check_original_frame_consistency",
+            check_original_frame_consistency,
+        ),
         ("check_proximal_end_index", check_proximal_end_index),
         ("check_z_distribution", check_z_distribution),
     ];
@@ -51,7 +52,6 @@ fn check_centroids_match(geometry: &Geometry) -> Result<()> {
     for (frame_index, frame) in geometry.frames.iter().enumerate() {
         let frame_centroid = frame.centroid;
 
-        // Compute lumen centroid from points if not present
         let lumen_centroid = match frame.lumen.centroid {
             Some(centroid) => centroid,
             None => compute_centroid_from_points(&frame.lumen.points),
@@ -67,7 +67,6 @@ fn check_centroids_match(geometry: &Geometry) -> Result<()> {
             ));
         }
 
-        // Also check that the stored lumen centroid matches computed if present
         if let Some(stored_lumen_centroid) = frame.lumen.centroid {
             if !points_approximately_equal(stored_lumen_centroid, lumen_centroid) {
                 return Err(anyhow!(
@@ -115,7 +114,6 @@ fn check_reference_point(geometry: &Geometry) -> Result<()> {
         .collect();
 
     match reference_frames.len() {
-        0 => Ok(()), // allow zero reference points
         1 => Ok(()),
         n => Err(anyhow!("Expected exactly one reference point, found {}", n)),
     }
@@ -125,11 +123,9 @@ fn check_reference_point(geometry: &Geometry) -> Result<()> {
 fn check_contour_point_counts(geometry: &Geometry) -> Result<()> {
     use std::collections::HashMap;
 
-    // Map from ContourType -> expected point count (first observed)
     let mut expected_counts: HashMap<ContourType, usize> = HashMap::new();
 
     for (frame_index, frame) in geometry.frames.iter().enumerate() {
-        // Lumen: establish expected count on first seen, then require same count in subsequent frames
         let lumen_count = frame.lumen.points.len();
         match expected_counts.get(&ContourType::Lumen) {
             Some(&expected) => {
@@ -148,7 +144,6 @@ fn check_contour_point_counts(geometry: &Geometry) -> Result<()> {
             }
         }
 
-        // Extras: for each contour kind present in this frame, require consistency among frames that have it.
         for (_contour_type, contour) in &frame.extras {
             let kind = contour.kind;
             let count = contour.points.len();
@@ -177,7 +172,6 @@ fn check_original_frame_consistency(geometry: &Geometry) -> Result<()> {
     for (frame_index, frame) in geometry.frames.iter().enumerate() {
         let expected_original_frame = frame.lumen.original_frame;
 
-        // Check extras
         for (contour_type, contour) in &frame.extras {
             if contour.original_frame != expected_original_frame {
                 return Err(anyhow!(
@@ -191,7 +185,6 @@ fn check_original_frame_consistency(geometry: &Geometry) -> Result<()> {
             }
         }
 
-        // Check reference point
         if let Some(ref_point) = &frame.reference_point {
             if ref_point.frame_index != expected_original_frame {
                 return Err(anyhow!(
@@ -212,7 +205,6 @@ fn check_original_frame_consistency(geometry: &Geometry) -> Result<()> {
 fn check_proximal_end_index(geometry: &Geometry) -> Result<()> {
     let proximal_idx = geometry.find_proximal_end_idx();
 
-    // find the index of the frame with minimum z
     let mut min_z = std::f64::INFINITY;
     let mut min_idx = 0usize;
     for (i, f) in geometry.frames.iter().enumerate() {
@@ -251,7 +243,6 @@ fn check_z_distribution(geometry: &Geometry) -> Result<()> {
 /// Helper function to compute centroid from contour points
 fn compute_centroid_from_points(points: &[ContourPoint]) -> (f64, f64, f64) {
     if points.is_empty() {
-        // avoid divide-by-zero; return a safe default centroid
         return (0.0, 0.0, 0.0);
     }
 
@@ -297,7 +288,6 @@ pub fn detailed_geometry_analysis(geometry: &Geometry) -> Result<()> {
         }
     }
 
-    // Check for unique original frames
     let unique_original_frames: HashSet<u32> = geometry
         .frames
         .iter()

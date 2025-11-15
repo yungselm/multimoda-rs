@@ -105,7 +105,12 @@ pub fn prepare_n_geometries(
                     radius,
                     n_points,
                 )
-                .with_context(|| format!("Failed to build geometry for Pair with diastole={}", diastole))?;
+                .with_context(|| {
+                    format!(
+                        "Failed to build geometry for Pair with diastole={}",
+                        diastole
+                    )
+                })?;
                 geometries.push(geom);
             }
             Ok(geometries)
@@ -154,7 +159,12 @@ pub fn prepare_n_geometries(
                         radius,
                         n_points,
                     )
-                    .with_context(|| format!("Failed to build geometry for Full from path with diastole={}", diastole))?;
+                    .with_context(|| {
+                        format!(
+                            "Failed to build geometry for Full from path with diastole={}",
+                            diastole
+                        )
+                    })?;
                     geometries.push(geom);
                 }
             }
@@ -165,8 +175,8 @@ pub fn prepare_n_geometries(
 
 #[cfg(test)]
 mod preprocessing_tests {
+    use crate::intravascular::io::input::{ContourPoint, InputData};
     use anyhow::Ok;
-    use crate::intravascular::io::input::{InputData, ContourPoint};
 
     use super::*;
     use std::path::Path;
@@ -174,16 +184,14 @@ mod preprocessing_tests {
     // Helper function to create mock InputData
     fn create_mock_input_data(label: &str, diastole: bool) -> InputData {
         InputData {
-            lumen: vec![
-                ContourPoint {
-                    frame_index: 0,
-                    point_index: 0,
-                    x: 10.0,
-                    y: 20.0,
-                    z: 0.0,
-                    aortic: false,
-                },
-            ],
+            lumen: vec![ContourPoint {
+                frame_index: 0,
+                point_index: 0,
+                x: 10.0,
+                y: 20.0,
+                z: 0.0,
+                aortic: false,
+            }],
             eem: None,
             calcification: None,
             sidebranch: None,
@@ -243,10 +251,10 @@ mod preprocessing_tests {
         Ok(())
     }
 
-        #[test]
+    #[test]
     fn test_single_with_one_input_data() -> anyhow::Result<()> {
         let input_data = vec![create_mock_input_data("test_input", true)];
-        
+
         let geometry = prepare_n_geometries(
             "fallback_label",
             (4.5, 4.5),
@@ -289,7 +297,7 @@ mod preprocessing_tests {
             create_mock_input_data("first", true),
             create_mock_input_data("second", false),
         ];
-        
+
         let geometry = prepare_n_geometries(
             "fallback_label",
             (4.5, 4.5),
@@ -337,7 +345,7 @@ mod preprocessing_tests {
             create_mock_input_data("third", true),
             create_mock_input_data("fourth", false),
         ];
-        
+
         let geometry = prepare_n_geometries(
             "fallback_label",
             (4.5, 4.5),
@@ -404,7 +412,7 @@ mod preprocessing_tests {
     fn test_insufficient_input_data_falls_back_to_paths() -> anyhow::Result<()> {
         // Only 1 InputData for Pair processing (needs 2) - should fall back to path
         let input_data = vec![create_mock_input_data("only_one", true)];
-        
+
         let geometry = prepare_n_geometries(
             "from_path",
             (4.5, 4.5),
@@ -466,7 +474,7 @@ mod preprocessing_tests {
             create_mock_input_data("second", false),
             create_mock_input_data("third", true),
         ];
-        
+
         let result = prepare_n_geometries(
             "test",
             (0.0, 0.0),

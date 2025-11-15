@@ -1,14 +1,11 @@
 pub mod interpolation;
-pub mod write_mtl;
 mod texture;
+pub mod write_mtl;
 
-use {
-    interpolation::interpolate_contours,
-    write_mtl::write_mtl_geometry
-};
-use crate::intravascular::processing::align_between::GeometryPair;
 use crate::intravascular::io::geometry::ContourType;
 use crate::intravascular::io::output::write_geometry_vec_to_obj;
+use crate::intravascular::processing::align_between::GeometryPair;
+use {interpolation::interpolate_contours, write_mtl::write_mtl_geometry};
 
 /// Processes a given case by reading diastolic and systolic contours, aligning them,
 /// computing displacements and UV coordinates, and finally writing out the OBJ, MTL, and texture files.
@@ -34,10 +31,10 @@ pub fn process_case(
 
     // Use the new write_mtl_geometry that returns a HashMap
     let uv_coords_map = write_mtl_geometry(
-        &interpolated_geometries, 
-        output_dir, 
-        case_name, 
-        contour_types
+        &interpolated_geometries,
+        output_dir,
+        case_name,
+        contour_types,
     );
 
     // Write specified contour types using UV coordinates from the map
@@ -52,10 +49,17 @@ pub fn process_case(
                 watertight,
             )?;
         } else {
-            eprintln!("Warning: No UV coordinates found for contour type {:?}", contour_type);
+            eprintln!(
+                "Warning: No UV coordinates found for contour type {:?}",
+                contour_type
+            );
         }
     }
 
     let label = geometries.label.clone();
-    Ok(GeometryPair { geom_a, geom_b, label })
+    Ok(GeometryPair {
+        geom_a,
+        geom_b,
+        label,
+    })
 }

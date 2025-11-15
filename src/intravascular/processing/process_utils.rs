@@ -27,7 +27,7 @@ where
 {
     let range_rad = range_deg.to_radians();
     let step_rad = step_deg.to_radians();
-    
+
     // Handle edge case: zero or negative step
     if step_rad <= 0.0 {
         return center_angle.unwrap_or(0.0);
@@ -44,7 +44,7 @@ where
     }
 
     let steps = (((stop_angle - start_angle) / step_rad).ceil() as usize).max(1);
-    
+
     let mut best_angle = center;
     let mut best_cost = f64::INFINITY;
 
@@ -208,9 +208,9 @@ mod process_utils_tests {
     fn test_search_range_quadratic_function() {
         // Test with a simple quadratic cost function: (angle - 0.5)^2
         let cost_fn = |angle: f64| (angle - 0.5).powi(2);
-        
+
         let result = search_range(cost_fn, 1.0, 180.0, None, 180.0);
-        
+
         // Should find minimum near 0.5 radians
         assert_relative_eq!(result, 0.5, epsilon = 1.0_f64.to_radians());
     }
@@ -219,9 +219,9 @@ mod process_utils_tests {
     fn test_search_range_with_center_angle() {
         // Test with center angle provided
         let cost_fn = |angle: f64| (angle - 1.0).powi(2);
-        
+
         let result = search_range(cost_fn, 0.5, 45.0, Some(0.8), 180.0);
-        
+
         // Should find minimum near 1.0 radians, but constrained by center and range
         assert_relative_eq!(result, 1.0, epsilon = 0.5_f64.to_radians());
     }
@@ -230,9 +230,9 @@ mod process_utils_tests {
     fn test_search_range_sine_function() {
         // Test with sine function - multiple minima, but should find one in range
         let cost_fn = |angle: f64| angle.sin();
-        
+
         let result = search_range(cost_fn, 1.0, 90.0, None, 180.0);
-        
+
         // Sine is minimized at -π/2, -5π/2, etc. Within [-π, π], minimum is -π/2 ≈ -1.57
         assert!(result <= 0.0); // Should find a negative value where sine is minimal
     }
@@ -255,13 +255,13 @@ mod process_utils_tests {
         // Test with range beyond limes
         let cost_fn = |angle: f64| (angle - 2.0).powi(2); // 2.0 rad ≈ 114.6°
         let result = search_range(cost_fn, 1.0, 180.0, None, 90.0); // limes = 90° ≈ 1.57 rad
-        // Should be constrained by limes, so minimum at limes boundary (1.57)
+                                                                    // Should be constrained by limes, so minimum at limes boundary (1.57)
         assert_relative_eq!(result, 1.57, epsilon = 1.0_f64.to_radians());
-        
+
         // Test with negative step - should return center angle
         let result = search_range(cost_fn, -1.0, 90.0, Some(0.5), 180.0);
         assert_relative_eq!(result, 0.5, epsilon = 1e-10);
-        
+
         // Test with no center angle provided
         let cost_fn = |angle: f64| (angle - 0.5).powi(2);
         let result = search_range(cost_fn, 0.0, 90.0, None, 180.0);
@@ -272,19 +272,19 @@ mod process_utils_tests {
     fn test_search_range_small_range() {
         // Test with range too small to reach the true minimum
         let cost_fn = |angle: f64| (angle - 0.5).powi(2); // Minimum at 0.5 rad
-        
+
         // Search with small range around 0.0 that doesn't include 0.5
         // Range: 0.2° ≈ 0.00349 rad, step: 0.1° ≈ 0.001745 rad
         let result = search_range(cost_fn, 0.1, 0.2, Some(0.0), 180.0);
-        
+
         // Should find the best angle within the search range [0.0-0.00349, 0.0+0.00349]
         // The best in this range is the upper boundary 0.00349 rad
         let expected = 0.2_f64.to_radians(); // 0.0034906585 rad
         assert_relative_eq!(result, expected, epsilon = 0.1_f64.to_radians());
-        
+
         // Test with range that exactly includes the minimum
         let result = search_range(cost_fn, 0.1, 30.0, Some(0.0), 180.0); // 30° ≈ 0.5236 rad
-        // Should find something close to 0.5 (within the step size)
+                                                                         // Should find something close to 0.5 (within the step size)
         assert_relative_eq!(result, 0.5, epsilon = 0.1_f64.to_radians());
     }
 
@@ -418,12 +418,12 @@ mod process_utils_tests {
         ];
 
         let distance = hausdorff_distance(&set1, &set2);
-        // set1 to set2: 
+        // set1 to set2:
         //   (0,0) -> nearest is (1,0) = 1.0
         //   (3,0) -> nearest is (2,0) = 1.0
         // set2 to set1:
         //   (1,0) -> nearest is (0,0) = 1.0
-        //   (2,0) -> nearest is (3,0) = 1.0  
+        //   (2,0) -> nearest is (3,0) = 1.0
         //   (4,0) -> nearest is (3,0) = 1.0
         // So Hausdorff distance should be 1.0
         assert_relative_eq!(distance, 1.0, epsilon = 1e-10);
@@ -456,21 +456,77 @@ mod process_utils_tests {
     fn test_hausdorff_distance_complex_shapes() {
         // Create a square and a diamond that partially overlap
         let square = vec![
-            ContourPoint { frame_index: 1, point_index: 0, x: 0.0, y: 0.0, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 1, point_index: 1, x: 2.0, y: 0.0, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 1, point_index: 2, x: 2.0, y: 2.0, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 1, point_index: 3, x: 0.0, y: 2.0, z: 0.0, aortic: false },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 0,
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 1,
+                x: 2.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 2,
+                x: 2.0,
+                y: 2.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 3,
+                x: 0.0,
+                y: 2.0,
+                z: 0.0,
+                aortic: false,
+            },
         ];
 
         let diamond = vec![
-            ContourPoint { frame_index: 1, point_index: 0, x: 1.0, y: 0.0, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 1, point_index: 1, x: 2.0, y: 1.0, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 1, point_index: 2, x: 1.0, y: 2.0, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 1, point_index: 3, x: 0.0, y: 1.0, z: 0.0, aortic: false },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 0,
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 1,
+                x: 2.0,
+                y: 1.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 2,
+                x: 1.0,
+                y: 2.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 3,
+                x: 0.0,
+                y: 1.0,
+                z: 0.0,
+                aortic: false,
+            },
         ];
 
         let distance = hausdorff_distance(&square, &diamond);
-        
+
         // The farthest points should be from square corners to diamond
         // Let's verify it's a reasonable value
         assert!(distance > 0.0);
@@ -481,13 +537,41 @@ mod process_utils_tests {
     fn test_directed_hausdorff_consistency() {
         // Test that the directed Hausdorff is consistent with the full Hausdorff
         let set1 = vec![
-            ContourPoint { frame_index: 1, point_index: 0, x: 0.0, y: 0.0, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 1, point_index: 1, x: 1.0, y: 0.0, z: 0.0, aortic: false },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 0,
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 1,
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
         ];
 
         let set2 = vec![
-            ContourPoint { frame_index: 1, point_index: 0, x: 2.0, y: 0.0, z: 0.0, aortic: false },
-            ContourPoint { frame_index: 1, point_index: 1, x: 3.0, y: 0.0, z: 0.0, aortic: false },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 0,
+                x: 2.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 1,
+                x: 3.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
         ];
 
         let full_distance = hausdorff_distance(&set1, &set2);
@@ -495,8 +579,12 @@ mod process_utils_tests {
         let directed_2_to_1 = directed_hausdorff(&set2, &set1);
 
         // Hausdorff distance should be the maximum of the two directed distances
-        assert_relative_eq!(full_distance, directed_1_to_2.max(directed_2_to_1), epsilon = 1e-10);
-        
+        assert_relative_eq!(
+            full_distance,
+            directed_1_to_2.max(directed_2_to_1),
+            epsilon = 1e-10
+        );
+
         // For this case, both directed distances should be 2.0
         assert_relative_eq!(directed_1_to_2, 2.0, epsilon = 1e-10);
         assert_relative_eq!(directed_2_to_1, 2.0, epsilon = 1e-10);
@@ -507,7 +595,7 @@ mod process_utils_tests {
         // Create larger point sets to test performance
         let mut set1 = Vec::new();
         let mut set2 = Vec::new();
-        
+
         for i in 0..100 {
             set1.push(ContourPoint {
                 frame_index: 1,
@@ -517,7 +605,7 @@ mod process_utils_tests {
                 z: 0.0,
                 aortic: false,
             });
-            
+
             set2.push(ContourPoint {
                 frame_index: 2,
                 point_index: i,
@@ -530,7 +618,7 @@ mod process_utils_tests {
 
         // This should complete quickly with the parallel implementation
         let distance = hausdorff_distance(&set1, &set2);
-        
+
         // Distance should be 0.5 (the constant offset)
         assert_relative_eq!(distance, 0.5, epsilon = 1e-10);
     }

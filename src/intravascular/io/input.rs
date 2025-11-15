@@ -432,9 +432,18 @@ mod input_tests {
         let data_path = Path::new("./data/ivus_full");
         let input = InputData::process_directory(data_path, names, true)?;
 
-        assert!(!input.lumen.is_empty(), "lumen contour vector should not be empty");
-        assert!(input.eem.is_some(), "eem contour vector should not be empty");
-        assert!(input.calcification.is_some(), "calcification contour vector should not be empty");
+        assert!(
+            !input.lumen.is_empty(),
+            "lumen contour vector should not be empty"
+        );
+        assert!(
+            input.eem.is_some(),
+            "eem contour vector should not be empty"
+        );
+        assert!(
+            input.calcification.is_some(),
+            "calcification contour vector should not be empty"
+        );
         assert!(input.record.is_none(), "record vector should be empty");
         assert!(input.ref_point.x > 0.0, "ref_point should not be empty");
 
@@ -544,6 +553,6 @@ mod input_tests {
         let centerline = Centerline::from_contour_points(points);
         let ref_pt = (0.0, 0.0, 0.0);
         let ref_id = centerline.find_reference_cl_point_idx(&ref_pt);
-        assert_eq!(centerline.points[0], centerline.points[ref_id]);        
+        assert_eq!(centerline.points[0], centerline.points[ref_id]);
     }
 }
