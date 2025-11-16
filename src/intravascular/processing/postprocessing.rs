@@ -19,7 +19,7 @@ pub fn postprocess_geom_pair(
     let ref_z_a = geom_pair.geom_a.frames[ref_idx_a].centroid.2;
     let ref_z_b = geom_pair.geom_b.frames[ref_idx_b].centroid.2;
 
-    let geom_pair_resampled = if same_sample_rate {
+    let mut geom_pair_resampled = if same_sample_rate {
         let mean_diff = (avg_diff_a + avg_diff_b) / 2.0;
         let geom_a = resample_by_diff(&geom_pair.geom_a, mean_diff);
         let geom_b = resample_by_diff(&geom_pair.geom_b, mean_diff);
@@ -32,6 +32,7 @@ pub fn postprocess_geom_pair(
         let n = geom_pair.geom_b.frames.len();
         let end_zero = geom_pair.geom_b.frames[0].centroid.2;
         let end_n = geom_pair.geom_b.frames[n - 1].centroid.2;
+        // should never be the case... just to be extra sure
         let (start, stop) = if end_zero < end_n {
             (end_zero, end_n)
         } else {
@@ -41,10 +42,9 @@ pub fn postprocess_geom_pair(
         let z_coords = predict_z_positions(ref_z_b, start, stop, avg_diff_a);
         let new_geom = new_frames_by_sample_rate(&geom_pair.geom_b, z_coords);
         let new_resampled_a = resample_by_diff(&geom_pair.geom_a, avg_diff_a);
-        let new_resampled_b = resample_by_diff(&new_geom, avg_diff_a);
         GeometryPair {
             geom_a: new_resampled_a,
-            geom_b: new_resampled_b,
+            geom_b: new_geom,
             label: geom_pair.label.clone(),
         }
     } else {
@@ -57,16 +57,21 @@ pub fn postprocess_geom_pair(
             (end_n, end_zero)
         };
 
-        let z_coords = predict_z_positions(ref_z_a, start, stop, avg_diff_a);
+        let z_coords = predict_z_positions(ref_z_a, start, stop, avg_diff_b);
         let new_geom = new_frames_by_sample_rate(&geom_pair.geom_a, z_coords);
-        let new_resampled_a = resample_by_diff(&new_geom, avg_diff_b);
         let new_resampled_b = resample_by_diff(&geom_pair.geom_b, avg_diff_b);
         GeometryPair {
-            geom_a: new_resampled_a,
+            geom_a: new_geom,
             geom_b: new_resampled_b,
             label: geom_pair.label.clone(),
         }
     };
+    // ensure again that ref points are on same position before trimming
+    let ref_idx_a_resample = geom_pair_resampled.geom_a.find_ref_frame_idx()?;
+    let ref_idx_b_resample = geom_pair_resampled.geom_b.find_ref_frame_idx()?;
+    let translation = geom_pair.geom_a.frames[ref_idx_a_resample].centroid.2 - geom_pair.geom_b.frames[ref_idx_b_resample].centroid.2;
+    geom_pair_resampled.geom_a.translate_geometry((0.0, 0.0, translation));
+
     let mut trimmed_geom_pair = trim_geom_pair(&geom_pair_resampled);
     trimmed_geom_pair = if anomalous {
         adjust_walls_anomalous_geom_pair(&trimmed_geom_pair)
@@ -187,8 +192,14 @@ fn predict_z_positions(ref_z: f64, start_z: f64, stop_z: f64, z_diff: f64) -> Ve
 fn new_frames_by_sample_rate(geometry: &Geometry, mut z_coords: Vec<f64>) -> Geometry {
     let mut new_frames = Vec::new();
     z_coords.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+    let n_frames = geometry.frames.len();
+    let max_z_coord = geometry.frames[n_frames - 1].centroid.2;
 
     for z_coord in z_coords {
+        if z_coord > max_z_coord {
+            break
+        }
+
         // Try to find exact match
         if let Some(frame) = geometry
             .frames
@@ -462,6 +473,7 @@ fn adjust_walls_anomalous_geom_pair(geom_pair: &GeometryPair) -> GeometryPair {
 mod tests {
     use super::*;
     use crate::intravascular::io::geometry::{Contour, ContourType, Frame, Geometry};
+    use crate::intravascular::utils::test_utils::dummy_geometry_custom;
     use std::collections::HashMap;
 
     // Helper function to create test contours
@@ -903,5 +915,61 @@ mod tests {
                 // Acceptable for testing - single frame might not be processable
             }
         }
+    }
+
+    #[test]
+    fn test_commplex_resampling() -> anyhow::Result<()> {
+        let geom_a = dummy_geometry_custom(1.0, 3);
+        let geom_b = dummy_geometry_custom(0.5, 6);
+        let geom_pair = GeometryPair {
+            geom_a: geom_a.clone(),
+            geom_b: geom_b.clone(),
+            label: "dummy_pair".to_string(),
+        };
+
+        assert_eq!(geom_a.frames.len(), 3);
+        assert_eq!(geom_b.frames.len(), 6);
+
+        let (same_sample_rate, avg_diff_a, avg_diff_b) =
+            check_same_sample_rate_geompair(&geom_pair, 0.1);
+
+        assert_eq!(same_sample_rate, false);
+        assert_eq!(avg_diff_a, 1.0);
+        assert_eq!(avg_diff_b, 0.5);
+        
+        let ref_idx_b = geom_b.find_ref_frame_idx()?;
+        let ref_z_b = geom_b.frames[ref_idx_b].centroid.2;
+        let z_coords = predict_z_positions(ref_z_b, 0.0, 2.5, 0.5);
+
+        assert_eq!(z_coords.len(), 6);
+        assert_eq!(z_coords[5], 2.5);
+        for (i, coord) in z_coords.iter().enumerate() {
+            assert_eq!(*coord, i as f64 * 0.5)
+        }
+
+        let interpolated_geom = new_frames_by_sample_rate(&geom_a, z_coords);
+
+        for (i, frame) in interpolated_geom.frames.iter().enumerate() {
+            assert_eq!(frame.centroid.2, i as f64 * 0.5)
+        }
+
+        let resampled_geom = resample_by_diff(&geom_a, 0.5);
+        for (i, frame) in resampled_geom.frames.iter().enumerate() {
+            assert_eq!(frame.centroid.2, i as f64 * 0.5)
+        }
+
+        let postprocessed_geom_pair = postprocess_geom_pair(&geom_pair, 0.1, true)?;
+        for (frame_a, frame_b) in postprocessed_geom_pair.geom_a.frames.iter().zip(postprocessed_geom_pair.geom_b.frames.iter()) {
+            assert_eq!(frame_a.id, frame_b.id);
+            assert_eq!(frame_a.centroid.0, frame_b.centroid.0);
+            assert_eq!(frame_a.centroid.1, frame_b.centroid.1);
+            assert_eq!(frame_a.centroid.2, frame_b.centroid.2);
+            for (point_a, point_b) in frame_a.lumen.points.iter().zip(frame_b.lumen.points.iter()) {
+                assert_eq!(point_a.x, point_b.x);
+                assert_eq!(point_a.y, point_b.y);
+                assert_eq!(point_a.z, point_b.z);
+            }
+        }
+        Ok(())
     }
 }

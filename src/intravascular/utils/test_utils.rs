@@ -2,6 +2,112 @@ use crate::intravascular::io::geometry::{Contour, ContourType, Frame, Geometry};
 use crate::intravascular::io::input::ContourPoint;
 use std::collections::HashMap;
 
+pub fn dummy_geometry_custom(z_spacing: f64, n_frames: usize) -> Geometry {
+    let mut new_frames: Vec<Frame> = Vec::new();
+
+    for i in 0..n_frames {
+        let z_coord = i as f64 * z_spacing;
+        let idx = i as u32;
+        let ref_pos = n_frames / 2;
+        let has_ref_pt = if i as usize == ref_pos {
+            true
+        } else {
+            false
+        };
+
+        let frame = new_frame(idx, z_coord, has_ref_pt);
+        new_frames.push(frame)
+    }
+    
+    Geometry { 
+        frames: new_frames, 
+        label: "dummy_geom".to_string(), 
+    }
+}
+
+fn new_frame(frame_index: u32, z_coord: f64, has_ref_pt: bool) -> Frame {
+    let points = vec![
+        ContourPoint {
+            frame_index: frame_index,
+            point_index: 0,
+            x: 1.0,
+            y: 3.0,
+            z: z_coord,
+            aortic: false,
+        },
+        ContourPoint {
+            frame_index: frame_index,
+            point_index: 1,
+            x: 0.0,
+            y: 2.0,
+            z: z_coord,
+            aortic: false,
+        },
+        ContourPoint {
+            frame_index: frame_index,
+            point_index: 2,
+            x: 0.0,
+            y: 0.0,
+            z: z_coord,
+            aortic: false,
+        },
+        ContourPoint {
+            frame_index: frame_index,
+            point_index: 3,
+            x: 1.0,
+            y: 0.0,
+            z: z_coord,
+            aortic: false,
+        },
+        ContourPoint {
+            frame_index: frame_index,
+            point_index: 4,
+            x: 2.0,
+            y: 0.0,
+            z: z_coord,
+            aortic: false,
+        },
+        ContourPoint {
+            frame_index: frame_index,
+            point_index: 5,
+            x: 2.0,
+            y: 2.0,
+            z: z_coord,
+            aortic: false,
+        },
+    ];
+    let mut contour = Contour {
+        id: frame_index,
+        original_frame: 999,
+        points: points,
+        centroid: Some((1.0, 1.0, z_coord)),
+        aortic_thickness: None,
+        pulmonary_thickness: None,
+        kind: ContourType::Lumen,
+    };
+    contour.compute_centroid();
+
+    let ref_point = if has_ref_pt {
+        Some(ContourPoint {
+        frame_index: frame_index,
+        point_index: 0,
+        x: 3.0,
+        y: 1.0,
+        z: z_coord,
+        aortic: false,}
+    )} else {
+        None
+    };
+
+    Frame {
+        id: contour.id,
+        centroid: contour.centroid.unwrap(),
+        lumen: contour,
+        extras: HashMap::new(),
+        reference_point: ref_point,
+    }
+}
+
 pub fn dummy_geometry() -> Geometry {
     let points_a = vec![
         ContourPoint {
@@ -351,5 +457,14 @@ mod test_utils_tests {
 
         assert_relative_eq!(rp.z, mid_frame.centroid.2, epsilon = 1e-6);
         assert_relative_eq!(mid_frame.centroid.2, 3.0, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn test_geometry_from_z_spacing() {
+        let test_geom = dummy_geometry_custom(1.0, 3);
+
+        assert_eq!(test_geom.frames.len(), 3);
+        assert_eq!(test_geom.frames[0].centroid.2, 0.0);
+        assert_eq!(test_geom.frames[2].lumen.points[0].z, 2.0);
     }
 }
