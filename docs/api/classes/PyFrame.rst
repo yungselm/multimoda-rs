@@ -1,12 +1,12 @@
-PyContour
-=========
+PyFrame
+=======
 
 .. currentmodule:: multimodars
 
 
-.. autoclass:: PyContour
+.. autoclass:: PyFrame
    :members:
    :undoc-members:
    :show-inheritance:
    :inherited-members:
-   :exclude-members: id, original_frame, points, centroid, kind
+   :exclude-members: id, centroid, lumen, extras, reference_point
