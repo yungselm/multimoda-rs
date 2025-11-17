@@ -317,76 +317,99 @@ fn assign_aortic(mut geometry: Geometry) -> Geometry {
     geometry
 }
 
+fn median(values: &mut [f64]) -> f64 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let n = values.len();
+    if n % 2 == 1 {
+        values[n / 2]
+    } else {
+        (values[n / 2 - 1] + values[n / 2]) / 2.0
+    }
+}
+
+/// Detect whether there's any gap that's substantially larger than typical spacing.
+/// Returns (has_hole, baseline_spacing)
 fn detect_holes(geometry: &Geometry) -> (bool, f64) {
-    let mut z_diffs = Vec::new();
+    let mut z_diffs: Vec<f64> = Vec::new();
     for i in 1..geometry.frames.len() {
         let z_prev = geometry.frames[i - 1].centroid.2;
         let z_curr = geometry.frames[i].centroid.2;
-        let diff = (z_curr - z_prev).abs();
-        z_diffs.push(diff);
+        z_diffs.push((z_curr - z_prev).abs());
     }
     if z_diffs.is_empty() {
         return (false, 0.0);
     }
-    let avg_diff: f64 = z_diffs.iter().sum::<f64>() / z_diffs.len() as f64;
-    for &diff in &z_diffs {
-        if diff >= 1.5 * avg_diff {
-            return (true, avg_diff);
-        }
+
+    let mut sorted = z_diffs.clone();
+    let baseline = median(&mut sorted);
+
+    // avoid divide-by-zero later; if baseline is zero treat as "no hole"
+    if baseline <= std::f64::EPSILON {
+        return (false, baseline);
     }
-    (false, avg_diff)
+
+    let has_hole = z_diffs.iter().any(|&d| d >= 1.5 * baseline);
+
+    (has_hole, baseline)
 }
 
 /// Fill holes by inserting averaged / interpolated frames using Geometry::insert_frame.
-/// Uses z thresholds:
-///   < 1.5 => OK, do nothing
+/// Uses ratio thresholds against the baseline spacing (median):
+///   ratio < 1.5 => OK, do nothing
 ///  [1.5,2.5) => one missing frame -> insert averaged frame
 ///  [2.5,3.5) => two missing frames -> insert two interpolated frames
-///  >=3.5 => error (too big to auto-fix)
+///  >= 3.5 => error (too big to auto-fix)
 pub fn fill_holes(geometry: &mut Geometry) -> anyhow::Result<Geometry> {
-    let (hole, _avg_diff) = detect_holes(geometry);
+    let (hole, baseline) = detect_holes(geometry);
 
     if !hole {
         return Ok(geometry.clone());
     }
 
-    println!("⚠️\tHole detected! Attempting to fix using Geometry::insert_frame(...)");
+    if baseline <= std::f64::EPSILON {
+        return Err(anyhow!("Baseline spacing is zero or too small to decide."));
+    }
 
-    // Walk through frames; insert when we see a gap
+    println!("⚠️\tHole detected! Attempting to fix using Geometry::insert_frame(...) (baseline spacing = {:.3})", baseline);
+
     let mut i: usize = 1;
     while i < geometry.frames.len() {
-        let prev = &geometry.frames[i - 1].clone();
-        let curr = &geometry.frames[i].clone();
+        let prev = geometry.frames[i - 1].clone();
+        let curr = geometry.frames[i].clone();
 
         let diff = (curr.centroid.2 - prev.centroid.2).abs();
+        let ratio = diff / baseline;
 
-        if diff < 1.5 {
+        if ratio < 1.5 {
             // normal spacing
             i += 1;
             continue;
-        } else if diff >= 1.5 && diff < 2.5 {
+        } else if ratio >= 1.5 && ratio < 2.5 {
             // one missing frame: insert averaged frame at position i
-            let mid = fix_one_frame_hole(prev, curr);
+            let mid = fix_one_frame_hole(&prev, &curr);
             geometry.insert_frame(mid, Some(i));
             // After insertion, the previously-curr frame moved to i+1, so skip past curr
             i += 2;
-            println!("Fixed one frame hole between Frame {} and Frame {}", prev.id, curr.id);
-        } else if diff >= 2.5 && diff < 3.5 {
+            println!("✅ Fixed one-frame hole between Frame {} and Frame {} (dz = {:.3}, ratio = {:.3})", prev.id, curr.id, diff, ratio);
+        } else if ratio >= 2.5 && ratio < 3.5 {
             // two missing frames: insert two interpolated frames at position i
-            let (f1, f2) = fix_two_frame_hole(prev, curr);
+            let (f1, f2) = fix_two_frame_hole(&prev, &curr);
             geometry.insert_frame(f1, Some(i));
-            // second frame should go after the first inserted frame -> index i+1
             geometry.insert_frame(f2, Some(i + 1));
             // skip past the two inserted frames and original curr
             i += 3;
-            println!("Fixed two frame hole between Frame {} and Frame {}", prev.id, curr.id);
+            println!("✅ Fixed two-frame hole between Frame {} and Frame {} (dz = {:.3}, ratio = {:.3})", prev.id, curr.id, diff, ratio);
         } else {
             return Err(anyhow!(
-                "🛑\tDetected a very large z-gap between frames at indices {} and {} (dz = {:.2} (avg diff: {:.2})) — refusing to auto-fix",
+                "🛑\tDetected a very large z-gap between frames at indices {} and {} (dz = {:.3}, baseline: {:.3}, ratio: {:.3}) — refusing to auto-fix",
                 i - 1,
                 i,
                 diff,
-                _avg_diff,
+                baseline,
+                ratio,
             ));
         }
     }
@@ -813,7 +836,7 @@ mod align_within_tests {
         let (bool_hole, avg_dist) = detect_holes(&geometry);
 
         assert_eq!(bool_hole, true);
-        assert_relative_eq!(avg_dist, 1.2, epsilon = 1e-6);
+        assert_relative_eq!(avg_dist, 1.0, epsilon = 1e-6);
 
         let new_frame = fix_one_frame_hole(&geometry.frames[1], &geometry.frames[2]);
 

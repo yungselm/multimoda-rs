@@ -124,44 +124,33 @@ fn apply_transformations(
     centerline: &Centerline,
     ref_pt: &(f64, f64, f64),
 ) -> GeometryPair {
-    let reference = geom_pair.geom_a.clone();
-    let transformations = get_transformations(reference, centerline, ref_pt);
+    // Create transformations using geom_a as reference
+    let transformations = get_transformations(geom_pair.geom_a.clone(), centerline, ref_pt);
 
-    fn transform_geometry(
-        mut geometry: Geometry,
-        transformations: &Vec<FrameTransformation>,
-    ) -> Geometry {
-        // Transform each frame
-        for frame in &mut geometry.frames {
-            // Find transformation for this frame
-            if let Some(tr) = transformations.iter().find(|t| t.frame_index == frame.id) {
+    // Helper function to apply transformations to a geometry
+    fn transform_geometry(mut geometry: Geometry, transformations: &[FrameTransformation]) -> Geometry {
+        // We assume transformations are in the same order as geometry frames
+        for (i, frame) in geometry.frames.iter_mut().enumerate() {
+            if i < transformations.len() {
+                let tr = &transformations[i];
+                
                 // Transform lumen contour
-                for pt in &mut frame.lumen.points {
-                    *pt = tr.apply_to_point(pt);
+                align_algorithms::apply_transformation_to_contour(&mut frame.lumen, tr);
+                
+                // Transform extra contours
+                for contour in frame.extras.values_mut() {
+                    align_algorithms::apply_transformation_to_contour(contour, tr);
                 }
-                // Update lumen centroid
-                frame.lumen.compute_centroid();
-
-                // Transform extra contours (walls, catheter, etc.)
-                for (_, contour) in frame.extras.iter_mut() {
-                    for pt in &mut contour.points {
-                        *pt = tr.apply_to_point(pt);
-                    }
-                    contour.compute_centroid();
-                }
-
+                
                 // Transform reference point if it exists
                 if let Some(ref mut reference_pt) = frame.reference_point {
                     *reference_pt = tr.apply_to_point(reference_pt);
                 }
-
+                
                 // Update frame centroid
                 frame.centroid = frame.lumen.centroid.unwrap_or((0.0, 0.0, 0.0));
-            } else {
-                eprintln!("No transformation found for frame {}", frame.id);
             }
         }
-
         geometry
     }
 
