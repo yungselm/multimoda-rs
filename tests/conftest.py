@@ -9,9 +9,9 @@ def _compute_centroid(points):
     """Compute centroid from a list of PyContourPoints"""
     if not points:
         return (0.0, 0.0, 0.0)
-    
+
     sum_x = sum(p.x for p in points)
-    sum_y = sum(p.y for p in points) 
+    sum_y = sum(p.y for p in points)
     sum_z = sum(p.z for p in points)
     n = len(points)
     return (sum_x / n, sum_y / n, sum_z / n)
@@ -33,9 +33,11 @@ def _create_round_contour(
     for idx, theta in enumerate(angles):
         x = cx + radius * np.cos(theta)
         y = cy + radius * np.sin(theta)
-        pt = PyContourPoint(frame_index=contour_id, point_index=idx, x=x, y=y, z=cz, aortic=aortic)
+        pt = PyContourPoint(
+            frame_index=contour_id, point_index=idx, x=x, y=y, z=cz, aortic=aortic
+        )
         points.append(pt)
-    
+
     centroid = _compute_centroid(points)
     contour = PyContour(
         id=contour_id,
@@ -44,7 +46,7 @@ def _create_round_contour(
         centroid=centroid,
         aortic_thickness=None,
         pulmonary_thickness=None,
-        kind="Lumen"
+        kind="Lumen",
     )
     return contour
 
@@ -66,9 +68,11 @@ def _create_elliptic_contour(
     for idx, theta in enumerate(angles):
         x = cx + major_radius * np.cos(theta)
         y = cy + minor_radius * np.sin(theta)
-        pt = PyContourPoint(frame_index=contour_id, point_index=idx, x=x, y=y, z=cz, aortic=aortic)
+        pt = PyContourPoint(
+            frame_index=contour_id, point_index=idx, x=x, y=y, z=cz, aortic=aortic
+        )
         points.append(pt)
-    
+
     centroid = _compute_centroid(points)
     contour = PyContour(
         id=contour_id,
@@ -77,7 +81,7 @@ def _create_elliptic_contour(
         centroid=centroid,
         aortic_thickness=None,
         pulmonary_thickness=None,
-        kind="Lumen"
+        kind="Lumen",
     )
     return contour
 
@@ -102,7 +106,7 @@ def sample_contour(sample_contour_points):
         centroid=centroid,
         aortic_thickness=None,
         pulmonary_thickness=None,
-        kind="Lumen"
+        kind="Lumen",
     )
     return contour
 
@@ -129,9 +133,11 @@ def sample_geometry(sample_contour):
         centroid=sample_contour.centroid,
         lumen=sample_contour,
         extras={},  # No extras for simple test
-        reference_point=PyContourPoint(frame_index=0, point_index=0, x=0.0, y=0.0, z=0.0, aortic=False)
+        reference_point=PyContourPoint(
+            frame_index=0, point_index=0, x=0.0, y=0.0, z=0.0, aortic=False
+        ),
     )
-    
+
     return PyGeometry(frames=[frame], label="test_geometry")
 
 
@@ -163,7 +169,8 @@ def sample_rest_dia_arr():
             "data/fixtures/idealized_geometry/diastolic_contours.csv", delimiter=","
         )
         ref = np.genfromtxt(
-            "data/fixtures/idealized_geometry/diastolic_reference_points.csv", delimiter=","
+            "data/fixtures/idealized_geometry/diastolic_reference_points.csv",
+            delimiter=",",
         )
         return numpy_to_geometry(
             lumen_arr=raw,
@@ -182,7 +189,8 @@ def sample_rest_sys_arr():
             "data/fixtures/idealized_geometry/systolic_contours.csv", delimiter=","
         )
         ref = np.genfromtxt(
-            "data/fixtures/idealized_geometry/systolic_reference_points.csv", delimiter=","
+            "data/fixtures/idealized_geometry/systolic_reference_points.csv",
+            delimiter=",",
         )
         return numpy_to_geometry(
             lumen_arr=raw,
@@ -201,7 +209,8 @@ def sample_stress_dia_arr():
             "data/fixtures/idealized_geometry/diastolic_contours.csv", delimiter=","
         )
         ref = np.genfromtxt(
-            "data/fixtures/idealized_geometry/diastolic_reference_points.csv", delimiter=","
+            "data/fixtures/idealized_geometry/diastolic_reference_points.csv",
+            delimiter=",",
         )
         return numpy_to_geometry(
             lumen_arr=raw,
@@ -220,7 +229,8 @@ def sample_stress_sys_arr():
             "data/fixtures/idealized_geometry/systolic_contours.csv", delimiter=","
         )
         ref = np.genfromtxt(
-            "data/fixtures/idealized_geometry/systolic_reference_points.csv", delimiter=","
+            "data/fixtures/idealized_geometry/systolic_reference_points.csv",
+            delimiter=",",
         )
         return numpy_to_geometry(
             lumen_arr=raw,

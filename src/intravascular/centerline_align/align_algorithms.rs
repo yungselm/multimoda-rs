@@ -43,7 +43,7 @@ pub fn get_transformations(
 
     // Find the reference point in the centerline
     let ref_idx_cl = centerline.find_reference_cl_point_idx(ref_pt);
-    
+
     // The geometry frames are ordered, and we assume they correspond to centerline points
     // starting from the reference point and moving in the same direction
     for (i, frame) in geometry.frames.into_iter().enumerate() {
@@ -51,13 +51,16 @@ pub fn get_transformations(
         // We start from the reference centerline point and move through the centerline
         // based on the geometry frame's position relative to the reference frame
         let cl_index = ref_idx_cl as isize + (i as isize); // or - i depending on your coordinate system direction
-        
+
         if cl_index >= 0 && cl_index < centerline.points.len() as isize {
             let cl_point = &centerline.points[cl_index as usize];
             let transformation = align_frame(&frame.lumen, cl_point);
             transformations.push(transformation);
         } else {
-            eprintln!("Centerline index {} out of bounds for geometry frame {}", cl_index, frame.id);
+            eprintln!(
+                "Centerline index {} out of bounds for geometry frame {}",
+                cl_index, frame.id
+            );
         }
     }
     transformations
@@ -148,16 +151,19 @@ fn calculate_normal(points: &[ContourPoint], centroid: &(f64, f64, f64)) -> Vect
 
     // Use a more stable method: Newell's method for polygon normal
     let mut normal = Vector3::zeros();
-    
+
     for i in 0..points.len() {
         let current = &points[i];
         let next = &points[(i + 1) % points.len()];
-        
-        normal.x += (current.y - centroid.1) * (next.z - centroid.2) - (current.z - centroid.2) * (next.y - centroid.1);
-        normal.y += (current.z - centroid.2) * (next.x - centroid.0) - (current.x - centroid.0) * (next.z - centroid.2);
-        normal.z += (current.x - centroid.0) * (next.y - centroid.1) - (current.y - centroid.1) * (next.x - centroid.0);
+
+        normal.x += (current.y - centroid.1) * (next.z - centroid.2)
+            - (current.z - centroid.2) * (next.y - centroid.1);
+        normal.y += (current.z - centroid.2) * (next.x - centroid.0)
+            - (current.x - centroid.0) * (next.z - centroid.2);
+        normal.z += (current.x - centroid.0) * (next.y - centroid.1)
+            - (current.y - centroid.1) * (next.x - centroid.0);
     }
-    
+
     // Normalize the result
     let norm = normal.norm();
     if norm > 1e-12 {
@@ -165,7 +171,7 @@ fn calculate_normal(points: &[ContourPoint], centroid: &(f64, f64, f64)) -> Vect
     } else {
         normal = Vector3::new(0.0, 0.0, 1.0);
     }
-    
+
     normal
 }
 
@@ -646,7 +652,7 @@ mod align_algorithms_tests {
         let upper_ref_pt = (0.0, 1.0, 0.0);
         let lower_ref_pt = (-1.0, 0.0, 0.0);
         let angle_step = std::f64::consts::FRAC_PI_8; // 22.5 degree steps
-        
+
         let centerline_point = create_test_centerline_point(0.0, 0.0, 0.0, 0);
 
         let best_angle = best_rotation_three_point(

@@ -393,7 +393,10 @@ pub fn fill_holes(geometry: &mut Geometry) -> anyhow::Result<Geometry> {
             geometry.insert_frame(mid, Some(i));
             // After insertion, the previously-curr frame moved to i+1, so skip past curr
             i += 2;
-            println!("✅ Fixed one-frame hole between Frame {} and Frame {} (dz = {:.3}, ratio = {:.3})", prev.id, curr.id, diff, ratio);
+            println!(
+                "✅ Fixed one-frame hole between Frame {} and Frame {} (dz = {:.3}, ratio = {:.3})",
+                prev.id, curr.id, diff, ratio
+            );
         } else if ratio >= 2.5 && ratio < 3.5 {
             // two missing frames: insert two interpolated frames at position i
             let (f1, f2) = fix_two_frame_hole(&prev, &curr);
@@ -401,7 +404,10 @@ pub fn fill_holes(geometry: &mut Geometry) -> anyhow::Result<Geometry> {
             geometry.insert_frame(f2, Some(i + 1));
             // skip past the two inserted frames and original curr
             i += 3;
-            println!("✅ Fixed two-frame hole between Frame {} and Frame {} (dz = {:.3}, ratio = {:.3})", prev.id, curr.id, diff, ratio);
+            println!(
+                "✅ Fixed two-frame hole between Frame {} and Frame {} (dz = {:.3}, ratio = {:.3})",
+                prev.id, curr.id, diff, ratio
+            );
         } else {
             return Err(anyhow!(
                 "🛑\tDetected a very large z-gap between frames at indices {} and {} (dz = {:.3}, baseline: {:.3}, ratio: {:.3}) — refusing to auto-fix",

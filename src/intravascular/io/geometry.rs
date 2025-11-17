@@ -522,29 +522,29 @@ impl Frame {
     pub fn rotate_frame_around_point(&mut self, angle_rad: f64, center: (f64, f64, f64)) {
         let cos_angle = angle_rad.cos();
         let sin_angle = angle_rad.sin();
-        
+
         // Rotate lumen points
         for point in &mut self.lumen.points {
             let translated_x = point.x - center.0;
             let translated_y = point.y - center.1;
-            
+
             point.x = center.0 + translated_x * cos_angle - translated_y * sin_angle;
             point.y = center.1 + translated_x * sin_angle + translated_y * cos_angle;
         }
-        
+
         // Rotate frame centroid
         let translated_cx = self.centroid.0 - center.0;
         let translated_cy = self.centroid.1 - center.1;
-        
+
         self.centroid.0 = center.0 + translated_cx * cos_angle - translated_cy * sin_angle;
         self.centroid.1 = center.1 + translated_cx * sin_angle + translated_cy * cos_angle;
-        
+
         // Rotate extras if needed
         for contour in self.extras.values_mut() {
             for point in &mut contour.points {
                 let translated_x = point.x - center.0;
                 let translated_y = point.y - center.1;
-                
+
                 point.x = center.0 + translated_x * cos_angle - translated_y * sin_angle;
                 point.y = center.1 + translated_x * sin_angle + translated_y * cos_angle;
             }

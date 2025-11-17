@@ -69,8 +69,11 @@ pub fn postprocess_geom_pair(
     // ensure again that ref points are on same position before trimming
     let ref_idx_a_resample = geom_pair_resampled.geom_a.find_ref_frame_idx()?;
     let ref_idx_b_resample = geom_pair_resampled.geom_b.find_ref_frame_idx()?;
-    let translation = geom_pair.geom_a.frames[ref_idx_a_resample].centroid.2 - geom_pair.geom_b.frames[ref_idx_b_resample].centroid.2;
-    geom_pair_resampled.geom_a.translate_geometry((0.0, 0.0, translation));
+    let translation = geom_pair.geom_a.frames[ref_idx_a_resample].centroid.2
+        - geom_pair.geom_b.frames[ref_idx_b_resample].centroid.2;
+    geom_pair_resampled
+        .geom_a
+        .translate_geometry((0.0, 0.0, translation));
 
     let mut trimmed_geom_pair = trim_geom_pair(&geom_pair_resampled);
     trimmed_geom_pair = if anomalous {
@@ -197,7 +200,7 @@ fn new_frames_by_sample_rate(geometry: &Geometry, mut z_coords: Vec<f64>) -> Geo
 
     for z_coord in z_coords {
         if z_coord > max_z_coord {
-            break
+            break;
         }
 
         // Try to find exact match
@@ -936,7 +939,7 @@ mod tests {
         assert_eq!(same_sample_rate, false);
         assert_eq!(avg_diff_a, 1.0);
         assert_eq!(avg_diff_b, 0.5);
-        
+
         let ref_idx_b = geom_b.find_ref_frame_idx()?;
         let ref_z_b = geom_b.frames[ref_idx_b].centroid.2;
         let z_coords = predict_z_positions(ref_z_b, 0.0, 2.5, 0.5);
@@ -959,7 +962,12 @@ mod tests {
         }
 
         let postprocessed_geom_pair = postprocess_geom_pair(&geom_pair, 0.1, true)?;
-        for (frame_a, frame_b) in postprocessed_geom_pair.geom_a.frames.iter().zip(postprocessed_geom_pair.geom_b.frames.iter()) {
+        for (frame_a, frame_b) in postprocessed_geom_pair
+            .geom_a
+            .frames
+            .iter()
+            .zip(postprocessed_geom_pair.geom_b.frames.iter())
+        {
             assert_eq!(frame_a.id, frame_b.id);
             assert_eq!(frame_a.centroid.0, frame_b.centroid.0);
             assert_eq!(frame_a.centroid.1, frame_b.centroid.1);

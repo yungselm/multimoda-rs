@@ -1,5 +1,6 @@
 from typing import Literal, Any, Dict, Tuple, Union
 import multimodars as mm
+
 Mode = Literal["full", "doublepair", "singlepair", "single"]
 
 
@@ -101,7 +102,12 @@ def from_file(
         If an unsupported `mode` is passed.
     """
     from . import PyContourType, PyGeometry, PyGeometryPair
-    from . import from_file_full, from_file_doublepair, from_file_singlepair, from_file_single
+    from . import (
+        from_file_full,
+        from_file_doublepair,
+        from_file_singlepair,
+        from_file_single,
+    )
 
     defaults = {
         "diastole": True,
@@ -119,7 +125,11 @@ def from_file(
         "interpolation_steps": 28,
         "bruteforce": False,
         "sample_size": 500,
-        "contour_types": [PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall],
+        "contour_types": [
+            PyContourType.Lumen,
+            PyContourType.Catheter,
+            PyContourType.Wall,
+        ],
         "smooth": True,
         "postprocessing": True,
     }
@@ -385,7 +395,12 @@ def from_array(
         If an unsupported `mode` is passed.
     """
     from . import PyContourType, PyGeometryPair, PyGeometry
-    from . import from_array_full, from_array_doublepair, from_array_singlepair, from_array_single
+    from . import (
+        from_array_full,
+        from_array_doublepair,
+        from_array_singlepair,
+        from_array_single,
+    )
 
     defaults = {
         "diastole": True,
@@ -403,7 +418,11 @@ def from_array(
         "interpolation_steps": 28,
         "bruteforce": False,
         "sample_size": 500,
-        "contour_types": [PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall],
+        "contour_types": [
+            PyContourType.Lumen,
+            PyContourType.Catheter,
+            PyContourType.Wall,
+        ],
         "smooth": True,
         "postprocessing": True,
     }
@@ -637,6 +656,7 @@ def to_centerline(
     """
     from . import PyCenterline, PyGeometryPair
     from . import align_three_point, align_manual
+
     defaults = {
         "angle_step": 0.01745329,  # approx 1° in radians
         "write": False,

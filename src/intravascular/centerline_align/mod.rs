@@ -128,25 +128,28 @@ fn apply_transformations(
     let transformations = get_transformations(geom_pair.geom_a.clone(), centerline, ref_pt);
 
     // Helper function to apply transformations to a geometry
-    fn transform_geometry(mut geometry: Geometry, transformations: &[FrameTransformation]) -> Geometry {
+    fn transform_geometry(
+        mut geometry: Geometry,
+        transformations: &[FrameTransformation],
+    ) -> Geometry {
         // We assume transformations are in the same order as geometry frames
         for (i, frame) in geometry.frames.iter_mut().enumerate() {
             if i < transformations.len() {
                 let tr = &transformations[i];
-                
+
                 // Transform lumen contour
                 align_algorithms::apply_transformation_to_contour(&mut frame.lumen, tr);
-                
+
                 // Transform extra contours
                 for contour in frame.extras.values_mut() {
                     align_algorithms::apply_transformation_to_contour(contour, tr);
                 }
-                
+
                 // Transform reference point if it exists
                 if let Some(ref mut reference_pt) = frame.reference_point {
                     *reference_pt = tr.apply_to_point(reference_pt);
                 }
-                
+
                 // Update frame centroid
                 frame.centroid = frame.lumen.centroid.unwrap_or((0.0, 0.0, 0.0));
             }

@@ -21,13 +21,13 @@ def test_basic_wrapper_functionality(sample_rest_dia_arr, tmp_path):
             write_obj=False,
             output_path=str(tmp_path),
         )
-        
+
         # Basic validation of return structure
         assert len(result) == 2  # Should return (geometry, logs)
         geometry, logs = result
         assert geometry is not None
         assert isinstance(logs, list)
-        
+
     except Exception as e:
         pytest.skip(f"Wrapper functionality not fully implemented: {e}")
 
@@ -48,11 +48,11 @@ def test_file_wrapper_basic(tmp_path):
             write_obj=False,
             output_path=str(tmp_path),
         )
-        
+
         # Basic validation
         assert len(result) == 2  # Should return (geometry, logs)
         geometry, logs = result
         assert geometry is not None
-        
+
     except Exception as e:
         pytest.skip(f"File wrapper functionality not available: {e}")

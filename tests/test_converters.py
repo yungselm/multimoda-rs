@@ -20,9 +20,9 @@ def _compute_centroid(points):
     """Compute centroid from a list of PyContourPoints"""
     if not points:
         return (0.0, 0.0, 0.0)
-    
+
     sum_x = sum(p.x for p in points)
-    sum_y = sum(p.y for p in points) 
+    sum_y = sum(p.y for p in points)
     sum_z = sum(p.z for p in points)
     n = len(points)
     return (sum_x / n, sum_y / n, sum_z / n)
@@ -40,7 +40,7 @@ def _make_simple_contour(contour_id: int, n: int = 4, offset: float = 0.0):
         )
         for i in range(n)
     ]
-    
+
     centroid = _compute_centroid(pts)
     return PyContour(
         id=contour_id,
@@ -49,7 +49,7 @@ def _make_simple_contour(contour_id: int, n: int = 4, offset: float = 0.0):
         centroid=centroid,
         aortic_thickness=None,
         pulmonary_thickness=None,
-        kind="Lumen"
+        kind="Lumen",
     )
 
 
@@ -81,12 +81,12 @@ def test_to_array_and_back_contour():
         wall_arr=np.zeros((0, 4)),
         reference_arr=np.array([[0.0, 0.0, 0.0, 0.0]]),
     )
-    
+
     # Check we have frames with contours
     assert len(rebuilt.frames) > 0
     frame = rebuilt.frames[0]
     assert len(frame.lumen.points) == 3
-    
+
     pts = frame.lumen.points
     for orig, new in zip(c.points, pts):
         assert pytest.approx(orig.x) == new.x
@@ -112,14 +112,14 @@ def test_to_array_and_back_geometry_roundtrip():
     # Create contours with different frame indices to test frame grouping
     c0 = _make_simple_contour(0, n=2, offset=0.0)
     c1 = _make_simple_contour(1, n=3, offset=10.0)
-    
+
     # Convert to numpy arrays first
     c0_arr = to_array(c0)
     c1_arr = to_array(c1)
-    
+
     # Combine into single lumen array
     lumen_arr = np.vstack([c0_arr, c1_arr])
-    
+
     geom = numpy_to_geometry(
         lumen_arr=lumen_arr,
         catheter_arr=np.zeros((0, 4)),
@@ -143,7 +143,7 @@ def test_to_array_and_back_geometry_roundtrip():
 
     # Validate geometry structure
     assert len(geom2.frames) == 2  # Should have 2 frames
-    
+
     # Check reference point
     ref_pt = geom2.frames[0].reference_point
     assert pytest.approx(ref_pt.x) == 100.0

@@ -9,19 +9,15 @@ pub fn dummy_geometry_custom(z_spacing: f64, n_frames: usize) -> Geometry {
         let z_coord = i as f64 * z_spacing;
         let idx = i as u32;
         let ref_pos = n_frames / 2;
-        let has_ref_pt = if i as usize == ref_pos {
-            true
-        } else {
-            false
-        };
+        let has_ref_pt = if i as usize == ref_pos { true } else { false };
 
         let frame = new_frame(idx, z_coord, has_ref_pt);
         new_frames.push(frame)
     }
-    
-    Geometry { 
-        frames: new_frames, 
-        label: "dummy_geom".to_string(), 
+
+    Geometry {
+        frames: new_frames,
+        label: "dummy_geom".to_string(),
     }
 }
 
@@ -89,13 +85,14 @@ fn new_frame(frame_index: u32, z_coord: f64, has_ref_pt: bool) -> Frame {
 
     let ref_point = if has_ref_pt {
         Some(ContourPoint {
-        frame_index: frame_index,
-        point_index: 0,
-        x: 3.0,
-        y: 1.0,
-        z: z_coord,
-        aortic: false,}
-    )} else {
+            frame_index: frame_index,
+            point_index: 0,
+            x: 3.0,
+            y: 1.0,
+            z: z_coord,
+            aortic: false,
+        })
+    } else {
         None
     };
 

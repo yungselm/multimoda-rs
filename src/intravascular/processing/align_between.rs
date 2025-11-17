@@ -33,7 +33,7 @@ pub fn align_between_geometries(
     sample_size: usize,
 ) -> Result<GeometryPair> {
     println!("Aligning geometry '{}' to '{}'", geom_b.label, geom_a.label);
-    
+
     // Find reference frames
     let ref_frame_a_idx = geom_a
         .find_ref_frame_idx()
@@ -94,7 +94,7 @@ pub fn align_between_geometries(
         final_ref_frame_a_centroid.1 - final_ref_frame_b_centroid.1,
         final_ref_frame_a_centroid.2 - final_ref_frame_b_centroid.2,
     );
-    
+
     geom_b.translate_geometry(final_translation);
 
     Ok(GeometryPair::new(geom_a.clone(), geom_b.clone())?)
@@ -104,18 +104,18 @@ pub fn align_between_geometries(
 fn rotate_geometry_around_point(geometry: &mut Geometry, angle_rad: f64, center: (f64, f64, f64)) {
     let cos_angle = angle_rad.cos();
     let sin_angle = angle_rad.sin();
-    
+
     // Helper closure to rotate a point around the common center
     let rotate_point = |x: f64, y: f64| -> (f64, f64) {
         let translated_x = x - center.0;
         let translated_y = y - center.1;
-        
+
         let rotated_x = translated_x * cos_angle - translated_y * sin_angle;
         let rotated_y = translated_x * sin_angle + translated_y * cos_angle;
-        
+
         (rotated_x + center.0, rotated_y + center.1)
     };
-    
+
     // Rotate ALL frames around the same reference point
     for frame in &mut geometry.frames {
         // Rotate lumen points
@@ -124,12 +124,12 @@ fn rotate_geometry_around_point(geometry: &mut Geometry, angle_rad: f64, center:
             point.x = new_x;
             point.y = new_y;
         }
-        
+
         // Rotate frame centroid
         let (new_cx, new_cy) = rotate_point(frame.centroid.0, frame.centroid.1);
         frame.centroid.0 = new_cx;
         frame.centroid.1 = new_cy;
-        
+
         // Rotate extras
         for contour in frame.extras.values_mut() {
             for point in &mut contour.points {
@@ -143,7 +143,7 @@ fn rotate_geometry_around_point(geometry: &mut Geometry, angle_rad: f64, center:
                 contour.centroid = Some((new_cx, new_cy, centroid.2));
             }
         }
-        
+
         // Rotate reference point if it exists
         if let Some(ref mut rp) = frame.reference_point {
             let (new_x, new_y) = rotate_point(rp.x, rp.y);
@@ -193,7 +193,7 @@ fn find_best_rotation_between(
 ) -> f64 {
     // Use the reference geometry's global centroid as the rotation center for BOTH geometries
     let ref_centroid = calculate_global_centroid(reference);
-    
+
     let cost_fn = |angle: f64| -> f64 {
         // Rotate ALL target points around the SAME global centroid
         let rotated_target: Vec<ContourPoint> = target
@@ -201,13 +201,13 @@ fn find_best_rotation_between(
             .map(|point_info| {
                 let translated_x = point_info.point.x - ref_centroid.0;
                 let translated_y = point_info.point.y - ref_centroid.1;
-                
+
                 let cos_angle = angle.cos();
                 let sin_angle = angle.sin();
-                
+
                 let rotated_x = translated_x * cos_angle - translated_y * sin_angle;
                 let rotated_y = translated_x * sin_angle + translated_y * cos_angle;
-                
+
                 // Translate back to original coordinate system
                 ContourPoint {
                     x: rotated_x + ref_centroid.0,
@@ -270,12 +270,12 @@ fn calculate_global_centroid(points: &[PointWithFrameInfo]) -> (f64, f64, f64) {
     if points.is_empty() {
         return (0.0, 0.0, 0.0);
     }
-    
+
     let sum_x: f64 = points.iter().map(|p| p.point.x).sum();
     let sum_y: f64 = points.iter().map(|p| p.point.y).sum();
     let sum_z: f64 = points.iter().map(|p| p.point.z).sum();
     let count = points.len() as f64;
-    
+
     (sum_x / count, sum_y / count, sum_z / count)
 }
 
@@ -332,7 +332,7 @@ mod align_between_tests {
         let rotation: f64 = 15.0;
         let mut geom_a = geom.clone();
         let mut geom_b = geom.clone();
-        
+
         // Apply rotation to geometry B
         let ref_frame_b_idx = geom_b.find_proximal_end_idx();
         let ref_frame_b_centroid = geom_b.frames[ref_frame_b_idx].centroid;
@@ -351,15 +351,15 @@ mod align_between_tests {
             .zip(geom_pair.geom_b.frames.iter())
         {
             assert_relative_eq!(frame_a.centroid.2, frame_b.centroid.2, epsilon = 1e-4);
-            
+
             // Ensure we have the same number of points
             assert_eq!(frame_a.lumen.points.len(), frame_b.lumen.points.len());
-            
+
             for (point_a, point_b) in frame_a.lumen.points.iter().zip(frame_b.lumen.points.iter()) {
                 let error_x = (point_a.x - point_b.x).abs();
                 let error_y = (point_a.y - point_b.y).abs();
                 let max_point_error = error_x.max(error_y);
-                
+
                 max_error = max_error.max(max_point_error);
                 total_error += error_x + error_y;
                 point_count += 2;
@@ -367,11 +367,19 @@ mod align_between_tests {
         }
 
         let avg_error = total_error / point_count as f64;
-        
+
         // Verify alignment precision
-        assert!(max_error < 0.01, "Maximum alignment error {} exceeds threshold", max_error);
-        assert!(avg_error < 0.001, "Average alignment error {} exceeds threshold", avg_error);
-        
+        assert!(
+            max_error < 0.01,
+            "Maximum alignment error {} exceeds threshold",
+            max_error
+        );
+        assert!(
+            avg_error < 0.001,
+            "Average alignment error {} exceeds threshold",
+            avg_error
+        );
+
         Ok(())
     }
 }
