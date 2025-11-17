@@ -35,21 +35,34 @@ pub fn align_between_geometries(
     println!("Aligning geometry '{}' to '{}'", geom_b.label, geom_a.label);
     
     // Find reference frames
-    let ref_frame_a_idx = geom_a.find_proximal_end_idx();
-    let ref_frame_b_idx = geom_b.find_proximal_end_idx();
+    let ref_frame_a_idx = geom_a
+        .find_ref_frame_idx()
+        .unwrap_or(geom_a.find_proximal_end_idx());
+    let ref_frame_b_idx = geom_b
+        .find_ref_frame_idx()
+        .unwrap_or(geom_b.find_proximal_end_idx());
 
-    let ref_frame_a_centroid = geom_a.frames[ref_frame_a_idx].centroid;
-    let ref_frame_b_centroid = geom_b.frames[ref_frame_b_idx].centroid;
+    let ref_frame_a = &geom_a.frames[ref_frame_a_idx];
+    let ref_frame_b = &geom_b.frames[ref_frame_b_idx];
 
-    // Apply translation to align centroids
-    let translation = (
+    let ref_frame_a_centroid = ref_frame_a.centroid;
+    let ref_frame_b_centroid = ref_frame_b.centroid;
+
+    println!("Reference frame A centroid: {:?}", ref_frame_a_centroid);
+    println!("Reference frame B centroid: {:?}", ref_frame_b_centroid);
+
+    // Calculate initial translation
+    let initial_translation = (
         ref_frame_a_centroid.0 - ref_frame_b_centroid.0,
         ref_frame_a_centroid.1 - ref_frame_b_centroid.1,
         ref_frame_a_centroid.2 - ref_frame_b_centroid.2,
     );
-    geom_b.translate_geometry(translation);
 
-    // Extract points for alignment
+    // Apply initial translation
+    geom_b.translate_geometry(initial_translation);
+    println!("Applied initial translation: {:?}", initial_translation);
+
+    // Extract points for alignment (after initial translation)
     let test_geom_a = extract_geometry_points_with_frame_info(geom_a, sample_size.max(500));
     let test_geom_b = extract_geometry_points_with_frame_info(geom_b, sample_size.max(500));
 
@@ -57,7 +70,7 @@ pub fn align_between_geometries(
         find_best_rotation_between(&test_geom_a, &test_geom_b, step_rot_deg, rot_deg);
 
     println!(
-        "Applied rotation of {:.2}° to align '{}' to '{}'",
+        "Applying rotation of {:.2}° to align '{}' to '{}'",
         best_rotation.to_degrees(),
         geom_b.label,
         geom_a.label
@@ -65,6 +78,24 @@ pub fn align_between_geometries(
 
     // Apply the rotation to the ENTIRE geometry around the reference frame A centroid
     rotate_geometry_around_point(geom_b, best_rotation, ref_frame_a_centroid);
+
+    // After rotation, recalculate and apply final translation to ensure perfect alignment
+    let ref_frame_a_idx = geom_a
+        .find_ref_frame_idx()
+        .unwrap_or(geom_a.find_proximal_end_idx());
+    let ref_frame_b_idx = geom_b
+        .find_ref_frame_idx()
+        .unwrap_or(geom_b.find_proximal_end_idx());
+
+    let final_ref_frame_b_centroid = geom_b.frames[ref_frame_b_idx].centroid;
+    let final_ref_frame_a_centroid = geom_a.frames[ref_frame_a_idx].centroid;
+    let final_translation = (
+        final_ref_frame_a_centroid.0 - final_ref_frame_b_centroid.0,
+        final_ref_frame_a_centroid.1 - final_ref_frame_b_centroid.1,
+        final_ref_frame_a_centroid.2 - final_ref_frame_b_centroid.2,
+    );
+    
+    geom_b.translate_geometry(final_translation);
 
     Ok(GeometryPair::new(geom_a.clone(), geom_b.clone())?)
 }
