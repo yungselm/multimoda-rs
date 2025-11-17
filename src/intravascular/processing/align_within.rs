@@ -129,10 +129,7 @@ pub fn align_frames_in_geometry(
     let anomalous_bool = is_anomalous_coronary(&geometry.frames[ref_idx]);
     let additional_rotation = angle_ref_point_to_right(&geometry.frames[ref_idx], anomalous_bool)?;
 
-    for frame in geometry.frames.iter_mut() {
-        frame.rotate_frame(additional_rotation);
-        frame.sort_frame_points();
-    }
+    geometry.rotate_geometry(additional_rotation);
 
     let mut final_geometry = if anomalous_bool {
         assign_aortic(geometry.clone())
@@ -373,6 +370,7 @@ pub fn fill_holes(geometry: &mut Geometry) -> anyhow::Result<Geometry> {
             geometry.insert_frame(mid, Some(i));
             // After insertion, the previously-curr frame moved to i+1, so skip past curr
             i += 2;
+            println!("Fixed one frame hole between Frame {} and Frame {}", prev.id, curr.id);
         } else if diff >= 2.5 && diff < 3.5 {
             // two missing frames: insert two interpolated frames at position i
             let (f1, f2) = fix_two_frame_hole(prev, curr);
@@ -381,6 +379,7 @@ pub fn fill_holes(geometry: &mut Geometry) -> anyhow::Result<Geometry> {
             geometry.insert_frame(f2, Some(i + 1));
             // skip past the two inserted frames and original curr
             i += 3;
+            println!("Fixed two frame hole between Frame {} and Frame {}", prev.id, curr.id);
         } else {
             return Err(anyhow!(
                 "🛑\tDetected a very large z-gap between frames at indices {} and {} (dz = {:.2} (avg diff: {:.2})) — refusing to auto-fix",
@@ -788,7 +787,7 @@ mod align_within_tests {
         )?;
 
         let (geom, logs, anomalous) =
-            align_frames_in_geometry(&mut geometry, 0.01, 45.0, true, false, 200)?;
+            align_frames_in_geometry(&mut geometry, 0.01, 20.0, true, false, 200)?;
 
         assert!(!geom.frames.is_empty());
         assert_eq!(anomalous, true);
@@ -860,7 +859,7 @@ mod align_within_tests {
     }
 
     #[test]
-    fn test_detec_holes_fail_on_big_gap() -> anyhow::Result<()> {
+    fn test_detect_holes_fail_on_big_gap() -> anyhow::Result<()> {
         let mut geometry = dummy_geometry_aligned_long();
         geometry.frames[5].translate_frame((0.0, 0.0, 3.0));
 

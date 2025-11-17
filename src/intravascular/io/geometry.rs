@@ -809,6 +809,7 @@ impl Geometry {
         }
         for frame in self.frames.iter_mut() {
             frame.rotate_frame(angle_rad);
+            frame.sort_frame_points();
         }
     }
 
