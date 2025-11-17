@@ -417,7 +417,7 @@ mod tests {
 
     #[test]
     fn test_point_count_mismatch_across_frames() {
-        let frame1 = create_test_frame(0, 10, false, 0.0);
+        let frame1 = create_test_frame(0, 10, true, 0.0);
         let mut frame2 = create_test_frame(1, 11, false, 1.0);
 
         // Frame2 lumen has different point count than frame1
@@ -439,7 +439,7 @@ mod tests {
     #[test]
     fn test_extra_contour_point_count_mismatch() {
         let mut frame1 = create_test_frame(0, 10, false, 0.0);
-        let mut frame2 = create_test_frame(1, 11, false, 1.0);
+        let mut frame2 = create_test_frame(1, 11, true, 1.0);
 
         // Add catheter contour to both frames with consistent point counts
         let catheter_points1 = create_test_contour_points(6, 10, 0.0);
@@ -510,7 +510,7 @@ mod tests {
 
     #[test]
     fn test_original_frame_mismatch() {
-        let mut frame = create_test_frame(0, 10, false, 0.0);
+        let mut frame = create_test_frame(0, 10, true, 0.0);
 
         // Add an extra contour with wrong original_frame
         frame.extras.insert(

@@ -519,38 +519,36 @@ impl Frame {
         }
     }
 
-    pub fn rotate_frame_around_point(&mut self, angle: f64, center: (f64, f64)) {
-        if angle == 0.0 {
-            return;
+    pub fn rotate_frame_around_point(&mut self, angle_rad: f64, center: (f64, f64, f64)) {
+        let cos_angle = angle_rad.cos();
+        let sin_angle = angle_rad.sin();
+        
+        // Rotate lumen points
+        for point in &mut self.lumen.points {
+            let translated_x = point.x - center.0;
+            let translated_y = point.y - center.1;
+            
+            point.x = center.0 + translated_x * cos_angle - translated_y * sin_angle;
+            point.y = center.1 + translated_x * sin_angle + translated_y * cos_angle;
         }
-        self.lumen.points = self
-            .lumen
-            .points
-            .iter()
-            .map(|p| p.rotate_point(angle, center))
-            .collect();
-
+        
+        // Rotate frame centroid
+        let translated_cx = self.centroid.0 - center.0;
+        let translated_cy = self.centroid.1 - center.1;
+        
+        self.centroid.0 = center.0 + translated_cx * cos_angle - translated_cy * sin_angle;
+        self.centroid.1 = center.1 + translated_cx * sin_angle + translated_cy * cos_angle;
+        
+        // Rotate extras if needed
         for contour in self.extras.values_mut() {
-            contour.points = contour
-                .points
-                .iter()
-                .map(|p| p.rotate_point(angle, center))
-                .collect();
+            for point in &mut contour.points {
+                let translated_x = point.x - center.0;
+                let translated_y = point.y - center.1;
+                
+                point.x = center.0 + translated_x * cos_angle - translated_y * sin_angle;
+                point.y = center.1 + translated_x * sin_angle + translated_y * cos_angle;
+            }
         }
-
-        if let Some(ref_point) = &mut self.reference_point {
-            *ref_point = ref_point.rotate_point(angle, center);
-        }
-
-        // Update centroid
-        let (cx, cy) = center;
-        let current_centroid = self.centroid;
-        let x = current_centroid.0 - cx;
-        let y = current_centroid.1 - cy;
-        let cos_a = angle.cos();
-        let sin_a = angle.sin();
-        self.centroid.0 = x * cos_a - y * sin_a + cx;
-        self.centroid.1 = x * sin_a + y * cos_a + cy;
     }
 
     pub fn create_catheter_points(
@@ -975,72 +973,6 @@ impl Geometry {
             );
         }
     }
-    // pub fn center_to_contour(&mut self, contour_type: ContourType) {
-    //     for frame in self.frames.iter_mut() {
-    //         frame.lumen.compute_centroid();
-    //         let x = frame.lumen.centroid.unwrap().0.clone();
-    //         let y = frame.lumen.centroid.unwrap().1.clone();
-    //         let z = frame.lumen.centroid.unwrap().2.clone();
-    //         frame.centroid = (x, y, z);
-    //         // Get the target contour and ensure its centroid is calculated
-    //         let target_centroid = match contour_type {
-    //             ContourType::Lumen => {
-    //                 frame.lumen.compute_centroid();
-    //                 frame.lumen.centroid
-    //             }
-    //             ContourType::Eem => {
-    //                 if let Some(contour) = frame.extras.get_mut(&ContourType::Eem) {
-    //                     contour.compute_centroid();
-    //                     contour.centroid
-    //                 } else {
-    //                     continue; // Skip this frame if EEM contour doesn't exist
-    //                 }
-    //             }
-    //             ContourType::Calcification => {
-    //                 if let Some(contour) = frame.extras.get_mut(&ContourType::Calcification) {
-    //                     contour.compute_centroid();
-    //                     contour.centroid
-    //                 } else {
-    //                     continue;
-    //                 }
-    //             }
-    //             ContourType::Sidebranch => {
-    //                 if let Some(contour) = frame.extras.get_mut(&ContourType::Sidebranch) {
-    //                     contour.compute_centroid();
-    //                     contour.centroid
-    //                 } else {
-    //                     continue;
-    //                 }
-    //             }
-    //             ContourType::Catheter => {
-    //                 if let Some(contour) = frame.extras.get_mut(&ContourType::Catheter) {
-    //                     contour.compute_centroid();
-    //                     contour.centroid
-    //                 } else {
-    //                     continue;
-    //                 }
-    //             }
-    //             ContourType::Wall => {
-    //                 if let Some(contour) = frame.extras.get_mut(&ContourType::Wall) {
-    //                     contour.compute_centroid();
-    //                     contour.centroid
-    //                 } else {
-    //                     continue;
-    //                 }
-    //             }
-    //         };
-
-    //         if let Some(target_centroid) = target_centroid {
-    //             let frame_centroid = frame.centroid;
-    //             let translation = (
-    //                 target_centroid.0 - frame_centroid.0,
-    //                 target_centroid.1 - frame_centroid.1,
-    //                 target_centroid.2 - frame_centroid.2,
-    //             );
-    //             frame.translate_frame(translation);
-    //         }
-    //     }
-    // }
 }
 
 #[cfg(test)]
@@ -1669,7 +1601,7 @@ mod geometry_tests {
         };
 
         // Rotate 180 degrees (PI) around point (1, 1)
-        frame.rotate_frame_around_point(PI, (1.0, 1.0));
+        frame.rotate_frame_around_point(PI, (1.0, 1.0, 0.0));
 
         let expected_points = vec![
             ContourPoint {
