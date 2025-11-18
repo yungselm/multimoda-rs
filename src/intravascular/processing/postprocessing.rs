@@ -272,7 +272,6 @@ fn new_frames_by_sample_rate(geometry: &Geometry, mut z_coords: Vec<f64>) -> Geo
         frame.id = id_u32;
 
         frame.lumen.id = id_u32;
-        frame.lumen.original_frame = frame.lumen.original_frame;
         for pt in frame.lumen.points.iter_mut() {
             pt.z = frame.centroid.2;
         }
@@ -282,7 +281,6 @@ fn new_frames_by_sample_rate(geometry: &Geometry, mut z_coords: Vec<f64>) -> Geo
 
         for extra in frame.extras.values_mut() {
             extra.id = id_u32;
-            extra.original_frame = extra.original_frame;
             for pt in extra.points.iter_mut() {
                 pt.z = frame.centroid.2;
             }
