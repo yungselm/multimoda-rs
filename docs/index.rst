@@ -32,6 +32,7 @@ Table of Contents
    installation
    tutorial
    api/index
+   changelog
 
 License
 -------
@@ -54,6 +55,10 @@ Contributing
 ------------
 We'd welcome your contributions to multimodars. Please read the
 `contributing guidelines <https://github.com/yungselm/multimoda-rs/blob/main/CONTRIBUTING.md>`_ on how to contribute to ``multimodars``.
+
+Changelog
+---------
+
 
 Indices and tables
 ==================

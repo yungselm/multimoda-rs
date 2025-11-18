@@ -1,8 +1,7 @@
 use nalgebra::Vector3;
 
+use crate::intravascular::io::geometry::Geometry;
 use crate::intravascular::io::input::{Centerline, CenterlinePoint, ContourPoint};
-use crate::intravascular::io::Geometry;
-use crate::intravascular::processing::align_between::GeometryPair;
 
 /// Resample `centerline` along its arc-length so that adjacent points are spaced at the
 /// mean Euclidean distance between consecutive contour centroids in `ref_mesh`.
@@ -13,12 +12,10 @@ use crate::intravascular::processing::align_between::GeometryPair;
 /// - `centerline` should be in decreasing z-order if that matters (you call `ensure_descending_z`).
 pub fn preprocess_centerline(
     centerline: Centerline,
-    reference_point: &(f64, f64, f64),
     ref_mesh: &Geometry,
 ) -> Result<Centerline, &'static str> {
     let mut cl = centerline;
     ensure_descending_z(&mut cl);
-    let cl = remove_leading_points_cl(cl, reference_point);
     let cl = resample_centerline_by_contours(&cl, ref_mesh)?;
     Ok(cl)
 }
@@ -33,68 +30,15 @@ fn ensure_descending_z(centerline: &mut Centerline) {
     }
 }
 
-fn remove_leading_points_cl(
-    mut centerline: Centerline,
-    reference_point: &(f64, f64, f64),
-) -> Centerline {
-    centerline.points.retain(|p| {
-        !p.contour_point.x.is_nan() && !p.contour_point.y.is_nan() && !p.contour_point.z.is_nan()
-    });
-
-    if centerline.points.is_empty() {
-        return centerline;
-    }
-
-    // Find closest point to reference
-    let closest_pt = centerline
-        .points
-        .iter()
-        .min_by(|a, b| {
-            distance_sq(&a.contour_point, reference_point)
-                .partial_cmp(&distance_sq(&b.contour_point, reference_point))
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .unwrap();
-    let start_frame = closest_pt.contour_point.frame_index;
-
-    println!(
-        "Index of closest point: {:?}",
-        closest_pt.contour_point.frame_index
-    );
-
-    // Remove points before closest point
-    let mut remaining: Vec<_> = centerline
-        .points
-        .into_iter()
-        .filter(|p| p.contour_point.frame_index >= start_frame)
-        .collect();
-
-    // 4) Re-sort by frame_index to restore z-order
-    remaining.sort_by_key(|p| p.contour_point.frame_index);
-
-    // Reindex starting from 0
-    for (i, pt) in remaining.iter_mut().enumerate() {
-        pt.contour_point.frame_index = i as u32;
-        pt.contour_point.point_index = i as u32;
-    }
-
-    Centerline { points: remaining }
-}
-
-/// Helper function to calculate squared distance between two points
-fn distance_sq(a: &ContourPoint, b: &(f64, f64, f64)) -> f64 {
-    let dx = a.x - b.0;
-    let dy = a.y - b.1;
-    let dz = a.z - b.2;
-    dx * dx + dy * dy + dz * dz
-}
-
-fn resample_centerline_by_contours(centerline: &Centerline, ref_mesh: &Geometry) -> Result<Centerline, &'static str> {
+fn resample_centerline_by_contours(
+    centerline: &Centerline,
+    ref_mesh: &Geometry,
+) -> Result<Centerline, &'static str> {
     if centerline.points.is_empty() {
         return Err("Centerline is empty");
     }
-    if ref_mesh.contours.is_empty() {
-        return Err("Reference mesh has no contorus");
+    if ref_mesh.frames.is_empty() {
+        return Err("Reference mesh has no frames");
     }
 
     let (centroids, mean_spacing_opt) = calculate_mean_spacing(ref_mesh);
@@ -128,7 +72,10 @@ fn resample_centerline_by_contours(centerline: &Centerline, ref_mesh: &Geometry)
         new_points.push(interpolate_centerline_at_s(centerline, &cum, target_s, k));
     }
 
-    eprintln!("resample_centerline_by_contours: produced {} points", new_points.len());
+    eprintln!(
+        "resample_centerline_by_contours: produced {} points",
+        new_points.len()
+    );
 
     Ok(Centerline { points: new_points })
 }
@@ -261,9 +208,9 @@ fn interpolate_centerline_at_s(
 fn calculate_mean_spacing(ref_mesh: &Geometry) -> (Vec<(f64, f64, f64)>, Option<f64>) {
     // 1) Compute centroid positions from ref_mesh
     let centroids: Vec<(f64, f64, f64)> = ref_mesh
-        .contours
+        .frames
         .iter()
-        .map(|c| (c.centroid.0, c.centroid.1, c.centroid.2))
+        .map(|f| (f.centroid.0, f.centroid.1, f.centroid.2))
         .collect();
 
     // 2) Compute distances between consecutive centroids (Euclidean)
@@ -296,149 +243,12 @@ fn calculate_mean_spacing(ref_mesh: &Geometry) -> (Vec<(f64, f64, f64)>, Option<
     (centroids, mean_spacing_opt)
 }
 
-pub fn prepare_geometry_alignment(mut geom_pair: GeometryPair) -> GeometryPair {
-    fn align_geometry(mut geom: Geometry) -> Geometry {
-        geom.contours.reverse();
-        for (index, contour) in geom.contours.iter_mut().enumerate() {
-            contour.id = index as u32;
-            for point in &mut contour.points {
-                point.frame_index = index as u32;
-            }
-        }
-
-        geom.catheter.reverse();
-        for (index, catheter) in geom.catheter.iter_mut().enumerate() {
-            catheter.id = index as u32;
-            for point in &mut catheter.points {
-                point.frame_index = index as u32;
-            }
-        }
-
-        geom.walls.reverse();
-        for (index, contour) in geom.walls.iter_mut().enumerate() {
-            contour.id = index as u32;
-            for point in &mut contour.points {
-                point.frame_index = index as u32;
-            }
-        }
-
-        geom.reference_point.frame_index = (geom.contours.len() - 1)
-            .saturating_sub(geom.reference_point.frame_index as usize)
-            as u32; // correct method?
-
-        geom
-    }
-
-    if geom_pair.dia_geom.reference_point.z == geom_pair.dia_geom.contours.last().map_or(f64::NAN, |c| c.centroid.2) {
-        eprintln!("prepare_geometry_alignment: dia_geom reference_point.z matches last contour z, reversing dia_geom");
-        geom_pair.dia_geom = align_geometry(geom_pair.dia_geom);
-    }
-    if geom_pair.sys_geom.reference_point.z == geom_pair.sys_geom.contours.last().map_or(f64::NAN, |c| c.centroid.2) {
-        eprintln!("prepare_geometry_alignment: sys_geom reference_point.z matches last contour z, reversing dia_geom");
-        geom_pair.sys_geom = align_geometry(geom_pair.sys_geom);
-    }
-
-    geom_pair
-}
-// pub fn prepare_geometry_alignment(mut geom_pair: GeometryPair) -> GeometryPair {
-//     fn align_geometry(mut geom: Geometry) -> Geometry {
-//         // tolerance for comparing z-coordinates
-//         const Z_TOL: f64 = 1e-6;
-
-//         // Try to find a contour whose centroid.z matches the reference point z
-//         let ref_z = geom.reference_point.z;
-//         let matched_idx_opt = geom
-//             .contours
-//             .iter()
-//             .position(|c| (c.centroid.2 - ref_z).abs() <= Z_TOL);
-
-//         if let Some(matched_idx) = matched_idx_opt {
-//             let matched_contour = &geom.contours[matched_idx];
-//             let ref_frame = geom.reference_point.frame_index;
-
-//             // Check: does the matched contour's id equal the reference frame index?
-//             if matched_contour.id != ref_frame {
-//                 eprintln!(
-//                     "prepare_geometry_alignment: reference_point.frame_index ({}) does not match contour.id ({}) \
-//                      for contour at z={:.6}. Will NOT reverse. Syncing reference_point.frame_index -> {}.",
-//                     ref_frame, matched_contour.id, ref_z, matched_contour.id
-//                 );
-
-//                 // Sync reference_point to the contour id to avoid silent inconsistencies.
-//                 // We do not reverse since the recorded mapping does not match the geometry order.
-//                 geom.reference_point.frame_index = matched_contour.id;
-//                 return geom;
-//             }
-
-//             // If reference already points to the "0" contour, nothing to do.
-//             if ref_frame == 0 {
-//                 // already in the desired orientation (or at least already 0)
-//                 return geom;
-//             }
-
-//             // At this point: matched_contour.id == ref_frame and ref_frame != 0,
-//             // so we perform the reverse + reindexing and update the reference_frame mapping.
-//             let orig_ref_index = ref_frame as usize;
-
-//             // Reverse contours and reindex their ids/frame_index
-//             geom.contours.reverse();
-//             for (index, contour) in geom.contours.iter_mut().enumerate() {
-//                 contour.id = index as u32;
-//                 for point in &mut contour.points {
-//                     point.frame_index = index as u32;
-//                 }
-//             }
-
-//             // Reverse and reindex catheter (if any)
-//             geom.catheter.reverse();
-//             for (index, catheter) in geom.catheter.iter_mut().enumerate() {
-//                 catheter.id = index as u32;
-//                 for point in &mut catheter.points {
-//                     point.frame_index = index as u32;
-//                 }
-//             }
-
-//             // Reverse and reindex walls (if any)
-//             geom.walls.reverse();
-//             for (index, contour) in geom.walls.iter_mut().enumerate() {
-//                 contour.id = index as u32;
-//                 for point in &mut contour.points {
-//                     point.frame_index = index as u32;
-//                 }
-//             }
-
-//             // Map the original reference index to the new index after reversal:
-//             // new_index = (len-1) - orig_ref_index
-//             let len_minus_one = geom.contours.len().saturating_sub(1);
-//             geom.reference_point.frame_index = len_minus_one.saturating_sub(orig_ref_index) as u32;
-
-//             eprintln!(
-//                 "prepare_geometry_alignment: reversed geometry. reference frame remapped {} -> {}",
-//                 orig_ref_index, geom.reference_point.frame_index
-//             );
-//         } else {
-//             // No contour found matching the reference z
-//             eprintln!(
-//                 "prepare_geometry_alignment: no contour found with centroid.z ~= {} (tol {}). Will not reverse.",
-//                 ref_z, Z_TOL
-//             );
-//         }
-
-//         geom
-//     }
-
-//     geom_pair.dia_geom = align_geometry(geom_pair.dia_geom);
-//     geom_pair.sys_geom = align_geometry(geom_pair.sys_geom);
-
-//     geom_pair
-// }
-
 #[cfg(test)]
 mod cl_preprocessing_tests {
     use super::*;
-    use crate::intravascular::io::input::{Contour, ContourPoint};
+    use crate::intravascular::io::input::ContourPoint;
     use approx::assert_relative_eq;
-    
+
     #[test]
     fn test_ensure_descending_z() {
         let mut cl = Centerline {
@@ -458,12 +268,12 @@ mod cl_preprocessing_tests {
                     contour_point: ContourPoint {
                         frame_index: 1,
                         point_index: 1,
-                        x: 0.0, 
+                        x: 0.0,
                         y: 0.0,
                         z: 0.0,
                         aortic: false,
-                },
-                normal: Vector3::new(0.0, 0.0, -1.0),
+                    },
+                    normal: Vector3::new(0.0, 0.0, -1.0),
                 },
             ],
         };
@@ -488,136 +298,82 @@ mod cl_preprocessing_tests {
                     contour_point: ContourPoint {
                         frame_index: 1,
                         point_index: 1,
-                        x: 0.0, 
+                        x: 0.0,
                         y: 0.0,
                         z: 1.0,
                         aortic: false,
-                },
-                normal: Vector3::new(0.0, 0.0, -1.0),
+                    },
+                    normal: Vector3::new(0.0, 0.0, -1.0),
                 },
             ],
         };
         ensure_descending_z(&mut cl);
         assert_eq!(cl.points[0].contour_point.z, 1.0);
-        assert_eq!(cl.points[1].contour_point.z, 0.0);     
-    }
-
-    #[test]
-    fn test_remove_leading_points_cl() {
-        // Build a centerline with 4 points
-        let cl = Centerline {
-            points: vec![
-                CenterlinePoint {
-                    contour_point: ContourPoint {
-                        frame_index: 0,
-                        point_index: 0,
-                        x: 0.0,
-                        y: 0.0,
-                        z: 0.0,
-                        aortic: false,
-                    },
-                    normal: Vector3::new(1.0, 0.0, 0.0),
-                },
-                CenterlinePoint {
-                    contour_point: ContourPoint {
-                        frame_index: 1,
-                        point_index: 1,
-                        x: 1.0,
-                        y: 0.0,
-                        z: 0.0,
-                        aortic: false,
-                    },
-                    normal: Vector3::new(1.0, 0.0, 0.0),
-                },
-                CenterlinePoint {
-                    contour_point: ContourPoint {
-                        frame_index: 2,
-                        point_index: 2,
-                        x: 2.0,
-                        y: 0.0,
-                        z: 0.0,
-                        aortic: false,
-                    },
-                    normal: Vector3::new(1.0, 0.0, 0.0),
-                },
-                CenterlinePoint {
-                    contour_point: ContourPoint {
-                        frame_index: 3,
-                        point_index: 3,
-                        x: 3.0,
-                        y: 0.0,
-                        z: 0.0,
-                        aortic: false,
-                    },
-                    normal: Vector3::new(1.0, 0.0, 0.0),
-                },
-            ],
-        };
-
-        // Reference point is closer to (2.0, 0.0, 0.0), so points before frame_index=2 should be dropped
-        let reference = (2.0, 0.0, 0.0);
-        let trimmed = remove_leading_points_cl(cl, &reference);
-
-        // Expect only 2 points remaining: indices 2 and 3
-        assert_eq!(trimmed.points.len(), 2);
-
-        // After reindexing, they should be renumbered as 0,1
-        assert_eq!(trimmed.points[0].contour_point.frame_index, 0);
-        assert_eq!(trimmed.points[0].contour_point.point_index, 0);
-        assert_eq!(trimmed.points[0].contour_point.x, 2.0);
-
-        assert_eq!(trimmed.points[1].contour_point.frame_index, 1);
-        assert_eq!(trimmed.points[1].contour_point.point_index, 1);
-        assert_eq!(trimmed.points[1].contour_point.x, 3.0);
+        assert_eq!(cl.points[1].contour_point.z, 0.0);
     }
 
     #[test]
     fn test_calculate_mean_spacing() {
-        use crate::intravascular::io::input::{Contour, ContourPoint};
+        use crate::intravascular::io::geometry::{Contour, ContourType, Frame, Geometry};
+        use crate::intravascular::io::input::ContourPoint;
+        use std::collections::HashMap;
 
-        // Case 1: multiple centroids → valid mean spacing
+        // Case 1: multiple frames → valid mean spacing
         let geom = Geometry {
-            contours: vec![
-                Contour {
+            frames: vec![
+                Frame {
                     id: 0,
                     centroid: (0.0, 0.0, 0.0),
-                    points: vec![ContourPoint {
-                        frame_index: 0,
-                        point_index: 0,
-                        x: 0.0,
-                        y: 0.0,
-                        z: 0.0,
-                        aortic: false,
-                    }],
-                    aortic_thickness: None,
-                    pulmonary_thickness: None,
+                    lumen: Contour {
+                        id: 0,
+                        original_frame: 0,
+                        points: vec![ContourPoint {
+                            frame_index: 0,
+                            point_index: 0,
+                            x: 0.0,
+                            y: 0.0,
+                            z: 0.0,
+                            aortic: false,
+                        }],
+                        centroid: Some((0.0, 0.0, 0.0)),
+                        aortic_thickness: None,
+                        pulmonary_thickness: None,
+                        kind: ContourType::Lumen,
+                    },
+                    extras: HashMap::new(),
+                    reference_point: None,
                 },
-                Contour {
+                Frame {
                     id: 1,
                     centroid: (3.0, 4.0, 0.0), // distance from (0,0,0) = 5
-                    points: vec![],
-                    aortic_thickness: None,
-                    pulmonary_thickness: None,
+                    lumen: Contour {
+                        id: 1,
+                        original_frame: 1,
+                        points: vec![],
+                        centroid: Some((3.0, 4.0, 0.0)),
+                        aortic_thickness: None,
+                        pulmonary_thickness: None,
+                        kind: ContourType::Lumen,
+                    },
+                    extras: HashMap::new(),
+                    reference_point: None,
                 },
-                Contour {
+                Frame {
                     id: 2,
                     centroid: (6.0, 8.0, 0.0), // distance from (3,4,0) = 5
-                    points: vec![],
-                    aortic_thickness: None,
-                    pulmonary_thickness: None,
+                    lumen: Contour {
+                        id: 2,
+                        original_frame: 2,
+                        points: vec![],
+                        centroid: Some((6.0, 8.0, 0.0)),
+                        aortic_thickness: None,
+                        pulmonary_thickness: None,
+                        kind: ContourType::Lumen,
+                    },
+                    extras: HashMap::new(),
+                    reference_point: None,
                 },
             ],
-            catheter: Vec::new(),
-            walls: Vec::new(),
-            // a simple reference_point (must be supplied)
-            reference_point: ContourPoint {
-                frame_index: 0,
-                point_index: 0,
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-                aortic: false,
-            },
             label: "test".to_string(),
         };
 
@@ -630,25 +386,23 @@ mod cl_preprocessing_tests {
         // Mean of [5.0, 5.0] = 5.0
         assert_eq!(mean_opt, Some(5.0));
 
-        // Case 2: single centroid → no distances
+        // Case 2: single frame → no distances
         let geom2 = Geometry {
-            contours: vec![Contour {
+            frames: vec![Frame {
                 id: 0,
                 centroid: (1.0, 2.0, 3.0),
-                points: vec![],
-                aortic_thickness: None,
-                pulmonary_thickness: None,
+                lumen: Contour {
+                    id: 0,
+                    original_frame: 0,
+                    points: vec![],
+                    centroid: Some((1.0, 2.0, 3.0)),
+                    aortic_thickness: None,
+                    pulmonary_thickness: None,
+                    kind: ContourType::Lumen,
+                },
+                extras: HashMap::new(),
+                reference_point: None,
             }],
-            catheter: Vec::new(),
-            walls: Vec::new(),
-            reference_point: ContourPoint {
-                frame_index: 0,
-                point_index: 0,
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-                aortic: false,
-            },
             label: "test2".to_string(),
         };
         let (centroids2, mean_opt2) = calculate_mean_spacing(&geom2);
@@ -662,10 +416,50 @@ mod cl_preprocessing_tests {
         // create a simple centerline along z = 0..3 with 4 points
         let cl = Centerline {
             points: vec![
-                CenterlinePoint { contour_point: ContourPoint { frame_index: 0, point_index: 0, x: 0.0, y: 0.0, z: 0.0, aortic: false }, normal: Vector3::new(0.0,0.0,1.0) },
-                CenterlinePoint { contour_point: ContourPoint { frame_index: 1, point_index: 1, x: 0.0, y: 0.0, z: 1.0, aortic: false }, normal: Vector3::new(0.0,0.0,1.0) },
-                CenterlinePoint { contour_point: ContourPoint { frame_index: 2, point_index: 2, x: 0.0, y: 0.0, z: 2.0, aortic: false }, normal: Vector3::new(0.0,0.0,1.0) },
-                CenterlinePoint { contour_point: ContourPoint { frame_index: 3, point_index: 3, x: 0.0, y: 0.0, z: 3.0, aortic: false }, normal: Vector3::new(0.0,0.0,1.0) },
+                CenterlinePoint {
+                    contour_point: ContourPoint {
+                        frame_index: 0,
+                        point_index: 0,
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                        aortic: false,
+                    },
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                },
+                CenterlinePoint {
+                    contour_point: ContourPoint {
+                        frame_index: 1,
+                        point_index: 1,
+                        x: 0.0,
+                        y: 0.0,
+                        z: 1.0,
+                        aortic: false,
+                    },
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                },
+                CenterlinePoint {
+                    contour_point: ContourPoint {
+                        frame_index: 2,
+                        point_index: 2,
+                        x: 0.0,
+                        y: 0.0,
+                        z: 2.0,
+                        aortic: false,
+                    },
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                },
+                CenterlinePoint {
+                    contour_point: ContourPoint {
+                        frame_index: 3,
+                        point_index: 3,
+                        x: 0.0,
+                        y: 0.0,
+                        z: 3.0,
+                        aortic: false,
+                    },
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                },
             ],
         };
 
@@ -683,10 +477,50 @@ mod cl_preprocessing_tests {
         // same centerline
         let cl = Centerline {
             points: vec![
-                CenterlinePoint { contour_point: ContourPoint { frame_index: 0, point_index: 0, x: 0.0, y: 0.0, z: 0.0, aortic: false }, normal: Vector3::new(0.0,0.0,1.0) },
-                CenterlinePoint { contour_point: ContourPoint { frame_index: 1, point_index: 1, x: 0.0, y: 0.0, z: 1.0, aortic: false }, normal: Vector3::new(0.0,0.0,1.0) },
-                CenterlinePoint { contour_point: ContourPoint { frame_index: 2, point_index: 2, x: 0.0, y: 0.0, z: 2.0, aortic: false }, normal: Vector3::new(0.0,0.0,1.0) },
-                CenterlinePoint { contour_point: ContourPoint { frame_index: 3, point_index: 3, x: 0.0, y: 0.0, z: 3.0, aortic: false }, normal: Vector3::new(0.0,0.0,1.0) },
+                CenterlinePoint {
+                    contour_point: ContourPoint {
+                        frame_index: 0,
+                        point_index: 0,
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                        aortic: false,
+                    },
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                },
+                CenterlinePoint {
+                    contour_point: ContourPoint {
+                        frame_index: 1,
+                        point_index: 1,
+                        x: 0.0,
+                        y: 0.0,
+                        z: 1.0,
+                        aortic: false,
+                    },
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                },
+                CenterlinePoint {
+                    contour_point: ContourPoint {
+                        frame_index: 2,
+                        point_index: 2,
+                        x: 0.0,
+                        y: 0.0,
+                        z: 2.0,
+                        aortic: false,
+                    },
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                },
+                CenterlinePoint {
+                    contour_point: ContourPoint {
+                        frame_index: 3,
+                        point_index: 3,
+                        x: 0.0,
+                        y: 0.0,
+                        z: 3.0,
+                        aortic: false,
+                    },
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                },
             ],
         };
 
@@ -699,116 +533,5 @@ mod cl_preprocessing_tests {
         assert_relative_eq!(pt.contour_point.z, 1.5, epsilon = 1e-12);
         // normal should be normalized and in z direction
         assert_relative_eq!(pt.normal.z, 1.0, epsilon = 1e-12);
-    }
-
-    // ----------------------------------------------------------------------------------------------------------------
-    fn make_geometry_with_contours(ids_and_z: &[(u32, f64)], ref_frame: u32, ref_z: f64, label: &str) -> Geometry {
-        let contours: Vec<Contour> = ids_and_z
-            .iter()
-            .map(|(id, z)| Contour {
-                id: *id,
-                centroid: (0.0_f64, 0.0_f64, *z),
-                points: vec![ContourPoint {
-                    frame_index: *id,
-                    point_index: 0,
-                    x: 0.0,
-                    y: 0.0,
-                    z: *z,
-                    aortic: false,
-                }],
-                aortic_thickness: None,
-                pulmonary_thickness: None,
-            })
-            .collect();
-
-        Geometry {
-            contours,
-            catheter: Vec::new(),
-            walls: Vec::new(),
-            reference_point: ContourPoint {
-                frame_index: ref_frame,
-                point_index: 0,
-                x: 0.0,
-                y: 0.0,
-                z: ref_z,
-                aortic: false,
-            },
-            label: label.to_string(),
-        }
-    }
-
-    #[test]
-    fn test_reverse_when_match_and_nonzero_ref() {
-        // contours with ids 0,1,2 and z 0.0,1.0,2.0
-        let geom = make_geometry_with_contours(&[(0, 0.0), (1, 1.0), (2, 2.0)], 2, 2.0, "dia");
-        let gp = GeometryPair {
-            dia_geom: geom.clone(),
-            sys_geom: geom.clone(),
-        };
-
-        let out = prepare_geometry_alignment(gp);
-
-        // dia_geom should be reversed: new contour 0 has old z=2.0
-        assert_eq!(out.dia_geom.contours[0].centroid.2, 2.0);
-        // reference_point.frame_index should be remapped to 0
-        assert_eq!(out.dia_geom.reference_point.frame_index, 0);
-
-        // points' frame_index should match new contour id (0)
-        assert_eq!(out.dia_geom.contours[0].points[0].frame_index, 0);
-    }
-
-    #[test]
-    fn test_no_reverse_on_id_mismatch_and_sync_ref() {
-        let geom = make_geometry_with_contours(&[(0, 0.0), (1, 1.0), (2, 2.0)], 1, 2.0, "dia");
-        let gp = GeometryPair {
-            dia_geom: geom.clone(),
-            sys_geom: geom.clone(),
-        };
-
-        let out = prepare_geometry_alignment(gp);
-
-        assert_eq!(out.dia_geom.contours[0].centroid.2, 2.0);
-
-        let len_minus_one = out.dia_geom.contours.len().saturating_sub(1);
-        let expected_remap = len_minus_one.saturating_sub(1) as u32; // orig_ref_idx was 1
-        assert_eq!(out.dia_geom.reference_point.frame_index, expected_remap);
-
-        // sanity: points' frame_index updated to match new contour id
-        assert_eq!(out.dia_geom.contours[0].points[0].frame_index, 0);
-    }
-
-
-    #[test]
-    fn test_no_reverse_when_no_matching_z() {
-        // contours z 0,1,2 but reference z doesn't match any (10.0)
-        let geom = make_geometry_with_contours(&[(0, 0.0), (1, 1.0), (2, 2.0)], 5, 10.0, "dia");
-        let gp = GeometryPair {
-            dia_geom: geom.clone(),
-            sys_geom: geom.clone(),
-        };
-
-        let out = prepare_geometry_alignment(gp);
-
-        // No reverse -> first contour still has z 0.0
-        assert_eq!(out.dia_geom.contours[0].centroid.2, 0.0);
-        // reference frame should remain unchanged (5)
-        assert_eq!(out.dia_geom.reference_point.frame_index, 5);
-    }
-
-    #[test]
-    fn test_no_reverse_when_ref_is_zero() {
-        // reference already points to id 0 (orientation OK) and z matches contour 0
-        let geom = make_geometry_with_contours(&[(0, 0.0), (1, 1.0), (2, 2.0)], 0, 0.0, "dia");
-        let gp = GeometryPair {
-            dia_geom: geom.clone(),
-            sys_geom: geom.clone(),
-        };
-
-        let out = prepare_geometry_alignment(gp);
-
-        // No reverse performed: contour 0 remains z 0.0
-        assert_eq!(out.dia_geom.contours[0].centroid.2, 0.0);
-        // reference frame stays 0
-        assert_eq!(out.dia_geom.reference_point.frame_index, 0);
     }
 }

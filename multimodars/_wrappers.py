@@ -1,24 +1,5 @@
 from typing import Literal, Any, Dict, Tuple, Union
-from multimodars import (
-    from_file_full,
-    from_file_doublepair,
-    from_file_singlepair,
-    from_file_single,
-)
-
-from multimodars import (
-    geometry_from_array,
-    from_array_full,
-    from_array_doublepair,
-    from_array_singlepair,
-)
-
-from multimodars import (
-    align_three_point,
-    align_manual,
-)
-
-from .multimodars import PyGeometry, PyGeometryPair, PyCenterline
+import multimodars as mm
 
 Mode = Literal["full", "doublepair", "singlepair", "single"]
 
@@ -29,10 +10,10 @@ def from_file(
 ) -> Union[
     # full returns 4 geometry pairs + 4 log-lists
     Tuple[
-        PyGeometryPair,
-        PyGeometryPair,
-        PyGeometryPair,
-        PyGeometryPair,
+        mm.PyGeometryPair,
+        mm.PyGeometryPair,
+        mm.PyGeometryPair,
+        mm.PyGeometryPair,
         list,
         list,
         list,
@@ -40,8 +21,8 @@ def from_file(
     ],
     # doublepair returns 2 geom + 4 log-lists
     Tuple[
-        PyGeometryPair,
-        PyGeometryPair,
+        mm.PyGeometryPair,
+        mm.PyGeometryPair,
         list,
         list,
         list,
@@ -49,14 +30,14 @@ def from_file(
     ],
     # singlepair returns 1 geom‐pair + 2 log-lists
     Tuple[
-        PyGeometryPair,
-        PyGeometryPair,
+        mm.PyGeometryPair,
+        mm.PyGeometryPair,
         list,
         list,
     ],
     # single returns 1 geom + 1 log-list
     Tuple[
-        PyGeometryPair,
+        mm.PyGeometryPair,
         list,
     ],
 ]:
@@ -120,7 +101,16 @@ def from_file(
     ValueError
         If an unsupported `mode` is passed.
     """
+    from . import PyContourType, PyGeometry, PyGeometryPair
+    from . import (
+        from_file_full,
+        from_file_doublepair,
+        from_file_singlepair,
+        from_file_single,
+    )
+
     defaults = {
+        "diastole": True,
         "step_rotation_deg": 0.01,
         "range_rotation_deg": 30,
         "image_center": (4.5, 4.5),
@@ -128,20 +118,29 @@ def from_file(
         "n_points": 20,
         "write_obj": True,
         "watertight": True,
-        "rest_output_path": "output/rest",
-        "stress_output_path": "output/stress",
-        "diastole_output_path": "output/diastole",
-        "systole_output_path": "output/systole",
+        "output_path_a": "output/rest",
+        "output_path_b": "output/stress",
+        "output_path_c": "output/diastole",
+        "output_path_d": "output/systole",
         "interpolation_steps": 28,
         "bruteforce": False,
         "sample_size": 500,
+        "contour_types": [
+            PyContourType.Lumen,
+            PyContourType.Catheter,
+            PyContourType.Wall,
+        ],
+        "smooth": True,
+        "postprocessing": True,
     }
     merged = {**defaults, **kwargs}
 
     if mode == "full":
         required = (
-            "rest_input_path",
-            "stress_input_path",
+            "input_path_a",
+            "input_path_b",
+            "label",
+            "diastole",
             "step_rotation_deg",
             "range_rotation_deg",
             "image_center",
@@ -149,18 +148,23 @@ def from_file(
             "n_points",
             "write_obj",
             "watertight",
-            "rest_output_path",
-            "stress_output_path",
-            "diastole_output_path",
-            "systole_output_path",
+            "output_path_a",
+            "output_path_b",
+            "output_path_c",
+            "output_path_d",
             "interpolation_steps",
             "bruteforce",
             "sample_size",
+            "contour_types",
+            "smooth",
+            "postprocessing",
         )
         args = {k: merged[k] for k in required}
         return from_file_full(
-            args["rest_input_path"],
-            args["stress_input_path"],
+            args["input_path_a"],
+            args["input_path_b"],
+            args["label"],
+            args["diastole"],
             args["step_rotation_deg"],
             args["range_rotation_deg"],
             args["image_center"],
@@ -168,19 +172,24 @@ def from_file(
             args["n_points"],
             args["write_obj"],
             args["watertight"],
-            args["rest_output_path"],
-            args["stress_output_path"],
-            args["diastole_output_path"],
-            args["systole_output_path"],
+            args["output_path_a"],
+            args["output_path_b"],
+            args["output_path_c"],
+            args["output_path_d"],
             args["interpolation_steps"],
             args["bruteforce"],
             args["sample_size"],
+            args["contour_types"],
+            args["smooth"],
+            args["postprocessing"],
         )
 
     elif mode == "doublepair":
         required = (
-            "rest_input_path",
-            "stress_input_path",
+            "input_path_a",
+            "input_path_b",
+            "label",
+            "diastole",
             "step_rotation_deg",
             "range_rotation_deg",
             "image_center",
@@ -188,16 +197,21 @@ def from_file(
             "n_points",
             "write_obj",
             "watertight",
-            "rest_output_path",
-            "stress_output_path",
+            "output_path_a",
+            "output_path_b",
             "interpolation_steps",
             "bruteforce",
             "sample_size",
+            "contour_types",
+            "smooth",
+            "postprocessing",
         )
         args = {k: merged[k] for k in required}
         return from_file_doublepair(
-            args["rest_input_path"],
-            args["stress_input_path"],
+            args["input_path_a"],
+            args["input_path_b"],
+            args["label"],
+            args["diastole"],
             args["step_rotation_deg"],
             args["range_rotation_deg"],
             args["image_center"],
@@ -205,16 +219,21 @@ def from_file(
             args["n_points"],
             args["write_obj"],
             args["watertight"],
-            args["rest_output_path"],
-            args["stress_output_path"],
+            args["output_path_a"],
+            args["output_path_b"],
             args["interpolation_steps"],
             args["bruteforce"],
             args["sample_size"],
+            args["contour_types"],
+            args["smooth"],
+            args["postprocessing"],
         )
 
     elif mode == "singlepair":
         required = (
             "input_path",
+            "label",
+            "diastole",
             "step_rotation_deg",
             "range_rotation_deg",
             "image_center",
@@ -226,10 +245,15 @@ def from_file(
             "interpolation_steps",
             "bruteforce",
             "sample_size",
+            "contour_types",
+            "smooth",
+            "postprocessing",
         )
         args = {k: merged[k] for k in required}
         return from_file_singlepair(
             args["input_path"],
+            args["label"],
+            args["diastole"],
             args["step_rotation_deg"],
             args["range_rotation_deg"],
             args["image_center"],
@@ -241,14 +265,18 @@ def from_file(
             args["interpolation_steps"],
             args["bruteforce"],
             args["sample_size"],
+            args["contour_types"],
+            args["smooth"],
+            args["postprocessing"],
         )
 
     elif mode == "single":
         required = (
             "input_path",
+            "label",
+            "diastole",
             "step_rotation_deg",
             "range_rotation_deg",
-            "diastole",
             "image_center",
             "radius",
             "n_points",
@@ -256,14 +284,17 @@ def from_file(
             "watertight",
             "output_path",
             "bruteforce",
-            "sample_size"
+            "sample_size",
+            "contour_types",
+            "smooth",
         )
         args = {k: merged[k] for k in required}
         return from_file_single(
             args["input_path"],
+            args["label"],
+            args["diastole"],
             args["step_rotation_deg"],
             args["range_rotation_deg"],
-            args["diastole"],
             args["image_center"],
             args["radius"],
             args["n_points"],
@@ -272,6 +303,8 @@ def from_file(
             args["output_path"],
             args["bruteforce"],
             args["sample_size"],
+            args["contour_types"],
+            args["smooth"],
         )
 
     else:
@@ -284,22 +317,22 @@ def from_array(
 ) -> Union[
     # full → 4 geometries + 4 log‐lists
     Tuple[
-        PyGeometryPair,
-        PyGeometryPair,
-        PyGeometryPair,
-        PyGeometryPair,
+        mm.PyGeometryPair,
+        mm.PyGeometryPair,
+        mm.PyGeometryPair,
+        mm.PyGeometryPair,
         list,
         list,
         list,
         list,
     ],
     # doublepair → 2 geometries + 4 log‐lists
-    Tuple[PyGeometryPair, PyGeometryPair, list, list, list, list],
+    Tuple[mm.PyGeometryPair, mm.PyGeometryPair, list, list, list, list],
     # singlepair → 1 pair + 2 log‐lists
-    Tuple[PyGeometryPair, PyGeometryPair, list, list],
+    Tuple[mm.PyGeometryPair, mm.PyGeometryPair, list, list],
     # single → 1 geometry + 1 log‐list
     Tuple[
-        PyGeometry,
+        mm.PyGeometry,
         list,
     ],
 ]:
@@ -338,7 +371,7 @@ def from_array(
                               image_center, radius, n_points)
 
     - "single" :
-        geometry_from_array(contours, walls, reference_point,
+        from_array_single(contours, walls, reference_point,
                             steps, range, image_center, radius, n_points,
                             label, records, delta, max_rounds,
                             diastole, sort, write_obj, output_path)
@@ -361,28 +394,37 @@ def from_array(
     ValueError
         If an unsupported `mode` is passed.
     """
+    from . import PyContourType, PyGeometryPair, PyGeometry
+    from . import (
+        from_array_full,
+        from_array_doublepair,
+        from_array_singlepair,
+        from_array_single,
+    )
+
     defaults = {
+        "diastole": True,
         "step_rotation_deg": 0.01,
         "range_rotation_deg": 30,
-        "interpolation_steps": 28,
         "image_center": (4.5, 4.5),
         "radius": 0.5,
         "n_points": 20,
-        "rest_output_path": "output/rest",
-        "stress_output_path": "output/stress",
-        "diastole_output_path": "output/diastole",
-        "systole_output_path": "output/systole",
-        "output_path": "output/single",
-        "label": "None",
-        "records": None,
-        "delta": 0.1,
-        "max_rounds": 5,
-        "diastole": True,
-        "sort": True,
         "write_obj": True,
         "watertight": True,
+        "output_path_a": "output/rest",
+        "output_path_b": "output/stress",
+        "output_path_c": "output/diastole",
+        "output_path_d": "output/systole",
+        "interpolation_steps": 28,
         "bruteforce": False,
         "sample_size": 500,
+        "contour_types": [
+            PyContourType.Lumen,
+            PyContourType.Catheter,
+            PyContourType.Wall,
+        ],
+        "smooth": True,
+        "postprocessing": True,
     }
     merged = {**defaults, **kwargs}
 
@@ -391,10 +433,12 @@ def from_array(
 
     if mode == "full":
         required = (
-            "rest_geometry_dia",
-            "rest_geometry_sys",
-            "stress_geometry_dia",
-            "stress_geometry_sys",
+            "input_data_a",
+            "input_data_b",
+            "input_data_c",
+            "input_data_d",
+            "label",
+            "diastole",
             "step_rotation_deg",
             "range_rotation_deg",
             "image_center",
@@ -402,20 +446,25 @@ def from_array(
             "n_points",
             "write_obj",
             "watertight",
-            "rest_output_path",
-            "stress_output_path",
-            "diastole_output_path",
-            "systole_output_path",
+            "output_path_a",
+            "output_path_b",
+            "output_path_c",
+            "output_path_d",
             "interpolation_steps",
             "bruteforce",
             "sample_size",
+            "contour_types",
+            "smooth",
+            "postprocessing",
         )
         args = {k: merged[k] for k in required}
         return from_array_full(
-            args["rest_geometry_dia"],
-            args["rest_geometry_sys"],
-            args["stress_geometry_dia"],
-            args["stress_geometry_sys"],
+            args["input_data_a"],
+            args["input_data_b"],
+            args["input_data_c"],
+            args["input_data_d"],
+            args["label"],
+            args["diastole"],
             args["step_rotation_deg"],
             args["range_rotation_deg"],
             args["image_center"],
@@ -423,21 +472,26 @@ def from_array(
             args["n_points"],
             args["write_obj"],
             args["watertight"],
-            args["rest_output_path"],
-            args["stress_output_path"],
-            args["diastole_output_path"],
-            args["systole_output_path"],
+            args["output_path_a"],
+            args["output_path_b"],
+            args["output_path_c"],
+            args["output_path_d"],
             args["interpolation_steps"],
             args["bruteforce"],
             args["sample_size"],
+            args["contour_types"],
+            args["smooth"],
+            args["postprocessing"],
         )
 
     elif mode == "doublepair":
         required = (
-            "rest_geometry_dia",
-            "rest_geometry_sys",
-            "stress_geometry_dia",
-            "stress_geometry_sys",
+            "input_data_a",
+            "input_data_b",
+            "input_data_c",
+            "input_data_d",
+            "label",
+            "diastole",
             "step_rotation_deg",
             "range_rotation_deg",
             "image_center",
@@ -445,18 +499,23 @@ def from_array(
             "n_points",
             "write_obj",
             "watertight",
-            "rest_output_path",
-            "stress_output_path",
+            "output_path_a",
+            "output_path_b",
             "interpolation_steps",
             "bruteforce",
             "sample_size",
+            "contour_types",
+            "smooth",
+            "postprocessing",
         )
         args = {k: merged[k] for k in required}
         return from_array_doublepair(
-            args["rest_geometry_dia"],
-            args["rest_geometry_sys"],
-            args["stress_geometry_dia"],
-            args["stress_geometry_sys"],
+            args["input_data_a"],
+            args["input_data_b"],
+            args["input_data_c"],
+            args["input_data_d"],
+            args["label"],
+            args["diastole"],
             args["step_rotation_deg"],
             args["range_rotation_deg"],
             args["image_center"],
@@ -464,17 +523,22 @@ def from_array(
             args["n_points"],
             args["write_obj"],
             args["watertight"],
-            args["rest_output_path"],
-            args["stress_output_path"],
+            args["output_path_a"],
+            args["output_path_b"],
             args["interpolation_steps"],
             args["bruteforce"],
             args["sample_size"],
+            args["contour_types"],
+            args["smooth"],
+            args["postprocessing"],
         )
 
     elif mode == "singlepair":
         required = (
-            "geometry_dia",
-            "geometry_sys",
+            "input_data_a",
+            "input_data_b",
+            "label",
+            "diastole",
             "step_rotation_deg",
             "range_rotation_deg",
             "image_center",
@@ -486,11 +550,16 @@ def from_array(
             "interpolation_steps",
             "bruteforce",
             "sample_size",
+            "contour_types",
+            "smooth",
+            "postprocessing",
         )
         args = {k: merged[k] for k in required}
         return from_array_singlepair(
-            args["geometry_dia"],
-            args["geometry_sys"],
+            args["input_data_a"],
+            args["input_data_b"],
+            args["label"],
+            args["diastole"],
             args["step_rotation_deg"],
             args["range_rotation_deg"],
             args["image_center"],
@@ -502,47 +571,46 @@ def from_array(
             args["interpolation_steps"],
             args["bruteforce"],
             args["sample_size"],
+            args["contour_types"],
+            args["smooth"],
+            args["postprocessing"],
         )
 
     elif mode == "single":
         required = (
-            "geometry",
+            "input_data",
+            "label",
+            "diastole",
             "step_rotation_deg",
             "range_rotation_deg",
             "image_center",
             "radius",
             "n_points",
-            "label",
-            "records",
-            "delta",
-            "max_rounds",
-            "diastole",
-            "sort",
             "write_obj",
             "watertight",
             "output_path",
             "bruteforce",
             "sample_size",
+            "contour_types",
+            "smooth",
         )
         args = {k: merged[k] for k in required}
-        return geometry_from_array(
-            args["geometry"],
+        return from_array_single(
+            args["input_data"],
+            args["label"],
+            args["diastole"],
             args["step_rotation_deg"],
             args["range_rotation_deg"],
             args["image_center"],
             args["radius"],
             args["n_points"],
-            args["label"],
-            args["records"],
-            args["delta"],
-            args["max_rounds"],
-            args["diastole"],
-            args["sort"],
             args["write_obj"],
             args["watertight"],
             args["output_path"],
             args["bruteforce"],
             args["sample_size"],
+            args["contour_types"],
+            args["smooth"],
         )
 
     else:
@@ -555,7 +623,7 @@ Mode_cl = Literal["three_pt", "manual"]
 def to_centerline(
     mode: Mode_cl,
     **kwargs: Any,
-) -> Tuple[PyGeometryPair, PyCenterline]:
+) -> Tuple[mm.PyGeometryPair, mm.PyCenterline]:
     """
     Unified entry for all to_centerline pipelines.
 
@@ -586,6 +654,9 @@ def to_centerline(
     ValueError
         If an unsupported `mode` is passed.
     """
+    from . import PyCenterline, PyGeometryPair
+    from . import align_three_point, align_manual
+
     defaults = {
         "angle_step": 0.01745329,  # approx 1° in radians
         "write": False,

@@ -184,7 +184,11 @@ The output allows for the creation of several interpolated meshes. These can the
 ![Stress-induced diastolic lumen deformation](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/examples/figures/animation_stress_induced_systolic_deformation.gif)
 
 ### IVUS registration - pre- and post-stenting
-IVUS registration works in the same way. An example is provided in `data/ivus_prestent` and `data/ivus_poststent`.
+The package works in the same way for other clinical applications such as pre- and post-stent alignment (An example is provided in `data/ivus_prestent` and `data/ivus_poststent`) or for coronary artery disease. Here it is also possible to read in contour information for e.g. lumen, external elastic membrane and create a coronary wall (See figure).
+
+![Coronary artery disease example](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/examples/figures/coronary_artery_disease.jpg)
+
+The data for this example is provided under `data/ivus_full`.
 
 ### OCT registration
 OCT registration works exactly the same as IVUS registration, just the parameters for image resolution have to be set differently.

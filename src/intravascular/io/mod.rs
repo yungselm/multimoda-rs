@@ -1,451 +1,496 @@
+pub mod geometry;
 pub mod input;
-pub mod load_geometry;
+mod integrity_check;
 pub mod output;
 
-use anyhow::Context;
-use input::{read_records, Contour, ContourPoint, Record};
+use geometry::{Contour, ContourType, Frame, Geometry};
+use input::{ContourPoint, InputData};
+use integrity_check::check_geometry_integrity;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-#[derive(Debug, Clone)]
-pub struct Geometry {
-    pub contours: Vec<Contour>,
-    pub catheter: Vec<Contour>,
-    pub walls: Vec<Contour>,
-    pub reference_point: ContourPoint, // needs to be set on aortic wall ostium!
-    pub label: String,
-}
+pub fn build_geometry_from_inputdata(
+    input_data: Option<InputData>,
+    path: Option<&Path>,
+    label: &str,
+    diastole: bool,
+    image_center: (f64, f64),
+    radius: f64,
+    n_points: u32,
+) -> anyhow::Result<Geometry> {
+    let input_data = if let Some(input_data) = input_data {
+        input_data
+    } else if let Some(path) = path {
+        // Default mapping for typical AIVUS-CAA structure
+        let mut names = HashMap::new();
+        names.insert(ContourType::Lumen, "lumen");
+        names.insert(ContourType::Eem, "eem");
+        names.insert(ContourType::Calcification, "calcium");
+        names.insert(ContourType::Sidebranch, "branch");
+        names.insert(ContourType::Catheter, "catheter");
 
-impl Geometry {
-    /// Creates a new Geometry instance by loading all required data files
-    pub fn new(
-        input_dir: &str,
-        label: String,
-        diastole: bool,
-        image_center: (f64, f64),
-        radius: f64,
-        n_points: u32,
-    ) -> anyhow::Result<Self> {
-        let label = if diastole {
-            format!("{}_diastole", label)
-        } else {
-            format!("{}_systole", label)
-        };
+        InputData::process_directory(path, names, diastole)?
+    } else {
+        return Err(anyhow::anyhow!(
+            "Either input_data or path must be provided"
+        ));
+    };
+    let print_input_data = input_data.clone();
 
-        let base_path = Path::new(input_dir);
-        let records_path = Path::new(base_path).join("combined_sorted_manual.csv");
-        let (contour_path, reference_path) = if diastole {
-            (
-                Path::new(base_path).join("diastolic_contours.csv"),
-                Path::new(base_path).join("diastolic_reference_points.csv"),
-            )
-        } else {
-            (
-                Path::new(base_path).join("systolic_contours.csv"),
-                Path::new(base_path).join("systolic_reference_points.csv"),
-            )
-        };
+    // First, collect all unique original frame IDs from ALL contour types
+    let mut all_original_frames: HashSet<u32> = HashSet::new();
 
-        let mut reference_point = Self::load_reference_point(&reference_path).with_context(|| {
-            format!(
-                "Failed to load reference point from {}",
-                reference_path.display()
-            )
-        })?;
+    for point in &input_data.lumen {
+        all_original_frames.insert(point.frame_index);
+    }
 
-        // Load records; if none exist, build a default one-per-contour with the correct phase
-        let raw_records = match Self::load_results(&records_path) {
-            Ok(v) => v,
-            Err(_) => Vec::new(), // silent fallback, ok here since program still runs
-        };
-
-        let records = if !raw_records.is_empty() {
-            raw_records
-        } else {
-            Vec::new()
-        };
-
-        let raw_points = ContourPoint::read_contour_data(&contour_path)?;
-        let inferred_records = if records.is_empty() {
-            let phase = if diastole { "D" } else { "S" }.to_string();
-            // infer default records from raw_points
-            let mut seen = std::collections::HashSet::new();
-            raw_points
-                .iter()
-                .filter_map(|p| {
-                    if seen.insert(p.frame_index) {
-                        Some(Record {
-                            frame: p.frame_index as u32,
-                            phase: phase.clone(),
-                            measurement_1: None,
-                            measurement_2: None,
-                        })
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        } else {
-            records
-        };
-
-        // finally build contours
-        let mut contours = Contour::create_contours(raw_points, inferred_records.clone())
-            .with_context(|| format!("Failed to build contours from {}", contour_path.display()))?;
-
-        // since reordeing the frames, destroys the z-coordinates of everyframe they need to be stored here
-        // and then be reused after reordering them
-        let mut z_coords = Vec::new();
-
-        for contour in &contours {
-            z_coords.push(contour.centroid.2)
+    if let Some(eem_points) = &input_data.eem {
+        for point in eem_points {
+            all_original_frames.insert(point.frame_index);
         }
-        // order z_coords by f64 ascending
-        z_coords.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    }
 
-        Self::reorder_contours(&mut contours, &inferred_records, diastole, &z_coords);
+    if let Some(calc_points) = &input_data.calcification {
+        for point in calc_points {
+            all_original_frames.insert(point.frame_index);
+        }
+    }
 
-        let mut catheter = if n_points == 0 {
-            Vec::new()
-        } else {
-            // build your catheter contours and return
-            Contour::create_catheter_contours(
-                &contours
-                    .iter()
-                    .flat_map(|c| c.points.clone())
-                    .collect::<Vec<_>>(),
-                image_center,
-                radius,
-                n_points,
-            )?
+    if let Some(side_points) = &input_data.sidebranch {
+        for point in side_points {
+            all_original_frames.insert(point.frame_index);
+        }
+    }
+
+    all_original_frames.insert(input_data.ref_point.frame_index);
+
+    let mut sorted_original_frames: Vec<u32> = all_original_frames.into_iter().collect();
+    sorted_original_frames.sort();
+
+    let frame_mapping: HashMap<u32, u32> = sorted_original_frames
+        .iter()
+        .enumerate()
+        .map(|(i, &original_id)| (original_id, i as u32))
+        .collect();
+
+    // Now build contours using the shared mapping
+    let lumen_contours = Contour::build_contour_with_mapping(
+        input_data.lumen,
+        input_data.record.clone(),
+        ContourType::Lumen,
+        &frame_mapping,
+    )?;
+
+    let eem_contours = if let Some(eem_points) = input_data.eem {
+        Contour::build_contour_with_mapping(eem_points, None, ContourType::Eem, &frame_mapping)?
+    } else {
+        Vec::new()
+    };
+
+    let calcification_contours = if let Some(calc_points) = input_data.calcification {
+        Contour::build_contour_with_mapping(
+            calc_points,
+            None,
+            ContourType::Calcification,
+            &frame_mapping,
+        )?
+    } else {
+        Vec::new()
+    };
+
+    let sidebranch_contours = if let Some(side_points) = input_data.sidebranch {
+        Contour::build_contour_with_mapping(
+            side_points,
+            None,
+            ContourType::Sidebranch,
+            &frame_mapping,
+        )?
+    } else {
+        Vec::new()
+    };
+
+    let mut frame_map: HashMap<u32, Frame> = HashMap::new();
+
+    for mut contour in lumen_contours {
+        contour.compute_centroid();
+        let frame_id = contour.id;
+        let mut frame = Frame {
+            id: frame_id,
+            centroid: contour.centroid.unwrap_or((0.0, 0.0, 0.0)),
+            lumen: contour,
+            extras: HashMap::new(),
+            reference_point: None,
         };
 
-        //sort catheter in ascending order
-        catheter.sort_by_key(|c| c.id);
-
-        // assign frame_index for reference_point to the same as the highest contour idx
-        let n = contours.len();
-        if n > 0 {
-            let max_idx = contours.iter().map(|c| c.id).max().unwrap();
-            reference_point.frame_index = max_idx;
-        } else {
-            println!("Warning: No contours loaded, reference point frame_index not set.");
-        };
-
-        let contours_loaded = !contours.is_empty();
-        let reference_loaded = !Some(reference_point).is_none();
-        let records_loaded = !inferred_records.is_empty();
-
-        println!("Generating geometry for {:?}", input_dir);
-        println!("{:<50} {}", "file/path", "loaded");
-        println!("{:<50} {}", contour_path.display(), contours_loaded);
-        println!("{:<50} {}", reference_path.display(), reference_loaded);
-        println!("{:<50} {}", records_path.display(), records_loaded);
-
-        let walls = Vec::new();
-
-        Ok(Self {
-            contours,
-            catheter,
-            walls,
-            reference_point,
-            label,
-        })
-    }
-
-    fn load_reference_point(reference_path: &Path) -> anyhow::Result<ContourPoint> {
-        ContourPoint::read_reference_point(reference_path)
-    }
-
-    fn load_results(records_path: &Path) -> anyhow::Result<Vec<Record>> {
-        read_records(records_path)
-    }
-
-    /// Reorders contours by record frame order, updates z-coordinates and ids
-    pub fn reorder_contours(
-        contours: &mut Vec<Contour>,
-        records: &[Record],
-        diastole: bool,
-        z_coords: &[f64],
-    ) {
-        if records.is_empty() {
-            return;
+        if let Some(&mapped_frame_id) = frame_mapping.get(&input_data.ref_point.frame_index) {
+            if mapped_frame_id == frame_id {
+                frame.reference_point = Some(input_data.ref_point);
+            }
         }
 
-        // reorder contours by records frame order, first filter only phase == 'D' if diastole true
-        // otherwise only phase == 'S'
-        let phase = if diastole { "D" } else { "S" };
-        let filtered: Vec<u32> = records
-            .iter()
-            .filter(|r| r.phase == phase)
-            .map(|r| r.frame)
+        frame_map.insert(frame_id, frame);
+    }
+
+    for mut contour in eem_contours {
+        contour.compute_centroid();
+        if let Some(frame) = frame_map.get_mut(&contour.id) {
+            frame.extras.insert(ContourType::Eem, contour);
+        }
+    }
+
+    for mut contour in calcification_contours {
+        contour.compute_centroid();
+        if let Some(frame) = frame_map.get_mut(&contour.id) {
+            frame.extras.insert(ContourType::Calcification, contour);
+        }
+    }
+
+    for mut contour in sidebranch_contours {
+        contour.compute_centroid();
+        if let Some(frame) = frame_map.get_mut(&contour.id) {
+            frame.extras.insert(ContourType::Sidebranch, contour);
+        }
+    }
+
+    if n_points > 0 {
+        let all_points: Vec<ContourPoint> = frame_map
+            .values()
+            .flat_map(|frame| frame.lumen.points.iter().cloned())
             .collect();
 
-        // Sort contours to match filtered record frame order
-        contours.sort_by_key(|c| {
-            filtered
-                .iter()
-                .position(|&f| f == c.id as u32)
-                .unwrap_or(usize::MAX)
-        });
+        let catheter_points =
+            Frame::create_catheter_points(&all_points, image_center, radius, n_points);
 
-        // Update the z-coordinates of contours and their points using z_coords
-        for (i, contour) in contours.iter_mut().enumerate() {
-            contour.centroid.2 = z_coords[i];
+        let catheter_contours = Contour::build_contour_with_mapping(
+            catheter_points,
+            None,
+            ContourType::Catheter,
+            &frame_mapping,
+        )?;
 
-            for pt in contour.points.iter_mut() {
-                pt.z = z_coords[i];
+        for mut contour in catheter_contours {
+            contour.compute_centroid();
+            if let Some(frame) = frame_map.get_mut(&contour.id) {
+                frame.extras.insert(ContourType::Catheter, contour);
             }
         }
-
-        // Reassign indices for contours and update their points' frame_index accordingly.
-        for (new_id, contour) in contours.iter_mut().enumerate() {
-            contour.id = new_id as u32;
-            for pt in contour.points.iter_mut() {
-                pt.frame_index = new_id as u32;
-            }
-        } // new order has now highest index for the ostium
     }
 
-    /// Smooths the x and y coordinates of the contours using a 3‐point moving average.
-    ///
-    /// For each point i in contour j, the new x and y values are computed as:
-    ///     new_x = (prev_contour[i].x + current_contour[i].x + next_contour[i].x) / 3.0
-    ///     new_y = (prev_contour[i].y + current_contour[i].y + next_contour[i].y) / 3.0
-    /// while the z coordinate remains unchanged (taken from the current contour).
-    ///
-    /// For the first and last contours, the current contour is used twice to simulate a mirror effect.
-    pub fn smooth_contours(mut self) -> Geometry {
-        let n = self.contours.len();
-        if n == 0 {
-            return self;
-        }
+    let mut frames: Vec<Frame> = frame_map.into_values().collect();
+    frames.sort_by_key(|f| f.id);
 
-        // Ensure all contours have the same number of points.
-        let point_count = self.contours[0].points.len();
-        if !self.contours.iter().all(|c| c.points.len() == point_count) {
-            panic!("All contours must have the same number of points for smoothing.");
-        }
+    let mut geometry = Geometry {
+        frames,
+        label: label.to_string(),
+    };
 
-        let mut smoothed_contours = Vec::with_capacity(n);
-
-        for j in 0..n {
-            let current_contour = &self.contours[j];
-            let mut new_points = Vec::with_capacity(current_contour.points.len());
-
-            for i in 0..current_contour.points.len() {
-                let (prev_contour, next_contour) = if j == 0 {
-                    // First contour: use current for previous
-                    (&self.contours[j], &self.contours[j + 1])
-                } else if j == n - 1 {
-                    // Last contour: use current for next
-                    (&self.contours[j - 1], &self.contours[j])
-                } else {
-                    (&self.contours[j - 1], &self.contours[j + 1])
-                };
-
-                let prev_point = &prev_contour.points[i];
-                let curr_point = &current_contour.points[i];
-                let next_point = &next_contour.points[i];
-
-                let avg_x = (prev_point.x + curr_point.x + next_point.x) / 3.0;
-                let avg_y = (prev_point.y + curr_point.y + next_point.y) / 3.0;
-
-                let new_point = ContourPoint {
-                    frame_index: curr_point.frame_index,
-                    point_index: curr_point.point_index,
-                    x: avg_x,
-                    y: avg_y,
-                    z: curr_point.z,
-                    aortic: curr_point.aortic,
-                };
-
-                new_points.push(new_point);
-            }
-
-            // Create new Contour with smoothed points and updated centroid
-            let centroid = Contour::compute_centroid(&new_points);
-            let new_contour = Contour {
-                id: current_contour.id,
-                points: new_points,
-                centroid,
-                aortic_thickness: current_contour.aortic_thickness.clone(),
-                pulmonary_thickness: current_contour.pulmonary_thickness.clone(),
-            };
-
-            smoothed_contours.push(new_contour);
-        }
-        // Replace the original contours with smoothed_contours
-        self.contours = smoothed_contours;
-
-        self
+    if let Some(records) = &input_data.record {
+        geometry.reorder_frames(records, diastole);
     }
+
+    for frame in &mut geometry.frames {
+        frame.sort_frame_points();
+    }
+
+    geometry.ensure_proximal_at_position_zero();
+
+    for frame in geometry.frames.iter_mut() {
+        let id = frame.id;
+        frame.set_value(Some(id), None, None, None);
+    }
+
+    check_geometry_integrity(&geometry)?;
+
+    let from_path = path.is_some();
+    print_success_message(print_input_data, from_path);
+
+    Ok(geometry)
+}
+
+fn print_success_message(input_data: InputData, from_path: bool) {
+    use ContourType::*;
+
+    println!(
+        "\n✅ Successfully built geometry from {}",
+        if from_path { "path" } else { "input data" }
+    );
+
+    let check = |present: bool| if present { "✅" } else { "❌" };
+
+    println!("-----------------------------------------");
+    println!("{} {}", check(!input_data.lumen.is_empty()), Lumen);
+    println!("{} {}", check(input_data.eem.is_some()), Eem);
+    println!(
+        "{} {}",
+        check(input_data.calcification.is_some()),
+        Calcification
+    );
+    println!("{} {}", check(input_data.sidebranch.is_some()), Sidebranch);
+    println!("{} {}", check(true), Catheter);
+    println!("-----------------------------------------");
+    println!("Label: {}", input_data.label);
+    println!(
+        "Diastole phase: {}",
+        if input_data.diastole { "Yes" } else { "No" }
+    );
+    println!();
 }
 
 #[cfg(test)]
-mod geometry_tests {
+mod input_tests {
     use super::*;
     use approx::assert_relative_eq;
-    use serde_json::Value;
-    use std::fs::File;
+    use std::path::Path;
 
-    const NUM_POINTS_CATHETER: usize = 20;
-
-    fn load_test_manifest(mode: &str) -> Value {
-        let manifest_path = format!("data/fixtures/{}_csv_files/test_manifest.json", mode);
-        let file = File::open(manifest_path).expect("Failed to open manifest");
-        serde_json::from_reader(file).expect("Failed to parse manifest")
-    }
+    const NUM_POINTS_CATHETER: u32 = 20;
 
     #[test]
-    fn test_reorder_matches_manifest_indices() {
-        let mode = "rest";
-        let manifest = load_test_manifest(mode);
-        let dia_expected: Vec<u32> = manifest["dia"]["expected_indices"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|v| v.as_u64().unwrap() as u32)
-            .collect();
+    fn test_full_directory_all_frames_explicit_types() {
+        use std::collections::HashMap;
+        use std::path::Path;
 
-        // Load raw records and geometry
-        let input_dir = format!("data/fixtures/{0}_csv_files", mode);
-        let geometry = Geometry::new(&input_dir, "test".into(), true, (4.5, 4.5), 0.5, 20).unwrap();
-        let records =
-            Geometry::load_results(&Path::new(&input_dir).join("combined_sorted_manual.csv"))
-                .unwrap();
-        let filtered: Vec<u32> = records
-            .into_iter()
-            .filter(|r| r.phase == "D")
-            .map(|r| r.frame)
-            .collect();
+        let result = build_geometry_from_inputdata(
+            None,
+            Some(Path::new("data/ivus_full")),
+            "full",
+            true,
+            (4.5, 4.5),
+            0.5,
+            NUM_POINTS_CATHETER,
+        );
 
-        // Map reordered contours back to original frame indices
-        let actual_sequence: Vec<u32> = geometry
-            .contours
-            .iter()
-            .map(|c| filtered[c.id as usize])
-            .collect();
+        assert!(result.is_ok());
+        let geometry = result.unwrap();
+        let n_frames = geometry.frames.len();
+        assert!(n_frames > 0, "expected at least one frame");
 
-        for (i, (got, want)) in actual_sequence.iter().zip(&dia_expected).enumerate() {
+        // choose the types you expect to exist in every frame
+        let wanted: Vec<ContourType> =
+            vec![ContourType::Lumen, ContourType::Eem, ContourType::Catheter];
+
+        let mut ids_map: HashMap<ContourType, Vec<u32>> = HashMap::new();
+        let mut orig_map: HashMap<ContourType, Vec<u32>> = HashMap::new();
+
+        for (idx, frame) in geometry.frames.iter().enumerate() {
+            ids_map
+                .entry(ContourType::Lumen)
+                .or_default()
+                .push(frame.lumen.id);
+            orig_map
+                .entry(ContourType::Lumen)
+                .or_default()
+                .push(frame.lumen.original_frame);
+
+            for wanted_type in &wanted {
+                if *wanted_type == ContourType::Lumen {
+                    continue;
+                }
+                match frame.extras.get(wanted_type) {
+                    Some(contour) => {
+                        ids_map
+                            .entry(wanted_type.clone())
+                            .or_default()
+                            .push(contour.id);
+                        orig_map
+                            .entry(wanted_type.clone())
+                            .or_default()
+                            .push(contour.original_frame);
+                    }
+                    None => panic!(
+                        "Frame {} missing expected contour type {:?}",
+                        idx, wanted_type
+                    ),
+                }
+            }
+        }
+
+        for (ctype, vec) in &ids_map {
             assert_eq!(
-                got, want,
-                "Mismatch at position {}: got frame {} but expected {}",
-                i, got, want
+                vec.len(),
+                n_frames,
+                "ids vector for {:?} has length {}, expected {}",
+                ctype,
+                vec.len(),
+                n_frames
             );
         }
-    }
+        for (ctype, vec) in &orig_map {
+            assert_eq!(
+                vec.len(),
+                n_frames,
+                "original_frame vector for {:?} has length {}, expected {}",
+                ctype,
+                vec.len(),
+                n_frames
+            );
+        }
 
-    #[test]
-    fn test_rest_diastolic_config_match() {
-        let geometry = Geometry::new(
-            "data/fixtures/rest_csv_files",
-            "test".to_string(),
-            true,
-            (4.5, 4.5),
-            0.5,
-            20,
-        )
-        .expect("Failed to load geometry");
+        let types: Vec<ContourType> = ids_map.keys().cloned().collect();
+        for i in 0..n_frames {
+            let first_type = &types[0];
+            let first_id = ids_map[first_type][i];
+            let first_of = orig_map[first_type][i];
 
-        let manifest = load_test_manifest("rest");
-        let dia_config = &manifest["dia"];
-
-        assert_eq!(
-            geometry.contours.len(),
-            dia_config["num_contours"].as_u64().unwrap() as usize,
-            "Contour count mismatch"
-        );
-        let n = geometry.contours.len() as u32;
-
-        let expected_indices: Vec<u32> = (0..=(n - 1) as u32).collect();
-
-        let actual_indices: Vec<u32> = geometry.contours.iter().map(|c| c.id).collect();
-
-        assert_eq!(
-            actual_indices, expected_indices,
-            "Frame indices ordering mismatch"
-        );
-    }
-
-    #[test]
-    fn test_contour_property_consistency() {
-        let geometry = Geometry::new(
-            "data/fixtures/rest_csv_files",
-            "test".to_string(),
-            true,
-            (4.5, 4.5),
-            0.5,
-            20,
-        )
-        .expect("Failed to load geometry");
-
-        let manifest = load_test_manifest("rest");
-        let dia_config = &manifest["dia"];
+            for t in &types[1..] {
+                let id = ids_map.get(t).unwrap()[i];
+                let of = orig_map.get(t).unwrap()[i];
+                assert_eq!(
+                    id, first_id,
+                    "mismatched id at frame {}: {:?} has id {}, but {:?} has {}",
+                    i, first_type, first_id, t, id
+                );
+                assert_eq!(
+                    of, first_of,
+                    "mismatched original_frame at frame {}: {:?} has {}, but {:?} has {}",
+                    i, first_type, first_of, t, of
+                );
+            }
+        }
 
         println!(
-            "Elliptic ratios manifest: {:?}",
-            dia_config["elliptic_ratios"]
+            "Checked {} frames and {} explicit contour types; all ids/original_frames match per-frame.",
+            n_frames,
+            types.len()
         );
-        let mut elliptic_ratios_contours = Vec::new();
-        let mut contour_ids = Vec::new();
-        for c in geometry.contours.iter() {
-            let ellip = c.elliptic_ratio();
-            elliptic_ratios_contours.push(ellip);
-            contour_ids.push(c.id);
-        }
-        println!("Contour ids: {:?}", contour_ids);
-        println!("Contour elliptic ratio: {:?}", elliptic_ratios_contours);
+    }
 
-        for (i, contour) in geometry.contours.iter().enumerate() {
-            // Verify elliptic ratio
-            let expected_ratio = dia_config["elliptic_ratios"][i].as_f64().unwrap();
-            assert_relative_eq!(
-                contour.elliptic_ratio(),
-                expected_ratio,
-                epsilon = 0.1 // Allow some tolerance
-            );
+    #[test]
+    fn test_rest_directory_area_elliptic() {
+        use std::path::Path;
 
-            // Verify area
-            let expected_area = dia_config["areas"][i].as_f64().unwrap();
-            assert_relative_eq!(contour.area(), expected_area, epsilon = 3.0); // fix later
+        let geometry = build_geometry_from_inputdata(
+            None,
+            Some(Path::new("data/ivus_rest")),
+            "full",
+            true,
+            (4.5, 4.5),
+            0.5,
+            NUM_POINTS_CATHETER,
+        )
+        .unwrap();
 
-            // Verify aortic thickness
-            let expected_thickness = match dia_config["aortic_thickness"][i].as_f64() {
-                Some(v) => Some(v),
-                None => None,
-            };
-            assert_eq!(
-                contour.aortic_thickness, expected_thickness,
-                "Aortic thickness mismatch at index {}",
-                i
-            );
-        }
+        let (_, long) = geometry.frames[0].lumen.find_farthest_points();
+        let (_, short) = geometry.frames[0].lumen.find_closest_opposite();
+
+        assert_eq!(geometry.frames[0].lumen.original_frame, 385);
+        assert_relative_eq!(geometry.frames[0].lumen.area(), 5.42, epsilon = 0.1);
+        assert_relative_eq!(long, 5.2, epsilon = 0.1);
+        assert_relative_eq!(short, 1.15, epsilon = 0.1);
+        assert_relative_eq!(
+            geometry.frames[0].lumen.elliptic_ratio(),
+            4.52,
+            epsilon = 0.1
+        );
+        assert_eq!(geometry.frames[0].lumen.aortic_thickness, Some(0.96));
+        assert_eq!(geometry.frames[0].lumen.pulmonary_thickness, Some(1.68));
+        assert_eq!(
+            geometry.frames[0].reference_point.unwrap().frame_index,
+            geometry.frames[0].lumen.original_frame
+        );
     }
 
     #[test]
     fn test_catheter_contour_properties() {
-        let geometry = Geometry::new(
-            "data/fixtures/rest_csv_files",
-            "test".to_string(),
+        let geometry = build_geometry_from_inputdata(
+            None,
+            Some(Path::new("data/fixtures/rest_csv_files")),
+            "test",
+            true,
+            (4.5, 4.5),
+            0.5,
+            NUM_POINTS_CATHETER,
+        )
+        .expect("Failed to load geometry");
+
+        for frame in &geometry.frames {
+            if let Some(catheter_contour) = frame.extras.get(&ContourType::Catheter) {
+                assert_eq!(
+                    catheter_contour.points.len(),
+                    NUM_POINTS_CATHETER as usize,
+                    "Incorrect number of catheter points"
+                );
+
+                assert_relative_eq!(
+                    catheter_contour.centroid.unwrap().2,
+                    frame.lumen.centroid.unwrap().2,
+                    epsilon = 1e-6
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_build_geometry_with_input_data() {
+        use input::InputData;
+
+        let test_points = vec![ContourPoint {
+            frame_index: 0,
+            point_index: 0,
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+            aortic: false,
+        }];
+
+        let input_data = InputData {
+            lumen: test_points.clone(),
+            eem: Some(test_points.clone()),
+            calcification: None,
+            sidebranch: None,
+            record: None,
+            ref_point: ContourPoint {
+                frame_index: 0,
+                point_index: 0,
+                x: 1.0,
+                y: 2.0,
+                z: 3.0,
+                aortic: false,
+            },
+            label: "test".to_string(),
+            diastole: true,
+        };
+
+        let geometry = build_geometry_from_inputdata(
+            Some(input_data),
+            None, // No path provided, use InputData
+            "test_label",
+            true,
+            (0.0, 0.0),
+            1.0,
+            10,
+        )
+        .expect("Failed to build geometry from InputData");
+
+        assert!(!geometry.frames.is_empty());
+        assert_eq!(geometry.label, "test_label");
+    }
+
+    #[test]
+    fn test_build_geometry_with_path() {
+        let geometry = build_geometry_from_inputdata(
+            None,
+            Some(Path::new("data/fixtures/rest_csv_files")),
+            "path_test",
             true,
             (4.5, 4.5),
             0.5,
             20,
-        )
-        .expect("Failed to load geometry");
+        );
 
-        // Verify number of catheter points per contour
-        for catheter_contour in &geometry.catheter {
-            assert_eq!(
-                catheter_contour.points.len(),
-                NUM_POINTS_CATHETER,
-                "Incorrect number of catheter points"
-            );
-        }
+        assert!(geometry.is_ok());
+        let geometry = geometry.unwrap();
+        assert!(!geometry.frames.is_empty());
+        assert_eq!(geometry.label, "path_test");
+    }
 
-        // Verify z-coordinate consistency
-        for (contour, catheter) in geometry.contours.iter().zip(&geometry.catheter) {
-            assert_relative_eq!(catheter.centroid.2, contour.centroid.2, epsilon = 1e-6);
-        }
+    #[test]
+    fn test_error_on_no_input() {
+        let result = build_geometry_from_inputdata(None, None, "test", true, (0.0, 0.0), 1.0, 10);
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Either input_data or path must be provided"));
     }
 }

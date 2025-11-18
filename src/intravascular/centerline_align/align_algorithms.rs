@@ -1,6 +1,6 @@
+use crate::intravascular::io::geometry::{Contour, Geometry};
+use crate::intravascular::io::input::ContourPoint;
 use crate::intravascular::io::input::{Centerline, CenterlinePoint};
-use crate::intravascular::io::input::{Contour, ContourPoint};
-use crate::intravascular::io::Geometry;
 use nalgebra::{Point3, Rotation3, Unit, Vector3};
 
 #[derive(Debug, Clone, Copy)]
@@ -34,46 +34,56 @@ impl FrameTransformation {
     }
 }
 
-pub fn get_transformations(mesh: Geometry, centerline: &Centerline) -> Vec<FrameTransformation> {
+pub fn get_transformations(
+    geometry: Geometry,
+    centerline: &Centerline,
+    ref_pt: &(f64, f64, f64),
+) -> Vec<FrameTransformation> {
     let mut transformations = Vec::new();
 
-    for mut contour in mesh.contours.into_iter() {
-        if let Some(cl_point) = centerline.get_by_frame(contour.id) {
-            let transformation = align_frame(&mut contour, cl_point);
-            transformations.push(transformation)
+    // Find the reference point in the centerline
+    let ref_idx_cl = centerline.find_reference_cl_point_idx(ref_pt);
+
+    // The geometry frames are ordered, and we assume they correspond to centerline points
+    // starting from the reference point and moving in the same direction
+    for (i, frame) in geometry.frames.into_iter().enumerate() {
+        // Calculate which centerline point corresponds to this geometry frame
+        // We start from the reference centerline point and move through the centerline
+        // based on the geometry frame's position relative to the reference frame
+        let cl_index = ref_idx_cl as isize + (i as isize); // or - i depending on your coordinate system direction
+
+        if cl_index >= 0 && cl_index < centerline.points.len() as isize {
+            let cl_point = &centerline.points[cl_index as usize];
+            let transformation = align_frame(&frame.lumen, cl_point);
+            transformations.push(transformation);
+        } else {
+            eprintln!(
+                "Centerline index {} out of bounds for geometry frame {}",
+                cl_index, frame.id
+            );
         }
     }
     transformations
 }
 
-/// Modified align_frame returns the transformation applied.
-fn align_frame(frame: &mut Contour, cl_point: &CenterlinePoint) -> FrameTransformation {
-    if frame.id != cl_point.contour_point.frame_index {
-        panic!(
-            "Frame Index {} does not match Centerline Point Frame Index {}",
-            frame.id, cl_point.contour_point.frame_index
-        );
-    }
+fn align_frame(frame: &Contour, cl_point: &CenterlinePoint) -> FrameTransformation {
+    // Get centroid or compute if None
+    let centroid = frame.centroid.unwrap_or_else(|| {
+        let x_avg = frame.points.iter().map(|p| p.x).sum::<f64>() / frame.points.len() as f64;
+        let y_avg = frame.points.iter().map(|p| p.y).sum::<f64>() / frame.points.len() as f64;
+        let z_avg = frame.points.iter().map(|p| p.z).sum::<f64>() / frame.points.len() as f64;
+        (x_avg, y_avg, z_avg)
+    });
 
     // === Translation Step ===
-    // Compute the translation vector to bring the frame's centroid to the centerline point.
     let translation_vec = Vector3::new(
-        cl_point.contour_point.x - frame.centroid.0,
-        cl_point.contour_point.y - frame.centroid.1,
-        cl_point.contour_point.z - frame.centroid.2,
+        cl_point.contour_point.x - centroid.0,
+        cl_point.contour_point.y - centroid.1,
+        cl_point.contour_point.z - centroid.2,
     );
-    for point in frame.points.iter_mut() {
-        point.x += translation_vec.x;
-        point.y += translation_vec.y;
-        point.z += translation_vec.z;
-    }
-    frame.centroid.0 += translation_vec.x;
-    frame.centroid.1 += translation_vec.y;
-    frame.centroid.2 += translation_vec.z;
 
     // === Rotation Step ===
-    // Compute the rotation needed to align the frame's normal with the centerline normal.
-    let current_normal = calculate_normal(&frame.points, &frame.centroid);
+    let current_normal = calculate_normal(&frame.points, &centroid);
     let desired_normal = cl_point.normal;
     let angle = current_normal.angle(&desired_normal);
     let rotation: Rotation3<f64> = if angle.abs() < 1e-6 {
@@ -88,45 +98,105 @@ fn align_frame(frame: &mut Contour, cl_point: &CenterlinePoint) -> FrameTransfor
         }
     };
 
-    // Define the pivot as the centerline point.
+    // Define the pivot as the centerline point
     let pivot = Point3::new(
         cl_point.contour_point.x,
         cl_point.contour_point.y,
         cl_point.contour_point.z,
     );
-    if angle.abs() >= 1e-6 {
-        for point in frame.points.iter_mut() {
-            let current_point = Point3::new(point.x, point.y, point.z);
-            let relative_vector = current_point - pivot;
-            let rotated_relative = rotation * relative_vector;
-            let rotated_point = pivot + rotated_relative;
-            point.x = rotated_point.x;
-            point.y = rotated_point.y;
-            point.z = rotated_point.z;
-        }
-    }
 
-    // Return the transformation details for later use (speed up).
     FrameTransformation {
-        frame_index: frame.id,
+        frame_index: frame.original_frame, // Keep original frame index for tracking
         translation: translation_vec,
         rotation,
         pivot,
     }
 }
 
+/// Applies transformation to a contour (mutable version)
+pub fn apply_transformation_to_contour(
+    contour: &mut Contour,
+    transformation: &FrameTransformation,
+) {
+    for point in contour.points.iter_mut() {
+        let transformed_point = transformation.apply_to_point(point);
+        *point = transformed_point;
+    }
+
+    // Update centroid if it exists
+    if let Some(centroid) = contour.centroid.as_mut() {
+        let centroid_point = ContourPoint {
+            frame_index: transformation.frame_index,
+            point_index: 0,
+            x: centroid.0,
+            y: centroid.1,
+            z: centroid.2,
+            aortic: false,
+        };
+        let transformed_centroid = transformation.apply_to_point(&centroid_point);
+        *centroid = (
+            transformed_centroid.x,
+            transformed_centroid.y,
+            transformed_centroid.z,
+        );
+    }
+}
+
 /// Calculates the normal vector using a stable cross product method.
+/// Calculates the normal vector using a more robust method
 fn calculate_normal(points: &[ContourPoint], centroid: &(f64, f64, f64)) -> Vector3<f64> {
-    let p1 = &points[0];
-    let p2 = &points[points.len() / 3];
-    let p3 = &points[2 * points.len() / 3];
+    if points.len() < 3 {
+        return Vector3::new(0.0, 0.0, 1.0); // Default to Z-axis for degenerate cases
+    }
 
-    let v1 = Vector3::new(p1.x - centroid.0, p1.y - centroid.1, p1.z - centroid.2);
-    let v2 = Vector3::new(p2.x - centroid.0, p2.y - centroid.1, p2.z - centroid.2);
-    let v3 = Vector3::new(p3.x - centroid.0, p3.y - centroid.1, p3.z - centroid.2);
+    // Use a more stable method: Newell's method for polygon normal
+    let mut normal = Vector3::zeros();
 
-    // need to take the negative normal, since centerline "appears backwards"
-    -(v1.cross(&v2) + v2.cross(&v3)).normalize()
+    for i in 0..points.len() {
+        let current = &points[i];
+        let next = &points[(i + 1) % points.len()];
+
+        normal.x += (current.y - centroid.1) * (next.z - centroid.2)
+            - (current.z - centroid.2) * (next.y - centroid.1);
+        normal.y += (current.z - centroid.2) * (next.x - centroid.0)
+            - (current.x - centroid.0) * (next.z - centroid.2);
+        normal.z += (current.x - centroid.0) * (next.y - centroid.1)
+            - (current.y - centroid.1) * (next.x - centroid.0);
+    }
+
+    // Normalize the result
+    let norm = normal.norm();
+    if norm > 1e-12 {
+        normal /= norm;
+    } else {
+        normal = Vector3::new(0.0, 0.0, 1.0);
+    }
+
+    normal
+}
+
+/// Rotates a contour around its centroid (for use in best_rotation_three_point)
+fn rotate_contour_around_centroid(contour: &mut Contour, angle: f64) {
+    let centroid = contour.centroid.unwrap_or_else(|| {
+        let x_avg = contour.points.iter().map(|p| p.x).sum::<f64>() / contour.points.len() as f64;
+        let y_avg = contour.points.iter().map(|p| p.y).sum::<f64>() / contour.points.len() as f64;
+        let z_avg = contour.points.iter().map(|p| p.z).sum::<f64>() / contour.points.len() as f64;
+        (x_avg, y_avg, z_avg)
+    });
+
+    let rotation_axis = calculate_normal(&contour.points, &centroid);
+    let rotation = Rotation3::from_axis_angle(&Unit::new_normalize(rotation_axis), angle);
+    let pivot = Point3::new(centroid.0, centroid.1, centroid.2);
+
+    for point in contour.points.iter_mut() {
+        let current_point = Point3::new(point.x, point.y, point.z);
+        let relative_vector = current_point - pivot;
+        let rotated_relative = rotation * relative_vector;
+        let rotated_point = pivot + rotated_relative;
+        point.x = rotated_point.x;
+        point.y = rotated_point.y;
+        point.z = rotated_point.z;
+    }
 }
 
 /// Finds the optimal rotation angle by minimizing the distance between the closest opposite point
@@ -152,24 +222,28 @@ pub fn best_rotation_three_point(
     println!(
         "---------------------Centerline alignment: Finding optimal rotation---------------------"
     );
+
     while angle < 6.283185 {
-        //aprox 360°
-        // maybe better approach then bruteforce, fix later, still fast enough
-        let mut temp_frame = contour.clone();
+        // approx 360°
+        let mut temp_contour = contour.clone();
 
-        temp_frame.rotate_contour(angle);
+        // Rotate around centroid
+        rotate_contour_around_centroid(&mut temp_contour, angle);
 
-        align_frame(&mut temp_frame, centerline_point);
-        let temp_contour = &temp_frame.points;
+        // Apply centerline alignment transformation
+        let transformation = align_frame(&temp_contour, centerline_point);
+        apply_transformation_to_contour(&mut temp_contour, &transformation);
 
-        let n_points = temp_contour.len() as u32;
+        let temp_points = &temp_contour.points;
 
-        let p_aortic = temp_contour
+        let n_points = temp_points.len() as u32;
+
+        let p_aortic = temp_points
             .iter()
             .find(|p| p.point_index == index_reference)
             .unwrap();
-        let cont_p_upper = temp_contour.iter().find(|p| p.point_index == 0).unwrap();
-        let cont_p_lower = temp_contour
+        let cont_p_upper = temp_points.iter().find(|p| p.point_index == 0).unwrap();
+        let cont_p_lower = temp_points
             .iter()
             .find(|p| p.point_index == (n_points / 2))
             .unwrap();
@@ -192,8 +266,6 @@ pub fn best_rotation_three_point(
         // Calculate sum of squared errors
         let total_error = d_aortic.powi(2) + d_upper.powi(2) + d_lower.powi(2);
 
-        // println!("angle: {:?}, error: {:?}", angle, total_error);
-
         if total_error < min_total_error {
             min_total_error = total_error;
             best_angle = angle;
@@ -202,4 +274,399 @@ pub fn best_rotation_three_point(
     }
 
     best_angle
+}
+
+#[cfg(test)]
+mod align_algorithms_tests {
+    use super::*;
+    use crate::intravascular::io::geometry::{ContourType, Frame, Geometry};
+    use std::collections::HashMap;
+
+    fn create_test_contour(id: u32, original_frame: u32, points: Vec<ContourPoint>) -> Contour {
+        Contour {
+            id,
+            original_frame,
+            points,
+            centroid: None,
+            aortic_thickness: None,
+            pulmonary_thickness: None,
+            kind: ContourType::Lumen,
+        }
+    }
+
+    fn create_test_centerline_point(x: f64, y: f64, z: f64, frame_index: u32) -> CenterlinePoint {
+        CenterlinePoint {
+            contour_point: ContourPoint {
+                frame_index,
+                point_index: 0,
+                x,
+                y,
+                z,
+                aortic: false,
+            },
+            normal: Vector3::new(0.0, 0.0, 1.0), // Default normal pointing up
+        }
+    }
+
+    #[test]
+    fn test_frame_transformation_apply_to_point() {
+        let transformation = FrameTransformation {
+            frame_index: 0,
+            translation: Vector3::new(1.0, 2.0, 3.0),
+            rotation: Rotation3::identity(),
+            pivot: Point3::new(0.0, 0.0, 0.0),
+        };
+
+        let point = ContourPoint {
+            frame_index: 0,
+            point_index: 0,
+            x: 1.0,
+            y: 1.0,
+            z: 1.0,
+            aortic: false,
+        };
+
+        let transformed = transformation.apply_to_point(&point);
+
+        // Only translation should be applied (rotation is identity)
+        assert_eq!(transformed.x, 2.0);
+        assert_eq!(transformed.y, 3.0);
+        assert_eq!(transformed.z, 4.0);
+        assert_eq!(transformed.frame_index, point.frame_index);
+        assert_eq!(transformed.point_index, point.point_index);
+        assert_eq!(transformed.aortic, point.aortic);
+    }
+
+    #[test]
+    fn test_frame_transformation_with_rotation() {
+        // 90 degree rotation around Z axis
+        let rotation = Rotation3::from_axis_angle(&Vector3::z_axis(), std::f64::consts::FRAC_PI_2);
+        let transformation = FrameTransformation {
+            frame_index: 0,
+            translation: Vector3::new(0.0, 0.0, 0.0),
+            rotation,
+            pivot: Point3::new(0.0, 0.0, 0.0),
+        };
+
+        let point = ContourPoint {
+            frame_index: 0,
+            point_index: 0,
+            x: 1.0,
+            y: 0.0,
+            z: 0.0,
+            aortic: false,
+        };
+
+        let transformed = transformation.apply_to_point(&point);
+
+        // Point (1, 0, 0) rotated 90° around Z should become (0, 1, 0)
+        assert!((transformed.x - 0.0).abs() < 1e-12);
+        assert!((transformed.y - 1.0).abs() < 1e-12);
+        assert!((transformed.z - 0.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_align_frame() {
+        // Create a simple square contour in XY plane
+        let points = vec![
+            ContourPoint {
+                frame_index: 0,
+                point_index: 0,
+                x: -1.0,
+                y: -1.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 0,
+                point_index: 1,
+                x: 1.0,
+                y: -1.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 0,
+                point_index: 2,
+                x: 1.0,
+                y: 1.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 0,
+                point_index: 3,
+                x: -1.0,
+                y: 1.0,
+                z: 0.0,
+                aortic: false,
+            },
+        ];
+
+        let contour = create_test_contour(0, 0, points);
+        let centerline_point = create_test_centerline_point(10.0, 10.0, 10.0, 0);
+
+        let transformation = align_frame(&contour, &centerline_point);
+
+        assert_eq!(transformation.frame_index, 0);
+
+        // The transformation should move the centroid (0,0,0) to (10,10,10)
+        assert!((transformation.translation.x - 10.0).abs() < 1e-12);
+        assert!((transformation.translation.y - 10.0).abs() < 1e-12);
+        assert!((transformation.translation.z - 10.0).abs() < 1e-12);
+
+        // Pivot should be the centerline point
+        assert!((transformation.pivot.x - 10.0).abs() < 1e-12);
+        assert!((transformation.pivot.y - 10.0).abs() < 1e-12);
+        assert!((transformation.pivot.z - 10.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_apply_transformation_to_contour() {
+        let points = vec![
+            ContourPoint {
+                frame_index: 0,
+                point_index: 0,
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 0,
+                point_index: 1,
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+        ];
+
+        let mut contour = create_test_contour(0, 0, points);
+        contour.centroid = Some((0.5, 0.0, 0.0));
+
+        let transformation = FrameTransformation {
+            frame_index: 0,
+            translation: Vector3::new(2.0, 3.0, 4.0),
+            rotation: Rotation3::identity(),
+            pivot: Point3::new(0.0, 0.0, 0.0),
+        };
+
+        apply_transformation_to_contour(&mut contour, &transformation);
+
+        // Check points were transformed
+        assert!((contour.points[0].x - 2.0).abs() < 1e-12);
+        assert!((contour.points[0].y - 3.0).abs() < 1e-12);
+        assert!((contour.points[0].z - 4.0).abs() < 1e-12);
+
+        assert!((contour.points[1].x - 3.0).abs() < 1e-12);
+        assert!((contour.points[1].y - 3.0).abs() < 1e-12);
+        assert!((contour.points[1].z - 4.0).abs() < 1e-12);
+
+        // Check centroid was transformed
+        let centroid = contour.centroid.unwrap();
+        assert!((centroid.0 - 2.5).abs() < 1e-12);
+        assert!((centroid.1 - 3.0).abs() < 1e-12);
+        assert!((centroid.2 - 4.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_calculate_normal() {
+        // Create points in XY plane (normal should be +Z or -Z)
+        let points = vec![
+            ContourPoint {
+                frame_index: 0,
+                point_index: 0,
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 0,
+                point_index: 1,
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 0,
+                point_index: 2,
+                x: 0.0,
+                y: 1.0,
+                z: 0.0,
+                aortic: false,
+            },
+        ];
+
+        let centroid = (0.0, 0.0, 0.0);
+        let normal = calculate_normal(&points, &centroid);
+
+        // Normal should be approximately in Z direction (up or down)
+        // The function takes negative of the computed normal, so we need to check magnitude
+        assert!(normal.norm() > 0.0);
+
+        // The cross product of (1,0,0) and (0,1,0) is (0,0,1) or (0,0,-1)
+        // After normalization and negation, it should be unit length
+        assert!((normal.norm() - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_rotate_contour_around_centroid() {
+        // Create a contour with clear normal direction
+        let points = vec![
+            ContourPoint {
+                frame_index: 0,
+                point_index: 0,
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 0,
+                point_index: 1,
+                x: 0.0,
+                y: 1.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 0,
+                point_index: 2,
+                x: -1.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 0,
+                point_index: 3,
+                x: 0.0,
+                y: -1.0,
+                z: 0.0,
+                aortic: false,
+            },
+        ];
+
+        let mut contour = create_test_contour(0, 0, points);
+        contour.centroid = Some((0.0, 0.0, 0.0));
+
+        // 90 degree rotation around Z axis
+        rotate_contour_around_centroid(&mut contour, std::f64::consts::FRAC_PI_2);
+
+        // With improved normal calculation, check the first point
+        // Point (1,0,0) should rotate to approximately (0,1,0)
+        assert!((contour.points[0].x - 0.0).abs() < 1e-6);
+        assert!((contour.points[0].y - 1.0).abs() < 1e-6);
+        assert!((contour.points[0].z - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_get_transformations() {
+        // Create a simple geometry with one frame
+        let contour_points = vec![
+            ContourPoint {
+                frame_index: 0,
+                point_index: 0,
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 0,
+                point_index: 1,
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+        ];
+
+        let lumen = create_test_contour(0, 0, contour_points);
+
+        let frame = Frame {
+            id: 0,
+            centroid: (0.5, 0.0, 0.0),
+            lumen,
+            extras: HashMap::new(),
+            reference_point: None,
+        };
+
+        let geometry = Geometry {
+            frames: vec![frame],
+            label: "test".to_string(),
+        };
+
+        // Create a centerline with matching frame indices
+        let centerline_points = vec![
+            create_test_centerline_point(10.0, 10.0, 10.0, 0),
+            create_test_centerline_point(11.0, 10.0, 10.0, 1),
+        ];
+
+        let centerline = Centerline {
+            points: centerline_points,
+        };
+        let ref_pt = (10.0, 10.0, 10.0);
+
+        let transformations = get_transformations(geometry, &centerline, &ref_pt);
+
+        // Should get one transformation for the one frame
+        assert_eq!(transformations.len(), 1);
+        assert_eq!(transformations[0].frame_index, 0);
+    }
+
+    #[test]
+    fn test_best_rotation_three_point_simple_case() {
+        // Create a simple circular contour
+        let points: Vec<ContourPoint> = (0..8)
+            .map(|i| {
+                let angle = (i as f64) * std::f64::consts::FRAC_PI_4;
+                ContourPoint {
+                    frame_index: 0,
+                    point_index: i as u32,
+                    x: angle.cos(),
+                    y: angle.sin(),
+                    z: 0.0,
+                    aortic: false,
+                }
+            })
+            .collect();
+
+        let mut contour = create_test_contour(0, 0, points);
+        contour.centroid = Some((0.0, 0.0, 0.0));
+
+        let reference_point = ContourPoint {
+            frame_index: 0,
+            point_index: 0, // first point as reference
+            x: 1.0,
+            y: 0.0,
+            z: 0.0,
+            aortic: false,
+        };
+
+        // Set targets to match the current positions (so best rotation should be 0)
+        let aortic_ref_pt = (1.0, 0.0, 0.0);
+        let upper_ref_pt = (0.0, 1.0, 0.0);
+        let lower_ref_pt = (-1.0, 0.0, 0.0);
+        let angle_step = std::f64::consts::FRAC_PI_8; // 22.5 degree steps
+
+        let centerline_point = create_test_centerline_point(0.0, 0.0, 0.0, 0);
+
+        let best_angle = best_rotation_three_point(
+            &contour,
+            &reference_point,
+            aortic_ref_pt,
+            upper_ref_pt,
+            lower_ref_pt,
+            angle_step,
+            &centerline_point,
+        );
+
+        // With targets matching current positions, best rotation should be near 0
+        // Allow some tolerance due to discrete angle steps
+        assert!(best_angle.abs() < angle_step + 1e-6);
+    }
 }

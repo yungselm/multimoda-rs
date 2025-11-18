@@ -7,8 +7,10 @@ Classes
 
    PyContourPoint
    PyContour
+   PyFrame
    PyGeometry
    PyGeometryPair
    PyRecord
+   PyInputData
    PyCenterlinePoint
    PyCenterline

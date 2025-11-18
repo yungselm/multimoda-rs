@@ -1,12 +1,11 @@
-mod intravascular;
 mod ccta;
+mod intravascular;
 
 use crate::intravascular::binding::align::{align_manual, align_three_point};
 use crate::intravascular::binding::classes::*;
 use crate::intravascular::binding::{
-    from_file_full, from_file_doublepair, from_file_singlepair, from_file_single,
-    create_catheter_geometry, geometry_from_array, from_array_full,
-    from_array_doublepair, from_array_singlepair, to_obj,
+    from_array_doublepair, from_array_full, from_array_single, from_array_singlepair,
+    from_file_doublepair, from_file_full, from_file_single, from_file_singlepair, to_obj,
 };
 
 use pyo3::prelude::*;
@@ -32,16 +31,18 @@ fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<(
     m.add_function(wrap_pyfunction!(align_three_point, m.clone())?)?;
     m.add_function(wrap_pyfunction!(align_manual, m.clone())?)?;
     // align hausdorff missing
-    m.add_function(wrap_pyfunction!(create_catheter_geometry, m.clone())?)?;
-    m.add_function(wrap_pyfunction!(geometry_from_array, m.clone())?)?;
     m.add_function(wrap_pyfunction!(from_array_full, m.clone())?)?;
     m.add_function(wrap_pyfunction!(from_array_doublepair, m.clone())?)?;
     m.add_function(wrap_pyfunction!(from_array_singlepair, m.clone())?)?;
+    m.add_function(wrap_pyfunction!(from_array_single, m.clone())?)?;
     m.add_function(wrap_pyfunction!(to_obj, m.clone())?)?;
 
     // Updated class registration
+    m.add_class::<PyInputData>()?;
     m.add_class::<PyContourPoint>()?;
     m.add_class::<PyContour>()?;
+    m.add_class::<PyContourType>()?;
+    m.add_class::<PyFrame>()?;
     m.add_class::<PyGeometry>()?;
     m.add_class::<PyGeometryPair>()?;
     m.add_class::<PyCenterlinePoint>()?;

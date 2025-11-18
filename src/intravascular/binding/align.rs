@@ -1,9 +1,8 @@
-use pyo3::prelude::*;
-
 use crate::intravascular::{
-    binding::classes::{PyCenterline, PyGeometryPair},
+    binding::classes::{PyCenterline, PyContourType, PyGeometryPair},
     centerline_align::{align_manual_rs, align_three_point_rs},
 };
+use pyo3::prelude::*;
 
 /// Creates centerline-aligned meshes for diastolic and systolic geometries
 /// based on three reference points (aorta, upper section, lower section).
@@ -15,8 +14,8 @@ use crate::intravascular::{
 ///     aortic_ref_pt: Reference point for aortic position
 ///     upper_ref_pt: Upper reference point
 ///     lower_ref_pt: Lower reference point
-///     angle_step_deg (default 1.0): step size in degrees for rotation search 
-///     write (default false): Wether to write aligned meshes to OBJ 
+///     angle_step_deg (default 1.0): step size in degrees for rotation search
+///     write (default false): Wether to write aligned meshes to OBJ
 ///     watertight (default true): Wether to write shell or watertight mesh to OBJ.
 ///     interpolation_steps: Number of interpolation steps
 ///     output_dir (default "output/aligned"): Output directory for aligned meshes
@@ -47,6 +46,7 @@ use crate::intravascular::{
         watertight=true,
         interpolation_steps=28usize,
         output_dir="output/aligned",
+        contour_types=vec![PyContourType::Lumen, PyContourType::Catheter, PyContourType::Wall],
         case_name="None",
     )
 )]
@@ -61,8 +61,11 @@ pub fn align_three_point(
     watertight: bool,
     interpolation_steps: usize,
     output_dir: &str,
+    contour_types: Vec<PyContourType>,
     case_name: &str,
 ) -> PyResult<(PyGeometryPair, PyCenterline)> {
+    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+        contour_types.iter().map(|ct| ct.into()).collect();
     let cl_rs = centerline.to_rust_centerline();
     let geom_pair_rs = geometry_pair.to_rust_geometry_pair();
     let angle_step = angle_step_deg.to_radians();
@@ -78,8 +81,10 @@ pub fn align_three_point(
         watertight,
         interpolation_steps,
         output_dir,
+        rust_contour_types,
         case_name,
-    );
+    )
+    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
     let aligned_py: PyGeometryPair = geom_pair.into();
     let resampled_cl: PyCenterline = cl.into();
@@ -96,7 +101,7 @@ pub fn align_three_point(
 ///     geometry_pair: PyGeometryPair object
 ///     rotation_angle: Rotation angle in radians
 ///     start_point: Index of centerline point to use as reference point
-///     write (default false): Wether to write aligned meshes to OBJ 
+///     write (default false): Wether to write aligned meshes to OBJ
 ///     watertight (default true): Wether to write shell or watertight mesh to OBJ.
 ///     interpolation_steps: Number of interpolation steps
 ///     output_dir (default "output/aligned"): Output directory for aligned meshes
@@ -120,11 +125,12 @@ pub fn align_three_point(
         centerline,
         geometry_pair,
         rotation_angle,
-        start_point,
+        ref_point,
         write=false,
         watertight=true,
         interpolation_steps=28usize,
         output_dir="output/aligned",
+        contour_types=vec![PyContourType::Lumen, PyContourType::Catheter, PyContourType::Wall],
         case_name="None",
     )
 )]
@@ -132,13 +138,16 @@ pub fn align_manual(
     centerline: PyCenterline,
     geometry_pair: PyGeometryPair,
     rotation_angle: f64,
-    start_point: usize,
+    ref_point: (f64, f64, f64),
     write: bool,
     watertight: bool,
     interpolation_steps: usize,
     output_dir: &str,
+    contour_types: Vec<PyContourType>,
     case_name: &str,
 ) -> PyResult<(PyGeometryPair, PyCenterline)> {
+    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+        contour_types.iter().map(|ct| ct.into()).collect();
     let cl_rs = centerline.to_rust_centerline();
     let geom_pair_rs = geometry_pair.to_rust_geometry_pair();
 
@@ -146,13 +155,15 @@ pub fn align_manual(
         cl_rs,
         geom_pair_rs,
         rotation_angle,
-        start_point,
+        ref_point,
         write,
         watertight,
         interpolation_steps,
         output_dir,
+        rust_contour_types,
         case_name,
-    );
+    )
+    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
     let aligned_py: PyGeometryPair = geom_pair.into();
     let resampled_cl: PyCenterline = cl.into();

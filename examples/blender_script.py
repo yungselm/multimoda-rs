@@ -117,7 +117,7 @@ def import_obj_file(filepath):
     new_objs = get_new_objects(before)
     return new_objs
 
-def import_sequence(prefix="mesh", count=30):
+def import_sequence(prefix="lumen", count=30):
     imported_groups = []
     for i in range(count):
         file_path = os.path.join(obj_directory, f"{prefix}_{i:03}_rest.obj")
@@ -385,7 +385,7 @@ if __name__ == "__main__":
     clean_scene()
 
     # 2) Import the mesh and catheter sequences
-    groups = import_sequence(prefix="mesh", count=30)
+    groups = import_sequence(prefix="lumen", count=30)
     catheter_groups = import_sequence(prefix="catheter", count=30)
 
     # Ensure groups lengths match
@@ -409,7 +409,7 @@ if __name__ == "__main__":
     animate_camera(camera, target, object_end_frame + 1, z_orbit_frames, y_orbit_frames)
 
     # 7) Lighting: compute a center to scatter around
-    mesh_obj = next((o for o in bpy.data.objects if o.name.startswith("mesh_000_rest")), None)
+    mesh_obj = next((o for o in bpy.data.objects if o.name.startswith("lumen_000_full")), None)
     if mesh_obj:
         mesh_center = get_object_geometric_center(mesh_obj)
     else:

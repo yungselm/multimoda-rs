@@ -9,4 +9,4 @@ PyGeometry
    :undoc-members:
    :show-inheritance:
    :inherited-members:
-   :exclude-members: contours, catheters, walls, reference_point
+   :exclude-members: frames, label

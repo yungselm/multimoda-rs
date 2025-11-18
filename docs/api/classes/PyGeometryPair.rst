@@ -9,4 +9,4 @@ PyGeometryPair
    :undoc-members:
    :show-inheritance:
    :inherited-members:
-   :exclude-members: dia_geom, sys_geom
+   :exclude-members: geom_a, geom_b
