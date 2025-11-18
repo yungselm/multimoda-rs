@@ -8,4 +8,4 @@ Processing Functions
 .. autofunction:: multimodars.from_array_full
 .. autofunction:: multimodars.from_array_doublepair
 .. autofunction:: multimodars.from_array_singlepair
-.. autofunction:: multimodars.geometry_from_array
+.. autofunction:: multimodars.from_array_single
