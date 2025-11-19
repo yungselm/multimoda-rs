@@ -38,4 +38,5 @@ __all__ = [
     "align_three_point",
     "align_manual",
     "to_obj",
+    "find_centerline_bounded_points_simple",
 ]

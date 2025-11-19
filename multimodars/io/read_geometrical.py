@@ -76,14 +76,32 @@ if __name__ == "__main__":
     # np.savetxt("data/centerline_narco119.csv", points, delimiter=",", fmt="%.6f")
 
     from trimesh.points import PointCloud
+    import multimodars as mm
+
     mesh = read_mesh('data/output/aligned/mesh_000_None.obj')
     mesh2 = read_mesh('data/NARCO_119.stl')
     print(mesh.vertices)
     print(mesh.faces)
     points = np.loadtxt("data/centerlines_narco119.csv", delimiter=",")
     pc = PointCloud(points)
+    
+    cl_raw = np.genfromtxt("data/centerlines_narco119.csv", delimiter=",")
+    cl = mm.numpy_to_centerline(cl_raw)
 
-    # scene = trimesh.Scene([mesh, mesh2])
-    # scene.add_geometry(pc)
-    scene = trimesh.Scene([mesh, pc])
+    points_list = [tuple(vertex) for vertex in mesh2.vertices.tolist()]
+    print(len(points_list))
+    points_found = mm.find_centerline_bounded_points_simple(cl, points_list, 3.0)
+    print(len(points_found))
+    print(points_found[0])
+
+    pf = np.array(points_found, dtype=np.float64)  # shape (N,3)
+
+    # Make an RGBA color for every point (uint8). Example: red, fully opaque.
+    color = np.array([255, 0, 0, 255], dtype=np.uint8)
+    colors = np.tile(color, (pf.shape[0], 1))
+
+    pc_found = PointCloud(pf, colors=colors)
+
+    # Add to scene (you already had mesh, mesh2, pc)
+    scene = trimesh.Scene([mesh, mesh2, pc, pc_found])
     scene.show()
