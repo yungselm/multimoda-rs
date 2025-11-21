@@ -75,7 +75,7 @@ pub fn align_three_point_rs(
 pub fn align_manual_rs(
     centerline: Centerline,
     mut geom_pair: GeometryPair,
-    rotation_angle: f64,
+    rotation_angle_deg: f64,
     ref_pt: (f64, f64, f64),
     write: bool,
     watertight: bool,
@@ -87,7 +87,7 @@ pub fn align_manual_rs(
     let resampled_centerline = preprocess_centerline(centerline, &geom_pair.geom_a)
         .map_err(|e| anyhow!("Couldn't resample the centerline: {}", e))?;
 
-    geom_pair = rotate_by_best_rotation(geom_pair, rotation_angle);
+    geom_pair = rotate_by_best_rotation(geom_pair, rotation_angle_deg.to_radians());
 
     geom_pair = apply_transformations(geom_pair, &resampled_centerline, &ref_pt);
 

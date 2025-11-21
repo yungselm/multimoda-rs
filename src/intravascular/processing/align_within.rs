@@ -391,7 +391,6 @@ pub fn fill_holes(geometry: &mut Geometry) -> anyhow::Result<Geometry> {
             // one missing frame: insert averaged frame at position i
             let mid = fix_one_frame_hole(&prev, &curr);
             geometry.insert_frame(mid, Some(i));
-            // After insertion, the previously-curr frame moved to i+1, so skip past curr
             i += 2;
             println!(
                 "✅ Fixed one-frame hole between Frame {} and Frame {} (dz = {:.3}, ratio = {:.3})",
@@ -402,21 +401,34 @@ pub fn fill_holes(geometry: &mut Geometry) -> anyhow::Result<Geometry> {
             let (f1, f2) = fix_two_frame_hole(&prev, &curr);
             geometry.insert_frame(f1, Some(i));
             geometry.insert_frame(f2, Some(i + 1));
-            // skip past the two inserted frames and original curr
             i += 3;
             println!(
                 "✅ Fixed two-frame hole between Frame {} and Frame {} (dz = {:.3}, ratio = {:.3})",
                 prev.id, curr.id, diff, ratio
             );
         } else {
-            return Err(anyhow!(
-                "🛑\tDetected a very large z-gap between frames at indices {} and {} (dz = {:.3}, baseline: {:.3}, ratio: {:.3}) — refusing to auto-fix",
-                i - 1,
-                i,
-                diff,
-                baseline,
-                ratio,
-            ));
+            // Larger gaps - calculate how many frames to insert
+            let missing_frames_count = (ratio - 1.0).floor().max(1.0) as usize;
+            
+            if ratio >= 10.0 {
+                println!("🛑 WARNING: Very large gap detected between Frame {} and Frame {} (dz = {:.3}, baseline: {:.3}, ratio: {:.3}) - inserting {} frames but geometry may not be realistic!", 
+                    prev.id, curr.id, diff, baseline, ratio, missing_frames_count);
+            } else if ratio >= 5.0 {
+                println!("⚠️\tLarge gap detected between Frame {} and Frame {} (dz = {:.3}, baseline: {:.3}, ratio: {:.3}) - inserting {} frames", 
+                    prev.id, curr.id, diff, baseline, ratio, missing_frames_count);
+            } else {
+                println!("🔄 Fixing {}-frame gap between Frame {} and Frame {} (dz = {:.3}, ratio = {:.3})", 
+                    missing_frames_count, prev.id, curr.id, diff, ratio);
+            }
+
+            // Insert the missing frames using interpolation
+            for frame_idx in 1..=missing_frames_count {
+                let t = frame_idx as f64 / (missing_frames_count + 1) as f64;
+                let new_frame = create_interpolated_frame(&prev, &curr, t);
+                geometry.insert_frame(new_frame, Some(i + frame_idx - 1));
+            }
+
+            i += missing_frames_count + 1;
         }
     }
 
@@ -884,16 +896,6 @@ mod align_within_tests {
                 assert_eq!(point.z, i as f64);
             }
         }
-        Ok(())
-    }
-
-    #[test]
-    fn test_detect_holes_fail_on_big_gap() -> anyhow::Result<()> {
-        let mut geometry = dummy_geometry_aligned_long();
-        geometry.frames[5].translate_frame((0.0, 0.0, 3.0));
-
-        let new_geom = fill_holes(&mut geometry);
-        assert!(new_geom.is_err());
         Ok(())
     }
 
