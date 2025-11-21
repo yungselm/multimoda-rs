@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.2] - 2025-11-21
+
+### Changed 
+- intravascular::processing::align_within::fill_holes() now does not panic with gaps > 2
+  frames, but instead still fixes the holes and returns a warning to the user to check integrity of the data.
+
+## [0.1.1] - 2025-11-17
+
+### Changed
+- Update documentation to match new functionality
+
 ## [0.1.0] - 2025-11-17
 
 ### Added
