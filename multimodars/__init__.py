@@ -6,6 +6,8 @@ from ._wrappers import (
     from_file,
     from_array,
 )
+from .io import read_geometrical, write_geometries
+from .ccta import adjust_ccta
 
 __all__ = [
     # Core classes
@@ -39,4 +41,6 @@ __all__ = [
     "align_manual",
     "to_obj",
     "find_centerline_bounded_points_simple",
+    # CCTA module
+    "adjust_ccta",
 ]
