@@ -1,7 +1,8 @@
 // src/ccta/binding/label_py.rs
 use crate::intravascular::binding::classes::PyCenterline;
-use crate::ccta::label_mesh::label_coronary::find_centerline_bounded_points;
-use crate::ccta::label_mesh::label_coronary::{Triangle, remove_occluded_points_ray_triangle_rust};
+use crate::ccta::adjust_mesh::label_coronary::find_centerline_bounded_points;
+use crate::ccta::adjust_mesh::label_coronary::{Triangle, remove_occluded_points_ray_triangle_rust};
+use crate::ccta::adjust_mesh::scale_coronary::centerline_based_diameter_morphing;
 use pyo3::prelude::*;
 
 /// Finds points that are bounded by spheres along a coronary vessel centerline.
@@ -48,12 +49,14 @@ pub fn find_centerline_bounded_points_simple(
 /// For each centerline point, we keep at most one point per angular bin
 /// (quantized theta/phi) — the point with the smallest radius (closest to the center).
 ///
-/// - `centerline`: centerline used as vantage points
-/// - `points`: candidate points (e.g., output of find_centerline_bounded_points)
-/// - `radius`: same bounding sphere radius used to gather points (we only consider points within this distance from each cl point)
-/// - `angular_tolerance_deg`: angular bin size in degrees (e.g. 8.0). Smaller = stricter separation.
+/// Args:
+///     `centerline`: centerline used as vantage points
+///     `points`: candidate points (e.g., output of find_centerline_bounded_points)
+///     `radius`: same bounding sphere radius used to gather points (we only consider points within this distance from each cl point)
+///     `angular_tolerance_deg`: angular bin size in degrees (e.g. 8.0). Smaller = stricter separation.
 ///
-/// Returns a filtered Vec of points with duplicates removed.
+/// Returns:
+///    Filtered list of points with occluded points removed.
 ///
 /// This is intended to run as a separate cleanup step after your existing selection.
 #[pyfunction]
@@ -81,4 +84,30 @@ pub fn remove_occluded_points_ray_triangle(
         &triangles,
     );
     Ok(result)
+}
+
+/// Adjust centerline-based diameter by morphing points outward or inward.
+/// 
+/// Args:
+///     centerline: PyCenterline object representing the vessel centerline
+///     points: List of (x, y, z) tuples containing point coordinates
+///     diameter_adjustment_mm: Amount to adjust diameter (positive to expand, negative to contract)
+/// 
+/// Returns:
+///     List of (x, y, z) tuples: Adjusted point coordinates
+#[pyfunction]
+pub fn adjust_diameter_centerline_morphing_simple(
+    centerline: PyCenterline,
+    points: Vec<(f64, f64, f64)>,
+    diameter_adjustment_mm: f64,
+) -> PyResult<Vec<(f64, f64, f64)>> {
+    let rust_centerline = centerline.to_rust_centerline();
+
+    let result_points = centerline_based_diameter_morphing(
+        &rust_centerline,
+        &points,
+        diameter_adjustment_mm,
+    );
+
+    Ok(result_points)
 }

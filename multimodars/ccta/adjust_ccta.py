@@ -52,7 +52,7 @@ def label_geometry(
 
     points_list = [tuple(vertex) for vertex in mesh.vertices.tolist()]
     
-    # Find points for RCA and LCA
+    # Rust implementation using a rolling sphere with fixed radius
     rca_points_found = mm.find_centerline_bounded_points_simple(
         cl_rca, 
         points_list, 
@@ -67,13 +67,14 @@ def label_geometry(
     print(f"RCA points found: {len(rca_points_found)}")
     print(f"LCA points found: {len(lca_points_found)}")
     
-    # Apply occlusion removal for anomalous vessels
     rca_removed_points = []
     lca_removed_points = []
     
     if anomalous_rca:
         print("Applying occlusion removal for anomalous RCA...")
         rca_faces_for_rust = prepare_faces_for_rust(mesh, points=rca_points_found, tol=tolerance_float)
+        # Rust implementation, that creates ray between aortic and coronary centerline, and
+        # removes faces if 3 consecutive faces are "pierced" by the ray
         final_rca_points_found = mm.remove_occluded_points_ray_triangle(
             centerline_coronary=cl_rca,
             centerline_aorta=cl_aorta,
@@ -101,7 +102,6 @@ def label_geometry(
     else:
         final_lca_points_found = lca_points_found.copy()
 
-    # Create debug plot if requested
     if control_plot:
         debug_plot(
             mesh=mesh,
@@ -114,7 +114,6 @@ def label_geometry(
             cl_aorta=cl_aorta
         )
 
-    # Return results
     results = {
         'mesh': mesh,
         'aorta_points': find_aortic_points(mesh.vertices, final_rca_points_found, final_lca_points_found),
@@ -154,7 +153,6 @@ def debug_plot(
     """
     from trimesh.points import PointCloud
     
-    # Get all mesh vertices and find aortic points
     all_vertices = mesh.vertices
     aortic_points = find_aortic_points(all_vertices, rca_points, lca_points)
     
@@ -166,7 +164,6 @@ def debug_plot(
     print(f"RCA reassigned points (red): {len(rca_removed_points)}")
     print(f"LCA reassigned points (red): {len(lca_removed_points)}")
     
-    # Create point clouds with different colors
     scenes = []
     
     # Scene 1: Mesh with all points
@@ -177,32 +174,27 @@ def debug_plot(
     mesh_visual.visual.face_colors = [200, 200, 200, 100]  # Semi-transparent gray
     scene1_geoms.append(mesh_visual)
     
-    # Add aortic points (yellow)
     if aortic_points:
         aortic_array = np.array(aortic_points, dtype=np.float64)
         aortic_colors = np.tile([255, 255, 0, 255], (len(aortic_points), 1))  # Yellow
         scene1_geoms.append(PointCloud(aortic_array, colors=aortic_colors))
     
-    # Add RCA points (blue)
     if rca_points:
         rca_array = np.array(rca_points, dtype=np.float64)
         rca_colors = np.tile([0, 0, 255, 255], (len(rca_points), 1))  # Blue
         scene1_geoms.append(PointCloud(rca_array, colors=rca_colors))
     
-    # Add LCA points (green)
     if lca_points:
         lca_array = np.array(lca_points, dtype=np.float64)
         lca_colors = np.tile([0, 255, 0, 255], (len(lca_points), 1))  # Green
         scene1_geoms.append(PointCloud(lca_array, colors=lca_colors))
     
-    # Add removed points (red)
     all_removed = rca_removed_points + lca_removed_points
     if all_removed:
         removed_array = np.array(all_removed, dtype=np.float64)
         removed_colors = np.tile([255, 0, 0, 255], (len(all_removed), 1))  # Red
         scene1_geoms.append(PointCloud(removed_array, colors=removed_colors))
     
-    # Add centerlines if provided - FIXED: Convert PyCenterlinePoint to tuples
     if cl_rca is not None:
         rca_centerline_points = np.array([(p.contour_point.x, p.contour_point.y, p.contour_point.z) for p in cl_rca.points], dtype=np.float64)
         scene1_geoms.append(PointCloud(rca_centerline_points, colors=[0, 100, 200, 255]))  # Dark blue
@@ -296,14 +288,117 @@ def _find_faces_for_points(mesh: trimesh.Trimesh, points_found, tol: float = 1e-
     return face_indices
 
 
-# Example usage
-if __name__ == "__main__":
-    results = label_geometry(
-        path_ccta_geometry='data/NARCO_119.stl',
-        path_centerline_aorta='data/centerline_aorta.csv',
-        path_centerline_rca='data/centerline_rca.csv',
-        path_centerline_lca='data/centerline_lca.csv',
-        anomalous_rca=True,
-        anomalous_lca=False,
-        control_plot=True
+def scale_region_centerline_morphing(
+    mesh: trimesh.Trimesh, 
+    region_points: list, 
+    centerline,  # Your PyCenterline object
+    diameter_adjustment_mm: float
+) -> trimesh.Trimesh:
+    """
+    Scale a specific region of the mesh using centerline-based radial morphing.
+    
+    Args:
+        mesh: The original mesh
+        region_points: List of points defining the region to scale
+        centerline: PyCenterline object for the region
+        diameter_adjustment_mm: Amount to adjust diameter (positive to expand, negative to contract)
+        
+    Returns:
+        A new mesh with the region scaled using centerline-based morphing
+    """
+    import multimodars as mm
+    
+    scaled_mesh = mesh.copy()
+    
+    region_vertex_indices = []
+    region_set = set(region_points)
+    
+    for idx, vertex in enumerate(scaled_mesh.vertices):
+        if tuple(vertex) in region_set:
+            region_vertex_indices.append(idx)
+    
+    region_vertex_indices = np.array(region_vertex_indices)
+    
+    if len(region_vertex_indices) == 0:
+        print("Warning: No vertices found for scaling region")
+        return scaled_mesh
+    
+    print(f"Scaling {len(region_vertex_indices)} vertices using centerline-based morphing")
+    print(f"Diameter adjustment: {diameter_adjustment_mm} mm")
+    
+    region_vertices_list = [tuple(vertex) for vertex in scaled_mesh.vertices[region_vertex_indices]]
+    adjusted_points = mm.adjust_diameter_centerline_morphing_simple(
+        centerline=centerline,
+        points=region_vertices_list,
+        diameter_adjustment_mm=diameter_adjustment_mm
     )
+    
+    scaled_mesh.vertices[region_vertex_indices] = np.array(adjusted_points, dtype=np.float64)
+    
+    # Clear mesh cache since we modified vertices directly
+    scaled_mesh.vertices.flags['WRITEABLE'] = False
+    
+    return scaled_mesh
+
+
+def compare_centerline_scaling(
+    original_mesh: trimesh.Trimesh, 
+    scaled_mesh: trimesh.Trimesh, 
+    region_points: list,
+    centerline=None
+):
+    """Create a visualization comparing original vs centerline-scaled mesh."""
+    from trimesh.points import PointCloud
+    
+    print(f"\n=== CENTERLINE SCALING COMPARISON ===")
+    
+    region_array = np.array(region_points, dtype=np.float64)
+    region_colors = np.tile([255, 0, 0, 255], (len(region_points), 1))  # Red
+    
+    # Scene 1: Original mesh with region highlighted
+    scene1 = trimesh.Scene([
+        original_mesh,
+        PointCloud(region_array, colors=region_colors)
+    ])
+    original_mesh.visual.face_colors = [200, 200, 200, 100]  # Semi-transparent
+    
+    if centerline is not None:
+        centerline_points = np.array([(p.contour_point.x, p.contour_point.y, p.contour_point.z) for p in centerline.points], dtype=np.float64)
+        centerline_colors = np.tile([0, 255, 255, 255], (len(centerline_points), 1))  # Cyan
+        scene1.add_geometry(PointCloud(centerline_points, colors=centerline_colors))
+    
+    print("Showing Scene 1: Original mesh with RCA region (red) and centerline (cyan)")
+    scene1.show()
+    
+    # Scene 2: Scaled mesh with region highlighted
+    scene2 = trimesh.Scene([
+        scaled_mesh,
+        PointCloud(region_array, colors=region_colors)
+    ])
+    scaled_mesh.visual.face_colors = [200, 200, 200, 100]  # Semi-transparent
+    
+    if centerline is not None:
+        scene2.add_geometry(PointCloud(centerline_points, colors=centerline_colors))
+    
+    print("Showing Scene 2: Scaled mesh with RCA region (red) and centerline (cyan)")
+    scene2.show()
+    
+    # Scene 3: Side-by-side comparison
+    scaled_mesh_shifted = scaled_mesh.copy()
+    shift_amount = np.array([150, 0, 0])  # Adjust based on your mesh size
+    scaled_mesh_shifted.apply_translation(shift_amount)
+    
+    scene3 = trimesh.Scene([
+        original_mesh,
+        scaled_mesh_shifted
+    ])
+    
+    original_mesh.visual.face_colors = [0, 100, 200, 100]  # Blue-ish
+    scaled_mesh_shifted.visual.face_colors = [200, 100, 0, 100]  # Orange-ish
+    
+    if centerline is not None:
+        centerline_shifted = centerline_points + shift_amount
+        scene3.add_geometry(PointCloud(centerline_shifted, colors=centerline_colors))
+    
+    print("Showing Scene 3: Side-by-side comparison (Blue=Original, Orange=Scaled)")
+    scene3.show()

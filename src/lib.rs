@@ -7,9 +7,10 @@ use crate::intravascular::binding::{
     from_array_doublepair, from_array_full, from_array_single, from_array_singlepair,
     from_file_doublepair, from_file_full, from_file_single, from_file_singlepair, to_obj,
 };
-use crate::ccta::binding::label_py::{
+use crate::ccta::binding::ccta_py::{
     find_centerline_bounded_points_simple,
     remove_occluded_points_ray_triangle,
+    adjust_diameter_centerline_morphing_simple,
 };
 
 use pyo3::prelude::*;
@@ -42,6 +43,7 @@ fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<(
     m.add_function(wrap_pyfunction!(to_obj, m.clone())?)?;
     m.add_function(wrap_pyfunction!(find_centerline_bounded_points_simple, m.clone())?)?;
     m.add_function(wrap_pyfunction!(remove_occluded_points_ray_triangle, m.clone())?)?;
+    m.add_function(wrap_pyfunction!(adjust_diameter_centerline_morphing_simple, m.clone())?)?;
 
     // Updated class registration
     m.add_class::<PyInputData>()?;

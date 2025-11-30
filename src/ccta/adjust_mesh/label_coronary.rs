@@ -93,7 +93,6 @@ pub fn remove_occluded_points_ray_triangle_rust(
     
     let mut faces_to_exclude: HashSet<usize> = HashSet::new();
     
-    // Phase 1: Identify faces to exclude (same as before)
     for aorta_point in &checked_cl_aorta.points {
         let aorta_coord = (
             aorta_point.contour_point.x,
@@ -124,7 +123,7 @@ pub fn remove_occluded_points_ray_triangle_rust(
             
             intersecting_faces.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
             
-            // Only exclude if we have at least 2 intersections (aorta wall structure)
+            // Only exclude if we have at least 2 intersections (aorta wall structure, see docs)
             if intersecting_faces.len() >= 3 {
                 if let Some((closest_face_idx, _t)) = intersecting_faces.first() {
                     faces_to_exclude.insert(*closest_face_idx);
@@ -150,7 +149,6 @@ pub fn remove_occluded_points_ray_triangle_rust(
         }
     }
     
-    // Filter out the points to remove
     let filtered_points: Vec<(f64, f64, f64)> = points
         .iter()
         .enumerate()
