@@ -1,6 +1,8 @@
 use crate::intravascular::io::geometry::{Contour, Geometry};
 use crate::intravascular::io::input::ContourPoint;
 use crate::intravascular::io::input::{Centerline, CenterlinePoint};
+use crate::intravascular::processing::align_between::GeometryPair;
+use crate::intravascular::processing::process_utils::{downsample_contour_points, hausdorff_distance};
 use nalgebra::{Point3, Rotation3, Unit, Vector3};
 
 #[derive(Debug, Clone, Copy)]
@@ -274,6 +276,185 @@ pub fn best_rotation_three_point(
     }
 
     best_angle
+}
+
+/// Refines alignment using Hausdorff distance within a limited search space
+pub fn refine_alignment_hausdorff(
+    geom_pair: &GeometryPair,
+    centerline: &Centerline,
+    initial_cl_ref_idx: usize,
+    initial_rotation: f64,
+    mutated_points: &[ContourPoint],
+    angle_search_range: f64, // e.g., 15° in radians
+    angle_step: f64,
+    index_search_range: usize, // e.g., 2 points
+) -> (f64, usize) {
+    let len_frames = geom_pair.geom_a.frames.len();
+    
+    let mut best_angle = initial_rotation;
+    let mut best_cl_ref_idx = initial_cl_ref_idx;
+    let mut min_hausdorff = f64::MAX;
+    
+    println!("---------------------Refining alignment with Hausdorff---------------------");
+    println!("Initial rotation: {:.4} rad, Initial CL index: {}", initial_rotation, initial_cl_ref_idx);
+    
+    // Search over centerline indices
+    for delta_idx in -(index_search_range as isize)..=(index_search_range as isize) {
+        let current_cl_ref_idx = (initial_cl_ref_idx as isize + delta_idx) as usize;
+        
+        // Ensure we have enough centerline points for all frames
+        if current_cl_ref_idx + len_frames >= centerline.points.len() {
+            continue;
+        }
+        
+        // Create centerline segment for this index
+        let cl_end_idx = current_cl_ref_idx + len_frames;
+        let cl_segment = Centerline {
+            points: centerline.points[current_cl_ref_idx..cl_end_idx].to_vec(),
+        };
+        
+        // Search over rotation angles
+        let mut angle = initial_rotation - angle_search_range;
+        while angle <= initial_rotation + angle_search_range {
+            // Apply rotation and transformation
+            let mut transformed_geompair = rotate_by_best_rotation(geom_pair.clone(), angle);
+            
+            // Use the current centerline point as reference
+            let ref_pt = (
+                centerline.points[current_cl_ref_idx].contour_point.x,
+                centerline.points[current_cl_ref_idx].contour_point.y,
+                centerline.points[current_cl_ref_idx].contour_point.z,
+            );
+            
+            transformed_geompair = apply_transformations(transformed_geompair, &cl_segment, &ref_pt);
+            
+            // Filter mutated points to the current region
+            let filtered_points = filter_points_in_region(
+                mutated_points,
+                &centerline.points[current_cl_ref_idx],
+                &centerline.points[cl_end_idx - 1],
+            );
+            
+            if filtered_points.is_empty() {
+                angle += angle_step;
+                continue;
+            }
+            
+            // Downsample and flatten geometry points
+            let frames = &transformed_geompair.geom_a.frames;
+            let n_points_per_frame = frames[0].lumen.points.len();
+            let mut nested: Vec<Vec<ContourPoint>> = Vec::with_capacity(len_frames);
+            
+            // Calculate downsample ratio
+            let ratio = filtered_points.len() as f64 / (n_points_per_frame as f64 * len_frames as f64);
+            let mut n_downsample = (ratio * n_points_per_frame as f64).ceil() as usize;
+            n_downsample = n_downsample.clamp(1, n_points_per_frame);
+            
+            for frame in frames.iter() {
+                if n_downsample < n_points_per_frame {
+                    let downsampled = downsample_contour_points(&frame.lumen.points, n_downsample);
+                    nested.push(downsampled);
+                } else {
+                    nested.push(frame.lumen.points.clone());
+                }
+            }
+            
+            let flat_geometry_points: Vec<ContourPoint> = nested.into_iter().flatten().collect();
+            
+            // Calculate Hausdorff distance
+            let hausdorff_dist = hausdorff_distance(&filtered_points, &flat_geometry_points);
+            
+            if hausdorff_dist < min_hausdorff {
+                min_hausdorff = hausdorff_dist;
+                best_angle = angle;
+                best_cl_ref_idx = current_cl_ref_idx;
+            }
+            
+            angle += angle_step;
+        }
+    }
+    
+    println!("Refined rotation: {:.4} rad, Refined CL index: {}, Hausdorff: {:.4}", 
+             best_angle, best_cl_ref_idx, min_hausdorff);
+    
+    (best_angle, best_cl_ref_idx)
+}
+
+/// Filter points to region between two centerline points
+fn filter_points_in_region(
+    points: &[ContourPoint],
+    start_cl_point: &CenterlinePoint,
+    end_cl_point: &CenterlinePoint,
+) -> Vec<ContourPoint> {
+    // Simple bounding box filter
+    let margin = 5.0; // Small margin
+    
+    let min_x = start_cl_point.contour_point.x.min(end_cl_point.contour_point.x) - margin;
+    let max_x = start_cl_point.contour_point.x.max(end_cl_point.contour_point.x) + margin;
+    let min_y = start_cl_point.contour_point.y.min(end_cl_point.contour_point.y) - margin;
+    let max_y = start_cl_point.contour_point.y.max(end_cl_point.contour_point.y) + margin;
+    let min_z = start_cl_point.contour_point.z.min(end_cl_point.contour_point.z) - margin;
+    let max_z = start_cl_point.contour_point.z.max(end_cl_point.contour_point.z) + margin;
+    
+    points.iter()
+        .filter(|p| {
+            p.x >= min_x && p.x <= max_x &&
+            p.y >= min_y && p.y <= max_y &&
+            p.z >= min_z && p.z <= max_z
+        })
+        .cloned()
+        .collect()
+}
+
+pub fn rotate_by_best_rotation(mut geom_pair: GeometryPair, angle: f64) -> GeometryPair {
+    geom_pair.geom_a.rotate_geometry(angle);
+    geom_pair.geom_b.rotate_geometry(angle);
+
+    geom_pair
+}
+
+pub fn apply_transformations(
+    mut geom_pair: GeometryPair,
+    centerline: &Centerline,
+    ref_pt: &(f64, f64, f64),
+) -> GeometryPair {
+    // Create transformations using geom_a as reference
+    let transformations = get_transformations(geom_pair.geom_a.clone(), centerline, ref_pt);
+
+    // Helper function to apply transformations to a geometry
+    fn transform_geometry(
+        mut geometry: Geometry,
+        transformations: &[FrameTransformation],
+    ) -> Geometry {
+        // We assume transformations are in the same order as geometry frames
+        for (i, frame) in geometry.frames.iter_mut().enumerate() {
+            if i < transformations.len() {
+                let tr = &transformations[i];
+
+                // Transform lumen contour
+                apply_transformation_to_contour(&mut frame.lumen, tr);
+
+                // Transform extra contours
+                for contour in frame.extras.values_mut() {
+                    apply_transformation_to_contour(contour, tr);
+                }
+
+                // Transform reference point if it exists
+                if let Some(ref mut reference_pt) = frame.reference_point {
+                    *reference_pt = tr.apply_to_point(reference_pt);
+                }
+
+                // Update frame centroid
+                frame.centroid = frame.lumen.centroid.unwrap_or((0.0, 0.0, 0.0));
+            }
+        }
+        geometry
+    }
+
+    geom_pair.geom_a = transform_geometry(geom_pair.geom_a, &transformations);
+    geom_pair.geom_b = transform_geometry(geom_pair.geom_b, &transformations);
+
+    geom_pair
 }
 
 #[cfg(test)]

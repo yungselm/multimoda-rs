@@ -74,24 +74,6 @@ pub fn hausdorff_distance(set1: &[ContourPoint], set2: &[ContourPoint]) -> f64 {
     forward.max(backward)
 }
 
-// /// Computes directed Hausdorff distance from A to B
-// fn directed_hausdorff(contour_a: &[ContourPoint], contour_b: &[ContourPoint]) -> f64 {
-//     contour_a
-//         .par_iter() // Use parallel iteration
-//         .map(|pa| {
-//             contour_b
-//                 .iter()
-//                 .map(|pb| {
-//                     let dx = pa.x - pb.x;
-//                     let dy = pa.y - pb.y;
-//                     (dx * dx + dy * dy).sqrt()
-//                 })
-//                 .fold(std::f64::MAX, f64::min) // Directly find min without storing a Vec
-//         })
-//         .reduce(|| 0.0, f64::max) // Directly find max without extra allocation
-// }
-
-// TODO implement this more efficient hausdorff version
 fn directed_hausdorff(contour_a: &[ContourPoint], contour_b: &[ContourPoint]) -> f64 {
     // Keep behavior simple for empty inputs (match prior behavior -> 0.0)
     if contour_a.is_empty() || contour_b.is_empty() {

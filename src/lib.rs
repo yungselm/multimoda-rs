@@ -1,7 +1,7 @@
 mod ccta;
 mod intravascular;
 
-use crate::intravascular::binding::align::{align_manual, align_three_point};
+use crate::intravascular::binding::align::{align_manual, align_three_point, align_combined};
 use crate::intravascular::binding::classes::*;
 use crate::intravascular::binding::{
     from_array_doublepair, from_array_full, from_array_single, from_array_singlepair,
@@ -35,7 +35,7 @@ fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<(
     m.add_function(wrap_pyfunction!(from_file_single, m.clone())?)?;
     m.add_function(wrap_pyfunction!(align_three_point, m.clone())?)?;
     m.add_function(wrap_pyfunction!(align_manual, m.clone())?)?;
-    // align hausdorff missing
+    m.add_function(wrap_pyfunction!(align_combined, m.clone())?)?;
     m.add_function(wrap_pyfunction!(from_array_full, m.clone())?)?;
     m.add_function(wrap_pyfunction!(from_array_doublepair, m.clone())?)?;
     m.add_function(wrap_pyfunction!(from_array_singlepair, m.clone())?)?;

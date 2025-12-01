@@ -291,7 +291,7 @@ def _find_faces_for_points(mesh: trimesh.Trimesh, points_found, tol: float = 1e-
 def scale_region_centerline_morphing(
     mesh: trimesh.Trimesh, 
     region_points: list, 
-    centerline,  # Your PyCenterline object
+    centerline,
     diameter_adjustment_mm: float
 ) -> trimesh.Trimesh:
     """

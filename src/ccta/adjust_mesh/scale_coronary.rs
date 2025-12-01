@@ -133,7 +133,7 @@ mod tests {
         };
 
         let points = vec![
-            (2.0, 0.0, 0.0),  // Point at (2,0,0)
+            (2.0, 0.0, 0.0),
         ];
 
         let result = centerline_based_diameter_morphing(&centerline, &points, -0.5);
