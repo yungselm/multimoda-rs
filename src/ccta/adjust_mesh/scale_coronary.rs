@@ -1,4 +1,5 @@
 use crate::intravascular::io::input::{CenterlinePoint, Centerline};
+use crate::intravascular::io::geometry::Frame;
 
 pub fn centerline_based_diameter_morphing(
     centerline: &Centerline,
@@ -62,6 +63,150 @@ fn calculate_squared_distance(point: (f64, f64, f64), centerline_point: &Centerl
     let dy = point.1 - centerline_point.contour_point.y;
     let dz = point.2 - centerline_point.contour_point.z;
     dx * dx + dy * dy + dz * dz
+}
+
+pub fn find_points_by_cl_region_rs(
+    centerline: &Centerline,
+    frames: &[Frame],
+    points: &[(f64, f64, f64)],
+) -> (Vec<(f64, f64, f64)>, Vec<(f64, f64, f64)>, Vec<(f64, f64, f64)>) {
+    let mut cumulative_z_dist_frames = 0.0;
+    for i in 1..frames.len() {
+        cumulative_z_dist_frames += (frames[i].centroid.2 - frames[i-1].centroid.2).abs();
+    }
+    cumulative_z_dist_frames /= (frames.len() -1) as f64;
+
+    let centroids_to_match = frames.iter().map(|f| f.centroid).collect::<Vec<(f64, f64, f64)>>();
+    let cl_points_indices: Vec<usize> = find_cl_points_in_range(
+        centerline,
+        &centroids_to_match,
+        cumulative_z_dist_frames,
+    );
+
+    // needed for proximal/distal classification
+    let dist_ref = centroids_to_match[centroids_to_match.len() -1];
+
+    let mut proximal_points: Vec<(f64, f64, f64)> = Vec::new();
+    let mut distal_points: Vec<(f64, f64, f64)> = Vec::new();
+    let mut points_between: Vec<(f64, f64, f64)> = Vec::new();
+
+    let mut remaining_points = points.to_vec();
+    
+    // First pass: find all points between centerline regions
+    remaining_points.retain(|point| {
+        let closest_cl_point = find_closest_centerline_point_optimized(&centerline, *point);
+        let cl_idx = closest_cl_point.contour_point.frame_index as usize;
+        
+        if cl_points_indices.contains(&cl_idx) {
+            points_between.push(*point);
+            false // remove from remaining
+        } else {
+            true // keep in remaining
+        }
+    });
+    
+    // Second pass: classify remaining points as proximal or distal
+    for point in remaining_points.iter() {
+        if point.0 > dist_ref.0 && point.1 > dist_ref.1 && point.2 > dist_ref.2 {
+            proximal_points.push(*point);
+        } else {
+            distal_points.push(*point);
+        }
+    }
+    let (proximal_points, points_between) = clean_up_non_section_points(proximal_points, points_between);
+    let (distal_points, points_between) = clean_up_non_section_points(distal_points, points_between);
+    (proximal_points, distal_points, points_between)
+}
+
+fn find_cl_points_in_range(
+    centerline: &Centerline,
+    points: &[(f64, f64, f64)],
+    search_radius: f64,
+) -> Vec<usize> {
+    let mut selected_points = Vec::new();
+
+    for point in points.iter() {
+        for cl_point in centerline.points.iter() {
+            let dx = point.0 - cl_point.contour_point.x;
+            let dy = point.1 - cl_point.contour_point.y;
+            let dz = point.2 - cl_point.contour_point.z;
+            let distance_squared = dx * dx + dy * dy + dz * dz;
+            if distance_squared <= search_radius * search_radius {
+                selected_points.push(cl_point);
+            }
+        }
+    }
+
+    // remove duplicates
+    selected_points.sort_by_key(|p| p.contour_point.frame_index);
+    selected_points.dedup_by_key(|p| p.contour_point.frame_index);
+    let mut final_points = Vec::new();
+    for p in selected_points {
+        final_points.push(p.contour_point.frame_index as usize);
+    }
+    final_points
+}
+
+fn clean_up_non_section_points(
+    points_to_cleanup: Vec<(f64, f64, f64)>,
+    reference_points: Vec<(f64, f64, f64)>,
+) -> (Vec<(f64, f64, f64)>, Vec<(f64, f64, f64)>) {
+    // Define neighborhood radius - you may want to adjust this based on your data
+    const NEIGHBORHOOD_RADIUS: f64 = 1.0; // Example value, adjust as needed
+    const NEIGHBORHOOD_RADIUS_SQ: f64 = NEIGHBORHOOD_RADIUS * NEIGHBORHOOD_RADIUS;
+    const MIN_NEIGHBOR_RATIO: f64 = 0.6; // If 60% or more neighbors are anomalous, reassign
+    
+    let mut cleaned_points = Vec::new();
+    let mut reassigned_points = reference_points.clone();
+    
+    for point in points_to_cleanup.iter() {
+        let mut ref_neighbors = 0;
+        let mut total_neighbors = 0;
+        
+        for ref_point in reference_points.iter() {
+            let dx = point.0 - ref_point.0;
+            let dy = point.1 - ref_point.1;
+            let dz = point.2 - ref_point.2;
+            let distance_squared = dx * dx + dy * dy + dz * dz;
+            
+            if distance_squared <= NEIGHBORHOOD_RADIUS_SQ {
+                ref_neighbors += 1;
+                total_neighbors += 1;
+            }
+        }
+        
+        for other_point in points_to_cleanup.iter() {
+            if std::ptr::eq(point, other_point) {
+                continue; // Skip the point itself
+            }
+            
+            let dx = point.0 - other_point.0;
+            let dy = point.1 - other_point.1;
+            let dz = point.2 - other_point.2;
+            let distance_squared = dx * dx + dy * dy + dz * dz;
+            
+            if distance_squared <= NEIGHBORHOOD_RADIUS_SQ {
+                total_neighbors += 1;
+            }
+        }
+        
+        // Decision logic: if most neighbors are reference points, reassign
+        if total_neighbors > 0 {
+            let ref_ratio = ref_neighbors as f64 / total_neighbors as f64;
+            if ref_ratio >= MIN_NEIGHBOR_RATIO {
+                // Reassign to reference_points (anomalous)
+                reassigned_points.push(*point);
+            } else {
+                // Keep in cleaned_points (proximal/distal)
+                cleaned_points.push(*point);
+            }
+        } else {
+            // If no neighbors in range, keep original classification
+            cleaned_points.push(*point);
+        }
+    }
+    
+    (cleaned_points, reassigned_points)
 }
 
 #[cfg(test)]

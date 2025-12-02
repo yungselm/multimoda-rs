@@ -2,6 +2,7 @@ import numpy as np
 import trimesh
 from pathlib import Path
 import warnings
+from typing import Optional, Tuple
 
 
 def label_geometry(
@@ -286,6 +287,72 @@ def _find_faces_for_points(mesh: trimesh.Trimesh, points_found, tol: float = 1e-
             face_indices.append(i)
 
     return face_indices
+
+
+def label_anomalous_region(
+        centerline,
+        frames,
+        results: dict,
+        results_key: str = 'rca_points',
+        debug_plot: bool = False,
+) -> dict:
+    import multimodars as mm
+    import numpy as np
+    import trimesh
+
+    proximal_points, distal_points, anomalous_points = mm.find_points_by_cl_region(
+        centerline=centerline,
+        frames=frames,
+        points=results[results_key],
+    )
+
+    results['proximal_points'] = proximal_points
+    results['distal_points'] = distal_points
+    results['anomalous_points'] = anomalous_points
+
+    if debug_plot:
+        plot_anomalous_region(
+            results=results,
+            centerline=centerline,
+        )
+
+    return results
+
+
+def plot_anomalous_region(results, centerline):
+    """Plot the results."""
+    import numpy as np
+    import trimesh
+    from trimesh.points import PointCloud
+    
+    print(f"\n=== ANOMALOUS REGION VISUALIZATION ===")
+    
+    # Create scene
+    scene_geoms = []
+    
+    # Create point clouds for each group
+    if results['proximal_points']:
+        proximal_array = np.array(results['proximal_points'])
+        proximal_cloud = PointCloud(proximal_array, colors=[0, 0, 255, 255])  # Blue
+        scene_geoms.append(proximal_cloud)
+    
+    if results['anomalous_points']:
+        anomalous_array = np.array(results['anomalous_points'])
+        anomalous_cloud = PointCloud(anomalous_array, colors=[255, 0, 0, 255])  # Red
+        scene_geoms.append(anomalous_cloud)
+    
+    if results['distal_points']:
+        distal_array = np.array(results['distal_points'])
+        distal_cloud = PointCloud(distal_array, colors=[0, 255, 0, 255])  # Green
+        scene_geoms.append(distal_cloud)
+
+    if centerline is not None:
+        centerline_points = np.array([(p.contour_point.x, p.contour_point.y, p.contour_point.z) for p in centerline.points], dtype=np.float64)
+        centerline_cloud = PointCloud(centerline_points, colors=[255, 255, 0, 255])  # Yellow
+        scene_geoms.append(centerline_cloud)
+    
+    scene = trimesh.Scene(scene_geoms)
+    scene.show()
 
 
 def scale_region_centerline_morphing(

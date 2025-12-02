@@ -177,7 +177,6 @@ fn distance(a: &(f64, f64, f64), b: &(f64, f64, f64)) -> f64 {
     (dx * dx + dy * dy + dz * dz).sqrt()
 }
 
-
 #[derive(Debug)]
 struct BoundingSphere {
     center: (f64, f64, f64),

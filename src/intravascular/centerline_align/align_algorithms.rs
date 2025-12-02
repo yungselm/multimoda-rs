@@ -296,7 +296,7 @@ pub fn refine_alignment_hausdorff(
     let mut min_hausdorff = f64::MAX;
     
     println!("---------------------Refining alignment with Hausdorff---------------------");
-    println!("Initial rotation: {:.4} rad, Initial CL index: {}", initial_rotation, initial_cl_ref_idx);
+    println!("Initial rotation: {:.4}°, Initial CL index: {}", initial_rotation.to_degrees(), initial_cl_ref_idx);
     
     // Search over centerline indices
     for delta_idx in -(index_search_range as isize)..=(index_search_range as isize) {
@@ -374,8 +374,8 @@ pub fn refine_alignment_hausdorff(
         }
     }
     
-    println!("Refined rotation: {:.4} rad, Refined CL index: {}, Hausdorff: {:.4}", 
-             best_angle, best_cl_ref_idx, min_hausdorff);
+    println!("Refined rotation: {:.4}°, Refined CL index: {}, Hausdorff: {:.4}", 
+             best_angle.to_degrees(), best_cl_ref_idx, min_hausdorff);
     
     (best_angle, best_cl_ref_idx)
 }

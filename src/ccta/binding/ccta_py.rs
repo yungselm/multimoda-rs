@@ -1,8 +1,8 @@
 // src/ccta/binding/label_py.rs
-use crate::intravascular::binding::classes::PyCenterline;
+use crate::intravascular::binding::classes::{PyCenterline, PyFrame};
 use crate::ccta::adjust_mesh::label_coronary::find_centerline_bounded_points;
 use crate::ccta::adjust_mesh::label_coronary::{Triangle, remove_occluded_points_ray_triangle_rust};
-use crate::ccta::adjust_mesh::scale_coronary::centerline_based_diameter_morphing;
+use crate::ccta::adjust_mesh::scale_coronary::{centerline_based_diameter_morphing, find_points_by_cl_region_rs};
 use pyo3::prelude::*;
 
 /// Finds points that are bounded by spheres along a coronary vessel centerline.
@@ -107,6 +107,42 @@ pub fn adjust_diameter_centerline_morphing_simple(
         &rust_centerline,
         &points,
         diameter_adjustment_mm,
+    );
+
+    Ok(result_points)
+}
+
+/// Find points that are within a specified frame region along the centerline.
+/// 
+/// Args:
+///     centerline: PyCenterline object representing the vessel centerline
+///     start_frame: PyFrame
+///     end_frame: PyFrame
+///     points: list of (x, y, z) tuples containing point coordinates
+/// 
+/// Returns:
+///     Tuple of three lists of (x, y, z) tuples:
+///         - proximal_points: points before the start frame region
+///         - distal_points: points after the end frame region
+///         - points_between: points within the frame region
+/// Example:
+///     >>> import multimodars as mm
+#[pyfunction]
+pub fn find_points_by_cl_region(
+    centerline: PyCenterline,
+    frames: Vec<PyFrame>,
+    points: Vec<(f64, f64, f64)>,
+) -> PyResult<(Vec<(f64, f64, f64)>, Vec<(f64, f64, f64)>, Vec<(f64, f64, f64)>)> {
+    let rust_centerline = centerline.to_rust_centerline();
+    let rust_frames: Vec<crate::intravascular::io::geometry::Frame> = frames
+        .into_iter()
+        .map(|f| f.to_rust_frame())
+        .collect::<Result<_, _>>()?;
+
+    let result_points = find_points_by_cl_region_rs(
+        &rust_centerline,
+        &rust_frames,
+        &points,
     );
 
     Ok(result_points)

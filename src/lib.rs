@@ -11,6 +11,7 @@ use crate::ccta::binding::ccta_py::{
     find_centerline_bounded_points_simple,
     remove_occluded_points_ray_triangle,
     adjust_diameter_centerline_morphing_simple,
+    find_points_by_cl_region,
 };
 
 use pyo3::prelude::*;
@@ -44,6 +45,7 @@ fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<(
     m.add_function(wrap_pyfunction!(find_centerline_bounded_points_simple, m.clone())?)?;
     m.add_function(wrap_pyfunction!(remove_occluded_points_ray_triangle, m.clone())?)?;
     m.add_function(wrap_pyfunction!(adjust_diameter_centerline_morphing_simple, m.clone())?)?;
+    m.add_function(wrap_pyfunction!(find_points_by_cl_region, m.clone())?)?;
 
     // Updated class registration
     m.add_class::<PyInputData>()?;
