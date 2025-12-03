@@ -213,31 +213,6 @@ def debug_plot(
     print("\nShowing Scene 1: Mesh with colored points")
     print("Colors: Yellow=Aorta, Blue=RCA, Green=LCA, Red=Removed")
     scene1.show()
-    
-    # # Scene 2: Points only (clearer view)
-    # scene2_geoms = []
-    
-    # if aortic_points:
-    #     scene2_geoms.append(PointCloud(aortic_array, colors=aortic_colors))
-    # if rca_points:
-    #     scene2_geoms.append(PointCloud(rca_array, colors=rca_colors))
-    # if lca_points:
-    #     scene2_geoms.append(PointCloud(lca_array, colors=lca_colors))
-    # if all_removed:
-    #     scene2_geoms.append(PointCloud(removed_array, colors=removed_colors))
-    
-    # # Add centerlines
-    # if cl_rca is not None:
-    #     scene2_geoms.append(PointCloud(rca_centerline_points, colors=[0, 100, 200, 255]))
-    # if cl_lca is not None:
-    #     scene2_geoms.append(PointCloud(lca_centerline_points, colors=[0, 150, 0, 255]))
-    # if cl_aorta is not None:
-    #     scene2_geoms.append(PointCloud(aorta_centerline_points, colors=[200, 200, 0, 255]))
-    
-    # scene2 = trimesh.Scene(scene2_geoms)
-    
-    # print("\nShowing Scene 2: Points only (clearer view)")
-    # scene2.show()
 
 
 def prepare_faces_for_rust(mesh: trimesh.Trimesh, *, points=None, face_indices=None, tol: float = 1e-6):
@@ -327,10 +302,8 @@ def plot_anomalous_region(results, centerline):
     
     print(f"\n=== ANOMALOUS REGION VISUALIZATION ===")
     
-    # Create scene
     scene_geoms = []
     
-    # Create point clouds for each group
     if results['proximal_points']:
         proximal_array = np.array(results['proximal_points'])
         proximal_cloud = PointCloud(proximal_array, colors=[0, 0, 255, 255])  # Blue
@@ -446,7 +419,7 @@ def compare_centerline_scaling(
     
     if centerline is not None:
         scene2.add_geometry(PointCloud(centerline_points, colors=centerline_colors))
-    
+
     print("Showing Scene 2: Scaled mesh with RCA region (red) and centerline (cyan)")
     scene2.show()
     
@@ -469,3 +442,286 @@ def compare_centerline_scaling(
     
     print("Showing Scene 3: Side-by-side comparison (Blue=Original, Orange=Scaled)")
     scene3.show()
+
+
+def find_distal_and_proximal_scaling(
+    frames,
+    results: dict,
+    dist_range: int=3,
+    prox_range: int=2,
+    debug_plot: bool=False,
+    percentile_lower=25,
+    percentile_upper=75,
+    anomalous=True,
+) -> Tuple[list, list]:
+    n_anomalous = len(results['anomalous_points'])
+    n_frames = len(frames)
+    dist_ratio = dist_range / n_frames
+    prox_ratio = prox_range / n_frames
+    n_distal_anomalous = int(np.ceil(n_anomalous * dist_ratio))
+    n_proximal_anomalous = int(np.ceil(n_anomalous * prox_ratio))
+
+    frame_points = [(p.x, p.y, p.z) for f in frames for p in f.lumen.points]
+    frame_points_dist = [(p.x, p.y, p.z) for f in frames[-dist_range:] for p in f.lumen.points]
+    frame_points_prox = [(p.x, p.y, p.z) for f in frames[0:prox_range] for p in f.lumen.points]
+
+    # calculate overal centroid of frame_points_dist
+    centroid_dist = np.mean(np.array(frame_points_dist), axis=0)
+    centroid_prox = np.mean(np.array(frame_points_prox), axis=0)
+
+    distal_anomalous = _find_points_by_centroid(results['anomalous_points'], centroid_dist, n_distal_anomalous)
+    proximal_anomalous = _find_points_by_centroid(results['anomalous_points'], centroid_prox, n_proximal_anomalous)
+    
+    # Calculate mean distances using closest-point comparison
+    if anomalous:
+        mean_dist = _circular_radial_expansion_numpy(frame_points, results['anomalous_points'], percentile_lower, percentile_upper)
+        mean_dist_distal = _circular_radial_expansion_numpy(frame_points_dist, distal_anomalous, percentile_lower, percentile_upper)
+        mean_dist_proximal = _elliptic_radial_expansion_numpy(frame_points_prox, proximal_anomalous, percentile_lower, percentile_upper)
+    else:
+        mean_dist = _circular_radial_expansion_numpy(frame_points, results['anomalous_points'], percentile_lower, percentile_upper)
+        mean_dist_distal = _circular_radial_expansion_numpy(frame_points_dist, distal_anomalous, percentile_lower, percentile_upper)
+        mean_dist_proximal = _circular_radial_expansion_numpy(frame_points_prox, proximal_anomalous, percentile_lower, percentile_upper)
+
+    # Print results for verification
+    print(f"Total - Mean distance: {mean_dist:.4f}, "
+          f"Anomalous points: {n_anomalous}, "
+          f"Frame points: {len(frame_points)}")
+    
+    print(f"Distal - Mean distance: {mean_dist_distal:.4f}, "
+          f"Anomalous points: {len(distal_anomalous)}, "
+          f"Frame points: {len(frame_points_dist)}")
+    
+    print(f"Proximal - Mean distance: {mean_dist_proximal:.4f}, "
+          f"Anomalous points: {len(proximal_anomalous)}, "
+          f"Frame points: {len(frame_points_prox)}")
+    
+    if debug_plot:
+        import trimesh
+        from trimesh.points import PointCloud
+
+        # plot anomalous points in grey and distal in blue and proximal in green
+        anomalous_array = np.array(results['anomalous_points'], dtype=np.float64)
+        anomalous_colors = np.tile([150, 150, 150, 255],
+                                      (len(results['anomalous_points']), 1))  # Grey
+        distal_array = np.array(distal_anomalous, dtype=np.float64)
+        distal_colors = np.tile([0, 0, 255, 255], (
+            len(distal_anomalous), 1))  # Blue
+        proximal_array = np.array(proximal_anomalous, dtype=np.float64)
+        proximal_colors = np.tile([0, 255, 0, 255], (
+            len(proximal_anomalous), 1))  # Green
+        scene = trimesh.Scene([
+            PointCloud(anomalous_array, colors=anomalous_colors),
+            PointCloud(distal_array, colors=distal_colors),
+            PointCloud(proximal_array, colors=proximal_colors),
+        ])
+        print("Showing anomalous points (grey), distal (blue), proximal (green)")
+        scene.show()
+    
+    return mean_dist_distal, mean_dist_proximal, mean_dist
+
+
+def _find_points_by_centroid(
+        points: list[(float, float, float)], 
+        centroid: tuple[float, float, float], 
+        n_points: int) -> list[(float, float, float)]:
+    "find n points closest to centroid"
+    points_array = np.array(points)
+    centroid_array = np.array(centroid)
+    distances = np.linalg.norm(points_array - centroid_array, axis=1)
+    closest_indices = np.argsort(distances)[:n_points]
+    closest_points = points_array[closest_indices].tolist()
+    return closest_points
+
+
+def _circular_radial_expansion_numpy(frame_points, anomalous_points, q_low, q_high):
+    """
+    Handle circular pipe sections with numpy only.
+    """
+    centroid = np.mean(frame_points, axis=0)
+    frame_centered = frame_points - centroid
+    anomalous_centered = anomalous_points - centroid
+    
+    # Perform PCA to find principal components
+    cov_matrix = np.cov(frame_centered.T)
+    eigenvalues, eigenvectors = np.linalg.eigh(cov_matrix)
+    
+    # Sort eigenvectors by eigenvalues (ascending)
+    idx = np.argsort(eigenvalues)
+    eigenvectors = eigenvectors[:, idx]
+    
+    # The first eigenvector (smallest eigenvalue) is the normal to the plane
+    normal = eigenvectors[:, 0]
+    
+    # Project points onto the plane (use the two largest eigenvectors)
+    # Create rotation matrix to align with principal axes
+    frame_2d = frame_centered @ eigenvectors[:, 1:]  # Use last two eigenvectors
+    anomalous_2d = anomalous_centered @ eigenvectors[:, 1:]
+    
+    n = len(frame_2d)
+    
+    x = frame_2d[:, 0]
+    y = frame_2d[:, 1]
+    
+    # Build linear system A * params = B
+    A = np.column_stack([2*x, 2*y, np.ones(n)])
+    B = x**2 + y**2
+    
+    # Solve for circle parameters
+    try:
+        params = np.linalg.lstsq(A, B, rcond=None)[0]
+        a, b, c = params
+        center_2d = np.array([a, b])
+        radius = np.sqrt(a**2 + b**2 + c)
+    except np.linalg.LinAlgError:
+        # Fallback: use centroid and mean distance
+        center_2d = np.mean(frame_2d, axis=0)
+        distances = np.linalg.norm(frame_2d - center_2d, axis=1)
+        radius = np.mean(distances)
+    
+    anomalous_distances = np.linalg.norm(anomalous_2d - center_2d, axis=1)
+    
+    # Signed radial differences (positive = inside circle, negative = outside)
+    radial_differences = - (anomalous_distances - radius)
+    
+    return _robust_statistic_numpy(radial_differences, q_low, q_high)
+
+
+def _elliptic_radial_expansion_numpy(frame_points, anomalous_points, q_low, q_high):
+    """
+    Handle elliptical/irregular point clouds with numpy only.
+    Uses PCA-based ellipsoid fitting or convex hull approximation.
+    """
+    centroid = np.mean(frame_points, axis=0)
+    frame_centered = frame_points - centroid
+    anomalous_centered = anomalous_points - centroid
+    
+    # Method 1: PCA-based ellipsoid approximation
+    try:
+        # Compute covariance matrix
+        cov_matrix = np.cov(frame_centered.T)
+        
+        # Get eigenvalues and eigenvectors
+        eigenvalues, eigenvectors = np.linalg.eigh(cov_matrix)
+        
+        # Sort by eigenvalue magnitude
+        idx = np.argsort(eigenvalues)[::-1]  # Descending
+        eigenvalues = eigenvalues[idx]
+        eigenvectors = eigenvectors[:, idx]
+        
+        # Normalize eigenvalues to get principal axis lengths
+        # Use square roots of eigenvalues (standard deviations)
+        axis_lengths = np.sqrt(eigenvalues)
+        
+        # Avoid division by zero
+        axis_lengths = np.maximum(axis_lengths, 1e-10)
+        
+        # For each anomalous point, compute normalized distance
+        signed_distances = []
+        
+        for point in anomalous_centered:
+            # Project point onto principal axes
+            proj = point @ eigenvectors
+            
+            # Compute normalized coordinates (divide by axis lengths)
+            normalized = proj / axis_lengths
+            
+            # Compute Mahalanobis-like distance
+            mahalanobis_dist = np.linalg.norm(normalized)
+            
+            # Compute "radius" in this normalized space for frame points
+            frame_normalized = (frame_centered @ eigenvectors) / axis_lengths
+            frame_radii = np.linalg.norm(frame_normalized, axis=1)
+            
+            # Use median frame radius as reference
+            ref_radius = np.median(frame_radii)
+            
+            # Signed distance (positive inside, negative outside)
+            signed_dist = - (mahalanobis_dist - ref_radius)
+            
+            scale_factor = np.mean(axis_lengths)
+            signed_distances.append(signed_dist * scale_factor)
+        
+        signed_distances = np.array(signed_distances)
+        
+    except:
+        # Fallback method: simple distance-based approach
+        signed_distances = _simple_distance_expansion_numpy(frame_points, anomalous_points)
+    
+    # Compute robust statistic
+    return _robust_statistic_numpy(signed_distances, q_low, q_high)
+
+
+def _simple_distance_expansion_numpy(frame_points, anomalous_points):
+    """
+    Fallback method using distance to nearest neighbor.
+    """
+    n_anomalous = len(anomalous_points)
+    n_frame = len(frame_points)
+    
+    # For memory efficiency, process in batches if needed
+    batch_size = min(1000, n_anomalous)
+    signed_distances = []
+    
+    for i in range(0, n_anomalous, batch_size):
+        batch = anomalous_points[i:i+batch_size]
+        
+        diff = batch[:, np.newaxis, :] - frame_points[np.newaxis, :, :]
+        
+        distances = np.sqrt(np.sum(diff * diff, axis=2))
+        min_distances = np.min(distances, axis=1)
+        
+        nearest_indices = np.argmin(distances, axis=1)
+        nearest_points = frame_points[nearest_indices]
+        
+        frame_centroid = np.mean(frame_points, axis=0)
+        
+        for j in range(len(batch)):
+            anomalous_pt = batch[j]
+            nearest_pt = nearest_points[j]
+            min_dist = min_distances[j]
+            
+            v_frame = nearest_pt - frame_centroid
+            v_anomalous = anomalous_pt - frame_centroid
+            
+            dot_product = np.dot(v_frame, v_anomalous)
+            
+            if dot_product > 0:
+                # Same general direction - anomalous point is likely outside
+                signed_distances.append(-min_dist)
+            else:
+                # Opposite direction - anomalous point is likely inside
+                signed_distances.append(min_dist)
+    
+    return np.array(signed_distances)
+
+
+def _robust_statistic_numpy(values, q_low, q_high):
+    """
+    Compute robust statistic (IQR-constrained median) of values.
+    """
+    if len(values) == 0:
+        return 0.0
+    
+    if q_low < 0.0:
+        q_low = 0.0
+    if q_high > 100.0:
+        q_high = 100.0
+    if q_low >= q_high:
+        return float(np.median(values))
+    
+    sorted_vals = np.sort(values)
+    n = len(sorted_vals)
+    
+    idx_low = max(0, min(n-1, int(q_low / 100.0 * n)))
+    idx_high = max(0, min(n-1, int(q_high / 100.0 * n)))
+    
+    low_val = sorted_vals[idx_low]
+    high_val = sorted_vals[idx_high]
+    
+    mask = (values >= low_val) & (values <= high_val)
+    selected = values[mask]
+    
+    if len(selected) == 0:
+        return float(np.median(values))
+    
+    return float(np.median(selected))

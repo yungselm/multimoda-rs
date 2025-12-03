@@ -19,8 +19,9 @@
 - [x] Create closed mesh for intravascular segment
 - [x] Assign regions based on Centerlines (RCA, LCA, Aorta)
 - [x] ensure works for IVUS and OCT
-- [] Lable points inside of anomalous region, proximal and distal to region
-- [] Shrink/Expand CCTA to best match Aortic wall and shrink/expand coronary to match iv   images
+- [x] Lable points inside of anomalous region, proximal and distal to region
+- [x] Shrink/expand coronary to match intravascular images
+- [] Shrink/Expand CCTA to best match Aortic wall
 - [] Remove points inside of anomalous region, connect remaining points to proximal and distal points, without resampling of the anomalous region
 - [] Create ostium frames for smoother connection to aorta (define range cl points, and function of lumen increase)
 - [] Write Pytests for the new functions
