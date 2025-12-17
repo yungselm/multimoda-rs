@@ -20,6 +20,7 @@
 - [x] Assign regions based on Centerlines (RCA, LCA, Aorta)
 - [x] ensure works for IVUS and OCT
 - [x] Lable points inside of anomalous region, proximal and distal to region
+- [] use the cleanup_section_points() also on LCA points
 - [x] Shrink/expand coronary to match intravascular images
 - [] Shrink/Expand CCTA to best match Aortic wall
 - [] Remove points inside of anomalous region, connect remaining points to proximal and distal points, without resampling of the anomalous region
