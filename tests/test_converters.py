@@ -13,6 +13,7 @@ from multimodars._converters import (
     to_array,
     numpy_to_geometry,
     numpy_to_centerline,
+    numpy_to_inputdata,
 )
 
 
@@ -154,3 +155,71 @@ def test_to_array_and_back_geometry_roundtrip():
 # Skip geometry pair test for now as it might need more complex setup
 def test_to_array_geometry_pair():
     pytest.skip("Geometry pair conversion needs more complex setup")
+
+def test_numpy_to_inputdata_roundtrip():
+    # Build two simple contours (frames 0 and 1)
+    c0 = _make_simple_contour(0, n=2, offset=0.0)
+    c1 = _make_simple_contour(1, n=3, offset=10.0)
+
+    # Convert to arrays and combine for lumen
+    lumen_arr = np.vstack([to_array(c0), to_array(c1)])
+
+    # Provide an EEM only for frame 0 and a sidebranch only for frame 1
+    eem_arr = to_array(c0)           # only frame 0 present
+    sidebranch_arr = to_array(c1)    # only frame 1 present
+
+    # Empty calcification array
+    calc_arr = np.zeros((0, 4))
+
+    # Create a structured record array: (frame, phase, m1, m2)
+    rec_dtype = np.dtype([("frame", "i4"), ("phase", "U1"), ("m1", "f8"), ("m2", "f8")])
+    records = np.array([(0, "D", 1.1, 2.2), (1, "S", np.nan, np.nan)], dtype=rec_dtype)
+
+    # Reference point (global)
+    reference_arr = np.array([[0, 100.0, 101.0, 102.0]])
+
+    # Call converter
+    inp = numpy_to_inputdata(
+        lumen_arr=lumen_arr,
+        eem_arr=eem_arr,
+        calcification=calc_arr,
+        sidebranch=sidebranch_arr,
+        record=records,
+        ref_point=reference_arr,
+        diastole=True,
+        label="test_label",
+    )
+
+    # Basic structure checks
+    assert hasattr(inp, "lumen")
+    assert len(inp.lumen) == 2  # two frames from lumen
+
+    # Check optional lists: eem present (1), calcification empty -> None, sidebranch present (1)
+    assert inp.eem is not None and len(inp.eem) == 1
+    assert inp.calcification is None or len(inp.calcification) == 0
+    assert inp.sidebranch is not None and len(inp.sidebranch) == 1
+
+    # Records parsed
+    assert inp.record is not None
+    assert len(inp.record) == 2
+    # Check first record values
+    r0 = inp.record[0]
+    assert r0.frame == 0
+    assert r0.phase in ("D", "d", "0", "D")  # accept 'D' (string) mapping variants
+
+    # Reference point, diastole and label
+    assert pytest.approx(inp.ref_point.x) == 100.0
+    assert pytest.approx(inp.ref_point.y) == 101.0
+    assert pytest.approx(inp.ref_point.z) == 102.0
+    assert inp.diastole is True
+    assert inp.label == "test_label"
+
+    # Check that lumen contours preserved point coordinates for frame 0
+    in_l0 = inp.lumen[0].points
+    orig_l0 = c0.points
+    assert len(in_l0) == len(orig_l0)
+    for o, n in zip(orig_l0, in_l0):
+        assert pytest.approx(o.x) == n.x
+        assert pytest.approx(o.y) == n.y
+        assert pytest.approx(o.z) == n.z
+

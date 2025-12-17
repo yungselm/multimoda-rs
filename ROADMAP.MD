@@ -20,9 +20,10 @@
 - [x] Assign regions based on Centerlines (RCA, LCA, Aorta)
 - [x] ensure works for IVUS and OCT
 - [x] Lable points inside of anomalous region, proximal and distal to region
-- [] use the cleanup_section_points() also on LCA points
+- [x] use the cleanup_section_points() also on LCA points
 - [x] Shrink/expand coronary to match intravascular images
-- [] Shrink/Expand CCTA to best match Aortic wall
+- [] Write a more stable clean up function by going along every face of a vertix adn then check if most vertices are from the same type
+- [] Shrink/Expand CCTA to best match aortic wall
 - [] Remove points inside of anomalous region, connect remaining points to proximal and distal points, without resampling of the anomalous region
 - [] Create ostium frames for smoother connection to aorta (define range cl points, and function of lumen increase)
 - [] Write Pytests for the new functions
@@ -45,7 +46,7 @@
 - [x] better summarized print statement
 - [x] for fixture use a idealized geometry to check functionality
 - [x] reference point is not rotated and translated
-- [] better error propagation from Rust to Python (probably in the binding module, handle different python errors)
+(- [] better error propagation from Rust to Python (probably in the binding module, handle different python errors)?)
 
 # Prepublish checklist:
 - [x] tests/ with unit tests checking that importing and running every public function works
@@ -57,5 +58,5 @@
 - [x] CONTRIBUTING.md
 - [x] Example scripts Jupyter notebook?
 - [] mypy in pre-commit hooks
-- [] make a dev version with more testing data in data folder and a minimal dataset for the pypi package, that can be loaded instead of read from files.
+- [] move example data to a downloadable folder in release and adjust tests to only use fixtures
 - [] make stable version update by reading in a __version__ file

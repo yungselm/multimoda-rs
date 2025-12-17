@@ -1,6 +1,16 @@
 use crate::intravascular::io::input::{CenterlinePoint, Centerline};
 use crate::intravascular::io::geometry::Frame;
 
+#[allow(dead_code)]
+pub fn centerline_based_diameter_optimization(
+    centerline: &Centerline,
+    points: &[(f64, f64, f64)],
+    reference_points: &[(f64, f64, f64)],
+) -> f64 {
+    let initial_distance = todo!("function that calcualtes distance between the two sets");
+    todo!()
+}
+
 pub fn centerline_based_diameter_morphing(
     centerline: &Centerline,
     points: &[(f64, f64, f64)],
@@ -113,8 +123,8 @@ pub fn find_points_by_cl_region_rs(
             distal_points.push(*point);
         }
     }
-    let (proximal_points, points_between) = clean_up_non_section_points(proximal_points, points_between);
-    let (distal_points, points_between) = clean_up_non_section_points(distal_points, points_between);
+    let (proximal_points, points_between) = clean_up_non_section_points(proximal_points, points_between, 1.0, 0.6);
+    let (distal_points, points_between) = clean_up_non_section_points(distal_points, points_between, 1.0, 0.6);
     (proximal_points, distal_points, points_between)
 }
 
@@ -147,15 +157,14 @@ fn find_cl_points_in_range(
     final_points
 }
 
-fn clean_up_non_section_points(
+pub fn clean_up_non_section_points(
     points_to_cleanup: Vec<(f64, f64, f64)>,
     reference_points: Vec<(f64, f64, f64)>,
-) -> (Vec<(f64, f64, f64)>, Vec<(f64, f64, f64)>) {
-    // Define neighborhood radius - you may want to adjust this based on your data
-    const NEIGHBORHOOD_RADIUS: f64 = 1.0; // Example value, adjust as needed
-    const NEIGHBORHOOD_RADIUS_SQ: f64 = NEIGHBORHOOD_RADIUS * NEIGHBORHOOD_RADIUS;
-    const MIN_NEIGHBOR_RATIO: f64 = 0.6; // If 60% or more neighbors are anomalous, reassign
-    
+    neighborhood_radius: f64,
+    min_neigbor_ratio: f64,
+) -> (Vec<(f64, f64, f64)>, Vec<(f64, f64, f64)>) {   
+    let neighborhood_radius_sq = neighborhood_radius * neighborhood_radius;
+
     let mut cleaned_points = Vec::new();
     let mut reassigned_points = reference_points.clone();
     
@@ -169,7 +178,7 @@ fn clean_up_non_section_points(
             let dz = point.2 - ref_point.2;
             let distance_squared = dx * dx + dy * dy + dz * dz;
             
-            if distance_squared <= NEIGHBORHOOD_RADIUS_SQ {
+            if distance_squared <= neighborhood_radius_sq {
                 ref_neighbors += 1;
                 total_neighbors += 1;
             }
@@ -185,7 +194,7 @@ fn clean_up_non_section_points(
             let dz = point.2 - other_point.2;
             let distance_squared = dx * dx + dy * dy + dz * dz;
             
-            if distance_squared <= NEIGHBORHOOD_RADIUS_SQ {
+            if distance_squared <= neighborhood_radius_sq {
                 total_neighbors += 1;
             }
         }
@@ -193,7 +202,7 @@ fn clean_up_non_section_points(
         // Decision logic: if most neighbors are reference points, reassign
         if total_neighbors > 0 {
             let ref_ratio = ref_neighbors as f64 / total_neighbors as f64;
-            if ref_ratio >= MIN_NEIGHBOR_RATIO {
+            if ref_ratio >= min_neigbor_ratio {
                 // Reassign to reference_points (anomalous)
                 reassigned_points.push(*point);
             } else {

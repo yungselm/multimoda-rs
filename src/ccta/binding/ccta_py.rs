@@ -2,7 +2,10 @@
 use crate::intravascular::binding::classes::{PyCenterline, PyFrame};
 use crate::ccta::adjust_mesh::label_coronary::find_centerline_bounded_points;
 use crate::ccta::adjust_mesh::label_coronary::{Triangle, remove_occluded_points_ray_triangle_rust};
-use crate::ccta::adjust_mesh::scale_coronary::{centerline_based_diameter_morphing, find_points_by_cl_region_rs};
+use crate::ccta::adjust_mesh::scale_coronary::{
+    centerline_based_diameter_morphing, 
+    find_points_by_cl_region_rs, 
+    clean_up_non_section_points};
 use pyo3::prelude::*;
 
 /// Finds points that are bounded by spheres along a coronary vessel centerline.
@@ -143,6 +146,35 @@ pub fn find_points_by_cl_region(
         &rust_centerline,
         &rust_frames,
         &points,
+    );
+
+    Ok(result_points)
+}
+
+/// Clean up points based on their neigbouring points and a list of reference points.
+/// 
+/// Args:
+///     points_to_cleanup: list of (x, y, z) tuples containing point coordinates
+///     reference_points: list of (x, y, z) tuples containing point coordinates
+/// 
+/// Returns:
+///     Tuple of two lists of (x, y, z) tuples:
+///         - cleaned_points: removed outliers
+///         - reference_points: added outliers
+/// Example:
+///     >>> import multimodars as mm
+#[pyfunction]
+pub fn clean_outlier_points(
+    points_to_cleanup: Vec<(f64, f64, f64)>,
+    reference_points: Vec<(f64, f64, f64)>,
+    neighborhood_radius: f64,
+    min_neigbor_ratio: f64,
+) -> PyResult<(Vec<(f64, f64, f64)>, Vec<(f64, f64, f64)>)> {
+    let result_points = clean_up_non_section_points(
+        points_to_cleanup,
+        reference_points,
+        neighborhood_radius,
+        min_neigbor_ratio,
     );
 
     Ok(result_points)

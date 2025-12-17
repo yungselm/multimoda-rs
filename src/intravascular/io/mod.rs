@@ -237,7 +237,7 @@ fn print_success_message(input_data: InputData, from_path: bool) {
 }
 
 #[cfg(test)]
-mod input_tests {
+mod io_tests {
     use super::*;
     use approx::assert_relative_eq;
     use std::path::Path;

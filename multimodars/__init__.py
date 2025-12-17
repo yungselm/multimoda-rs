@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 from .multimodars import *
-from ._converters import to_array, numpy_to_geometry, numpy_to_centerline
+from ._converters import (
+    to_array, 
+    numpy_to_geometry, 
+    numpy_to_centerline,
+    numpy_to_inputdata,
+)
 from ._wrappers import (
     from_file,
     from_array,
@@ -25,6 +30,7 @@ __all__ = [
     "to_array",
     "numpy_to_geometry",
     "numpy_to_centerline",
+    "numpy_to_inputdata",
     # Wrapper functions
     "from_file",
     "from_array",

@@ -103,11 +103,21 @@ def label_geometry(
     else:
         final_lca_points_found = lca_points_found.copy()
 
+    print(f"Removing LCA island points...")
+    aortic_points = find_aortic_points(mesh.vertices, final_rca_points_found, final_lca_points_found)
+    print(f"length before: {len(final_lca_points_found)}")
+    final_lca_points, final_aortic_points = mm.clean_outlier_points(
+        final_lca_points_found, 
+        aortic_points,
+        2.0,
+        0.4) # based on patient data, needs more stable option in the future
+    print(f"length after: {len(final_lca_points)}")
+
     if control_plot:
         debug_plot(
             mesh=mesh,
             rca_points=final_rca_points_found,
-            lca_points=final_lca_points_found,
+            lca_points=final_lca_points,
             rca_removed_points=rca_removed_points,
             lca_removed_points=lca_removed_points,
             cl_rca=cl_rca,
@@ -117,9 +127,9 @@ def label_geometry(
 
     results = {
         'mesh': mesh,
-        'aorta_points': find_aortic_points(mesh.vertices, final_rca_points_found, final_lca_points_found),
+        'aorta_points': final_aortic_points,
         'rca_points': final_rca_points_found,
-        'lca_points': final_lca_points_found,
+        'lca_points': final_lca_points,
         'rca_removed_points': rca_removed_points,
         'lca_removed_points': lca_removed_points
     }

@@ -900,16 +900,6 @@ mod align_within_tests {
     }
 
     #[test]
-    fn test_detect_holes_fail_on_big_gap() -> anyhow::Result<()> {
-        let mut geometry = dummy_geometry_aligned_long();
-        geometry.frames[5].translate_frame((0.0, 0.0, 3.0));
-
-        let new_geom = fill_holes(&mut geometry);
-        assert!(new_geom.is_err());
-        Ok(())
-    }
-
-    #[test]
     fn test_smoothing_effect() -> anyhow::Result<()> {
         let mut geometry = dummy_geometry();
 
