@@ -47,6 +47,7 @@ __all__ = [
     "align_manual",
     "to_obj",
     "find_centerline_bounded_points_simple",
+    "find_proximal_distal_scaling",
     # CCTA module
     "adjust_ccta",
 ]

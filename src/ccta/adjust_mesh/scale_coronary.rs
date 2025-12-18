@@ -1,14 +1,129 @@
+use core::f64;
+use std::collections::HashSet;
 use crate::intravascular::io::input::{CenterlinePoint, Centerline};
 use crate::intravascular::io::geometry::Frame;
 
-#[allow(dead_code)]
 pub fn centerline_based_diameter_optimization(
+    anomalous_points: &[(f64, f64, f64)],
+    n_proximal: usize,
+    n_distal: usize,
     centerline: &Centerline,
-    points: &[(f64, f64, f64)],
+    proximal_reference: &[(f64, f64, f64)],
+    distal_reference: &[(f64, f64, f64)],
+) -> (f64, f64) {
+    let (proximal_points, anomalous_points_new) = find_region_points(&anomalous_points, &proximal_reference, n_proximal);
+    let (distal_points, _) = find_region_points(&anomalous_points_new, &distal_reference, n_distal);
+
+    let start = -2.0f64;
+    let end =  2.0f64;
+    let step = 0.1f64;
+    let steps = ((end - start) / step).round() as i32; // (4.0 / 0.1) => 40
+    
+    let mut min_dist_proximal = f64::MAX;
+    let mut min_dist_distal = f64::MAX;
+    let mut prox_scaling_best = f64::MAX;
+    let mut dist_scaling_best = f64::MAX;
+    
+    for i in 0..=steps {
+        let x = start + i as f64 * step;
+        let temp_points = centerline_based_diameter_morphing(centerline, &proximal_points, x);
+
+        let dist = symmetric_nn_distance(&proximal_reference, &temp_points);
+
+        if dist < min_dist_proximal {
+            min_dist_proximal = dist;
+            prox_scaling_best = x;
+        }
+    }
+    for i in 0..=steps {
+        let x = start + i as f64 * step;
+        let temp_points = centerline_based_diameter_morphing(centerline, &distal_points, x);
+
+        let dist = symmetric_nn_distance(&distal_reference, &temp_points);
+
+        if dist < min_dist_distal {
+            min_dist_distal = dist;
+            dist_scaling_best = x;
+        }
+    }
+    (prox_scaling_best, dist_scaling_best)
+}
+
+fn find_region_points(
+    anomalous_points: &[(f64, f64, f64)],
     reference_points: &[(f64, f64, f64)],
-) -> f64 {
-    let initial_distance = todo!("function that calcualtes distance between the two sets");
-    todo!()
+    n_points: usize,
+) -> (Vec<(f64, f64, f64)>, Vec<(f64, f64, f64)>) {
+    if anomalous_points.is_empty() || reference_points.is_empty() || n_points == 0 {
+        return (Vec::new(), anomalous_points.to_vec());
+    }
+
+    let mut indexed_dists: Vec<(usize, f64)> = anomalous_points
+        .iter()
+        .enumerate()
+        .map(|(i, a_pt)| {
+            let min_sq = reference_points
+                .iter()
+                .map(|r_pt| calculate_squared_distance(a_pt, r_pt))
+                .fold(f64::INFINITY, |m, v| if v < m { v } else { m });
+            (i, min_sq)
+        })
+        .collect();
+
+    indexed_dists.sort_by(|(i1, d1), (i2, d2)| {
+        d1.partial_cmp(d2)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| i1.cmp(i2))
+    });
+
+    let take = n_points.min(anomalous_points.len());
+    let selected_slice = &indexed_dists[..take];
+
+    let selected_indices: HashSet<usize> = selected_slice.iter().map(|(i, _)| *i).collect();
+
+    let selected_points: Vec<(f64, f64, f64)> = selected_slice
+        .iter()
+        .map(|(i, _)| anomalous_points[*i])
+        .collect();
+
+    let remaining_points: Vec<(f64, f64, f64)> = anomalous_points
+        .iter()
+        .enumerate()
+        .filter_map(|(i, pt)| if selected_indices.contains(&i) { None } else { Some(*pt) })
+        .collect();
+
+    (selected_points, remaining_points)
+}
+
+/// Symmetric average nearest-neighbor distance between two point sets.
+/// Returns sqrt of average squared distance for readability (i.e., RMS of nearest neighbor distances).
+/// If either set is empty returns f64::INFINITY.
+fn symmetric_nn_distance(a: &[(f64, f64, f64)], b: &[(f64, f64, f64)]) -> f64 {
+    if a.is_empty() || b.is_empty() {
+        return f64::INFINITY;
+    }
+
+    let sum_a_to_b: f64 = a.iter()
+        .map(|pa| {
+            b.iter()
+             .map(|pb| calculate_squared_distance(pa, pb))
+             .fold(f64::INFINITY, |m, v| if v < m { v } else { m })
+        })
+        .sum();
+
+    let avg_a_to_b = sum_a_to_b / (a.len() as f64);
+
+    let sum_b_to_a: f64 = b.iter()
+        .map(|pb| {
+            a.iter()
+             .map(|pa| calculate_squared_distance(pb, pa))
+             .fold(f64::INFINITY, |m, v| if v < m { v } else { m })
+        })
+        .sum();
+
+    let avg_b_to_a = sum_b_to_a / (b.len() as f64);
+
+    ((avg_a_to_b + avg_b_to_a) / 2.0).sqrt()
 }
 
 pub fn centerline_based_diameter_morphing(
@@ -58,7 +173,7 @@ fn find_closest_centerline_point_optimized(centerline: &Centerline, point: (f64,
     let mut closest_point = &centerline.points[0];
     
     for centerline_point in &centerline.points {
-        let distance_squared = calculate_squared_distance(point, centerline_point);
+        let distance_squared = calculate_squared_distance(&point, centerline_point);
         if distance_squared < min_distance_squared {
             min_distance_squared = distance_squared;
             closest_point = centerline_point;
@@ -68,11 +183,29 @@ fn find_closest_centerline_point_optimized(centerline: &Centerline, point: (f64,
     closest_point
 }
 
-fn calculate_squared_distance(point: (f64, f64, f64), centerline_point: &CenterlinePoint) -> f64 {
-    let dx = point.0 - centerline_point.contour_point.x;
-    let dy = point.1 - centerline_point.contour_point.y;
-    let dz = point.2 - centerline_point.contour_point.z;
-    dx * dx + dy * dy + dz * dz
+trait Point3D {
+    fn x(&self) -> f64;
+    fn y(&self) -> f64;
+    fn z(&self) -> f64;
+}
+
+impl Point3D for (f64, f64, f64) {
+    fn x(&self) -> f64 { self.0 }
+    fn y(&self) -> f64 { self.1 }
+    fn z(&self) -> f64 { self.2 }
+}
+
+impl Point3D for CenterlinePoint {
+    fn x(&self) -> f64 { self.contour_point.x }
+    fn y(&self) -> f64 { self.contour_point.y }
+    fn z(&self) -> f64 { self.contour_point.z }
+}
+
+fn calculate_squared_distance<A: Point3D, B: Point3D>(a: &A, b: &B) -> f64 {
+    let dx = a.x() - b.x();
+    let dy = a.y() - b.y();
+    let dz = a.z() - b.z();
+    dx*dx + dy*dy + dz*dz
 }
 
 pub fn find_points_by_cl_region_rs(
@@ -298,4 +431,77 @@ mod tests {
         assert!((new_point.1 - 0.0).abs() < 1e-6);
         assert!((new_point.2 - 0.0).abs() < 1e-6);
     }
+
+    // #[test]
+    // fn test_centerline_based_diameter_optimization_basic() {
+    //     let proximal_points = vec![
+    //         (1.0, 0.0, 0.0),
+    //         (1.0, 1.0, 0.0),
+    //         (1.0, -1.0, 0.0),
+    //     ];
+
+    //     let distal_points = vec![
+    //         (2.0, 0.0, 0.0),
+    //         (2.0, 1.0, 0.0),
+    //         (2.0, -1.0, 0.0),
+    //     ];
+
+    //     // Reference points exactly match both regions
+    //     let reference_points = vec![
+    //         (1.0, 0.0, 0.0),
+    //         (1.0, 1.0, 0.0),
+    //         (1.0, -1.0, 0.0),
+    //         (2.0, 0.0, 0.0),
+    //         (2.0, 1.0, 0.0),
+    //         (2.0, -1.0, 0.0),
+    //     ];
+
+    //     let centerline = Centerline {
+    //         points: vec![
+    //             CenterlinePoint {
+    //                 contour_point: ContourPoint {
+    //                     frame_index: 0,
+    //                     point_index: 0,
+    //                     x: 0.0,
+    //                     y: 0.0,
+    //                     z: 0.0,
+    //                     aortic: false,
+    //                 },
+    //                 normal: Vector3::new(1.0, 0.0, 0.0).into(),
+    //             },
+    //             CenterlinePoint {
+    //                 contour_point: ContourPoint {
+    //                     frame_index: 1,
+    //                     point_index: 1,
+    //                     x: 0.0,
+    //                     y: 0.0,
+    //                     z: 1.0,
+    //                     aortic: false,
+    //                 },
+    //                 normal: Vector3::new(1.0, 0.0, 0.0).into(),
+    //             },
+    //         ],
+    //     };
+
+    //     let (min_prox, min_dist) = centerline_based_diameter_optimization(
+    //         &proximal_points,
+    //         &distal_points,
+    //         &centerline,
+    //         &reference_points,
+    //         &reference_points,
+    //     );
+
+    //     // Best match occurs at diameter_adjustment_mm ≈ 0.0
+    //     assert!(
+    //         min_prox < 1e-6,
+    //         "Expected proximal min distance ≈ 0, got {}",
+    //         min_prox
+    //     );
+
+    //     assert!(
+    //         min_dist < 1e-6,
+    //         "Expected distal min distance ≈ 0, got {}",
+    //         min_dist
+    //     );
+    // }
 }

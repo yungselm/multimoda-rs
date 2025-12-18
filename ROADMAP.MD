@@ -22,11 +22,11 @@
 - [x] Lable points inside of anomalous region, proximal and distal to region
 - [x] use the cleanup_section_points() also on LCA points
 - [x] Shrink/expand coronary to match intravascular images
-- [] Write a more stable clean up function by going along every face of a vertix adn then check if most vertices are from the same type
 - [] Shrink/Expand CCTA to best match aortic wall
 - [] Remove points inside of anomalous region, connect remaining points to proximal and distal points, without resampling of the anomalous region
 - [] Create ostium frames for smoother connection to aorta (define range cl points, and function of lumen increase)
 - [] Write Pytests for the new functions
+- [] Write a more stable clean up function by going along every face of a vertix adn then check if most vertices are from the same type
 
 # CCTA clinical assessment (v0.3.0)
 - [] automatically assess lumen area, minor-, major axis, mla, intramural length etc. from the CCTA mesh.
@@ -46,17 +46,16 @@
 - [x] better summarized print statement
 - [x] for fixture use a idealized geometry to check functionality
 - [x] reference point is not rotated and translated
-(- [] better error propagation from Rust to Python (probably in the binding module, handle different python errors)?)
 
 # Prepublish checklist:
 - [x] tests/ with unit tests checking that importing and running every public function works
-- [] Integrate coverage measurement (e.g. pytest-cov) and upload reports to Coverall or Codecov
-- [] Status badge for coverage to README
 - [x] Add testing to the CI workflow
 - [x] Auto-generated API docs
 - [x] High-level "Getting Started" guide
 - [x] CONTRIBUTING.md
 - [x] Example scripts Jupyter notebook?
+- [] make stable version update by reading in a __version__ file
+- [] Integrate coverage measurement (e.g. pytest-cov) and upload reports to Coverall or Codecov
+- [] Status badge for coverage to README
 - [] mypy in pre-commit hooks
 - [] move example data to a downloadable folder in release and adjust tests to only use fixtures
-- [] make stable version update by reading in a __version__ file

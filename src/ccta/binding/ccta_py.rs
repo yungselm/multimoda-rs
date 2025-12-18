@@ -5,7 +5,9 @@ use crate::ccta::adjust_mesh::label_coronary::{Triangle, remove_occluded_points_
 use crate::ccta::adjust_mesh::scale_coronary::{
     centerline_based_diameter_morphing, 
     find_points_by_cl_region_rs, 
-    clean_up_non_section_points};
+    clean_up_non_section_points,
+    centerline_based_diameter_optimization,
+};
 use pyo3::prelude::*;
 
 /// Finds points that are bounded by spheres along a coronary vessel centerline.
@@ -178,4 +180,39 @@ pub fn clean_outlier_points(
     );
 
     Ok(result_points)
+}
+
+/// Find optimal scaling for distal and proximal region.
+/// 
+/// Args:
+///     anomalous_points: list of (x, y, z) tuples containing proximal frame coordinates
+///     n_proximal: number of proximal points to compare
+///     n_distal: number of distal points to compare
+///     centerline: PyCenterline for the region
+///     proximal_reference: list of (x, y, z) with the region of interest points from the CCTA mesh
+///     distal_reference: list of (x, y, z) tuples containing distal frame coordinates
+/// 
+/// Returns:
+///     Tuple of two floats with proximal and distal scaling distance
+/// Example:
+///     >>> import multimodars as mm
+#[pyfunction]
+pub fn find_proximal_distal_scaling(
+    anomalous_points: Vec<(f64, f64, f64)>,
+    n_proximal: usize,
+    n_distal: usize,
+    centerline: PyCenterline,
+    proximal_reference: Vec<(f64, f64, f64)>,
+    distal_reference: Vec<(f64, f64, f64)>,
+) -> PyResult<(f64, f64)> {
+    let rust_centerline = centerline.to_rust_centerline();
+    let (prox_dist, distal_dist) = centerline_based_diameter_optimization(
+        &anomalous_points, 
+        n_proximal,
+        n_distal,
+        &rust_centerline, 
+        &proximal_reference,
+        &distal_reference,
+    );
+    Ok((prox_dist, distal_dist))
 }

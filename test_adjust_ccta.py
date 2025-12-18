@@ -45,7 +45,7 @@ if __name__ == "__main__":
         mesh=mesh,
         region_points=rca_points,
         centerline=rca_centerline,
-        diameter_adjustment_mm=0.4902,  # Positive to expand
+        diameter_adjustment_mm=0.5,  # Positive to expand
     )
 
     # Create comparison plot
@@ -82,8 +82,9 @@ if __name__ == "__main__":
         debug_plot=True,
     )
 
-    distal, proximal, mean = find_distal_and_proximal_scaling(
+    prox_scaling, dist_scaling = find_distal_and_proximal_scaling(
         frames=aligned.geom_a.frames,
+        centerline=rca_centerline,
         results=results,
         debug_plot=True,
     )
@@ -93,21 +94,21 @@ if __name__ == "__main__":
         mesh=mesh,
         region_points=results['proximal_points'],
         centerline=rca_centerline,
-        diameter_adjustment_mm=-0.9033,  # Positive to expand
+        diameter_adjustment_mm=prox_scaling,
     )
 
     scaled_distal = scale_region_centerline_morphing(
         mesh=mesh,
         region_points=results['distal_points'],
         centerline=rca_centerline,
-        diameter_adjustment_mm=0.4902,  # Positive to expand
+        diameter_adjustment_mm=dist_scaling,  # Positive to expand
     )
 
     scaled_anomalous = scale_region_centerline_morphing(
         mesh=mesh,
         region_points=results['anomalous_points'],
         centerline=rca_centerline,
-        diameter_adjustment_mm=-1.5,  # Positive to expand
+        diameter_adjustment_mm=-0.9033,  # Positive to expand
     )
 
     anomaly_mesh = trimesh.load("test/lumen_000_None.obj")
