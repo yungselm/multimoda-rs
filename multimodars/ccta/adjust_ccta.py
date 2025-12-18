@@ -460,6 +460,7 @@ def find_distal_and_proximal_scaling(
     debug_plot: bool=True,    
 ) -> Tuple[float, float]:
     import multimodars as mm
+    
     frame_points_dist = [(p.x, p.y, p.z) for f in frames[-dist_range:] for p in f.lumen.points]
     frame_points_prox = [(p.x, p.y, p.z) for f in frames[0:prox_range] for p in f.lumen.points]
     n_anomalous_points = len(results['anomalous_points'])
@@ -478,3 +479,47 @@ def find_distal_and_proximal_scaling(
     print(f"Best distal scaling: {dist_scaling}")
 
     return prox_scaling, dist_scaling
+
+
+def find_aortic_scaling(
+    frames,
+    centerline,
+    results: dict,
+    debug_plot: bool=True,
+) -> float:
+    import multimodars as mm
+
+    # since geometries always have the same number of points per frame we can take one frame
+    n_points = len(frames[0].lumen.points)
+    step = n_points // 8
+    lower_limit = step
+    upper_limit = step * 2
+
+    reference_points = None
+
+    # this extracts the recreated wall from aortic thickness if it exists.
+    for frame in frames:
+        if frame.lumen.aortic_thickness is None:
+            continue
+        if 'Wall' not in frame.extras or frame.extras['Wall'] is None:
+            raise ValueError(
+                f"No Wall extras found for frame {getattr(frame, 'frame', '?')}"
+            )
+                
+        walls = [frame.extras.get('Wall')]
+
+        if not walls:
+            raise ValueError(
+                f"Empty Wall extras for frame {getattr(frame, 'frame', '?')}"                
+            )
+        
+        all_points = [
+            (p.x, p.y, p.z)
+            for w in walls
+            for p in w.points
+            if lower_limit <= p.point_index <= upper_limit
+        ]
+
+        reference_points = all_points
+
+    return reference_points

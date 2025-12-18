@@ -11,6 +11,7 @@ from multimodars.ccta.adjust_ccta import (
     compare_centerline_scaling,
     label_anomalous_region,
     find_distal_and_proximal_scaling,
+    find_aortic_scaling,
 )
 
 if __name__ == "__main__":
@@ -83,6 +84,13 @@ if __name__ == "__main__":
     )
 
     prox_scaling, dist_scaling = find_distal_and_proximal_scaling(
+        frames=aligned.geom_a.frames,
+        centerline=rca_centerline,
+        results=results,
+        debug_plot=True,
+    )
+
+    test = find_aortic_scaling(
         frames=aligned.geom_a.frames,
         centerline=rca_centerline,
         results=results,
