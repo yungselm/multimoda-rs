@@ -30,6 +30,7 @@
 - [] Write a more stable function to find intramural points on aorta (for now works with excluded RCA points)
 
 # CCTA clinical assessment (v0.3.0)
+- [] automatically find the required reference points for alignment
 - [] automatically assess lumen area, minor-, major axis, mla, intramural length etc. from the CCTA mesh.
 - [] return hausdorff distances per point between aligned ivus mesh and ccta mesh.
 

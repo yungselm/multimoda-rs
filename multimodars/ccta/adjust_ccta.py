@@ -538,3 +538,15 @@ def _extract_wall_from_frames(frames) -> List[Tuple[float, float, float]]:
         reference_points = all_points
     
     return reference_points
+
+
+def replace_anomalous_section(
+    mesh: trimesh.Trimesh,
+    results: dict,
+    geometry,
+    coronary_cl,
+    aortic_cl,
+) -> trimesh.Trimesh:
+    import multimodars as mm
+    
+    pass
