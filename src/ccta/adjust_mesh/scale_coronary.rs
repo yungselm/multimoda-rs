@@ -2,6 +2,34 @@ use core::f64;
 use std::collections::HashSet;
 use crate::intravascular::io::input::{CenterlinePoint, Centerline};
 use crate::intravascular::io::geometry::Frame;
+use super::calculate_squared_distance;
+
+pub fn centerline_based_aortic_diameter_optimization(
+    intramural_points: &[(f64, f64, f64)],
+    reference_points: &[(f64, f64, f64)],
+    centerline: &Centerline,
+) -> f64 {
+    let start = -2.0f64;
+    let end =  2.0f64;
+    let step = 0.1f64;
+    let steps = ((end - start) / step).round() as i32; // (4.0 / 0.1) => 40
+    
+    let mut min_dist = f64::MAX;
+    let mut scaling_best = f64::MAX;
+    
+    for i in 0..=steps {
+        let x = start + i as f64 * step;
+        let temp_points = centerline_based_diameter_morphing(centerline, &intramural_points, x);
+
+        let dist = symmetric_nn_distance(&reference_points, &temp_points);
+
+        if dist < min_dist {
+            min_dist = dist;
+            scaling_best = x;
+        }
+    }
+    scaling_best
+}
 
 pub fn centerline_based_diameter_optimization(
     anomalous_points: &[(f64, f64, f64)],
@@ -181,31 +209,6 @@ fn find_closest_centerline_point_optimized(centerline: &Centerline, point: (f64,
     }
     
     closest_point
-}
-
-trait Point3D {
-    fn x(&self) -> f64;
-    fn y(&self) -> f64;
-    fn z(&self) -> f64;
-}
-
-impl Point3D for (f64, f64, f64) {
-    fn x(&self) -> f64 { self.0 }
-    fn y(&self) -> f64 { self.1 }
-    fn z(&self) -> f64 { self.2 }
-}
-
-impl Point3D for CenterlinePoint {
-    fn x(&self) -> f64 { self.contour_point.x }
-    fn y(&self) -> f64 { self.contour_point.y }
-    fn z(&self) -> f64 { self.contour_point.z }
-}
-
-fn calculate_squared_distance<A: Point3D, B: Point3D>(a: &A, b: &B) -> f64 {
-    let dx = a.x() - b.x();
-    let dy = a.y() - b.y();
-    let dz = a.z() - b.z();
-    dx*dx + dy*dy + dz*dz
 }
 
 pub fn find_points_by_cl_region_rs(

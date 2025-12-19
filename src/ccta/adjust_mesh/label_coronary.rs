@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use crate::intravascular::io::input::{CenterlinePoint, Centerline};
+use super::calculate_squared_distance;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Triangle {
@@ -163,18 +164,11 @@ pub fn remove_occluded_points_ray_triangle_rust(
 }
 
 fn point_to_triangle_distance(point: &(f64, f64, f64), triangle: &Triangle) -> f64 {
-    let dist_v0 = distance(point, &triangle.v0);
-    let dist_v1 = distance(point, &triangle.v1);
-    let dist_v2 = distance(point, &triangle.v2);
+    let dist_v0 = calculate_squared_distance(point, &triangle.v0);
+    let dist_v1 = calculate_squared_distance(point, &triangle.v1);
+    let dist_v2 = calculate_squared_distance(point, &triangle.v2);
     
     dist_v0.min(dist_v1).min(dist_v2)
-}
-
-fn distance(a: &(f64, f64, f64), b: &(f64, f64, f64)) -> f64 {
-    let dx = a.0 - b.0;
-    let dy = a.1 - b.1;
-    let dz = a.2 - b.2;
-    (dx * dx + dy * dy + dz * dz).sqrt()
 }
 
 #[derive(Debug)]

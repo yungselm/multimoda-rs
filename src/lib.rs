@@ -16,6 +16,7 @@ use crate::ccta::binding::ccta_py::{
     find_points_by_cl_region,
     clean_outlier_points,
     find_proximal_distal_scaling,
+    find_aortic_scaling,
 };
 
 use pyo3::prelude::*;
@@ -52,6 +53,7 @@ fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<(
     m.add_function(wrap_pyfunction!(find_points_by_cl_region, m.clone())?)?;
     m.add_function(wrap_pyfunction!(clean_outlier_points, m.clone())?)?;
     m.add_function(wrap_pyfunction!(find_proximal_distal_scaling, m.clone())?)?;
+    m.add_function(wrap_pyfunction!(find_aortic_scaling, m.clone())?)?;
 
     // Updated class registration
     m.add_class::<PyInputData>()?;

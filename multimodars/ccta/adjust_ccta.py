@@ -2,7 +2,7 @@ import numpy as np
 import trimesh
 from pathlib import Path
 import warnings
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 
 def label_geometry(
@@ -111,6 +111,7 @@ def label_geometry(
         aortic_points,
         2.0,
         0.4) # based on patient data, needs more stable option in the future
+    aortic_points = find_aortic_points(mesh.vertices, final_rca_points_found, final_lca_points_found)
     print(f"length after: {len(final_lca_points)}")
 
     if control_plot:
@@ -466,6 +467,7 @@ def find_distal_and_proximal_scaling(
     n_anomalous_points = len(results['anomalous_points'])
     n_section: int = int(np.ceil(0.25 * n_anomalous_points))
     
+    print("=== Finding best scaling factors ===")
     prox_scaling, dist_scaling = mm.find_proximal_distal_scaling(
         results['anomalous_points'],
         n_section,
@@ -474,7 +476,6 @@ def find_distal_and_proximal_scaling(
         frame_points_prox,
         frame_points_dist,
     )
-    print("=== Finding best scaling factors ===")
     print(f"Best proximal scaling: {prox_scaling}")
     print(f"Best distal scaling: {dist_scaling}")
 
@@ -489,6 +490,20 @@ def find_aortic_scaling(
 ) -> float:
     import multimodars as mm
 
+    reference_points = _extract_wall_from_frames(frames)
+
+    print("=== Finding best scaling factor ===")
+    scaling = mm.find_aortic_scaling(
+        results['rca_removed_points'], # For now work with removed points
+        reference_points,
+        centerline,
+    )
+    print(f"Best aortic scaling: {scaling}") 
+
+    return scaling
+
+
+def _extract_wall_from_frames(frames) -> List[Tuple[float, float, float]]:
     # since geometries always have the same number of points per frame we can take one frame
     n_points = len(frames[0].lumen.points)
     step = n_points // 8
@@ -521,5 +536,5 @@ def find_aortic_scaling(
         ]
 
         reference_points = all_points
-
+    
     return reference_points

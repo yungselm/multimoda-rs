@@ -7,6 +7,7 @@ use crate::ccta::adjust_mesh::scale_coronary::{
     find_points_by_cl_region_rs, 
     clean_up_non_section_points,
     centerline_based_diameter_optimization,
+    centerline_based_aortic_diameter_optimization,
 };
 use pyo3::prelude::*;
 
@@ -215,4 +216,30 @@ pub fn find_proximal_distal_scaling(
         &distal_reference,
     );
     Ok((prox_dist, distal_dist))
+}
+
+/// Find optimal scaling for aorta using intramural region.
+/// 
+/// Args:
+///     intramural_points: list of (x, y, z) tuples containing proximal frame coordinates
+///     reference_opints: list of (x, y, z) with the region of interest points from the CCTA mesh
+///     centerline: PyCenterline of the aorta
+/// 
+/// Returns:
+///     float with best scaling distance
+/// Example:
+///     >>> import multimodars as mm
+#[pyfunction]
+pub fn find_aortic_scaling(
+    intramural_points: Vec<(f64, f64, f64)>,
+    reference_points: Vec<(f64, f64, f64)>,
+    centerline: PyCenterline,
+) -> PyResult<f64> {
+    let rust_centerline = centerline.to_rust_centerline();
+    let dist = centerline_based_aortic_diameter_optimization(
+        &intramural_points,
+        &reference_points, 
+        &rust_centerline,
+    );
+    Ok(dist)
 }

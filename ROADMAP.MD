@@ -22,11 +22,12 @@
 - [x] Lable points inside of anomalous region, proximal and distal to region
 - [x] use the cleanup_section_points() also on LCA points
 - [x] Shrink/expand coronary to match intravascular images
-- [] Shrink/Expand CCTA to best match aortic wall
+- [x] Shrink/Expand CCTA to best match aortic wall
+- [] Write a more stable clean up function by going along every face of a vertix adn then check if most vertices are from the same type
 - [] Remove points inside of anomalous region, connect remaining points to proximal and distal points, without resampling of the anomalous region
 - [] Create ostium frames for smoother connection to aorta (define range cl points, and function of lumen increase)
 - [] Write Pytests for the new functions
-- [] Write a more stable clean up function by going along every face of a vertix adn then check if most vertices are from the same type
+- [] Write a more stable function to find intramural points on aorta (for now works with excluded RCA points)
 
 # CCTA clinical assessment (v0.3.0)
 - [] automatically assess lumen area, minor-, major axis, mla, intramural length etc. from the CCTA mesh.

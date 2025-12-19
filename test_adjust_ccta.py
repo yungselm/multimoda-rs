@@ -36,6 +36,8 @@ if __name__ == "__main__":
     rca_points = results["rca_points"]
     rca_cl_raw = np.genfromtxt("data/centerline_rca.csv", delimiter=",")
     rca_centerline = mm.numpy_to_centerline(rca_cl_raw)
+    aorta_cl_raw = np.genfromtxt("data/centerline_aorta.csv", delimiter=",")
+    ao_centerline = mm.numpy_to_centerline(aorta_cl_raw)
 
     print(f"\n=== CENTERLINE-BASED RCA MORPHING ===")
     print(f"Original mesh has {len(mesh.vertices)} vertices")
@@ -90,9 +92,9 @@ if __name__ == "__main__":
         debug_plot=True,
     )
 
-    test = find_aortic_scaling(
+    aortic_scaling = find_aortic_scaling(
         frames=aligned.geom_a.frames,
-        centerline=rca_centerline,
+        centerline=ao_centerline,
         results=results,
         debug_plot=True,
     )
@@ -119,12 +121,19 @@ if __name__ == "__main__":
         diameter_adjustment_mm=-0.9033,  # Positive to expand
     )
 
+    scaled_aortic = scale_region_centerline_morphing(
+        mesh=mesh,
+        region_points=results['aorta_points'],
+        centerline=ao_centerline,
+        diameter_adjustment_mm=aortic_scaling,     
+    )
+
     anomaly_mesh = trimesh.load("test/lumen_000_None.obj")
     mesh_visual = mesh.copy()
     # semitransparent red
     mesh_visual.visual.face_colors = [128, 0, 0, 255]
 
-    scene = trimesh.Scene([scaled_proximal, scaled_distal, scaled_anomalous, mesh, anomaly_mesh])
+    scene = trimesh.Scene([scaled_proximal, scaled_distal, scaled_anomalous, scaled_aortic, anomaly_mesh])
     scene.show()
 
     scene = trimesh.Scene([mesh, anomaly_mesh])
