@@ -17,6 +17,8 @@ use crate::ccta::binding::ccta_py::{
     clean_outlier_points,
     find_proximal_distal_scaling,
     find_aortic_scaling,
+    build_adjacency_map,
+    smooth_mesh_labels,
 };
 
 use pyo3::prelude::*;
@@ -54,6 +56,8 @@ fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<(
     m.add_function(wrap_pyfunction!(clean_outlier_points, m.clone())?)?;
     m.add_function(wrap_pyfunction!(find_proximal_distal_scaling, m.clone())?)?;
     m.add_function(wrap_pyfunction!(find_aortic_scaling, m.clone())?)?;
+    m.add_function(wrap_pyfunction!(build_adjacency_map, m.clone())?)?;
+    m.add_function(wrap_pyfunction!(smooth_mesh_labels, m.clone())?)?;
 
     // Updated class registration
     m.add_class::<PyInputData>()?;

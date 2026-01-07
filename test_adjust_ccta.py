@@ -31,110 +31,120 @@ if __name__ == "__main__":
         control_plot=True,
     )
 
-    # Now scale just the RCA region using centerline-based morphing
     mesh = results["mesh"]
-    rca_points = results["rca_points"]
-    rca_cl_raw = np.genfromtxt("data/centerline_rca.csv", delimiter=",")
-    rca_centerline = mm.numpy_to_centerline(rca_cl_raw)
-    aorta_cl_raw = np.genfromtxt("data/centerline_aorta.csv", delimiter=",")
-    ao_centerline = mm.numpy_to_centerline(aorta_cl_raw)
+    print(mesh.faces[0])
+    print(mesh.vertices[0])
 
-    print(f"\n=== CENTERLINE-BASED RCA MORPHING ===")
-    print(f"Original mesh has {len(mesh.vertices)} vertices")
-    print(f"RCA region has {len(rca_points)} vertices")
+    adj_map = mm.build_adjacency_map(mesh.faces.tolist())
+    neighbor_indices = adj_map[0]
+    print(neighbor_indices)
+    neighbor_coords = mesh.vertices[list(neighbor_indices)]
+    print(neighbor_coords)
 
-    # Expand RCA by 2mm using centerline-based morphing
-    scaled_mesh = scale_region_centerline_morphing(
-        mesh=mesh,
-        region_points=rca_points,
-        centerline=rca_centerline,
-        diameter_adjustment_mm=0.5,  # Positive to expand
-    )
+    # # Now scale just the RCA region using centerline-based morphing
+    # mesh = results["mesh"]
+    # rca_points = results["rca_points"]
+    # rca_cl_raw = np.genfromtxt("data/centerline_rca.csv", delimiter=",")
+    # rca_centerline = mm.numpy_to_centerline(rca_cl_raw)
+    # aorta_cl_raw = np.genfromtxt("data/centerline_aorta.csv", delimiter=",")
+    # ao_centerline = mm.numpy_to_centerline(aorta_cl_raw)
 
-    # Create comparison plot
-    compare_centerline_scaling(
-        original_mesh=mesh,
-        scaled_mesh=scaled_mesh,
-        region_points=rca_points,
-        centerline=rca_centerline,
-    )
+    # print(f"\n=== CENTERLINE-BASED RCA MORPHING ===")
+    # print(f"Original mesh has {len(mesh.vertices)} vertices")
+    # print(f"RCA region has {len(rca_points)} vertices")
 
-    # Return both the original and scaled mesh for further use
-    results["scaled_mesh"] = scaled_mesh
+    # # Expand RCA by 2mm using centerline-based morphing
+    # scaled_mesh = scale_region_centerline_morphing(
+    #     mesh=mesh,
+    #     region_points=rca_points,
+    #     centerline=rca_centerline,
+    #     diameter_adjustment_mm=0.5,  # Positive to expand
+    # )
 
-    rest, _ = mm.from_file_singlepair("data/ivus_rest", write_obj=False)
+    # # Create comparison plot
+    # compare_centerline_scaling(
+    #     original_mesh=mesh,
+    #     scaled_mesh=scaled_mesh,
+    #     region_points=rca_points,
+    #     centerline=rca_centerline,
+    # )
 
-    aligned, resampled_cl = mm.align_combined(
-        rca_centerline,
-        rest,
-        (12.2605, -201.3643, 1751.0554),
-        (11.7567, -202.1920, 1754.7975),
-        (15.6605, -202.1920, 1749.9655),
-        results["rca_points"],
-        angle_range_deg=10.0,
-        write=True,
-        watertight=True,
-        output_dir="test",
-    )
+    # # Return both the original and scaled mesh for further use
+    # results["scaled_mesh"] = scaled_mesh
 
-    results = label_anomalous_region(
-        centerline=rca_centerline,
-        frames=aligned.geom_a.frames,
-        results=results,
-        results_key='rca_points',
-        debug_plot=True,
-    )
+    # rest, _ = mm.from_file_singlepair("data/ivus_rest", write_obj=False)
 
-    prox_scaling, dist_scaling = find_distal_and_proximal_scaling(
-        frames=aligned.geom_a.frames,
-        centerline=rca_centerline,
-        results=results,
-        debug_plot=True,
-    )
+    # aligned, resampled_cl = mm.align_combined(
+    #     rca_centerline,
+    #     rest,
+    #     (12.2605, -201.3643, 1751.0554),
+    #     (11.7567, -202.1920, 1754.7975),
+    #     (15.6605, -202.1920, 1749.9655),
+    #     results["rca_points"],
+    #     angle_range_deg=10.0,
+    #     write=True,
+    #     watertight=True,
+    #     output_dir="test",
+    # )
 
-    aortic_scaling = find_aortic_scaling(
-        frames=aligned.geom_a.frames,
-        centerline=ao_centerline,
-        results=results,
-        debug_plot=True,
-    )
+    # results = label_anomalous_region(
+    #     centerline=rca_centerline,
+    #     frames=aligned.geom_a.frames,
+    #     results=results,
+    #     results_key='rca_points',
+    #     debug_plot=True,
+    # )
 
-    # paper plot
-    scaled_proximal = scale_region_centerline_morphing(
-        mesh=mesh,
-        region_points=results['proximal_points'],
-        centerline=rca_centerline,
-        diameter_adjustment_mm=prox_scaling,
-    )
+    # prox_scaling, dist_scaling = find_distal_and_proximal_scaling(
+    #     frames=aligned.geom_a.frames,
+    #     centerline=rca_centerline,
+    #     results=results,
+    #     debug_plot=True,
+    # )
 
-    scaled_distal = scale_region_centerline_morphing(
-        mesh=mesh,
-        region_points=results['distal_points'],
-        centerline=rca_centerline,
-        diameter_adjustment_mm=dist_scaling,  # Positive to expand
-    )
+    # aortic_scaling = find_aortic_scaling(
+    #     frames=aligned.geom_a.frames,
+    #     centerline=ao_centerline,
+    #     results=results,
+    #     debug_plot=True,
+    # )
 
-    scaled_anomalous = scale_region_centerline_morphing(
-        mesh=mesh,
-        region_points=results['anomalous_points'],
-        centerline=rca_centerline,
-        diameter_adjustment_mm=-0.9033,  # Positive to expand
-    )
+    # # paper plot
+    # scaled_proximal = scale_region_centerline_morphing(
+    #     mesh=mesh,
+    #     region_points=results['proximal_points'],
+    #     centerline=rca_centerline,
+    #     diameter_adjustment_mm=prox_scaling,
+    # )
 
-    scaled_aortic = scale_region_centerline_morphing(
-        mesh=mesh,
-        region_points=results['aorta_points'],
-        centerline=ao_centerline,
-        diameter_adjustment_mm=aortic_scaling,     
-    )
+    # scaled_distal = scale_region_centerline_morphing(
+    #     mesh=mesh,
+    #     region_points=results['distal_points'],
+    #     centerline=rca_centerline,
+    #     diameter_adjustment_mm=dist_scaling,  # Positive to expand
+    # )
 
-    anomaly_mesh = trimesh.load("test/lumen_000_None.obj")
-    mesh_visual = mesh.copy()
-    # semitransparent red
-    mesh_visual.visual.face_colors = [128, 0, 0, 255]
+    # scaled_anomalous = scale_region_centerline_morphing(
+    #     mesh=mesh,
+    #     region_points=results['anomalous_points'],
+    #     centerline=rca_centerline,
+    #     diameter_adjustment_mm=-0.9033,  # Positive to expand
+    # )
 
-    scene = trimesh.Scene([scaled_proximal, scaled_distal, scaled_anomalous, scaled_aortic, anomaly_mesh])
-    scene.show()
+    # scaled_aortic = scale_region_centerline_morphing(
+    #     mesh=mesh,
+    #     region_points=results['aorta_points'],
+    #     centerline=ao_centerline,
+    #     diameter_adjustment_mm=aortic_scaling,     
+    # )
 
-    scene = trimesh.Scene([mesh, anomaly_mesh])
-    scene.show()
+    # anomaly_mesh = trimesh.load("test/lumen_000_None.obj")
+    # mesh_visual = mesh.copy()
+    # # semitransparent red
+    # mesh_visual.visual.face_colors = [128, 0, 0, 255]
+
+    # scene = trimesh.Scene([scaled_proximal, scaled_distal, scaled_anomalous, scaled_aortic, anomaly_mesh])
+    # scene.show()
+
+    # scene = trimesh.Scene([mesh, anomaly_mesh])
+    # scene.show()

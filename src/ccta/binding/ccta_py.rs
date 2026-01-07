@@ -1,4 +1,6 @@
 // src/ccta/binding/label_py.rs
+use std::collections::{HashMap, HashSet};
+
 use crate::intravascular::binding::classes::{PyCenterline, PyFrame};
 use crate::ccta::adjust_mesh::label_coronary::find_centerline_bounded_points;
 use crate::ccta::adjust_mesh::label_coronary::{Triangle, remove_occluded_points_ray_triangle_rust};
@@ -242,4 +244,69 @@ pub fn find_aortic_scaling(
         &rust_centerline,
     );
     Ok(dist)
+}
+
+#[pyfunction]
+pub fn build_adjacency_map(faces: Vec<[usize; 3]>) -> HashMap<usize, HashSet<usize>> {
+    let mut adjacency: HashMap<usize, HashSet<usize>> = HashMap::new();
+
+    for face in faces {
+        let v0 = face[0];
+        let v1 = face[1];
+        let v2 = face[2];
+
+        // Add connections for all three edges of the triangle
+        let edges = [(v0, v1), (v1, v2), (v2, v0)];
+
+        for &(a, b) in &edges {
+            adjacency.entry(a).or_default().insert(b);
+            adjacency.entry(b).or_default().insert(a);
+        }
+    }
+
+    adjacency
+}
+
+#[pyfunction]
+pub fn smooth_mesh_labels(
+    labels: Vec<u8>, 
+    adjacency_map: HashMap<usize, HashSet<usize>>,
+    iterations: usize
+) -> Vec<u8> {
+    let mut current_labels = labels;
+    let n = current_labels.len();
+
+    for _ in 0..iterations {
+        let mut next_labels = current_labels.clone();
+        
+        for i in 0..n {
+            if let Some(neighbors) = adjacency_map.get(&i) {
+                if neighbors.is_empty() { continue; }
+
+                let my_label = current_labels[i];
+                
+                // Count occurrences of neighbor labels
+                let mut counts = HashMap::new();
+                for &neighbor_idx in neighbors {
+                    let label = current_labels[neighbor_idx];
+                    *counts.entry(label).or_insert(0) += 1;
+                }
+
+                // Find the most frequent label among neighbors
+                let (&majority_label, &max_count) = counts
+                    .iter()
+                    .max_by_key(|&(_, count)| count)
+                    .unwrap();
+
+                // If I am different from the majority and the majority is strong
+                // (You can adjust this logic: e.g., only flip if 100% of neighbors are different)
+                if max_count == neighbors.len() && my_label != majority_label {
+                    next_labels[i] = majority_label;
+                }
+            }
+        }
+        current_labels = next_labels;
+    }
+
+    current_labels
 }
