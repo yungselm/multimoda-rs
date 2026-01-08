@@ -12,7 +12,13 @@ from ._wrappers import (
     from_array,
 )
 from .io import read_geometrical, write_geometries
-from .ccta import adjust_ccta
+from .ccta.adjust_ccta import (
+    label_geometry,
+    label_anomalous_region,
+    scale_region_centerline_morphing,
+    find_distal_and_proximal_scaling,
+    find_aortic_scaling,
+)
 
 __all__ = [
     # Core classes
@@ -49,5 +55,9 @@ __all__ = [
     "find_centerline_bounded_points_simple",
     "find_proximal_distal_scaling",
     # CCTA module
-    "adjust_ccta",
+    "label_geometry",
+    "label_anomalous_region",
+    "scale_region_centerline_morphing",
+    "find_distal_and_proximal_scaling",
+    "find_aortic_scaling",
 ]
