@@ -17,7 +17,7 @@ from .ccta.adjust_ccta import (
     label_anomalous_region,
     scale_region_centerline_morphing,
     find_distal_and_proximal_scaling,
-    find_aortic_scaling,
+    find_aorta_scaling,
 )
 
 __all__ = [
@@ -59,5 +59,5 @@ __all__ = [
     "label_anomalous_region",
     "scale_region_centerline_morphing",
     "find_distal_and_proximal_scaling",
-    "find_aortic_scaling",
+    "find_aorta_scaling",
 ]

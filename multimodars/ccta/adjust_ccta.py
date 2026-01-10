@@ -558,7 +558,7 @@ def find_distal_and_proximal_scaling(
     return prox_scaling, dist_scaling
 
 
-def find_aortic_scaling(
+def find_aorta_scaling(
     frames,
     centerline,
     results: dict,

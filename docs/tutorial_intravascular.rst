@@ -1,15 +1,18 @@
-Tutorial - CCTA Module
-=======================
+Tutorial - Intravascular Module
+================================
 
 This step-by-step tutorial demonstrates how to:
 
-- Read in and prepare .stl CCTA geometries and centerlines
-- Label the newly created trimesh.Trimesh object based on the centerlines
-- Morph the newly labeled regions to match an intravascular geometry pair
-- UNFINISHED: Fusion of CCTA and intravascular geometries
+- Run the workflow from csv files
+- Run the workflow by building geometries from numpy arrays
+- Finetuning of alignment algorithms
+- Alignment with a centerline
+- Saving everything as .obj files
+- Utility functions to link to numpy
+- Class methods
 
-1. Read in and prepare CCTA geometries and centerlines
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1. Workflow csv files
+^^^^^^^^^^^^^^^^^^^^^^
 After pip installing or locally building the package, install it in the familiar way.
 
 .. code-block:: python
@@ -138,7 +141,7 @@ in 0.1° steps and so on until the desired acccuracy). If bruteforce is set to '
 If ``write_obj`` is set to True, geometries will be saved as .obj files. if interpolation steps are not 0, additionally interpolated geometries will be created. This is useful if the dynamic
 behaviour will be rendered later on. For example here a rendering of a non-aligned systolic stress-induced deformation in a coronary artery anomaly:
 
-.. image:: ../examples/figures/animation_stress_induced_systolic_deformation.gif
+.. image:: ./figures/animation_stress_induced_systolic_deformation.gif
     :alt: Example figure
     :align: center
     :width: 400px
@@ -173,7 +176,7 @@ This can either be done with three point alignment (preferred), where one point 
 of the PyGeometry (e.g. aortic reference for coronary artery anomalies) and one point indicating the superior position
 and another point indicating the inferior position.
 
-.. image:: ../examples/figures/Alignment3p.png
+.. image:: ./figures/Alignment3p.png
    :alt: Example figure
    :align: center
    :width: 400px
