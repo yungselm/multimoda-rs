@@ -1,16 +1,16 @@
 // src/ccta/binding/label_py.rs
 use std::collections::{HashMap, HashSet};
 
-use crate::intravascular::binding::classes::{PyCenterline, PyFrame};
 use crate::ccta::adjust_mesh::label_coronary::find_centerline_bounded_points;
-use crate::ccta::adjust_mesh::label_coronary::{Triangle, remove_occluded_points_ray_triangle_rust};
-use crate::ccta::adjust_mesh::scale_coronary::{
-    centerline_based_diameter_morphing, 
-    find_points_by_cl_region_rs, 
-    clean_up_non_section_points,
-    centerline_based_diameter_optimization,
-    centerline_based_aortic_diameter_optimization,
+use crate::ccta::adjust_mesh::label_coronary::{
+    remove_occluded_points_ray_triangle_rust, Triangle,
 };
+use crate::ccta::adjust_mesh::scale_coronary::{
+    centerline_based_aortic_diameter_optimization, centerline_based_diameter_morphing,
+    centerline_based_diameter_optimization, clean_up_non_section_points,
+    find_points_by_cl_region_rs,
+};
+use crate::intravascular::binding::classes::{PyCenterline, PyFrame};
 use pyo3::prelude::*;
 
 /// Finds points that are bounded by spheres along a coronary vessel centerline.
@@ -26,7 +26,7 @@ use pyo3::prelude::*;
 ///
 /// Example:
 ///     >>> import multimodars as mm
-///     >>> 
+///     >>>
 ///     >>> # Load centerline and point cloud  
 ///     >>> centerline = mm.load_centerline("path/to/centerline.json")
 ///     >>> points = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), ...]  # or mesh.vertices.tolist()
@@ -41,19 +41,15 @@ pub fn find_centerline_bounded_points_simple(
     radius: f64,
 ) -> PyResult<Vec<(f64, f64, f64)>> {
     let rust_centerline = centerline.to_rust_centerline();
-    
+
     // Call Rust function directly - no complex conversions needed
-    let result_points = find_centerline_bounded_points(
-        rust_centerline, 
-        &points, 
-        radius
-    );
-    
+    let result_points = find_centerline_bounded_points(rust_centerline, &points, radius);
+
     Ok(result_points)
 }
 
 /// Remove occluded / overlapping points seen from the centerline.
-/// 
+///
 /// For each centerline point, we keep at most one point per angular bin
 /// (quantized theta/phi) — the point with the smallest radius (closest to the center).
 ///
@@ -77,13 +73,13 @@ pub fn remove_occluded_points_ray_triangle(
 ) -> PyResult<Vec<(f64, f64, f64)>> {
     let rust_centerline_coronary = centerline_coronary.to_rust_centerline();
     let rust_centerline_aorta = centerline_aorta.to_rust_centerline();
-    
+
     // Convert faces to Triangle format
     let triangles: Vec<Triangle> = faces
         .into_iter()
         .map(|(v0, v1, v2)| Triangle::new(v0, v1, v2))
         .collect();
-    
+
     let result = remove_occluded_points_ray_triangle_rust(
         &rust_centerline_coronary,
         &rust_centerline_aorta,
@@ -95,12 +91,12 @@ pub fn remove_occluded_points_ray_triangle(
 }
 
 /// Adjust centerline-based diameter by morphing points outward or inward.
-/// 
+///
 /// Args:
 ///     centerline: PyCenterline object representing the vessel centerline
 ///     points: List of (x, y, z) tuples containing point coordinates
 ///     diameter_adjustment_mm: Amount to adjust diameter (positive to expand, negative to contract)
-/// 
+///
 /// Returns:
 ///     List of (x, y, z) tuples: Adjusted point coordinates
 #[pyfunction]
@@ -111,23 +107,20 @@ pub fn adjust_diameter_centerline_morphing_simple(
 ) -> PyResult<Vec<(f64, f64, f64)>> {
     let rust_centerline = centerline.to_rust_centerline();
 
-    let result_points = centerline_based_diameter_morphing(
-        &rust_centerline,
-        &points,
-        diameter_adjustment_mm,
-    );
+    let result_points =
+        centerline_based_diameter_morphing(&rust_centerline, &points, diameter_adjustment_mm);
 
     Ok(result_points)
 }
 
 /// Find points that are within a specified frame region along the centerline.
-/// 
+///
 /// Args:
 ///     centerline: PyCenterline object representing the vessel centerline
 ///     start_frame: PyFrame
 ///     end_frame: PyFrame
 ///     points: list of (x, y, z) tuples containing point coordinates
-/// 
+///
 /// Returns:
 ///     Tuple of three lists of (x, y, z) tuples:
 ///         - proximal_points: points before the start frame region
@@ -140,28 +133,28 @@ pub fn find_points_by_cl_region(
     centerline: PyCenterline,
     frames: Vec<PyFrame>,
     points: Vec<(f64, f64, f64)>,
-) -> PyResult<(Vec<(f64, f64, f64)>, Vec<(f64, f64, f64)>, Vec<(f64, f64, f64)>)> {
+) -> PyResult<(
+    Vec<(f64, f64, f64)>,
+    Vec<(f64, f64, f64)>,
+    Vec<(f64, f64, f64)>,
+)> {
     let rust_centerline = centerline.to_rust_centerline();
     let rust_frames: Vec<crate::intravascular::io::geometry::Frame> = frames
         .into_iter()
         .map(|f| f.to_rust_frame())
         .collect::<Result<_, _>>()?;
 
-    let result_points = find_points_by_cl_region_rs(
-        &rust_centerline,
-        &rust_frames,
-        &points,
-    );
+    let result_points = find_points_by_cl_region_rs(&rust_centerline, &rust_frames, &points);
 
     Ok(result_points)
 }
 
 /// Clean up points based on their neigbouring points and a list of reference points.
-/// 
+///
 /// Args:
 ///     points_to_cleanup: list of (x, y, z) tuples containing point coordinates
 ///     reference_points: list of (x, y, z) tuples containing point coordinates
-/// 
+///
 /// Returns:
 ///     Tuple of two lists of (x, y, z) tuples:
 ///         - cleaned_points: removed outliers
@@ -186,7 +179,7 @@ pub fn clean_outlier_points(
 }
 
 /// Find optimal scaling for distal and proximal region.
-/// 
+///
 /// Args:
 ///     anomalous_points: list of (x, y, z) tuples containing proximal frame coordinates
 ///     n_proximal: number of proximal points to compare
@@ -194,7 +187,7 @@ pub fn clean_outlier_points(
 ///     centerline: PyCenterline for the region
 ///     proximal_reference: list of (x, y, z) with the region of interest points from the CCTA mesh
 ///     distal_reference: list of (x, y, z) tuples containing distal frame coordinates
-/// 
+///
 /// Returns:
 ///     Tuple of two floats with proximal and distal scaling distance
 /// Example:
@@ -210,10 +203,10 @@ pub fn find_proximal_distal_scaling(
 ) -> PyResult<(f64, f64)> {
     let rust_centerline = centerline.to_rust_centerline();
     let (prox_dist, distal_dist) = centerline_based_diameter_optimization(
-        &anomalous_points, 
+        &anomalous_points,
         n_proximal,
         n_distal,
-        &rust_centerline, 
+        &rust_centerline,
         &proximal_reference,
         &distal_reference,
     );
@@ -221,12 +214,12 @@ pub fn find_proximal_distal_scaling(
 }
 
 /// Find optimal scaling for aorta using intramural region.
-/// 
+///
 /// Args:
 ///     intramural_points: list of (x, y, z) tuples containing proximal frame coordinates
 ///     reference_opints: list of (x, y, z) with the region of interest points from the CCTA mesh
 ///     centerline: PyCenterline of the aorta
-/// 
+///
 /// Returns:
 ///     float with best scaling distance
 /// Example:
@@ -240,7 +233,7 @@ pub fn find_aortic_scaling(
     let rust_centerline = centerline.to_rust_centerline();
     let dist = centerline_based_aortic_diameter_optimization(
         &intramural_points,
-        &reference_points, 
+        &reference_points,
         &rust_centerline,
     );
     Ok(dist)
@@ -269,22 +262,24 @@ pub fn build_adjacency_map(faces: Vec<[usize; 3]>) -> HashMap<usize, HashSet<usi
 
 #[pyfunction]
 pub fn smooth_mesh_labels(
-    labels: Vec<u8>, 
+    labels: Vec<u8>,
     adjacency_map: HashMap<usize, HashSet<usize>>,
-    iterations: usize
+    iterations: usize,
 ) -> Vec<u8> {
     let mut current_labels = labels;
     let n = current_labels.len();
 
     for _ in 0..iterations {
         let mut next_labels = current_labels.clone();
-        
+
         for i in 0..n {
             if let Some(neighbors) = adjacency_map.get(&i) {
-                if neighbors.is_empty() { continue; }
+                if neighbors.is_empty() {
+                    continue;
+                }
 
                 let my_label = current_labels[i];
-                
+
                 // Count occurrences of neighbor labels
                 let mut counts = HashMap::new();
                 for &neighbor_idx in neighbors {
@@ -293,10 +288,8 @@ pub fn smooth_mesh_labels(
                 }
 
                 // Find the most frequent label among neighbors
-                let (&majority_label, &max_count) = counts
-                    .iter()
-                    .max_by_key(|&(_, count)| count)
-                    .unwrap();
+                let (&majority_label, &max_count) =
+                    counts.iter().max_by_key(|&(_, count)| count).unwrap();
 
                 // If I am different from the majority and the majority is strong
                 // (You can adjust this logic: e.g., only flip if 100% of neighbors are different)

@@ -409,7 +409,7 @@ pub fn fill_holes(geometry: &mut Geometry) -> anyhow::Result<Geometry> {
         } else {
             // Larger gaps - calculate how many frames to insert
             let missing_frames_count = (ratio - 1.0).floor().max(1.0) as usize;
-            
+
             if ratio >= 10.0 {
                 println!("🛑 WARNING: Very large gap detected between Frame {} and Frame {} (dz = {:.3}, baseline: {:.3}, ratio: {:.3}) - inserting {} frames but geometry may not be realistic!", 
                     prev.id, curr.id, diff, baseline, ratio, missing_frames_count);

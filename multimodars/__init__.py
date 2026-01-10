@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from .multimodars import *
 from ._converters import (
-    to_array, 
-    numpy_to_geometry, 
+    to_array,
+    numpy_to_geometry,
     numpy_to_centerline,
     numpy_to_inputdata,
 )

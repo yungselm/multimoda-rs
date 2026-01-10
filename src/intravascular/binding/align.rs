@@ -1,6 +1,6 @@
 use crate::intravascular::{
     binding::classes::{PyCenterline, PyContourType, PyGeometryPair},
-    centerline_align::{align_manual_rs, align_three_point_rs, align_combined_rs},
+    centerline_align::{align_combined_rs, align_manual_rs, align_three_point_rs},
 };
 use pyo3::prelude::*;
 
@@ -225,8 +225,8 @@ pub fn align_combined(
     lower_ref_pt: (f64, f64, f64),
     points: Vec<(f64, f64, f64)>,
     angle_step_deg: f64,
-    angle_range_deg: f64,  // e.g., 15° in radians
-    index_range: usize, // e.g., 2
+    angle_range_deg: f64, // e.g., 15° in radians
+    index_range: usize,   // e.g., 2
     write: bool,
     watertight: bool,
     interpolation_steps: usize,

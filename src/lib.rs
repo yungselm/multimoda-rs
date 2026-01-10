@@ -3,22 +3,16 @@
 mod ccta;
 mod intravascular;
 
-use crate::intravascular::binding::align::{align_manual, align_three_point, align_combined};
+use crate::ccta::binding::ccta_py::{
+    adjust_diameter_centerline_morphing_simple, build_adjacency_map, clean_outlier_points,
+    find_aortic_scaling, find_centerline_bounded_points_simple, find_points_by_cl_region,
+    find_proximal_distal_scaling, remove_occluded_points_ray_triangle, smooth_mesh_labels,
+};
+use crate::intravascular::binding::align::{align_combined, align_manual, align_three_point};
 use crate::intravascular::binding::classes::*;
 use crate::intravascular::binding::{
     from_array_doublepair, from_array_full, from_array_single, from_array_singlepair,
     from_file_doublepair, from_file_full, from_file_single, from_file_singlepair, to_obj,
-};
-use crate::ccta::binding::ccta_py::{
-    find_centerline_bounded_points_simple,
-    remove_occluded_points_ray_triangle,
-    adjust_diameter_centerline_morphing_simple,
-    find_points_by_cl_region,
-    clean_outlier_points,
-    find_proximal_distal_scaling,
-    find_aortic_scaling,
-    build_adjacency_map,
-    smooth_mesh_labels,
 };
 
 use pyo3::prelude::*;
@@ -49,9 +43,18 @@ fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<(
     m.add_function(wrap_pyfunction!(from_array_singlepair, m.clone())?)?;
     m.add_function(wrap_pyfunction!(from_array_single, m.clone())?)?;
     m.add_function(wrap_pyfunction!(to_obj, m.clone())?)?;
-    m.add_function(wrap_pyfunction!(find_centerline_bounded_points_simple, m.clone())?)?;
-    m.add_function(wrap_pyfunction!(remove_occluded_points_ray_triangle, m.clone())?)?;
-    m.add_function(wrap_pyfunction!(adjust_diameter_centerline_morphing_simple, m.clone())?)?;
+    m.add_function(wrap_pyfunction!(
+        find_centerline_bounded_points_simple,
+        m.clone()
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        remove_occluded_points_ray_triangle,
+        m.clone()
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        adjust_diameter_centerline_morphing_simple,
+        m.clone()
+    )?)?;
     m.add_function(wrap_pyfunction!(find_points_by_cl_region, m.clone())?)?;
     m.add_function(wrap_pyfunction!(clean_outlier_points, m.clone())?)?;
     m.add_function(wrap_pyfunction!(find_proximal_distal_scaling, m.clone())?)?;

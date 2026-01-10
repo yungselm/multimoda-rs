@@ -1,6 +1,6 @@
-use std::collections::HashSet;
-use crate::intravascular::io::input::{CenterlinePoint, Centerline};
 use super::calculate_squared_distance;
+use crate::intravascular::io::input::{Centerline, CenterlinePoint};
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Triangle {
@@ -22,7 +22,7 @@ fn ray_triangle_intersection(
     triangle: &Triangle,
 ) -> Option<f64> {
     let eps = 1e-8;
-    
+
     let edge1 = (
         triangle.v1.0 - triangle.v0.0,
         triangle.v1.1 - triangle.v0.1,
@@ -33,42 +33,42 @@ fn ray_triangle_intersection(
         triangle.v2.1 - triangle.v0.1,
         triangle.v2.2 - triangle.v0.2,
     );
-    
+
     // Calculate determinant
     let h = (
         ray_direction.1 * edge2.2 - ray_direction.2 * edge2.1,
         ray_direction.2 * edge2.0 - ray_direction.0 * edge2.2,
         ray_direction.0 * edge2.1 - ray_direction.1 * edge2.0,
     );
-    
+
     let a = edge1.0 * h.0 + edge1.1 * h.1 + edge1.2 * h.2;
     if a > -eps && a < eps {
         return None; // Ray is parallel to triangle
     }
-    
+
     let f = 1.0 / a;
     let s = (
         ray_origin.0 - triangle.v0.0,
         ray_origin.1 - triangle.v0.1,
         ray_origin.2 - triangle.v0.2,
     );
-    
+
     let u = f * (s.0 * h.0 + s.1 * h.1 + s.2 * h.2);
     if u < 0.0 || u > 1.0 {
         return None;
     }
-    
+
     let q = (
         s.1 * edge1.2 - s.2 * edge1.1,
         s.2 * edge1.0 - s.0 * edge1.2,
         s.0 * edge1.1 - s.1 * edge1.0,
     );
-    
+
     let v = f * (ray_direction.0 * q.0 + ray_direction.1 * q.1 + ray_direction.2 * q.2);
     if v < 0.0 || u + v > 1.0 {
         return None;
     }
-    
+
     // Compute t to find intersection point
     let t = f * (edge2.0 * q.0 + edge2.1 * q.1 + edge2.2 * q.2);
     if t > eps {
@@ -88,42 +88,42 @@ pub fn remove_occluded_points_ray_triangle_rust(
     if points.is_empty() || faces.is_empty() {
         return points.to_vec();
     }
-    
+
     let checked_cl_coronary = check_centerline(centerline_coronary.clone());
     let checked_cl_aorta = check_centerline(centerline_aorta.clone());
-    
+
     let mut faces_to_exclude: HashSet<usize> = HashSet::new();
-    
+
     for aorta_point in &checked_cl_aorta.points {
         let aorta_coord = (
             aorta_point.contour_point.x,
             aorta_point.contour_point.y,
             aorta_point.contour_point.z,
         );
-        
+
         for coronary_point in checked_cl_coronary.points.iter().take(range_coronary) {
             let coronary_coord = (
                 coronary_point.contour_point.x,
                 coronary_point.contour_point.y,
                 coronary_point.contour_point.z,
             );
-            
+
             let ray_direction = (
                 coronary_coord.0 - aorta_coord.0,
                 coronary_coord.1 - aorta_coord.1,
                 coronary_coord.2 - aorta_coord.2,
             );
-            
+
             let mut intersecting_faces: Vec<(usize, f64)> = Vec::new();
-            
+
             for (face_idx, face) in faces.iter().enumerate() {
                 if let Some(t) = ray_triangle_intersection(&aorta_coord, &ray_direction, face) {
                     intersecting_faces.push((face_idx, t));
                 }
             }
-            
+
             intersecting_faces.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-            
+
             // Only exclude if we have at least 2 intersections (aorta wall structure, see docs)
             if intersecting_faces.len() >= 3 {
                 if let Some((closest_face_idx, _t)) = intersecting_faces.first() {
@@ -132,12 +132,12 @@ pub fn remove_occluded_points_ray_triangle_rust(
             }
         }
     }
-    
+
     println!("Total faces to exclude: {}", faces_to_exclude.len());
-    
+
     let mut points_to_remove: HashSet<usize> = HashSet::new();
     const DISTANCE_THRESHOLD: f64 = 0.5; // This only works for mm, just needs to be sufficiently small
-    
+
     for (point_idx, point) in points.iter().enumerate() {
         for &face_idx in &faces_to_exclude {
             if let Some(face) = faces.get(face_idx) {
@@ -149,17 +149,22 @@ pub fn remove_occluded_points_ray_triangle_rust(
             }
         }
     }
-    
+
     let filtered_points: Vec<(f64, f64, f64)> = points
         .iter()
         .enumerate()
         .filter(|(idx, _)| !points_to_remove.contains(idx))
         .map(|(_, point)| *point)
         .collect();
-    
-    println!("Excluded {} faces, removed {} points (filtered from {} to {} points)", 
-        faces_to_exclude.len(), points_to_remove.len(), points.len(), filtered_points.len());
-    
+
+    println!(
+        "Excluded {} faces, removed {} points (filtered from {} to {} points)",
+        faces_to_exclude.len(),
+        points_to_remove.len(),
+        points.len(),
+        filtered_points.len()
+    );
+
     filtered_points
 }
 
@@ -167,7 +172,7 @@ fn point_to_triangle_distance(point: &(f64, f64, f64), triangle: &Triangle) -> f
     let dist_v0 = calculate_squared_distance(point, &triangle.v0);
     let dist_v1 = calculate_squared_distance(point, &triangle.v1);
     let dist_v2 = calculate_squared_distance(point, &triangle.v2);
-    
+
     dist_v0.min(dist_v1).min(dist_v2)
 }
 
@@ -204,12 +209,15 @@ pub fn find_centerline_bounded_points(
         let filtered_local = if points_inside.len() < 3 {
             points_inside
         } else {
-            let dists: Vec<f64> = points_inside.iter().map(|p| {
-                let dx = p.0 - bounding_sphere.center.0;
-                let dy = p.1 - bounding_sphere.center.1;
-                let dz = p.2 - bounding_sphere.center.2;
-                (dx*dx + dy*dy + dz*dz).sqrt()
-            }).collect();
+            let dists: Vec<f64> = points_inside
+                .iter()
+                .map(|p| {
+                    let dx = p.0 - bounding_sphere.center.0;
+                    let dy = p.1 - bounding_sphere.center.1;
+                    let dz = p.2 - bounding_sphere.center.2;
+                    (dx * dx + dy * dy + dz * dz).sqrt()
+                })
+                .collect();
 
             let mean = dists.iter().sum::<f64>() / dists.len() as f64;
             let var = dists.iter().map(|d| (d - mean).powi(2)).sum::<f64>() / dists.len() as f64;
@@ -218,7 +226,8 @@ pub fn find_centerline_bounded_points(
             if std == 0.0 {
                 points_inside
             } else {
-                points_inside.into_iter()
+                points_inside
+                    .into_iter()
                     .zip(dists.into_iter())
                     .filter(|(_p, d)| (d - mean).abs() <= 2.0 * std)
                     .map(|(p, _d)| p)
@@ -230,7 +239,8 @@ pub fn find_centerline_bounded_points(
     }
 
     all_points_inside.sort_by(|a, b| {
-        a.0.partial_cmp(&b.0).unwrap()
+        a.0.partial_cmp(&b.0)
+            .unwrap()
             .then(a.1.partial_cmp(&b.1).unwrap())
             .then(a.2.partial_cmp(&b.2).unwrap())
     });
@@ -247,17 +257,21 @@ fn check_centerline(centerline: Centerline) -> Centerline {
     // Check that the centerline is sorted by z-value (distal to proximal)
     // and ensure the last point has the lowest z-value
     let mut points = centerline.points.clone();
-    
+
     points.sort_by(|a, b| b.contour_point.z.partial_cmp(&a.contour_point.z).unwrap());
-    
+
     Centerline { points }
 }
 
 fn create_bounding_sphere(cl_point: &CenterlinePoint, radius: f64) -> BoundingSphere {
     let radius = radius;
-    
+
     BoundingSphere {
-        center: (cl_point.contour_point.x, cl_point.contour_point.y, cl_point.contour_point.z),
+        center: (
+            cl_point.contour_point.x,
+            cl_point.contour_point.y,
+            cl_point.contour_point.z,
+        ),
         radius,
     }
 }
@@ -267,7 +281,7 @@ fn find_points_inside_of_sphere(sphere: &BoundingSphere, point: &(f64, f64, f64)
     let dy = point.1 - sphere.center.1;
     let dz = point.2 - sphere.center.2;
     let distance_squared = dx * dx + dy * dy + dz * dz;
-    
+
     distance_squared <= sphere.radius * sphere.radius
 }
 
@@ -307,7 +321,7 @@ mod test_find_cl_bounded_points {
                 x: 0.5,
                 y: 0.5,
                 z: 0.0,
-                aortic: false
+                aortic: false,
             },
             ContourPoint {
                 frame_index: 212,
@@ -315,7 +329,7 @@ mod test_find_cl_bounded_points {
                 x: 0.5,
                 y: 0.5,
                 z: 1.0,
-                aortic: false
+                aortic: false,
             },
             ContourPoint {
                 frame_index: 3657,
@@ -323,32 +337,41 @@ mod test_find_cl_bounded_points {
                 x: 0.5,
                 y: 0.5,
                 z: 2.0,
-                aortic: false
-            }
+                aortic: false,
+            },
         ];
         let cl = Centerline::from_contour_points(cl_raw_points);
-        
+
         // Combine inside and outside points
-        let all_points: Vec<(f64, f64, f64)> = points_inside.iter()
+        let all_points: Vec<(f64, f64, f64)> = points_inside
+            .iter()
             .chain(points_outside.iter())
             .cloned()
             .collect();
-        
+
         let result = find_centerline_bounded_points(cl, &all_points, 1.0);
-        
+
         // The result should contain all the points that were inside our test spheres
         // Since our spheres have radius 1.0 and are centered at (0.5, 0.5, z),
         // all points within distance 1.0 should be included
         assert_eq!(result.len(), points_inside.len());
-        
+
         // Verify that all expected inside points are in the result
         for expected_point in &points_inside {
-            assert!(result.contains(expected_point), "Missing point: {:?}", expected_point);
+            assert!(
+                result.contains(expected_point),
+                "Missing point: {:?}",
+                expected_point
+            );
         }
-        
+
         // Verify that no outside points are in the result
         for outside_point in &points_outside {
-            assert!(!result.contains(outside_point), "Unexpected point: {:?}", outside_point);
+            assert!(
+                !result.contains(outside_point),
+                "Unexpected point: {:?}",
+                outside_point
+            );
         }
     }
 
@@ -357,16 +380,12 @@ mod test_find_cl_bounded_points {
         // Test a single specific ray and triangle
         let ray_origin = (0.0, 0.0, 0.0);
         let ray_direction = (1.0, 0.0, 0.0); // Ray along x-axis
-        
+
         // Triangle in the yz-plane at x=1.0
-        let triangle = Triangle::new(
-            (1.0, -1.0, -1.0),
-            (1.0, 1.0, -1.0), 
-            (1.0, 0.0, 1.0),
-        );
+        let triangle = Triangle::new((1.0, -1.0, -1.0), (1.0, 1.0, -1.0), (1.0, 0.0, 1.0));
 
         let result = ray_triangle_intersection(&ray_origin, &ray_direction, &triangle);
-        
+
         println!("=== Single Ray-Triangle Test ===");
         println!("Ray origin: {:?}", ray_origin);
         println!("Ray direction: {:?}", ray_direction);
@@ -374,6 +393,9 @@ mod test_find_cl_bounded_points {
         println!("Intersection result: {:?}", result);
 
         assert!(result.is_some(), "Ray should intersect triangle");
-        assert!((result.unwrap() - 1.0).abs() < 1e-6, "Intersection should be at t=1.0");
+        assert!(
+            (result.unwrap() - 1.0).abs() < 1e-6,
+            "Intersection should be at t=1.0"
+        );
     }
 }

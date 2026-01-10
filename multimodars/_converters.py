@@ -315,7 +315,9 @@ def numpy_to_inputdata(
             m1 = _to_optional_float(row[2]) if row.shape[0] > 2 else None
             m2 = _to_optional_float(row[3]) if row.shape[0] > 3 else None
 
-            recs.append(PyRecord(frame=frame, phase=phase, measurement_1=m1, measurement_2=m2))
+            recs.append(
+                PyRecord(frame=frame, phase=phase, measurement_1=m1, measurement_2=m2)
+            )
 
         return recs if len(recs) > 0 else None
 
@@ -347,7 +349,9 @@ def numpy_to_inputdata(
 
     if global_ref is None:
         # default fallback (required by PyInputData ctor)
-        global_ref = PyContourPoint(frame_index=0, point_index=0, x=0.0, y=0.0, z=0.0, aortic=False)
+        global_ref = PyContourPoint(
+            frame_index=0, point_index=0, x=0.0, y=0.0, z=0.0, aortic=False
+        )
 
     # Build lists of contours
     if lumen_arr.size == 0:
@@ -371,7 +375,9 @@ def numpy_to_inputdata(
         if eem_contour is not None:
             eem_list.append(eem_contour)
 
-        calc_contour = build_contour_from_array(calcification_arr, frame_id, "Calcification")
+        calc_contour = build_contour_from_array(
+            calcification_arr, frame_id, "Calcification"
+        )
         if calc_contour is not None:
             calc_list.append(calc_contour)
 

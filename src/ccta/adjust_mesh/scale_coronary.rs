@@ -1,8 +1,8 @@
+use super::calculate_squared_distance;
+use crate::intravascular::io::geometry::Frame;
+use crate::intravascular::io::input::{Centerline, CenterlinePoint};
 use core::f64;
 use std::collections::HashSet;
-use crate::intravascular::io::input::{CenterlinePoint, Centerline};
-use crate::intravascular::io::geometry::Frame;
-use super::calculate_squared_distance;
 
 pub fn centerline_based_aortic_diameter_optimization(
     intramural_points: &[(f64, f64, f64)],
@@ -10,13 +10,13 @@ pub fn centerline_based_aortic_diameter_optimization(
     centerline: &Centerline,
 ) -> f64 {
     let start = -2.0f64;
-    let end =  2.0f64;
+    let end = 2.0f64;
     let step = 0.1f64;
     let steps = ((end - start) / step).round() as i32; // (4.0 / 0.1) => 40
-    
+
     let mut min_dist = f64::MAX;
     let mut scaling_best = f64::MAX;
-    
+
     for i in 0..=steps {
         let x = start + i as f64 * step;
         let temp_points = centerline_based_diameter_morphing(centerline, &intramural_points, x);
@@ -39,19 +39,20 @@ pub fn centerline_based_diameter_optimization(
     proximal_reference: &[(f64, f64, f64)],
     distal_reference: &[(f64, f64, f64)],
 ) -> (f64, f64) {
-    let (proximal_points, anomalous_points_new) = find_region_points(&anomalous_points, &proximal_reference, n_proximal);
+    let (proximal_points, anomalous_points_new) =
+        find_region_points(&anomalous_points, &proximal_reference, n_proximal);
     let (distal_points, _) = find_region_points(&anomalous_points_new, &distal_reference, n_distal);
 
     let start = -2.0f64;
-    let end =  2.0f64;
+    let end = 2.0f64;
     let step = 0.1f64;
     let steps = ((end - start) / step).round() as i32; // (4.0 / 0.1) => 40
-    
+
     let mut min_dist_proximal = f64::MAX;
     let mut min_dist_distal = f64::MAX;
     let mut prox_scaling_best = f64::MAX;
     let mut dist_scaling_best = f64::MAX;
-    
+
     for i in 0..=steps {
         let x = start + i as f64 * step;
         let temp_points = centerline_based_diameter_morphing(centerline, &proximal_points, x);
@@ -117,7 +118,13 @@ fn find_region_points(
     let remaining_points: Vec<(f64, f64, f64)> = anomalous_points
         .iter()
         .enumerate()
-        .filter_map(|(i, pt)| if selected_indices.contains(&i) { None } else { Some(*pt) })
+        .filter_map(|(i, pt)| {
+            if selected_indices.contains(&i) {
+                None
+            } else {
+                Some(*pt)
+            }
+        })
         .collect();
 
     (selected_points, remaining_points)
@@ -131,21 +138,23 @@ fn symmetric_nn_distance(a: &[(f64, f64, f64)], b: &[(f64, f64, f64)]) -> f64 {
         return f64::INFINITY;
     }
 
-    let sum_a_to_b: f64 = a.iter()
+    let sum_a_to_b: f64 = a
+        .iter()
         .map(|pa| {
             b.iter()
-             .map(|pb| calculate_squared_distance(pa, pb))
-             .fold(f64::INFINITY, |m, v| if v < m { v } else { m })
+                .map(|pb| calculate_squared_distance(pa, pb))
+                .fold(f64::INFINITY, |m, v| if v < m { v } else { m })
         })
         .sum();
 
     let avg_a_to_b = sum_a_to_b / (a.len() as f64);
 
-    let sum_b_to_a: f64 = b.iter()
+    let sum_b_to_a: f64 = b
+        .iter()
         .map(|pb| {
             a.iter()
-             .map(|pa| calculate_squared_distance(pb, pa))
-             .fold(f64::INFINITY, |m, v| if v < m { v } else { m })
+                .map(|pa| calculate_squared_distance(pb, pa))
+                .fold(f64::INFINITY, |m, v| if v < m { v } else { m })
         })
         .sum();
 
@@ -178,13 +187,13 @@ pub fn centerline_based_diameter_morphing(
                 vector.1 / magnitude,
                 vector.2 / magnitude,
             );
-            
+
             let new_point = (
                 point.0 + normalized_vector.0 * diameter_adjustment_mm,
                 point.1 + normalized_vector.1 * diameter_adjustment_mm,
                 point.2 + normalized_vector.2 * diameter_adjustment_mm,
             );
-            
+
             result_points.push(new_point);
         } else {
             // If point is exactly on centerline, we can't determine direction
@@ -192,14 +201,17 @@ pub fn centerline_based_diameter_morphing(
             result_points.push(*point);
         }
     }
-    
+
     result_points
 }
 
-fn find_closest_centerline_point_optimized(centerline: &Centerline, point: (f64, f64, f64)) -> &CenterlinePoint {
+fn find_closest_centerline_point_optimized(
+    centerline: &Centerline,
+    point: (f64, f64, f64),
+) -> &CenterlinePoint {
     let mut min_distance_squared = f64::MAX;
     let mut closest_point = &centerline.points[0];
-    
+
     for centerline_point in &centerline.points {
         let distance_squared = calculate_squared_distance(&point, centerline_point);
         if distance_squared < min_distance_squared {
@@ -207,7 +219,7 @@ fn find_closest_centerline_point_optimized(centerline: &Centerline, point: (f64,
             closest_point = centerline_point;
         }
     }
-    
+
     closest_point
 }
 
@@ -215,34 +227,38 @@ pub fn find_points_by_cl_region_rs(
     centerline: &Centerline,
     frames: &[Frame],
     points: &[(f64, f64, f64)],
-) -> (Vec<(f64, f64, f64)>, Vec<(f64, f64, f64)>, Vec<(f64, f64, f64)>) {
+) -> (
+    Vec<(f64, f64, f64)>,
+    Vec<(f64, f64, f64)>,
+    Vec<(f64, f64, f64)>,
+) {
     let mut cumulative_z_dist_frames = 0.0;
     for i in 1..frames.len() {
-        cumulative_z_dist_frames += (frames[i].centroid.2 - frames[i-1].centroid.2).abs();
+        cumulative_z_dist_frames += (frames[i].centroid.2 - frames[i - 1].centroid.2).abs();
     }
-    cumulative_z_dist_frames /= (frames.len() -1) as f64;
+    cumulative_z_dist_frames /= (frames.len() - 1) as f64;
 
-    let centroids_to_match = frames.iter().map(|f| f.centroid).collect::<Vec<(f64, f64, f64)>>();
-    let cl_points_indices: Vec<usize> = find_cl_points_in_range(
-        centerline,
-        &centroids_to_match,
-        cumulative_z_dist_frames,
-    );
+    let centroids_to_match = frames
+        .iter()
+        .map(|f| f.centroid)
+        .collect::<Vec<(f64, f64, f64)>>();
+    let cl_points_indices: Vec<usize> =
+        find_cl_points_in_range(centerline, &centroids_to_match, cumulative_z_dist_frames);
 
     // needed for proximal/distal classification
-    let dist_ref = centroids_to_match[centroids_to_match.len() -1];
+    let dist_ref = centroids_to_match[centroids_to_match.len() - 1];
 
     let mut proximal_points: Vec<(f64, f64, f64)> = Vec::new();
     let mut distal_points: Vec<(f64, f64, f64)> = Vec::new();
     let mut points_between: Vec<(f64, f64, f64)> = Vec::new();
 
     let mut remaining_points = points.to_vec();
-    
+
     // First pass: find all points between centerline regions
     remaining_points.retain(|point| {
         let closest_cl_point = find_closest_centerline_point_optimized(&centerline, *point);
         let cl_idx = closest_cl_point.contour_point.frame_index as usize;
-        
+
         if cl_points_indices.contains(&cl_idx) {
             points_between.push(*point);
             false // remove from remaining
@@ -250,7 +266,7 @@ pub fn find_points_by_cl_region_rs(
             true // keep in remaining
         }
     });
-    
+
     // Second pass: classify remaining points as proximal or distal
     for point in remaining_points.iter() {
         if point.0 > dist_ref.0 && point.1 > dist_ref.1 && point.2 > dist_ref.2 {
@@ -259,8 +275,10 @@ pub fn find_points_by_cl_region_rs(
             distal_points.push(*point);
         }
     }
-    let (proximal_points, points_between) = clean_up_non_section_points(proximal_points, points_between, 1.0, 0.6);
-    let (distal_points, points_between) = clean_up_non_section_points(distal_points, points_between, 1.0, 0.6);
+    let (proximal_points, points_between) =
+        clean_up_non_section_points(proximal_points, points_between, 1.0, 0.6);
+    let (distal_points, points_between) =
+        clean_up_non_section_points(distal_points, points_between, 1.0, 0.6);
     (proximal_points, distal_points, points_between)
 }
 
@@ -298,43 +316,43 @@ pub fn clean_up_non_section_points(
     reference_points: Vec<(f64, f64, f64)>,
     neighborhood_radius: f64,
     min_neigbor_ratio: f64,
-) -> (Vec<(f64, f64, f64)>, Vec<(f64, f64, f64)>) {   
+) -> (Vec<(f64, f64, f64)>, Vec<(f64, f64, f64)>) {
     let neighborhood_radius_sq = neighborhood_radius * neighborhood_radius;
 
     let mut cleaned_points = Vec::new();
     let mut reassigned_points = reference_points.clone();
-    
+
     for point in points_to_cleanup.iter() {
         let mut ref_neighbors = 0;
         let mut total_neighbors = 0;
-        
+
         for ref_point in reference_points.iter() {
             let dx = point.0 - ref_point.0;
             let dy = point.1 - ref_point.1;
             let dz = point.2 - ref_point.2;
             let distance_squared = dx * dx + dy * dy + dz * dz;
-            
+
             if distance_squared <= neighborhood_radius_sq {
                 ref_neighbors += 1;
                 total_neighbors += 1;
             }
         }
-        
+
         for other_point in points_to_cleanup.iter() {
             if std::ptr::eq(point, other_point) {
                 continue; // Skip the point itself
             }
-            
+
             let dx = point.0 - other_point.0;
             let dy = point.1 - other_point.1;
             let dz = point.2 - other_point.2;
             let distance_squared = dx * dx + dy * dy + dz * dz;
-            
+
             if distance_squared <= neighborhood_radius_sq {
                 total_neighbors += 1;
             }
         }
-        
+
         // Decision logic: if most neighbors are reference points, reassign
         if total_neighbors > 0 {
             let ref_ratio = ref_neighbors as f64 / total_neighbors as f64;
@@ -350,7 +368,7 @@ pub fn clean_up_non_section_points(
             cleaned_points.push(*point);
         }
     }
-    
+
     (cleaned_points, reassigned_points)
 }
 
@@ -365,37 +383,37 @@ mod tests {
     fn test_centerline_based_diameter_morphing() {
         let centerline = Centerline {
             points: vec![
-                CenterlinePoint { 
+                CenterlinePoint {
                     contour_point: ContourPoint {
-                        frame_index: 0, 
-                        point_index: 0, 
-                        x: 0.0, 
-                        y: 0.0, 
-                        z: 0.0, 
-                        aortic: false
+                        frame_index: 0,
+                        point_index: 0,
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                        aortic: false,
                     },
-                    normal: Vector3::new(1.0, 0.0, 0.0).into()
+                    normal: Vector3::new(1.0, 0.0, 0.0).into(),
                 },
-                CenterlinePoint { 
+                CenterlinePoint {
                     contour_point: ContourPoint {
-                        frame_index: 1, 
-                        point_index: 1, 
-                        x: 1.0, 
-                        y: 0.0, 
-                        z: 0.0, 
-                        aortic: false
+                        frame_index: 1,
+                        point_index: 1,
+                        x: 1.0,
+                        y: 0.0,
+                        z: 0.0,
+                        aortic: false,
                     },
-                    normal: Vector3::new(1.0, 0.0, 0.0).into()
+                    normal: Vector3::new(1.0, 0.0, 0.0).into(),
                 },
             ],
         };
 
         let points = vec![
-            (1.0, 1.0, 0.0),  // Point at (1,1,0) - closest to centerline point (1,0,0)
+            (1.0, 1.0, 0.0), // Point at (1,1,0) - closest to centerline point (1,0,0)
         ];
 
         let result = centerline_based_diameter_morphing(&centerline, &points, 1.0);
-        
+
         // The point should move from (1,1,0) to (1,2,0) - same direction but 1 unit further
         assert_eq!(result.len(), 1);
         let new_point = result[0];
@@ -407,27 +425,23 @@ mod tests {
     #[test]
     fn test_negative_adjustment() {
         let centerline = Centerline {
-            points: vec![
-                CenterlinePoint { 
-                    contour_point: ContourPoint {
-                        frame_index: 0, 
-                        point_index: 0, 
-                        x: 0.0, 
-                        y: 0.0, 
-                        z: 0.0, 
-                        aortic: false
-                    },
-                    normal: Vector3::new(1.0, 0.0, 0.0).into()
+            points: vec![CenterlinePoint {
+                contour_point: ContourPoint {
+                    frame_index: 0,
+                    point_index: 0,
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                    aortic: false,
                 },
-            ],
+                normal: Vector3::new(1.0, 0.0, 0.0).into(),
+            }],
         };
 
-        let points = vec![
-            (2.0, 0.0, 0.0),
-        ];
+        let points = vec![(2.0, 0.0, 0.0)];
 
         let result = centerline_based_diameter_morphing(&centerline, &points, -0.5);
-        
+
         // Should move toward centerline by 0.5 units
         let new_point = result[0];
         assert!((new_point.0 - 1.5).abs() < 1e-6);
