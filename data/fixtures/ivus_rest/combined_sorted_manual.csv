@@ -1,0 +1,7 @@
+frame,position,phase,lumen_area,lumen_circumf,longest_distance,shortest_distance,elliptic_ratio,vector_length,vector_angle,measurement_1,measurement_2,pullback_speed,pullback_start_frame,frame_rate
+347,2.27,D,5.94,12.18,5.59,1.11,3.5,1.59,139.4,1.09,1.62,,,
+367,0.94,D,6.05,12.17,5.54,1.17,3.46,1.56,142.7,1.06,1.72,,,
+385,0.0,D,5.42,11.3,5.2,1.15,3.73,1.31,135.17,0.96,1.68,,,
+181,1.54,S,5.68,12.67,6.03,1.16,3.01,1.34,139.52,1.01,1.6,,,
+279,0.4,S,5.2,12.08,5.71,1.06,3.27,0.95,128.02,0.99,1.43,,,
+258,0.0,S,5.9,12.19,5.64,1.19,2.57,1.47,125.19,0.88,1.6,,,
