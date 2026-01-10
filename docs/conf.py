@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.abspath("../src"))
 project = "multimodars"
 copyright = "2025, Anselm W. Stark"
 author = "Anselm W. Stark"
-release = "0.1.1"
+release = "0.2.0"
 
 # Extensions
 extensions = [

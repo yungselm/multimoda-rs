@@ -224,12 +224,12 @@ Hausdorff distances between the pointcloud and the geometry, the following funct
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 While every wrapper function allows to directly save the created geometries as .obj files (with optional interpolation),
 it is also possible to save any created geometry directly to an object file. The ``to_obj`` function can automatically
-detect the type of the object, and can be applied to PyGeometryPair, PyGeometry. For PyCenterline use the ``centerline_to_obj`` function.
+detect the type of the object, and can be applied to PyGeometryPair, PyGeometry.
 
 .. code-block:: python
 
     mm.to_obj(aligned_pair.dia_geom, "data/aligned.obj")
-    mm.centerline_to_obj(cl_resampled, "data/resampled_cl.obj")
+    
 
 4. Utility functions to link to numpy
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
