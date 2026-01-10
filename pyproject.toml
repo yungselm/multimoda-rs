@@ -33,7 +33,7 @@ Issues = "https://github.com/yungselm/multimoda-rs/issues"
 
 [project.optional-dependencies]
 docs = [
-    "sphinx>=9.0.4",
+    "sphinx>=8.0,<9.0",
     "sphinx-rtd-theme",
     "sphinx-autodoc-typehints",
     "myst-parser",
