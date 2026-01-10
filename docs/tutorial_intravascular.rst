@@ -1,3 +1,10 @@
+
+.. note::
+
+    Also download the example data and jupyter notebooks from the current release from the
+    `Github Releases page <https://github.com/yungselm/multimoda-rs/releases>`_ to follow
+    this tutorial step-by-step.
+
 Tutorial - Intravascular Module
 ================================
 

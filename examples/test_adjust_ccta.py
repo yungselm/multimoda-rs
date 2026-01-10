@@ -5,6 +5,9 @@ import os
 # Add the current directory to Python path so we can import multimodars
 sys.path.insert(0, os.path.dirname(__file__))
 
+# set directory of the script as working directory
+os.chdir(os.path.dirname(__file__))
+
 from multimodars.ccta.adjust_ccta import (
     label_geometry,
     scale_region_centerline_morphing,
@@ -20,7 +23,7 @@ if __name__ == "__main__":
     import multimodars as mm
 
     results, _ = label_geometry(
-        path_ccta_geometry="data/NARCO_119.stl",
+        path_ccta_geometry="data/raaoca_ccta.stl",
         path_centerline_aorta="data/centerline_aorta.csv",
         path_centerline_rca="data/centerline_rca.csv",
         path_centerline_lca="data/centerline_lca.csv",
