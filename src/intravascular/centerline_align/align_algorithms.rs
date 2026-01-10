@@ -274,7 +274,7 @@ pub fn best_rotation_three_point(
         }
         angle += angle_step;
     }
-
+    println!("✅ Best angle found: {}°", best_angle.to_degrees());
     best_angle
 }
 

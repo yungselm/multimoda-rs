@@ -16,7 +16,7 @@ authors:
   - name: Marc Ilic
     orcid: 0009-0000-6443-8739
     affiliation: "1, 2"
-  - name: Ali Mokthari
+  - name: Ali Mokhtari
     orcid: 0009-0004-8864-6988
     affiliation: "1, 2"
   - name: Pooya Mohammadi Kazaj
