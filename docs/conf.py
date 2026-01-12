@@ -1,5 +1,6 @@
 import os
 import sys
+import re
 
 try:
     import multimodars
@@ -7,6 +8,16 @@ except ImportError:
     from unittest.mock import MagicMock
 
     sys.modules["multimodars"] = MagicMock()
+
+# Get the version from Cargo.toml
+def get_version():
+    with open(os.path.join("..", "Cargo.toml"), "r") as f:
+        content = f.read()
+    # Find the version string in the [package] section
+    match = re.search(r'^version\s*=\s*"([^"]+)"', content, re.MULTILINE)
+    if match:
+        return match.group(1)
+    return "0.0.0"
 
 # Add project to path
 sys.path.insert(0, os.path.abspath(".."))
@@ -16,7 +27,8 @@ sys.path.insert(0, os.path.abspath("../src"))
 project = "multimodars"
 copyright = "2025, Anselm W. Stark"
 author = "Anselm W. Stark"
-release = "0.2.0"
+release = get_version()
+version = ".".join(release.split(".")[:2])
 
 # Extensions
 extensions = [

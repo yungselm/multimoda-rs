@@ -1,6 +1,6 @@
 [project]
 name = "multimodars"
-version = "0.2.0"
+dynamic = ["version"]
 authors = [
     { name = "Anselm W. Stark"}
 ]

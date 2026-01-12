@@ -60,7 +60,7 @@ We'd welcome your contributions to multimodars. Please read the
 Changelog
 ---------
 
-* :ref:`Changelog <changelog>`
+* :doc:`changelog`
 
 Indices and tables
 ==================
