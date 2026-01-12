@@ -186,6 +186,225 @@ def _input_data_to_numpy(input_data) -> dict[str, Union[np.ndarray, List[str], b
     return result
 
 
+def numpy_to_inputdata(
+    lumen_arr: np.ndarray,
+    record: Optional[np.ndarray],
+    ref_point: np.ndarray,
+    diastole: bool,
+    eem_arr: Optional[np.ndarray] = None,
+    calcification: Optional[np.ndarray] = None,
+    sidebranch: Optional[np.ndarray] = None,
+    label: str = "",
+) -> mm.PyInputData:
+    """
+    Build a PyInputData from numpy arrays, grouping by frame_index into frames.
+
+    Each row in the ``*_arr`` is [frame_index, x, y, z].
+
+    Returns a PyInputData containing:
+      - lumen: list of PyContour (one per frame found in lumen_arr)
+      - eem: optional list of PyContour (only contours that exist)
+      - calcification: optional list of PyContour (only contours that exist)
+      - sidebranch: optional list of PyContour (only contours that exist)
+      - record: optional list of PyRecord (converted from record array)
+      - ref_point: PyContourPoint (first reference row, or default)
+      - diastole: boolean
+      - label: str
+    """
+    import numpy as np
+    from . import PyContour, PyContourPoint, PyRecord, PyInputData
+
+    def _to_numeric_array(arr: Optional[np.ndarray], name: str) -> np.ndarray:
+        if arr is None:
+            return np.zeros((0, 4), dtype=float)
+        # Handle structured arrays with named fields
+        if arr.ndim == 1 and getattr(arr, "dtype", None).names:
+            try:
+                arr = np.vstack([arr[n] for n in arr.dtype.names]).T
+            except Exception:
+                raise ValueError(f"Could not convert structured array for {name}")
+        arr = np.asarray(arr, dtype=float)
+        if arr.ndim == 1:
+            # Single row -> make it 2D
+            arr = arr.reshape(1, -1)
+        return arr
+
+    def build_contour_from_array(arr: np.ndarray, frame_id: int, contour_type: str):
+        """Return PyContour for given frame_id or None if not present."""
+        if arr.size == 0:
+            return None
+        mask = arr[:, 0].astype(int) == int(frame_id)
+        pts_arr = arr[mask]
+        if pts_arr.shape[0] == 0:
+            return None
+
+        pts = [
+            PyContourPoint(
+                frame_index=int(fr),
+                point_index=i,
+                x=float(x),
+                y=float(y),
+                z=float(z),
+                aortic=False,
+            )
+            for i, (fr, x, y, z) in enumerate(pts_arr)
+        ]
+
+        centroid = (
+            float(np.mean(pts_arr[:, 1])),
+            float(np.mean(pts_arr[:, 2])),
+            float(np.mean(pts_arr[:, 3])),
+        )
+
+        return PyContour(
+            id=int(frame_id),
+            original_frame=int(frame_id),
+            points=pts,
+            centroid=centroid,
+            aortic_thickness=None,
+            pulmonary_thickness=None,
+            kind=contour_type,
+        )
+
+    def _records_from_array(arr: Optional[np.ndarray]):
+        if arr is None:
+            return None
+        # If structured with fields, try to coerce to (N,4) or (N,3)
+        if arr.ndim == 1 and getattr(arr, "dtype", None).names:
+            # Try to create a 2D array with numeric fields where appropriate
+            try:
+                arr = np.vstack([arr[n] for n in arr.dtype.names]).T
+            except Exception:
+                # fallback to treating each element as a row-like object
+                arr = np.asarray(arr)
+        arr = np.asarray(arr)
+        if arr.size == 0:
+            return None
+        # If 1D single-row, reshape
+        if arr.ndim == 1:
+            arr = arr.reshape(1, -1)
+
+        recs = []
+        for row in arr:
+            # Attempt to extract fields robustly:
+            # Expecting [frame, phase, measurement_1, measurement_2] or at least [frame, phase]
+            frame = int(row[0])
+            phase_val = row[1] if row.shape[0] > 1 else ""
+            # Normalize phase to string
+            if isinstance(phase_val, (bytes, bytearray)):
+                try:
+                    phase = phase_val.decode("utf-8")
+                except Exception:
+                    phase = str(phase_val)
+            else:
+                # numeric -> map 0 -> "D", 1 -> "S", otherwise string-ify
+                if np.issubdtype(type(phase_val), np.number):
+                    phase = "D" if int(phase_val) == 0 else "S"
+                else:
+                    phase = str(phase_val)
+
+            def _to_optional_float(v):
+                try:
+                    fv = float(v)
+                    if np.isnan(fv):
+                        return None
+                    return fv
+                except Exception:
+                    return None
+
+            m1 = _to_optional_float(row[2]) if row.shape[0] > 2 else None
+            m2 = _to_optional_float(row[3]) if row.shape[0] > 3 else None
+
+            recs.append(
+                PyRecord(frame=frame, phase=phase, measurement_1=m1, measurement_2=m2)
+            )
+
+        return recs if len(recs) > 0 else None
+
+    # Convert arrays
+    lumen_arr = _to_numeric_array(lumen_arr, "lumen_arr")
+    eem_arr = _to_numeric_array(eem_arr, "eem_arr")
+    calcification_arr = _to_numeric_array(calcification, "calcification")
+    sidebranch_arr = _to_numeric_array(sidebranch, "sidebranch")
+
+    # Reference point: prefer provided ref_point, otherwise a default
+    global_ref = None
+    if ref_point is not None:
+        try:
+            ref_arr = np.asarray(ref_point)
+            if ref_arr.ndim == 1:
+                fr, x, y, z = ref_arr[:4]
+            else:
+                fr, x, y, z = ref_arr[0, :4]
+            global_ref = PyContourPoint(
+                frame_index=int(fr),
+                point_index=0,
+                x=float(x),
+                y=float(y),
+                z=float(z),
+                aortic=False,
+            )
+        except Exception:
+            global_ref = None
+
+    if global_ref is None:
+        # default fallback (required by PyInputData ctor)
+        global_ref = PyContourPoint(
+            frame_index=0, point_index=0, x=0.0, y=0.0, z=0.0, aortic=False
+        )
+
+    # Build lists of contours
+    if lumen_arr.size == 0:
+        raise ValueError("lumen_arr cannot be empty")
+
+    all_lumen_frames = sorted(set(lumen_arr[:, 0].astype(int)))
+
+    lumen_list = []
+    eem_list = []
+    calc_list = []
+    sidebranch_list = []
+
+    for frame_id in all_lumen_frames:
+        lumen_contour = build_contour_from_array(lumen_arr, frame_id, "Lumen")
+        if lumen_contour is None:
+            # If no lumen for this frame, skip (shouldn't usually happen since frames come from lumen)
+            continue
+        lumen_list.append(lumen_contour)
+
+        eem_contour = build_contour_from_array(eem_arr, frame_id, "Eem")
+        if eem_contour is not None:
+            eem_list.append(eem_contour)
+
+        calc_contour = build_contour_from_array(
+            calcification_arr, frame_id, "Calcification"
+        )
+        if calc_contour is not None:
+            calc_list.append(calc_contour)
+
+        sb_contour = build_contour_from_array(sidebranch_arr, frame_id, "Sidebranch")
+        if sb_contour is not None:
+            sidebranch_list.append(sb_contour)
+
+    # Convert records (if any)
+    record_list = _records_from_array(record)
+
+    # Convert empty lists to None for optional fields like eem/calcification/sidebranch/record
+    eem_final = eem_list if len(eem_list) > 0 else None
+    calc_final = calc_list if len(calc_list) > 0 else None
+    sidebranch_final = sidebranch_list if len(sidebranch_list) > 0 else None
+
+    return PyInputData(
+        lumen=lumen_list,
+        eem=eem_final,
+        calcification=calc_final,
+        sidebranch=sidebranch_final,
+        record=record_list,
+        ref_point=global_ref,
+        diastole=bool(diastole),
+        label=label or "",
+    )
+
+
 def numpy_to_geometry(
     lumen_arr: np.ndarray,
     eem_arr: Optional[np.ndarray] = None,

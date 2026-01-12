@@ -30,7 +30,8 @@ Table of Contents
    :maxdepth: 2
 
    installation
-   tutorial
+   Intravascular Tutorial <tutorial_intravascular>
+   CCTA Tutorial <tutorial_ccta>
    api/index
    changelog
 
@@ -59,6 +60,7 @@ We'd welcome your contributions to multimodars. Please read the
 Changelog
 ---------
 
+* :ref:`Changelog <changelog>`
 
 Indices and tables
 ==================

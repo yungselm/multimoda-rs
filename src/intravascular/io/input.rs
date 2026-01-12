@@ -429,7 +429,7 @@ mod input_tests {
         names.insert(ContourType::Calcification, "calcification");
         names.insert(ContourType::Sidebranch, "sidebranch");
 
-        let data_path = Path::new("./data/ivus_full");
+        let data_path = Path::new("./data/fixtures/idealized_geometry");
         let input = InputData::process_directory(data_path, names, true)?;
 
         assert!(

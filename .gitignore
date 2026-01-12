@@ -3,6 +3,9 @@
 /data/output
 /performance
 /paper/old
+.VSCodeCounter
+/test
+/examples
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

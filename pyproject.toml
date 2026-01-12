@@ -1,6 +1,6 @@
 [project]
 name = "multimodars"
-version = "0.1.2"
+version = "0.2.0"
 authors = [
     { name = "Anselm W. Stark"}
 ]
@@ -33,7 +33,7 @@ Issues = "https://github.com/yungselm/multimoda-rs/issues"
 
 [project.optional-dependencies]
 docs = [
-    "sphinx>=8.0",
+    "sphinx>=8.0,<9.0",
     "sphinx-rtd-theme",
     "sphinx-autodoc-typehints",
     "myst-parser",
@@ -41,7 +41,7 @@ docs = [
     "furo",
 ]
 test = [
-    "pytest>=8.0",
+    "pytest>=9.0.2",
     "pytest-cov",
     "ruff",
     "black",

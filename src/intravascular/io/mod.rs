@@ -237,7 +237,7 @@ fn print_success_message(input_data: InputData, from_path: bool) {
 }
 
 #[cfg(test)]
-mod input_tests {
+mod io_tests {
     use super::*;
     use approx::assert_relative_eq;
     use std::path::Path;
@@ -251,7 +251,7 @@ mod input_tests {
 
         let result = build_geometry_from_inputdata(
             None,
-            Some(Path::new("data/ivus_full")),
+            Some(Path::new("data/fixtures/ivus_full")),
             "full",
             true,
             (4.5, 4.5),
@@ -360,7 +360,7 @@ mod input_tests {
 
         let geometry = build_geometry_from_inputdata(
             None,
-            Some(Path::new("data/ivus_rest")),
+            Some(Path::new("data/fixtures/ivus_rest")),
             "full",
             true,
             (4.5, 4.5),
@@ -393,7 +393,7 @@ mod input_tests {
     fn test_catheter_contour_properties() {
         let geometry = build_geometry_from_inputdata(
             None,
-            Some(Path::new("data/fixtures/rest_csv_files")),
+            Some(Path::new("data/fixtures/ivus_rest")),
             "test",
             true,
             (4.5, 4.5),
@@ -469,7 +469,7 @@ mod input_tests {
     fn test_build_geometry_with_path() {
         let geometry = build_geometry_from_inputdata(
             None,
-            Some(Path::new("data/fixtures/rest_csv_files")),
+            Some(Path::new("data/fixtures/ivus_rest")),
             "path_test",
             true,
             (4.5, 4.5),

@@ -3,6 +3,21 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - 2026-01-11
+
+### Added
+- Functionality to read in CCTA .stl files and label them according to centerline object
+- Functionality to label the CCTA geometry additionally by an aligned intravascular aligned geometry.
+- Functionality to better align intravascular geometry to a centerline using additionally the CCTA vertices `align_combined`
+- Functionality to radially scale different regions radially to their corresponding centerline
+- Algorihtm for finding the best radial scaling factor for distal and proximal region compared to the aligned geometry
+- Algorithm for finding the best radial scaling factor for the aorta to minimize the distance between "wall" of `PyGeometry` object and the identified intramural vertices
+
+### Changed
+- Updated documentation to include a tutorial for the new functionality
+- Reduced the amount of testing data to reduce size of the package
+- Removed the examples folder from the repository and coupled to release (.zip file)
+
 ## [0.1.2] - 2025-11-21
 
 ### Changed 

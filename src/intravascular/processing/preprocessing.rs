@@ -218,7 +218,7 @@ mod preprocessing_tests {
             20,
             None,
             true,
-            Some(Path::new("data/ivus_stress")),
+            Some(Path::new("data/fixtures/ivus_stress")),
             None,
             ProcessingOptions::Single,
         )?;
@@ -239,7 +239,7 @@ mod preprocessing_tests {
             20,
             None,
             true,
-            Some(Path::new("data/ivus_stress")),
+            Some(Path::new("data/fixtures/ivus_stress")),
             None,
             ProcessingOptions::Pair,
         )?;
@@ -282,7 +282,7 @@ mod preprocessing_tests {
             20,
             None,
             true,
-            Some(Path::new("data/ivus_stress")),
+            Some(Path::new("data/fixtures/ivus_stress")),
             None,
             ProcessingOptions::Single,
         )?;
@@ -325,7 +325,7 @@ mod preprocessing_tests {
             20,
             None,
             true,
-            Some(Path::new("data/ivus_stress")),
+            Some(Path::new("data/fixtures/ivus_stress")),
             None,
             ProcessingOptions::Pair,
         )?;
@@ -375,8 +375,8 @@ mod preprocessing_tests {
             20,
             None,
             true,
-            Some(Path::new("data/ivus_stress")),
-            Some(Path::new("data/ivus_rest")),
+            Some(Path::new("data/fixtures/ivus_stress")),
+            Some(Path::new("data/fixtures/ivus_rest")),
             ProcessingOptions::Full,
         )?;
 
@@ -420,7 +420,7 @@ mod preprocessing_tests {
             20,
             Some(input_data),
             true,
-            Some(Path::new("data/ivus_stress")),
+            Some(Path::new("data/fixtures/ivus_stress")),
             None,
             ProcessingOptions::Pair,
         )?;

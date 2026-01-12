@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.abspath("../src"))
 project = "multimodars"
 copyright = "2025, Anselm W. Stark"
 author = "Anselm W. Stark"
-release = "0.1.2"
+release = "0.2.0"
 
 # Extensions
 extensions = [
@@ -36,10 +36,10 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 # Theme
 # html_theme = "furo"
-html_theme = 'sphinx_rtd_theme'
+html_theme = "sphinx_rtd_theme"
 html_theme_options = {
-    'navigation_depth': 3,
-    'collapse_navigation': False,
+    "navigation_depth": 3,
+    "collapse_navigation": False,
 }
 
 # Autodoc config

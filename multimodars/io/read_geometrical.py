@@ -63,27 +63,3 @@ def read_mesh(path: Path | str) -> trimesh.base.Trimesh:
         warnings.warn(f"Mesh from {path} is not watertight after repairs", RuntimeWarning)
 
     return mesh
-
-
-if __name__ == "__main__":
-    # import pyvista as pv
-    # import numpy as np
-    # vtk_path = 'data/center_smoothed.vtk'
-
-    # mesh = pv.read(vtk_path)
-    # points = mesh.points
-
-    # np.savetxt("data/centerline_narco119.csv", points, delimiter=",", fmt="%.6f")
-
-    from trimesh.points import PointCloud
-    mesh = read_mesh('data/output/aligned/mesh_000_None.obj')
-    mesh2 = read_mesh('data/NARCO_119.stl')
-    print(mesh.vertices)
-    print(mesh.faces)
-    points = np.loadtxt("data/centerlines_narco119.csv", delimiter=",")
-    pc = PointCloud(points)
-
-    # scene = trimesh.Scene([mesh, mesh2])
-    # scene.add_geometry(pc)
-    scene = trimesh.Scene([mesh, pc])
-    scene.show()
