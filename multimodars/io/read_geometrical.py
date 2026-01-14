@@ -1,4 +1,5 @@
-import numpy as np
+from __future__ import annotations
+
 import trimesh
 from pathlib import Path
 import warnings
