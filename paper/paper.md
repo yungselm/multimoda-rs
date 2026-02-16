@@ -46,15 +46,15 @@ bibliography: bibliography.bib
 
 Coronary artery anomalies (CAAs) and coronary artery disease (CAD) require precise morphological and functional assessment for diagnosis and treatment planning. Cardiac computed tomography angiography (CCTA) provides a comprehensive 3D coronary anatomy but lacks the sub-millimeter resolution and dynamic tissue detail available from intravascular imaging, such as intravascular ultrasound (IVUS) and optical coherence tomography (OCT). 
 
-`multimodars` is a general-purpose toolkit that registers high-resolution intravascular pullbacks to CCTA-derived centerlines, producing locally enhanced fusion 3D vessel representations. Developed initially to quantify dynamic lumen changes in CAAs, the toolkit produces high-fidelity models suitable for visualization, geometric analysis, and patient-specific modelling. It implements four alignment paradigms (full, double-pair, single-pair, single) to compare pullbacks acquired under different haemodynamic states (e.g., rest vs. pharmacologic stress) or at different clinical timepoints (e.g., pre- vs. post-stenting). `multimodars` targets deterministic, reproducible multimodal fusion for both specialized CAA research and general CAD applications [@stark2025true; @stark2025ivus].
+The `multimodars` package is a general-purpose toolkit that registers high-resolution intravascular pullbacks to CCTA-derived centerlines, producing locally enhanced fusion 3D vessel representations. Developed initially to quantify dynamic lumen changes in CAAs, the toolkit produces high-fidelity models suitable for visualization, geometric analysis, and patient-specific modelling. It implements four alignment paradigms (full, double-pair, single-pair, single) to compare pullbacks acquired under different haemodynamic states (e.g., rest vs. pharmacologic stress) or at different clinical timepoints (e.g., pre- vs. post-stenting). `Multimodars` targets deterministic, reproducible multimodal fusion for both specialized CAA research and general CAD applications [@stark2025true].
 
 # Statement of Need
 
-Building reliable 3D coronary models requires combining complementary imaging modalities. Intravascular imaging offers exceptional local resolution but lacks whole-vessel context and 3D orientation. CCTA provides the global 3D geometry but suffers from limited spatial resolution and artifacts like blooming. `multimodars` fills a critical gap for researchers in **cardiac imaging**, **interventional cardiology**, and **biomedical engineering** who require high-fidelity lumen models for:
+Building reliable 3D coronary models requires combining complementary imaging modalities. Intravascular imaging offers exceptional local resolution but lacks whole-vessel context and 3D orientation. CCTA provides the global 3D geometry but suffers from limited spatial resolution and artifacts like blooming. `Multimodars` fills a critical gap for researchers in **cardiac imaging**, **interventional cardiology**, and **biomedical engineering** who require high-fidelity lumen models for:
 
-* Computational Fluid Dynamics (CFD) and Fluid-Structure Interaction (FSI) simulations.
 * Automated quantification of vessel deformation under stress.
-* Longitudinal studies of stent performance and plaque progression.
+* Computational Fluid Dynamics (CFD) and Fluid-Structure Interaction (FSI) simulations.
+* Digital twin solutions.
 
 The package accepts CSV and NumPy inputs, including data formats produced by the [AIVUS-CAA](https://github.com/AI-in-Cardiovascular-Medicine/AIVUS-CAA) software [@stark2025automated], providing a standardized pipeline from raw image segmentation to final 3D fusion.
 
@@ -62,16 +62,16 @@ The package accepts CSV and NumPy inputs, including data formats produced by the
 
 # State of the Field
 
-Prior research has established the clinical value of CCTA/intravascular fusion [@van20103d; @wu20203d; @ilic2025comprehensive], but several barriers remain:
-1.  **Proprietary Constraints**: Most existing fusion solutions are tied to proprietary vendor hardware or closed-source commercial workstations, limiting academic transparency.
-2.  **Multi-state Gap**: No existing open-source toolkit is specifically tailored for **multi-state** analysis (comparing rest vs. stress or pre- vs. post-intervention states) while maintaining a deterministic alignment across pullbacks.
+Prior research has established the clinical value of CCTA/intravascular fusion [@van20103d; @wu20203d; @ilic2025comprehensive; @bourantas2013new; @boogers2012automated], but several barriers remain:
+1. **Proprietary Constraints**: Most existing fusion solutions are tied to proprietary vendor hardware or closed-source commercial workstations, limiting academic transparency.
+2. **Multi-state Gap**: No existing open-source toolkit is specifically tailored for **multi-state** analysis (comparing rest vs. stress or pre- vs. post-intervention states) while maintaining a deterministic alignment across pullbacks.
 
 ## Build vs. Contribute Justification
-While packages like `trimesh` or `SimpleITK` provide general mesh and registration utilities, they do not offer the domain-specific coronary alignment logic (e.g., cumulative rotation propagation to preserve vessel torsion) required for intravascular imaging. `multimodars` was built as a standalone toolkit because existing registration libraries lack the specific coordinate mapping and multiscale search algorithms optimized for curvilinear cardiac centerlines.
+While packages like `trimesh` or `SimpleITK` provide general mesh and registration utilities, they do not offer the domain-specific coronary alignment logic (e.g., cumulative rotation propagation to preserve vessel torsion) required for intravascular imaging. `Multimodars` was built as a standalone toolkit because existing registration libraries lack the specific coordinate mapping and multiscale search algorithms optimized for curvilinear cardiac centerlines.
 
 # Software Design
 
-`multimodars` is built as a `maturin` project, wrapping a high-performance Rust core with a Python interface. 
+`Multimodars` is built as a `maturin` project, wrapping a high-performance Rust core with a Python interface. 
 
 ## Architectural Choices and Trade-offs
 We chose **Rust** for the core backend to leverage its memory safety and hierarchical data parallelism (via the `Rayon` crate). This allows the toolkit to handle the significant computational load of multiscale angular searches across hundreds of image frames without the performance limitations found in pure Python implementations. 
@@ -88,7 +88,7 @@ Alignment is a two-stage pipeline producing spatially and rotationally consisten
 
 - **Inter-pullback and CCTA fusion:** Inter-pullback alignment harmonizes distal centroids, averages slice spacing to align z-coordinates, and applies a rigid rotation to minimize mean directed distances across corresponding frames; ellipticity-weighted similarity prioritizes non-round stenotic slices. 
 
-- **CCTA-Centerline alignment:** `multimodars` implements a three-point (aortic-, cranial- and caudal direction) anatomical registration and a manual alignment mode. It additionally utilizes Hausdorff distances to CCTA mesh points for ambiguous anatomies: centerlines are resampled to contour spacing, centroids are translated to matched points, normals are aligned by cross-product computations, and an optional interpolated UV-mapped mesh is produced for visualization and downstream modeling.
+- **CCTA-Centerline alignment:** The `multimodars` package implements a three-point (aortic-, cranial- and caudal direction) anatomical registration and a manual alignment mode. It additionally utilizes Hausdorff distances to CCTA mesh points for ambiguous anatomies: centerlines are resampled to contour spacing, centroids are translated to matched points, normals are aligned by cross-product computations, and an optional interpolated UV-mapped mesh is produced for visualization and downstream modeling.
 
 - **CCTA-labeling:** For normal coronary anatomy, CCTA mesh points are labeled using a rolling-sphere sweep along the coronary centerline. For CAAs, where the vessel may run very close to or within the aortic wall, this is followed by an occlusion-based cleanup: rays are cast from the aortic centerline toward the coronary centerline; ray–triangle intersections identify occluding aortic wall regions, and mesh points close to these surfaces are removed. This yields a deterministic and anatomically consistent coronary lumen representation.
 
@@ -110,11 +110,12 @@ The core is implemented in Rust and exposed to Python via PyO3; packaging uses `
 
 # Research impact statement
 
-`multimodars` was motivated by the need to quantify dynamic lumen deformation in CAAs, where rest/stress and pulsatile comparisons are diagnostically critical. Deterministic, high-resolution fusion enables quantitative assessment of stress-induced deformation and supports patient-specific haemodynamic modeling. These methods also support longitudinal CAD analyses (e.g., pre-/post-stent). In a case report accepted in JACC: Case Reports, we successfully implemented this fusion approach to unveil a distinct compression pattern not visible in IVUS or CCTA alone. We hope to foster a research community that leverages `multimodars` to standardize multimodal coronary fusion and accelerate the development of personalized interventional or computational strategies.
+`Multimodars` was motivated by the need to quantify dynamic lumen deformation in CAAs, where rest/stress and pulsatile comparisons are diagnostically critical. Deterministic, high-resolution fusion enables quantitative assessment of stress-induced deformation and supports patient-specific haemodynamic modeling. These methods also support longitudinal CAD analyses (e.g., pre-/post-stent). In a case report accepted in JACC: Case Reports, we successfully implemented this fusion approach to unveil a distinct compression pattern not visible in IVUS or CCTA alone. We hope to foster a research community that leverages `multimodars` to standardize multimodal coronary fusion and accelerate the development of personalized interventional or computational strategies.
 
 # AI usage disclosure
 
 No generative AI was used for architectural design or core algorithms. Generative AI was used for creating documentation docstrings, bug fixing, and minor inline code changes.
+For this manuscript generative AI was only used for grammatical changes.
 
 # Acknowledgements
 
