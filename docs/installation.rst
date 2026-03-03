@@ -2,7 +2,7 @@
 Installation
 ============
 
-There are two ways you can use pyradiomics:
+There are two ways you can install multimodars:
 1. Install via pip
 2. Install from source
 

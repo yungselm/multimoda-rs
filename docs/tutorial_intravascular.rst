@@ -27,7 +27,7 @@ After pip installing or locally building the package, install it in the familiar
     import multimodars as mm
 
 To run the whole workflow from .csv files the following requirements have to be met.
-Files should be named ``diastolic_contours.csv``, ``systolic_contours.csv``, 
+Files should be named ``diastolic_contours.csv``, ``systolic_contours.csv``,
 ``diastolic_reference_points.csv`` and ``systolic_reference_points.csv`` depending on the required analysis.
 Every file should be structured in the following way (no headers):
 
@@ -44,8 +44,8 @@ Every file should be structured in the following way (no headers):
 +-------+---------+---------+---------+
 
 To acquire meaningful measurement data, the coordinates should be provided in mm or another SI unit instead of pixel values.
-Optionally a record file can be provided `combined_sorted_manual.csv`, which should have the following structure, here the first column should contain the desired frame order and "measurement_1" 
-represent the thickness of the wall between aorta and coronary and "measurement_2" for the thickness between pulmonary artery and coronary (position just for demonstration). This is based on the 
+Optionally a record file can be provided `combined_sorted_manual.csv`, which should have the following structure, here the first column should contain the desired frame order and "measurement_1"
+represent the thickness of the wall between aorta and coronary and "measurement_2" for the thickness between pulmonary artery and coronary (position just for demonstration). This is based on the
 output of the `AIVUS-CAA software <https://github.com/AI-in-Cardiovascular-Medicine/AIVUS-CAA/>`_:
 
 +-----------------+---------------+---------------+---------------+---------------+
@@ -64,73 +64,98 @@ output of the `AIVUS-CAA software <https://github.com/AI-in-Cardiovascular-Medic
 | 47              |  18.78        |       S       |               |               |
 +-----------------+---------------+---------------+---------------+---------------+
 
-This simplifies the workflow, by just providing a directory to automatically process:
+The full workflow comparing rest vs. stress and diastole vs. systole can be run with:
 
 .. code-block:: python
 
-    rest, stress, dia, sys, (rest_logs, stress_logs, dia_logs, sys_logs) = mm.from_file_full(
-        input_path_a="examples/data/ivus_rest",
-        input_path_b="examples/data/ivus_stress",
-        output_path_a="examples/data/output/rest",
-        output_path_b="examples/data/output/stress",
-        output_path_c="examples/data/output/diastole",
-        output_path_d="examples/data/output/systole"
-    )
-
-However the preferred more flexible way is from numpy arrays.
-
-2. Workflow numpy arrays and Finetuning
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-Here the geometry can be directly build from arrays with the same structure as before:
-
-+------------+----------+----------+----------+
-| ...        |   ...    |   ...    |   ...    |
-+------------+----------+----------+----------+
-| 771        | 2.4862   |  6.7096  |  24.5370 |
-+------------+----------+----------+----------+
-| 771        | 2.5118   |  6.7017  |  24.5370 |
-+------------+----------+----------+----------+
-| 771        | 2.5370   |  6.6936  |  24.5370 |
-+------------+----------+----------+----------+
-| ...        |   ...    |   ...    |   ...    |
-+------------+----------+----------+----------+
-
-catheter and walls are optional. However it is not recommended to provide the catheter points directly, but rather the image center (in mm), radius of the catheter (e.g. 0.5mm for IVUS)
-and number of points to represent the catheter. If no walls are provided a default wall with 1mm offset is created.
-
-.. code-block:: python
-
-    prestent = mm.numpy_to_geometry(
-        contours_arr=contours,
-        catheters_arr=np.array([]),
-        walls_arr=np.array([]),
-        reference_arr=references,
-    )
-
-    poststent = mm.numpy_to_geometry(
-        contours_arr=contours,
-        catheters_arr=np.array([]),
-        walls_arr=np.array([]),
-        reference_arr=references,
-    )
-
-    pair, logs = mm.from_array(
-        mode="singlepair",
-        geometry_dia=prestent,
-        geometry_sys=poststent,
+    rest, stress, dia, sys, _ = mm.from_file_full(
+        input_path_a="ivus_rest",
+        input_path_b="ivus_stress",
+        label="full",
         step_rotation_deg=0.1,
-        range_rotation_deg=30,
+        range_rotation_deg=90,
         image_center=(4.5, 4.5),
         radius=0.5,
         n_points=20,
         write_obj=True,
-        output_path="output/stent_comparison",
+        watertight=False,
+        output_path_a="output/rest",
+        output_path_b="output/stress",
+        output_path_c="output/diastole",
+        output_path_d="output/systole",
         interpolation_steps=28,
-        bruteforce=False,
-        sample_size=200,
+        contour_types=[mm.PyContourType.Lumen, mm.PyContourType.Catheter, mm.PyContourType.Wall]
     )
 
-This ``from_array`` function automatically aligns the frames within a pullback and then between pullbacks. The algorithm translates contours to the same centroid as the most proximal contour,
+For a single pair (e.g. only diastole/systole of one state) the simpler function can be used:
+
+.. code-block:: python
+
+    rest, (dia_logs, sys_logs) = mm.from_file_singlepair(
+        input_path="ivus_rest",
+        label="aligned",
+        output_path="output/rest",
+    )
+
+2. Workflow numpy arrays and Finetuning
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Here the geometry can be directly built from arrays with the same structure as before.
+``numpy_to_geometry`` accepts ``lumen_arr``, ``eem_arr``, ``catheter_arr``, ``wall_arr`` and ``reference_arr``:
+
+.. code-block:: python
+
+    before_geom = mm.numpy_to_geometry(
+        lumen_arr=before_arr,
+        eem_arr=np.array([]),
+        catheter_arr=np.array([]),
+        wall_arr=np.array([]),
+        reference_arr=before_ref,
+    )
+
+    after_geom = mm.numpy_to_geometry(
+        lumen_arr=after_arr,
+        eem_arr=np.array([]),
+        catheter_arr=np.array([]),
+        wall_arr=np.array([]),
+        reference_arr=after_ref,
+    )
+
+To call ``from_array_singlepair`` the contours and reference point from the geometry must be packed into
+a ``PyInputData`` object first:
+
+.. code-block:: python
+
+    contours = []
+    ref_pt = None
+    for frame in before_geom.frames:
+        contours.append(frame.lumen)
+        if frame.reference_point is not None:
+            ref_pt = frame.reference_point
+
+    before_input_data = mm.PyInputData(
+        lumen=contours,
+        eem=None,
+        calcification=None,
+        sidebranch=None,
+        record=None,
+        ref_point=ref_pt,
+        diastole=True,
+        label="before"
+    )
+
+    # repeat for after_input_data ...
+
+    pair, _ = mm.from_array_singlepair(
+        input_data_a=before_input_data,
+        input_data_b=after_input_data,
+        label="singlepair",
+        diastole=True,
+        output_path="output/stent_comparison",
+        step_rotation_deg=0.01,
+        range_rotation_deg=30,
+    )
+
+This ``from_array_singlepair`` function automatically aligns the frames within a pullback and then between pullbacks. The algorithm translates contours to the same centroid as the most proximal contour,
 and then finds the best rotation based on contour **AND** catheter points.
 
 .. image:: ../paper/figures/Figure3.png
@@ -143,8 +168,27 @@ this image center can increase accuracy of the correct rotation. For stenotic se
 rather small (default 20 points compared to 500 for the contour).
 
 ``range_rotation_deg`` and ``step_rotation_deg`` define the +/- degree range where the rotation is tested (default 90° so full range) and step_rotation_deg in what step sizes (default 0.5°).
-This algorithm is optimized and where it downsamples the original contour to 200 points, and performs coars steps (full provided range in 1° steps, then in +/- 5° degrees around the optimal angle
-in 0.1° steps and so on until the desired acccuracy). If bruteforce is set to 'True' the complete range is sweeped with the provided acccuracy (not recommended O(n^3)).
+This algorithm is optimized and where it downsamples the original contour to 200 points, and performs coarse steps (full provided range in 1° steps, then in +/- 5° degrees around the optimal angle
+in 0.1° steps and so on until the desired accuracy). If ``bruteforce`` is set to ``True`` the complete range is swept with the provided accuracy (not recommended O(n^3)).
+
+For a single geometry reconstruction (e.g. OCT) use ``from_array_single``:
+
+.. code-block:: python
+
+    oct_recon, _ = mm.from_array_single(
+        input_data=oct_input_data,
+        label="oct",
+        diastole=True,
+        step_rotation_deg=0.01,
+        range_rotation_deg=6,
+        image_center=(5.0, 5.0),
+        radius=0.5,
+        n_points=40,
+        write_obj=False,
+        output_path="output/oct",
+        watertight=False,
+        smooth=False,
+    )
 
 If ``write_obj`` is set to True, geometries will be saved as .obj files. if interpolation steps are not 0, additionally interpolated geometries will be created. This is useful if the dynamic
 behaviour will be rendered later on. For example here a rendering of a non-aligned systolic stress-induced deformation in a coronary artery anomaly:
@@ -174,7 +218,7 @@ These could for example be stored in a .csv file and then be converted to a PyCe
 
 .. code-block:: python
 
-    cl_raw = np.genfromtxt("data/centerline_raw.csv", delimiter=",")
+    cl_raw = np.genfromtxt("centerline_raw.csv", delimiter=',')
     centerline = mm.numpy_to_centerline(cl_raw)
 
 As soon as the centerline is created it will be automatically resampled to have the same spacing as the
@@ -194,13 +238,15 @@ and the spacing is adjusted to match the z-spacing of the PyGeometry.
 
 .. code-block:: python
 
-    aligned_pair, cl_resampled = mm.to_centerline(
-        mode="three_pt",
+    aligned_geometry, resampled_cl = mm.align_three_point(
         centerline=centerline,
-        geometry_pair=rest,                # e.g. Rest geometry (dia/sys)
-        aortic_ref_pt=(12.26, -201.36, 1751.06),
-        upper_ref_pt=(11.76, -202.19, 1754.80),
-        lower_ref_pt=(15.66, -202.19, 1749.97)
+        geometry_pair=rest,
+        aortic_ref_pt=(12.2605, -201.3643, 1751.0554),
+        upper_ref_pt=(11.7567, -202.1920, 1754.7975),
+        lower_ref_pt=(15.6605, -202.1920, 1749.9655),
+        write=True,
+        watertight=False,
+        interpolation_steps=0,
     )
 
 If you want to additionally use a pointcloud to finetune the three point alignment, by utilizing
@@ -209,17 +255,17 @@ Hausdorff distances between the pointcloud and the geometry, the following funct
 .. code-block:: python
 
     aligned, resampled_cl = mm.align_combined(
-        centerline=rca_centerline,
-        geometry_pair=rest,
-        aortic_ref_pt=(12.2605, -201.3643, 1751.0554),
-        upper_ref_pt=(11.7567, -202.1920, 1754.7975),
-        lower_ref_pt=(15.6605, -202.1920, 1749.9655),
-        points=results["rca_points"], # [(x, y, z), ...]
+        centerline,
+        rest,
+        (12.2605, -201.3643, 1751.0554),
+        (11.7567, -202.1920, 1754.7975),
+        (15.6605, -202.1920, 1749.9655),
+        results["rca_points"],  # [(x, y, z), ...]
         angle_range_deg=10.0,
         write=True,
         watertight=True,
         output_dir="test",
-    )    
+    )
 
 3. Saving everything as .obj files
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -229,8 +275,14 @@ detect the type of the object, and can be applied to PyGeometryPair, PyGeometry.
 
 .. code-block:: python
 
-    mm.to_obj(aligned_pair.dia_geom, "data/aligned.obj")
-    
+    mm.to_obj(
+        geometry,
+        "output/dir",
+        watertight=False,
+        contour_types=[mm.PyContourType.Lumen, mm.PyContourType.Catheter],
+        filename_prefix="aligned",
+    )
+
 
 4. Utility functions to link to numpy
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -242,7 +294,7 @@ will be returned as a dictionary with their corresponding arrays (contours, cath
     stress_dia_arr, stress_sys_arr = mm.to_array(stress)
     aligned_arr = mm.to_array(aligned)
     centerline_arr = mm.to_array(cl_resampled)
-    ostial_contour_arr = mm.to_array(rest.dia_geom.contours[-1])
+    ostial_contour_arr = mm.to_array(rest.geom_a.frames[-1].lumen)
 
 Returns::
 
@@ -265,7 +317,7 @@ Returns::
 ^^^^^^^^^^^^^^^^^
 PyContour
 --------------
-After creating a PyGeometry several utility methods provided. If a new contour is created from points
+After creating a PyGeometry several utility methods are provided. If a new contour is created from points
 and no centroid is available it can easily be calculated, additionally can the closest opposite points
 and the farthest points be identified:
 
@@ -288,7 +340,7 @@ but rather return a new contour that can then be set to the original position if
 
 .. code-block:: python
 
-    contour = geometry.contours[2]
+    contour = geometry.frames[2].lumen
     contour_rot = contour.rotate(20)
     contour_trsl = contour_rot.translate((0.0, 1.0, 2.0))
     geometry.set_cont(2, contour_trsl)
@@ -311,8 +363,8 @@ ratio for either diastole and systole are provided. These results can then easil
 .. code-block:: python
 
     geometries.get_summary()
-    geometries.dia_geom.get_summary()
-    geometries.sys_geom.get_summary()
+    geometries.geom_a.get_summary()
+    geometries.geom_b.get_summary()
     # turn summary map to numpy array
     _, deformation = geometries.get_summary()
     deform_array = np.array(deformation)

@@ -24,7 +24,7 @@ that combines both steps, and performs several checks. Additionally is the geome
 
     import multimodars as mm
 
-    results, (rca_cl, lca_cl, ao_cl) = mm.lable_geometry(
+    results, (rca_cl, lca_cl, ao_cl) = mm.label_geometry(
         path_ccta_geometry="../data/NARCO_119.stl",
         path_centerline_aorta="../data/centerline_aorta.csv",
         path_centerline_rca="../data/centerline_rca.csv",
@@ -60,10 +60,15 @@ be performed.
 
 .. code-block:: python
 
-    rest, _ = mm.from_file_singlepair("data/ivus_rest", write_obj=False)
+    rest, _ = mm.from_file_singlepair(
+        input_path="data/ivus_rest",
+        label="aligned",
+        output_path="output/rest",
+        write_obj=False,
+    )
 
     aligned, resampled_cl = mm.align_combined(
-        rca_centerline,
+        rca_cl,
         rest,
         (12.2605, -201.3643, 1751.0554),
         (11.7567, -202.1920, 1754.7975),
@@ -88,9 +93,10 @@ The labeling is straightforward:
 .. code-block:: python
 
     results = mm.label_anomalous_region(
-        centerline=rca_centerline,
+        centerline=rca_cl,
         frames=aligned.geom_a.frames,
-        output_dir="test",
+        results=results,
+        results_key='rca_points',
         debug_plot=True,
     )
 
