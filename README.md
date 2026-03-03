@@ -75,25 +75,24 @@ maturin develop
 
 
 ## Quickstart Example
-Run the script with the provided test cases, to ensure sufficient set up.
+Download the example data from latest realease and add to root. Run the script with the provided test cases, to ensure sufficient set up.
 ```python
 import multimodars as mm
 import numpy as np
 
 # IVUS pullbacks: full alignment of rest/stress & diastole/systole
-rest, stress, dia, sys, _ = mm.from_file(
-    mode="full",
-    rest_input_path="data/ivus_rest",
-    stress_input_path="data/ivus_stress"
+rest, stress, dia, sys, _ = mm.from_file_full(
+    input_path_a="examples/data/ivus_rest",
+    input_path_b="examples/data/ivus_stress",
+    write_obj=False,
 )
 
 # Load raw centerline
-cl_raw = np.genfromtxt("data/centerline_raw.csv", delimiter=",")
+cl_raw = np.genfromtxt("examples/data/centerline_raw.csv", delimiter=",")
 centerline = mm.numpy_to_centerline(cl_raw)
 
 # Align geometry pair onto centerline
-aligned_pair, cl_resampled = mm.to_centerline(
-    mode="three_pt",
+aligned_pair, cl_resampled = mm.align_three_point(
     centerline=centerline,
     geometry_pair=rest,                # e.g. Rest geometry (dia/sys)
     aortic_ref_pt=(12.26, -201.36, 1751.06),
@@ -102,9 +101,11 @@ aligned_pair, cl_resampled = mm.to_centerline(
 )
 
 # Optionally save aligned to obj
-mm.to_obj(aligned_pair.dia_geom, "data/aligned.obj")
-mm.centerline_to_obj(cl_resampled, "data/resampled_cl.obj")
+mm.to_obj(aligned_pair.geom_a, "data/aligned.obj")
 ```
+
+> **Note:** A Jupyter Notebook with practical examples is available at `examples/ivus_to_centerline.ipynb`. It is recommended to work through these examples to better understand the functionality.
+
 ## API Reference
 For detailed signatures and usage examples, see the [online documentation](https://multimoda-rs.readthedocs.io).
 The intended usage of the package with examples for every case are provided under examples with Jupyter Notebooks to follow along.

@@ -1,7 +1,7 @@
 
 .. note::
 
-    Also download the example data and jupyter notebooks from the current release from the
+    Download the example data and jupyter notebooks from the current release from the
     `Github Releases page <https://github.com/yungselm/multimoda-rs/releases>`_ to follow
     this tutorial step-by-step.
 
@@ -68,12 +68,13 @@ This simplifies the workflow, by just providing a directory to automatically pro
 
 .. code-block:: python
 
-    rest, stress, dia, sys, (rest_logs, stress_logs, dia_logs, sys_logs) = mm.from_file(
-        mode="full",
-        rest_input_path="rest_csv_files",
-        stress_input_path="stress_csv_files",
-        rest_output_path="output/rest",
-        stress_output_path="output/stress",
+    rest, stress, dia, sys, (rest_logs, stress_logs, dia_logs, sys_logs) = mm.from_file_full(
+        input_path_a="examples/data/ivus_rest",
+        input_path_b="examples/data/ivus_stress",
+        output_path_a="examples/data/output/rest",
+        output_path_b="examples/data/output/stress",
+        output_path_c="examples/data/output/diastole",
+        output_path_d="examples/data/output/systole"
     )
 
 However the preferred more flexible way is from numpy arrays.
@@ -132,7 +133,7 @@ and number of points to represent the catheter. If no walls are provided a defau
 This ``from_array`` function automatically aligns the frames within a pullback and then between pullbacks. The algorithm translates contours to the same centroid as the most proximal contour,
 and then finds the best rotation based on contour **AND** catheter points.
 
-.. image:: ../paper/figures/Figure3.jpg
+.. image:: ../paper/figures/Figure3.png
    :alt: Example figure
    :align: center
    :width: 400px
