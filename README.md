@@ -16,9 +16,9 @@
 
 <figure class="epigraph" style="text-align: center; font-style: italic;">
   <blockquote>
-    “One package to fuse them all.”
+    "One package to fuse them all."
   </blockquote>
-  <figcaption>— <cite>The Lord of the Rings (probably)</cite></figcaption>
+  <figcaption>— <cite>The Lord of the Rings (probably)</cite></figcaption>
 </figure>
 
 ---
@@ -26,7 +26,7 @@
 > A high‑performance, Rust‑accelerated toolkit for multi‑modality cardiac image fusion and registration ﮩ٨ـﮩﮩ٨ـ♡ﮩ٨ـﮩﮩ٨ـ.
 
 ---
-# Overview 
+# Overview
 `multimoda-rs` is a high-performance toolkit developed to enable the study of dynamic vessel deformation in coronary artery anomalies (CAAs), where quantifying lumen changes under stress and rest is critical. It addresses the general challenge of aligning and fusing diverse cardiac imaging modalities, such as CCTA, IVUS, OCT, and MRI—into a unified, high‑resolution 3D model. While CCTA provides comprehensive volumetric context, intravascular modalities (IVUS and OCT) offer sub‑millimeter resolution along the vessel lumen, and MRI (LGE) reveals tissue characteristics like scar and edema. This library leverages Rust for computationally intensive registration steps, delivering faster performance than pure Python implementations.
 
 ## Key Features
@@ -75,40 +75,60 @@ maturin develop
 
 
 ## Quickstart Example
-Download the example data from latest realease and add to root. Run the script with the provided test cases, to ensure sufficient set up.
+Download the example data from the latest release and place it in your working directory. A Jupyter Notebook with step-by-step examples is available at `examples/ivus_to_centerline.ipynb`.
+
 ```python
 import multimodars as mm
 import numpy as np
 
 # IVUS pullbacks: full alignment of rest/stress & diastole/systole
 rest, stress, dia, sys, _ = mm.from_file_full(
-    input_path_a="examples/data/ivus_rest",
-    input_path_b="examples/data/ivus_stress",
-    write_obj=False,
+    input_path_a="ivus_rest",
+    input_path_b="ivus_stress",
+    label="full",
+    step_rotation_deg=0.1,
+    range_rotation_deg=90,
+    image_center=(4.5, 4.5),
+    radius=0.5,
+    n_points=20,
+    write_obj=True,
+    watertight=False,
+    output_path_a="output/rest",
+    output_path_b="output/stress",
+    output_path_c="output/diastole",
+    output_path_d="output/systole",
+    interpolation_steps=28,
+    contour_types=[mm.PyContourType.Lumen, mm.PyContourType.Catheter, mm.PyContourType.Wall]
 )
 
-# Load raw centerline
-cl_raw = np.genfromtxt("examples/data/centerline_raw.csv", delimiter=",")
+# Load raw centerline and align geometry onto it
+cl_raw = np.genfromtxt("centerline_raw.csv", delimiter=",")
 centerline = mm.numpy_to_centerline(cl_raw)
 
-# Align geometry pair onto centerline
 aligned_pair, cl_resampled = mm.align_three_point(
     centerline=centerline,
-    geometry_pair=rest,                # e.g. Rest geometry (dia/sys)
-    aortic_ref_pt=(12.26, -201.36, 1751.06),
-    upper_ref_pt=(11.76, -202.19, 1754.80),
-    lower_ref_pt=(15.66, -202.19, 1749.97)
+    geometry_pair=rest,
+    aortic_ref_pt=(12.2605, -201.3643, 1751.0554),
+    upper_ref_pt=(11.7567, -202.1920, 1754.7975),
+    lower_ref_pt=(15.6605, -202.1920, 1749.9655),
+    write=True,
+    watertight=False,
+    interpolation_steps=0,
 )
 
-# Optionally save aligned to obj
-mm.to_obj(aligned_pair.geom_a, "data/aligned.obj")
+# Optionally save any geometry directly as .obj
+mm.to_obj(
+    aligned_pair.geom_a,
+    "output/aligned",
+    watertight=False,
+    contour_types=[mm.PyContourType.Lumen],
+    filename_prefix="aligned",
+)
 ```
-
-> **Note:** A Jupyter Notebook with practical examples is available at `examples/ivus_to_centerline.ipynb`. It is recommended to work through these examples to better understand the functionality.
 
 ## API Reference
 For detailed signatures and usage examples, see the [online documentation](https://multimoda-rs.readthedocs.io).
-The intended usage of the package with examples for every case are provided under examples with Jupyter Notebooks to follow along.
+The intended usage of the package with examples for every case are provided under `examples/` with Jupyter Notebooks to follow along.
 
 ## License
 Distributed under the MIT License. See [LICENSE](LICENSE) for details.
@@ -122,7 +142,7 @@ This package was initially built to study anomalous aortic origin of a coronary 
 
 2. Stress-induced deformation from rest to stress for both diastole and systole.
 
-The `from_file()` and `from_array()` functions and their processing modes (full, double-pair, etc.) were specifically designed to quantify these four distinct geometric states, which are crucial for diagnosis and treatment planning.
+The `from_file_full`, `from_file_singlepair`, `from_array_singlepair`, and `from_array_single` functions were specifically designed to quantify these four distinct geometric states, which are crucial for diagnosis and treatment planning.
 
 ![Dynamic lumen changes](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/media/dynamic_lumen_changes.png)
 
@@ -176,13 +196,29 @@ The expected input data for contours is the following for a csv file:
 --------------------------------------------------------------------
 |      185     |       5.32     |      2.37       |        0.0     |
 |      ...     |       ...      |      ...        |        ...     |
-No headers -> frame index, x-coord [mm], y-coord [mm], z-coord [mm] 
+No headers -> frame index, x-coord [mm], y-coord [mm], z-coord [mm]
 ```
 The contours can also be in pixels, but results of the `.get_area()` function will be wrong.
 
 The output allows for the creation of several interpolated meshes. These can then be used to render videos displaying the dynamics.
 
-![Stress-induced diastolic lumen deformation](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/examples/figures/animation_stress_induced_systolic_deformation.gif)
+![Stress-induced diastolic lumen deformation](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/docs/figures/animation_stress_induced_systolic_deformation.gif)
+
+### Centerline Alignment
+Reconstructed geometries can be aligned to a CCTA-derived centerline using three landmark points (aortic reference, proximal, and distal):
+
+![Three-point alignment](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/docs/figures/Alignment3p.png)
+
+### CCTA Geometry Labeling
+CCTA meshes can be automatically labeled by vessel region (aorta, RCA, LCA, intramural) for selective morphing and fusion:
+
+![Initial labeling](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/docs/figures/initial_labeling.jpg)
+
+After alignment the anomalous region can be further subdivided into proximal, anomalous and distal parts and the CCTA can be morphed to better match the intravascular geometry:
+
+![Anomalous region labeling](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/docs/figures/anomalous_labeling.jpg)
+
+![Scaling](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/docs/figures/scaling.jpg)
 
 ### IVUS registration - pre- and post-stenting
 The package works in the same way for other clinical applications such as pre- and post-stent alignment (An example is provided in `data/ivus_prestent` and `data/ivus_poststent`) or for coronary artery disease. Here it is also possible to read in contour information for e.g. lumen, external elastic membrane and create a coronary wall (See figure).
@@ -210,6 +246,3 @@ Please kindly cite the following paper if you use this repository.
 ```
 
 Stark, Anselm W., Marc Ilic, Ali Mokhtari, Pooya Mohammadi Kazaj, Christoph Graeni, and Isaac Shiri. "multimodars: A Rust-powered toolkit for multi-modality cardiac image fusion and registration." arXiv preprint arXiv:2510.06241 (2025).
-
-
-```

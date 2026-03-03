@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.2] - 2026-03-03
+
+### Changed
+- Uploaded new example data
+- Updated docs to match the new example data
+
+## [0.2.1] - 2026-01-12
+
+### Changed
+- Automatic version update based on Cargo.toml
+
 ## [0.2.0] - 2026-01-11
 
 ### Added
