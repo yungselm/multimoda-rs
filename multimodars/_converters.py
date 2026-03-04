@@ -197,19 +197,38 @@ def numpy_to_inputdata(
     label: str = "",
 ) -> mm.PyInputData:
     """
-    Build a PyInputData from numpy arrays, grouping by frame_index into frames.
+    Build a ``PyInputData`` from numpy arrays, grouping by frame index into frames.
 
-    Each row in the ``*_arr`` is [frame_index, x, y, z].
+    Each row in the array arguments must be ``[frame_index, x, y, z]``.
 
-    Returns a PyInputData containing:
-      - lumen: list of PyContour (one per frame found in lumen_arr)
-      - eem: optional list of PyContour (only contours that exist)
-      - calcification: optional list of PyContour (only contours that exist)
-      - sidebranch: optional list of PyContour (only contours that exist)
-      - record: optional list of PyRecord (converted from record array)
-      - ref_point: PyContourPoint (first reference row, or default)
-      - diastole: boolean
-      - label: str
+    Parameters
+    ----------
+    lumen_arr : np.ndarray
+        ``(N, 4)`` array of lumen points ``[frame_index, x, y, z]``.
+    record : np.ndarray, optional
+        ``(M, 4)`` array of records ``[frame, phase, measurement_1, measurement_2]``.
+    ref_point : np.ndarray
+        ``(1, 4)`` or ``(4,)`` array ``[frame_index, x, y, z]`` for the reference point.
+    diastole : bool
+        ``True`` if the data corresponds to the diastolic phase.
+    eem_arr : np.ndarray, optional
+        ``(N, 4)`` array of EEM points ``[frame_index, x, y, z]``.  Default is ``None``.
+    calcification : np.ndarray, optional
+        ``(N, 4)`` array of calcification points.  Default is ``None``.
+    sidebranch : np.ndarray, optional
+        ``(N, 4)`` array of side-branch points.  Default is ``None``.
+    label : str, optional
+        Label string for the input data.  Default is ``""``.
+
+    Returns
+    -------
+    input_data : PyInputData
+        Input data object with contours grouped by frame index.
+
+    Raises
+    ------
+    ValueError
+        If ``lumen_arr`` is empty.
     """
     import numpy as np
     from . import PyContour, PyContourPoint, PyRecord, PyInputData
@@ -414,33 +433,35 @@ def numpy_to_geometry(
     label: str = "",
 ) -> mm.PyGeometry:
     """
-    Build a PyGeometry from numpy arrays, grouping by frame_index into frames.
+    Build a ``PyGeometry`` from numpy arrays, grouping by frame index into frames.
 
-    Each row in the ``*_arr`` is [frame_index, x, y, z].
-
-    Returns a PyGeometry containing frames with:
-      - lumen: PyContour for each frame
-      - extras: dictionary with optional EEM, Catheter, Wall contours
-      - reference_point: PyContourPoint from reference_arr (if provided)
+    Each row in the array arguments must be ``[frame_index, x, y, z]``.
 
     Parameters
     ----------
     lumen_arr : np.ndarray
-        (N,4) array of lumen points [frame_index, x, y, z]
+        ``(N, 4)`` array of lumen points ``[frame_index, x, y, z]``.
     eem_arr : np.ndarray, optional
-        (M,4) array of EEM points [frame_index, x, y, z]
+        ``(M, 4)`` array of EEM points ``[frame_index, x, y, z]``.  Default is ``None``.
     catheter_arr : np.ndarray, optional
-        (K,4) array of catheter points [frame_index, x, y, z]
+        ``(K, 4)`` array of catheter points ``[frame_index, x, y, z]``.  Default is ``None``.
     wall_arr : np.ndarray, optional
-        (L,4) array of wall points [frame_index, x, y, z]
+        ``(L, 4)`` array of wall points ``[frame_index, x, y, z]``.  Default is ``None``.
     reference_arr : np.ndarray, optional
-        (1,4) or (4,) array [frame_index, x, y, z] for reference point
-    label : str
-        Label for the geometry
+        ``(1, 4)`` or ``(4,)`` array ``[frame_index, x, y, z]`` for the reference point.
+        Default is ``None``.
+    label : str, optional
+        Label string for the geometry.  Default is ``""``.
 
     Returns
     -------
-    PyGeometry
+    geometry : PyGeometry
+        Geometry object with frames constructed from the provided arrays.
+
+    Raises
+    ------
+    ValueError
+        If ``lumen_arr`` is empty.
     """
     from . import PyContour, PyContourPoint, PyFrame, PyGeometry
 
@@ -574,19 +595,29 @@ def numpy_to_centerline(
     aortic: bool = False,
 ) -> mm.PyCenterline:
     """
-    Build a PyCenterline from a numpy array of shape (N,3),
-    where each row is (x, y, z).
+    Build a ``PyCenterline`` from a numpy array.
 
-    This function will linearly interpolate NaN values along each coordinate
-    axis. If an entire coordinate column is NaN, or result has fewer than 2
-    points after processing, a ValueError is raised.
+    Linearly interpolates NaN values along each coordinate axis.  Raises
+    ``ValueError`` if an entire coordinate column is NaN or fewer than two
+    points remain after processing.
 
-    Args:
-        arr: np.ndarray of shape (N,3)
-        aortic: whether to mark each point as aortic
+    Parameters
+    ----------
+    arr : np.ndarray
+        ``(N, 3)`` array where each row is ``(x, y, z)``.
+    aortic : bool, optional
+        Whether to mark each point as aortic.  Default is ``False``.
 
-    Returns:
-        PyCenterline
+    Returns
+    -------
+    centerline : PyCenterline
+        Centerline object built from the provided points.
+
+    Raises
+    ------
+    ValueError
+        If ``arr`` is not ``(N, 3)``, is empty, all values in a coordinate
+        column are NaN, or fewer than two points remain after interpolation.
     """
     import numpy as np
     from . import PyContourPoint, PyCenterline
@@ -657,16 +688,44 @@ def array_to_pyinputdata(
     label: str = "",
 ) -> mm.PyInputData:
     """
-    Create a PyInputData from either Py* objects or NumPy arrays.
+    Create a ``PyInputData`` from either ``Py*`` objects or NumPy arrays.
 
-    Parameters mirror PyInputData fields. For layer arrays each row must be
-    (frame_index, x, y, z). `records` accepts structured array or list/array
-    of rows (frame, phase, m1, m2) or existing PyRecord instances. `reference`
-    is (1,4) or (4,) row with frame,x,y,z.
+    Accepts existing ``PyContour`` / ``PyRecord`` instances or raw arrays.
+    For layer arrays each row must be ``(frame_index, x, y, z)``.  Records
+    accept a structured array or a list/array of rows
+    ``(frame, phase, measurement_1, measurement_2)``.
+
+    Parameters
+    ----------
+    lumen : list of PyContour or np.ndarray, optional
+        Lumen contours or ``(N, 4)`` array.  Default is ``None``.
+    eem : list of PyContour or np.ndarray, optional
+        EEM contours or ``(N, 4)`` array.  Default is ``None``.
+    calcification : list of PyContour or np.ndarray, optional
+        Calcification contours or ``(N, 4)`` array.  Default is ``None``.
+    sidebranch : list of PyContour or np.ndarray, optional
+        Side-branch contours or ``(N, 4)`` array.  Default is ``None``.
+    records : list of PyRecord or np.ndarray, optional
+        Records or ``(M, 4)`` array of ``(frame, phase, m1, m2)`` rows.
+        Default is ``None``.
+    reference : np.ndarray, optional
+        ``(1, 4)`` or ``(4,)`` array ``[frame_index, x, y, z]`` for the
+        reference point.  Default is ``None``.
+    diastole : bool, optional
+        ``True`` if the data corresponds to the diastolic phase.
+        Default is ``True``.
+    label : str, optional
+        Label string for the input data.  Default is ``""``.
 
     Returns
     -------
-    PyInputData
+    input_data : PyInputData
+        Input data object populated from the provided arguments.
+
+    Raises
+    ------
+    ValueError
+        If a layer array has an incompatible shape or unsupported format.
     """
     from . import (
         PyContour,
@@ -904,20 +963,20 @@ def array_to_pyinputdata(
 
 def geometry_to_frames_array(geometry: mm.PyGeometry) -> Dict[str, np.ndarray]:
     """
-    Convert PyGeometry to dictionary of numpy arrays organized by frame.
-
-    Returns a dictionary where each key is a frame ID and the value is another
-    dictionary with contour types as keys and numpy arrays as values.
+    Convert a ``PyGeometry`` to a nested dictionary of numpy arrays by frame.
 
     Parameters
     ----------
     geometry : PyGeometry
-        The geometry to convert
+        Geometry object to convert.
 
     Returns
     -------
-    Dict[str, Dict[str, np.ndarray]]
-        Dictionary mapping frame IDs to dictionaries of contour arrays
+    result : dict of str to dict of str to np.ndarray
+        Mapping from frame ID strings to dictionaries of contour-type arrays.
+        Each inner dictionary has keys such as ``"lumen"``, ``"eem"``,
+        ``"catheter"``, ``"wall"``, and ``"reference"``, each containing a
+        ``(N, 4)`` array ``[frame_index, x, y, z]``.
     """
     result = {}
 

@@ -4,35 +4,55 @@ use crate::intravascular::{
 };
 use pyo3::prelude::*;
 
-/// Creates centerline-aligned meshes for diastolic and systolic geometries
-/// based on three reference points (aorta, upper section, lower section).
-/// Only works for elliptic vessels e.g. coronary artery anomalies.
+/// Align diastolic and systolic meshes to the centerline using three reference points.
 ///
-/// Args:
-///     centerline: PyCenterline object
-///     geometry_pair: PyGeometryPair object
-///     aortic_ref_pt: Reference point for aortic position
-///     upper_ref_pt: Upper reference point
-///     lower_ref_pt: Lower reference point
-///     angle_step_deg (default 1.0): step size in degrees for rotation search
-///     write (default false): Wether to write aligned meshes to OBJ
-///     watertight (default true): Wether to write shell or watertight mesh to OBJ.
-///     interpolation_steps: Number of interpolation steps
-///     output_dir (default "output/aligned"): Output directory for aligned meshes
-///     case_name (default "None"): Case name for output files
+/// Creates centerline-aligned meshes for a diastolic/systolic geometry pair
+/// based on three anatomical reference points (aorta, upper section, lower
+/// section).  Only works for elliptic vessels such as coronary artery
+/// anomalies.
 ///
-/// Returns:
-///     PyGeometryPair, PyCenterline (resampled)
+/// Parameters
+/// ----------
+/// centerline : PyCenterline
+///     Centerline of the vessel.
+/// geometry_pair : PyGeometryPair
+///     Diastolic/systolic geometry pair to align.
+/// aortic_ref_pt : tuple of float
+///     ``(x, y, z)`` reference point at the aortic ostium.
+/// upper_ref_pt : tuple of float
+///     ``(x, y, z)`` upper section reference point.
+/// lower_ref_pt : tuple of float
+///     ``(x, y, z)`` lower section reference point.
+/// angle_step_deg : float, optional
+///     Step size in degrees for the rotation search.  Default is ``1.0``.
+/// write : bool, optional
+///     Whether to write the aligned meshes to OBJ files.  Default is ``False``.
+/// watertight : bool, optional
+///     Whether to write a watertight or shell mesh to OBJ.  Default is ``True``.
+/// interpolation_steps : int, optional
+///     Number of interpolation steps between phases.  Default is ``28``.
+/// output_dir : str, optional
+///     Output directory for aligned meshes.  Default is ``"output/aligned"``.
+/// case_name : str, optional
+///     Case name used as a filename prefix.  Default is ``"None"``.
 ///
-/// Example:
-///     >>> import multimodars as mm
-///     >>> dia, sys = mm.align_three_point(
-///     ...     centerline,
-///     ...     geometry_pair,
-///     ...     (12.2605, -201.3643, 1751.0554),
-///     ...     (11.7567, -202.1920, 1754.7975),
-///     ...     (15.6605, -202.1920, 1749.9655),
-///     ... )
+/// Returns
+/// -------
+/// geom_pair : PyGeometryPair
+///     Aligned geometry pair.
+/// centerline : PyCenterline
+///     Resampled centerline.
+///
+/// Examples
+/// --------
+/// >>> import multimodars as mm
+/// >>> dia, sys = mm.align_three_point(
+/// ...     centerline,
+/// ...     geometry_pair,
+/// ...     (12.2605, -201.3643, 1751.0554),
+/// ...     (11.7567, -202.1920, 1754.7975),
+/// ...     (15.6605, -202.1920, 1749.9655),
+/// ... )
 #[pyfunction]
 #[pyo3(
     signature = (
@@ -92,33 +112,51 @@ pub fn align_three_point(
     Ok((aligned_py, resampled_cl))
 }
 
-/// Creates centerline-aligned meshes for diastolic and systolic geometries
-/// based on three reference points (aorta, upper section, lower section).
-/// Only works for elliptic vessels e.g. coronary artery anomalies.
+/// Align diastolic and systolic meshes to the centerline using a manual rotation angle.
 ///
-/// Args:
-///     centerline: PyCenterline object
-///     geometry_pair: PyGeometryPair object
-///     rotation_angle: Rotation angle in radians
-///     start_point: Index of centerline point to use as reference point
-///     write (default false): Wether to write aligned meshes to OBJ
-///     watertight (default true): Wether to write shell or watertight mesh to OBJ.
-///     interpolation_steps: Number of interpolation steps
-///     output_dir (default "output/aligned"): Output directory for aligned meshes
-///     case_name (default "None"): Case name for output files
+/// Creates centerline-aligned meshes for a diastolic/systolic geometry pair
+/// using an explicit rotation angle and a single reference point on the
+/// centerline.  Only works for elliptic vessels such as coronary artery
+/// anomalies.
 ///
-/// Returns:
-///     PyGeometryPair
+/// Parameters
+/// ----------
+/// centerline : PyCenterline
+///     Centerline of the vessel.
+/// geometry_pair : PyGeometryPair
+///     Diastolic/systolic geometry pair to align.
+/// rotation_angle : float
+///     Rotation angle in radians to apply.
+/// ref_point : tuple of float
+///     ``(x, y, z)`` reference point on the centerline.
+/// write : bool, optional
+///     Whether to write the aligned meshes to OBJ files.  Default is ``False``.
+/// watertight : bool, optional
+///     Whether to write a watertight or shell mesh to OBJ.  Default is ``True``.
+/// interpolation_steps : int, optional
+///     Number of interpolation steps between phases.  Default is ``28``.
+/// output_dir : str, optional
+///     Output directory for aligned meshes.  Default is ``"output/aligned"``.
+/// case_name : str, optional
+///     Case name used as a filename prefix.  Default is ``"None"``.
 ///
-/// Example:
-///     >>> import multimodars as mm
-///     >>> dia, sys = mm.centerline_align(
-///     ...     "path/to/centerline.csv",
-///     ...     (1.0, 2.0, 3.0),
-///     ...     (4.0, 5.0, 6.0),
-///     ...     (7.0, 8.0, 9.0),
-///     ...     "rest"
-///     ... )
+/// Returns
+/// -------
+/// geom_pair : PyGeometryPair
+///     Aligned geometry pair.
+/// centerline : PyCenterline
+///     Resampled centerline.
+///
+/// Examples
+/// --------
+/// >>> import multimodars as mm
+/// >>> dia, sys = mm.centerline_align(
+/// ...     "path/to/centerline.csv",
+/// ...     (1.0, 2.0, 3.0),
+/// ...     (4.0, 5.0, 6.0),
+/// ...     (7.0, 8.0, 9.0),
+/// ...     "rest"
+/// ... )
 #[pyfunction]
 #[pyo3(
     signature = (
@@ -171,32 +209,62 @@ pub fn align_manual(
     Ok((aligned_py, resampled_cl))
 }
 
-/// Creates centerline-aligned meshes for diastolic and systolic geometries
-/// based on one reference point (e.g. aorta ostium, upper, lower) and Hausdorff distances.
+/// Align meshes using three reference points combined with Hausdorff distance refinement.
 ///
-/// Args:
-///     centerline: PyCenterline object
-///     geometry_pair: PyGeometryPair object
-///     aortic_ref_pt: Reference point for aortic position
-///     points: List of points to use for Hausdorff distance calculation
-///     angle_step_deg (default 1.0): step size in degrees for rotation search
-///     write (default false): Wether to write aligned meshes to OBJ
-///     watertight (default true): Wether to write shell or watertight mesh to OBJ.
-///     interpolation_steps: Number of interpolation steps
-///     output_dir (default "output/aligned"): Output directory for aligned meshes
-///     case_name (default "None"): Case name for output files
+/// Creates centerline-aligned meshes for a diastolic/systolic geometry pair
+/// using three anatomical reference points for an initial orientation and a
+/// set of additional points for Hausdorff distance-based fine-tuning of the
+/// rotation.
 ///
-/// Returns:
-///     PyGeometryPair, PyCenterline (resampled)
+/// Parameters
+/// ----------
+/// centerline : PyCenterline
+///     Centerline of the vessel.
+/// geom_pair : PyGeometryPair
+///     Diastolic/systolic geometry pair to align.
+/// aortic_ref_pt : tuple of float
+///     ``(x, y, z)`` reference point at the aortic ostium.
+/// upper_ref_pt : tuple of float
+///     ``(x, y, z)`` upper section reference point.
+/// lower_ref_pt : tuple of float
+///     ``(x, y, z)`` lower section reference point.
+/// points : list of tuple of float
+///     Point cloud used for Hausdorff distance calculation during rotation
+///     refinement.
+/// angle_step_deg : float, optional
+///     Step size in degrees for the rotation search.  Default is ``1.0``.
+/// angle_range_deg : float, optional
+///     Total rotation search range in degrees.  Default is ``15.0``.
+/// index_range : int, optional
+///     Number of centerline indices considered around the reference.
+///     Default is ``2``.
+/// write : bool, optional
+///     Whether to write the aligned meshes to OBJ files.  Default is ``False``.
+/// watertight : bool, optional
+///     Whether to write a watertight or shell mesh to OBJ.  Default is ``True``.
+/// interpolation_steps : int, optional
+///     Number of interpolation steps between phases.  Default is ``28``.
+/// output_dir : str, optional
+///     Output directory for aligned meshes.  Default is ``"output/aligned"``.
+/// case_name : str, optional
+///     Case name used as a filename prefix.  Default is ``"None"``.
 ///
-/// Example:
-///     >>> import multimodars as mm
-///     >>> dia, sys = mm.align_three_point(
-///     ...     centerline,
-///     ...     geometry_pair,
-///     ...     (12.2605, -201.3643, 1751.0554),
-///     ...     [(11.7567, -202.1920, 1754.7975), ... ],
-///     ... )
+/// Returns
+/// -------
+/// geom_pair : PyGeometryPair
+///     Aligned geometry pair.
+/// centerline : PyCenterline
+///     Resampled centerline.
+///
+/// Examples
+/// --------
+/// >>> import multimodars as mm
+/// >>> dia, sys = mm.align_three_point(
+/// ...     centerline,
+/// ...     geometry_pair,
+/// ...     (12.2605, -201.3643, 1751.0554),
+/// ...     [(11.7567, -202.1920, 1754.7975), ... ],
+/// ... )
 #[pyfunction]
 #[pyo3(
     signature = (

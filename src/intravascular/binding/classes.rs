@@ -9,27 +9,38 @@ use pyo3::prelude::*;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 
-/// Python representation of InputData
+/// Python representation of the intravascular imaging input data for one cardiac phase.
 ///
-/// Attributes:
-///    lumen (List[PyContour]): Vessel lumen contours
-///    eem (List[PyContour] | None): Vessel EEM contours
-///    calcification (List[PyContour] | None): Vessel calcification contours
-///    sidebranch (List[PyContor] | None): Vessel sidebranch contours
-///    record (PyRecord): Metadata about the input data
-///    ref_point (PyContourPoint): Reference point for alignment
-///    diastole (bool): Flag indicating if data is diastolic
-///    label (str): label for the input data
-/// Example:
-///     >>> input_data = PyInputData(
-///     ...     lumen=[lumen_contour1, lumen_contour2, ...],
-///     ...     eem=[eem_contour1, eem_contour2, ...],
-///     ...     calcification=[],
-///     ...     sidebranch=[],
-///     ...     record=record,
-///     ...     diastole=True,
-///     ...     lablel="Pat00_diastole_rest"
-///     ... )
+/// Attributes
+/// ----------
+/// lumen : list of PyContour
+///     Vessel lumen contours.
+/// eem : list of PyContour or None
+///     Vessel EEM (external elastic membrane) contours.
+/// calcification : list of PyContour or None
+///     Vessel calcification contours.
+/// sidebranch : list of PyContour or None
+///     Vessel sidebranch contours.
+/// record : list of PyRecord or None
+///     Metadata records about the input data.
+/// ref_point : PyContourPoint
+///     Reference point used for alignment.
+/// diastole : bool
+///     ``True`` when the data corresponds to the diastolic phase.
+/// label : str
+///     Human-readable label for this input dataset.
+///
+/// Examples
+/// --------
+/// >>> input_data = PyInputData(
+/// ...     lumen=[lumen_contour1, lumen_contour2, ...],
+/// ...     eem=[eem_contour1, eem_contour2, ...],
+/// ...     calcification=[],
+/// ...     sidebranch=[],
+/// ...     record=record,
+/// ...     diastole=True,
+/// ...     lablel="Pat00_diastole_rest"
+/// ... )
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyInputData {
@@ -250,25 +261,34 @@ impl From<InputData> for PyInputData {
     }
 }
 
-/// Python representation of a 3D contour point
+/// Python representation of a 3D contour point.
 ///
-/// Attributes:
-///     frame_index (int): Frame number in sequence
-///     point_index (int): Index within contour
-///     x (float): X-coordinate in mm
-///     y (float): Y-coordinate in mm
-///     z (float): Z-coordinate (depth) in mm
-///     aortic (bool): Flag indicating aortic position (in case of intramural course)
+/// Attributes
+/// ----------
+/// frame_index : int
+///     Frame number in the acquisition sequence.
+/// point_index : int
+///     Index of this point within its contour.
+/// x : float
+///     X-coordinate in mm.
+/// y : float
+///     Y-coordinate in mm.
+/// z : float
+///     Z-coordinate (depth) in mm.
+/// aortic : bool
+///     ``True`` when the point is at an aortic position (relevant for
+///     intramural vessel courses).
 ///
-/// Example:
-///     >>> point = PyContourPoint(
-///     ...     frame_index=0,
-///     ...     point_index=1,
-///     ...     x=1.23,
-///     ...     y=4.56,
-///     ...     z=7.89,
-///     ...     aortic=True
-///     ... )
+/// Examples
+/// --------
+/// >>> point = PyContourPoint(
+/// ...     frame_index=0,
+/// ...     point_index=1,
+/// ...     x=1.23,
+/// ...     y=4.56,
+/// ...     z=7.89,
+/// ...     aortic=True
+/// ... )
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyContourPoint {
@@ -314,13 +334,21 @@ impl PyContourPoint {
         )
     }
 
-    /// Euclidean distance to another PyContourPoint
+    /// Euclidean distance to another PyContourPoint.
     ///
-    /// Args:
-    ///     point (PyContourPoint): Any other PyContourPoint.
+    /// Parameters
+    /// ----------
+    /// other : PyContourPoint
+    ///     The target point to measure the distance to.
     ///
-    /// Example:
-    ///     >>> p1.distance(p2)
+    /// Returns
+    /// -------
+    /// float
+    ///     Euclidean distance between the two points in mm.
+    ///
+    /// Examples
+    /// --------
+    /// >>> p1.distance(p2)
     pub fn distance(&self, other: &PyContourPoint) -> f64 {
         let p1: ContourPoint = ContourPoint::from(self);
         let p2: ContourPoint = ContourPoint::from(other);
@@ -361,19 +389,32 @@ impl From<&&ContourPoint> for PyContourPoint {
     }
 }
 
-/// Python representation of a 3D contour
+/// Python representation of a 3D contour.
 ///
-/// Attributes:
-///     id (int): Contour number in sequence
-///     points ([PyContourPoint]): Vector of ContourPoints
-///     centroid (float, float, float): Tuple containing x-, y-, z-coordinates
+/// Attributes
+/// ----------
+/// id : int
+///     Contour identifier (sequence number).
+/// original_frame : int
+///     Frame index from which this contour originates.
+/// points : list of PyContourPoint
+///     Ordered list of contour points.
+/// centroid : tuple of float
+///     ``(x, y, z)`` centroid coordinates of the contour.
+/// aortic_thickness : float or None
+///     Aortic wall thickness at this contour, if available.
+/// pulmonary_thickness : float or None
+///     Pulmonary wall thickness at this contour, if available.
+/// kind : str
+///     String representation of the contour type (e.g. ``"Lumen"``).
 ///
-/// Example:
-///     >>> contour = PyContour(
-///     ...     id=0,
-///     ...     points=[point1, point2, ...],
-///     ...     centroid=(1.0, 1.0, 1.0)
-///     ... )
+/// Examples
+/// --------
+/// >>> contour = PyContour(
+/// ...     id=0,
+/// ...     points=[point1, point2, ...],
+/// ...     centroid=(1.0, 1.0, 1.0)
+/// ... )
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyContour {
@@ -395,11 +436,14 @@ pub struct PyContour {
 
 #[pymethods]
 impl PyContour {
-    /// Creates a new PyContour instance, automatically calculates centroid
+    /// Create a new PyContour instance.
     ///
-    /// Args:
-    ///     id (int): Contour identifier
-    ///     points (List[PyContourPoint]): List of contour points
+    /// Parameters
+    /// ----------
+    /// id : int
+    ///     Contour identifier.
+    /// points : list of PyContourPoint
+    ///     List of contour points.
     #[new]
     fn new(
         id: u32,
@@ -438,10 +482,11 @@ impl PyContour {
         self.points.len()
     }
 
-    /// Calculates the contours centroid by averaging over all coordinates
+    /// Calculate the contour centroid by averaging all point coordinates.
     ///
-    /// Example:
-    ///     >>> contour.compute_centroid()
+    /// Examples
+    /// --------
+    /// >>> contour.compute_centroid()
     pub fn compute_centroid(&mut self) {
         if self.points.is_empty() {
             self.centroid = (0.0, 0.0, 0.0);
@@ -456,23 +501,33 @@ impl PyContour {
         self.centroid = (sum_x / n, sum_y / n, sum_z / n);
     }
 
-    /// Returns contour points as list of (x, y, z) tuples
+    /// Return contour points as a list of ``(x, y, z)`` tuples.
     ///
-    /// Example:
-    ///     >>> contour.points_as_tuples()
-    ///     [(1.0, 2.0, 3.0), (4.0, 5.0, 6.0)]
+    /// Returns
+    /// -------
+    /// list of tuple of float
+    ///     Each element is ``(x, y, z)`` coordinates of one contour point.
+    ///
+    /// Examples
+    /// --------
+    /// >>> contour.points_as_tuples()
+    /// [(1.0, 2.0, 3.0), (4.0, 5.0, 6.0)]
     fn points_as_tuples(&self) -> Vec<(f64, f64, f64)> {
         self.points.iter().map(|p| (p.x, p.y, p.z)).collect()
     }
 
-    /// Finds the two farthest points in the contour
+    /// Find the two farthest points in the contour.
     ///
-    /// Returns:
-    ///     Tuple[Tuple[PyContourPoint, PyContourPoint], float]:
-    ///         Pair of points and their Euclidean distance
+    /// Returns
+    /// -------
+    /// points : tuple of PyContourPoint
+    ///     Pair ``(p1, p2)`` of the two most distant points.
+    /// distance : float
+    ///     Euclidean distance between *p1* and *p2*.
     ///
-    /// Example:
-    ///     >>> (p1, p2), distance = contour.find_farthest_points()
+    /// Examples
+    /// --------
+    /// >>> (p1, p2), distance = contour.find_farthest_points()
     pub fn find_farthest_points(&self) -> PyResult<((PyContourPoint, PyContourPoint), f64)> {
         let rust_contour = self.to_rust_contour()?;
         let ((p1, p2), distance) = rust_contour.find_farthest_points();
@@ -482,13 +537,18 @@ impl PyContour {
         ))
     }
 
-    /// Finds closest points on opposite sides of the contour
+    /// Find the closest points on opposite sides of the contour.
     ///
-    /// Returns:
-    ///     Tuple[Tuple[PyContourPoint, PyContourPoint], float]:
-    ///         Pair of points and their Euclidean distance
-    /// Example:
-    ///     >>> (p1, p2), distance = contour.find_closest_opposite()
+    /// Returns
+    /// -------
+    /// points : tuple of PyContourPoint
+    ///     Pair ``(p1, p2)`` of opposing contour points with minimum distance.
+    /// distance : float
+    ///     Euclidean distance between *p1* and *p2*.
+    ///
+    /// Examples
+    /// --------
+    /// >>> (p1, p2), distance = contour.find_closest_opposite()
     pub fn find_closest_opposite(&self) -> PyResult<((PyContourPoint, PyContourPoint), f64)> {
         let rust_contour = self.to_rust_contour()?;
         let ((p1, p2), distance) = rust_contour.find_closest_opposite();
@@ -498,40 +558,47 @@ impl PyContour {
         ))
     }
 
-    /// Get the elliptic ratio of the current contour
+    /// Get the elliptic ratio of the current contour.
     ///
-    /// Returns:
-    ///     float:
-    ///         Ratio of farthest points distance divided by closest
-    ///         opposite points distance.
-    /// Example:
-    ///     >>> elliptic_ratio = contour.get_elliptic_ratio()
+    /// Returns
+    /// -------
+    /// float
+    ///     Ratio of the farthest-points distance divided by the
+    ///     closest-opposite-points distance.
+    ///
+    /// Examples
+    /// --------
+    /// >>> elliptic_ratio = contour.get_elliptic_ratio()
     pub fn get_elliptic_ratio(&self) -> PyResult<f64> {
         let rust_contour = self.to_rust_contour()?;
         Ok(rust_contour.elliptic_ratio())
     }
 
-    /// Get the area of the current contour using shoelace formula
+    /// Get the area of the current contour using the shoelace formula.
     ///
-    /// Returns:
-    ///     float:
-    ///         Area of the current contour in the unit that the original
-    ///         contour data was provided (e.g. mm2).
-    /// Example:
-    ///     >>> area = contour.get_area()    
+    /// Returns
+    /// -------
+    /// float
+    ///     Area of the contour in the units of the original data (e.g. mm²).
+    ///
+    /// Examples
+    /// --------
+    /// >>> area = contour.get_area()
     pub fn get_area(&self) -> PyResult<f64> {
         let rust_contour = self.to_rust_contour()?;
         Ok(rust_contour.area())
     }
 
-    /// Rotate a given contour around it's own centroid by an angle
-    /// in degrees.
+    /// Rotate the contour around its own centroid by an angle in degrees.
     ///
-    /// Returns:
-    ///     PyContour:
-    ///         Original Contour rotated around it's centroid
-    /// Example:
-    ///     >>> contour = contour.rotate(20)
+    /// Returns
+    /// -------
+    /// PyContour
+    ///     New contour rotated around its centroid.
+    ///
+    /// Examples
+    /// --------
+    /// >>> contour = contour.rotate(20)
     #[pyo3(signature = (angle_deg))]
     pub fn rotate(&self, angle_deg: f64) -> PyResult<PyContour> {
         let angle_rad = angle_deg.to_radians();
@@ -541,18 +608,25 @@ impl PyContour {
         Ok(PyContour::from(&rust_contour))
     }
 
-    /// translate a given contour by x, y, z coordinates
+    /// Translate the contour by ``(dx, dy, dz)`` coordinates.
     ///
-    /// Args:
-    ///     dx (float): Translation in x-direction.
-    ///     dy (float): Translation in y-direction.
-    ///     dz (float): Translation in z-direction.
+    /// Parameters
+    /// ----------
+    /// dx : float
+    ///     Translation in the x-direction.
+    /// dy : float
+    ///     Translation in the y-direction.
+    /// dz : float
+    ///     Translation in the z-direction.
     ///
-    /// Returns:
-    ///     PyContour:
-    ///         Original Contour translated to (x, y, z)
-    /// Example:
-    ///     >>> contour = contour.translate((0.0, 1.0, 2.0))
+    /// Returns
+    /// -------
+    /// PyContour
+    ///     New contour translated by ``(dx, dy, dz)``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> contour = contour.translate((0.0, 1.0, 2.0))
     #[pyo3(signature = (dx, dy, dz))]
     pub fn translate(&self, dx: f64, dy: f64, dz: f64) -> PyResult<PyContour> {
         let mut rust_contour = self.to_rust_contour()?;
@@ -561,14 +635,19 @@ impl PyContour {
         Ok(PyContour::from(&rust_contour))
     }
 
-    /// Sort points within a contour, so highest y-coord point
-    /// has index 0 and all the others are sorted counterclockwise
+    /// Sort points within the contour in counterclockwise order.
     ///
-    /// Returns:
-    ///     PyContour:
-    ///         Original Contour rearranged points.point_idx
-    /// Example:
-    ///     >>> contour = contour.sort_contour_points()
+    /// The point with the highest y-coordinate receives index 0; all
+    /// remaining points are ordered counterclockwise.
+    ///
+    /// Returns
+    /// -------
+    /// PyContour
+    ///     New contour with rearranged point indices.
+    ///
+    /// Examples
+    /// --------
+    /// >>> contour = contour.sort_contour_points()
     pub fn sort_contour_points(&self) -> PyResult<PyContour> {
         let mut rust_contour = self.to_rust_contour()?;
         rust_contour.sort_contour_points();
@@ -606,13 +685,14 @@ impl PyContour {
     }
 }
 
-/// Python representation of contour types
+/// Python representation of the available intravascular contour types.
 ///
-/// Example:
-///     >>> from multimodars import PyContourType
-///     >>> contour_type = PyContourType.Lumen
-///     >>> contour_type.name
-///     'Lumen'
+/// Examples
+/// --------
+/// >>> from multimodars import PyContourType
+/// >>> contour_type = PyContourType.Lumen
+/// >>> contour_type.name
+/// 'Lumen'
 #[pyclass]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PyContourType {
@@ -732,28 +812,31 @@ pub struct PyFrame {
     pub reference_point: Option<PyContourPoint>,
 }
 
-/// Python representation of a full geometry set
+/// Python representation of a single intravascular imaging frame.
 ///
-/// Contains:
-///     - Vessel contours
-///     - Catheter points
-///     - Wall contours
-///     - Reference point
+/// Attributes
+/// ----------
+/// id : int
+///     Frame identifier.
+/// centroid : tuple of float
+///     ``(x, y, z)`` centroid of the frame.
+/// lumen : PyContour
+///     Lumen contour for this frame.
+/// extras : dict of str to PyContour
+///     Additional contour types keyed by name: ``"Eem"``,
+///     ``"Calcification"``, ``"Sidebranch"``, ``"Catheter"``, ``"Wall"``.
+/// reference_point : PyContourPoint or None
+///     Reference position used for alignment, if available.
 ///
-/// Attributes:
-///     id /int): Frame id
-///     centroid ((float, float, float)): (x, y, z)
-///     extras (Dict[str, PyContour]): "Eem", "Calcification", "Sidebranch", "Catheter", "Wall"
-///     reference_point (PyContourPoint): Reference position
-///
-/// Example:
-///     >>> geom = PyFrame(
-///     ...     id=0,
-///     ...     centroid=(0.0, 0.0, 0.0),
-///     ...     lumen=lumen_contour,
-///     ...     extras={"Eem": eem_contour}
-///     ...     reference_point=ref_point
-///     ... )
+/// Examples
+/// --------
+/// >>> geom = PyFrame(
+/// ...     id=0,
+/// ...     centroid=(0.0, 0.0, 0.0),
+/// ...     lumen=lumen_contour,
+/// ...     extras={"Eem": eem_contour},
+/// ...     reference_point=ref_point
+/// ... )
 #[pymethods]
 impl PyFrame {
     #[new]
@@ -853,27 +936,21 @@ impl PyFrame {
     }
 }
 
-/// Python representation of a full geometry set
+/// Python representation of a full intravascular imaging geometry (sequence of frames).
 ///
-/// Contains:
-///     - Vessel contours
-///     - Catheter points
-///     - Wall contours
-///     - Reference point
+/// Attributes
+/// ----------
+/// frames : list of PyFrame
+///     Ordered list of imaging frames constituting the geometry.
+/// label : str
+///     Human-readable label for this geometry.
 ///
-/// Attributes:
-///     contours (List[PyContour]): Vessel contours
-///     catheter (List[PyContour]): Catheter points
-///     walls (List[PyContour]): Wall contours
-///     reference_point (PyContourPoint): Reference position
-///
-/// Example:
-///     >>> geom = PyGeometry(
-///     ...     contours=[contour1, contour2],
-///     ...     catheter=[catheter_points],
-///     ...     walls=[wall1, wall2],
-///     ...     reference_point=ref_point
-///     ... )
+/// Examples
+/// --------
+/// >>> geom = PyGeometry(
+/// ...     frames=[frame1, frame2, ...],
+/// ...     label="Pat00_diastole"
+/// ... )
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyGeometry {
@@ -885,13 +962,14 @@ pub struct PyGeometry {
 
 #[pymethods]
 impl PyGeometry {
-    /// Creates a new PyGeometry instance
+    /// Create a new PyGeometry instance.
     ///
-    /// Args:
-    ///     contours (List[PyContour]): Vessel contours
-    ///     catheter (List[PyContour]): Catheter points
-    ///     walls (List[PyContour]): Wall contours
-    ///     reference_point (PyContourPoint): Reference position
+    /// Parameters
+    /// ----------
+    /// frames : list of PyFrame
+    ///     Ordered list of imaging frames.
+    /// label : str
+    ///     Human-readable label for this geometry.
     #[new]
     fn new(frames: Vec<PyFrame>, label: String) -> Self {
         Self { frames, label }
@@ -951,15 +1029,18 @@ impl PyGeometry {
         self.get_contours_by_type(contour_type)
     }
 
-    /// Rotate all contours/walls/catheters of a given geometry
-    /// around it's own centroid by an angle in degrees. Catheters are rotated
-    /// around the same centroid as contour.
+    /// Rotate the entire geometry around its centroid by an angle in degrees.
     ///
-    /// Returns:
-    ///     PyGeometry:
-    ///         Original Geometry rotated around it's centroid
-    /// Example:
-    ///     >>> geometry = geometry.rotate(20)
+    /// All frames (lumen, extras) are rotated around the same centroid.
+    ///
+    /// Returns
+    /// -------
+    /// PyGeometry
+    ///     New geometry rotated around its centroid.
+    ///
+    /// Examples
+    /// --------
+    /// >>> geometry = geometry.rotate(20)
     #[pyo3(signature = (angle_deg))]
     pub fn rotate(&self, angle_deg: f64) -> PyResult<PyGeometry> {
         let mut rust_geometry = self.to_rust_geometry()?;
@@ -969,15 +1050,21 @@ impl PyGeometry {
         Ok(PyGeometry::from(&rust_geometry))
     }
 
-    /// Translates all contours, walls, and catheters in a geometry by (dx, dy, dz).
+    /// Translate all frames in the geometry by ``(dx, dy, dz)``.
     ///
-    /// Args:
-    ///     dx (float): translation in x-direction.
-    ///     dy (float): translation in y-direction.
-    ///     dz (float): translation in z-direction.
+    /// Parameters
+    /// ----------
+    /// dx : float
+    ///     Translation in the x-direction.
+    /// dy : float
+    ///     Translation in the y-direction.
+    /// dz : float
+    ///     Translation in the z-direction.
     ///
-    /// Returns:
-    ///     A new PyGeometry with all elements translated.
+    /// Returns
+    /// -------
+    /// PyGeometry
+    ///     New geometry with all frames translated.
     #[pyo3(signature = (dx, dy, dz))]
     pub fn translate(&self, dx: f64, dy: f64, dz: f64) -> PyResult<PyGeometry> {
         let mut rust_geometry = self.to_rust_geometry()?;
@@ -987,10 +1074,16 @@ impl PyGeometry {
         Ok(PyGeometry::from(&rust_geometry))
     }
 
-    /// Applies smoothing to all contours using a threepoint moving average
+    /// Apply smoothing to all frames using a three-point moving average.
     ///
-    /// Example:
-    ///     >>> geom.smooth_frames()
+    /// Returns
+    /// -------
+    /// PyGeometry
+    ///     New geometry with smoothed frames.
+    ///
+    /// Examples
+    /// --------
+    /// >>> geom.smooth_frames()
     pub fn smooth_frames(&self) -> PyResult<PyGeometry> {
         let rust_geometry = self.to_rust_geometry()?;
         let smoothed = rust_geometry.smooth_frames();
@@ -999,17 +1092,20 @@ impl PyGeometry {
 
     /// Get a compact summary of lumen properties for this geometry.
     ///
-    /// Returns:
-    ///     tuple: (mla, max_stenosis, stenosis_length_mm)
-    ///         mla (float): minimal lumen area (same units as contour.area(), e.g. mm^2)
-    ///         max_stenosis (float): 1 - (mla / biggest_area)
-    ///         stenosis_length_mm (float): length (in mm) of the longest contiguous region
-    ///         where contour area < threshold.
+    /// When all contours have an elliptic ratio below 1.3 the vessel is
+    /// treated as elliptic and a lenient threshold of 70 % of the maximum
+    /// area is used to identify stenotic segments; otherwise a stricter
+    /// 50 % threshold is applied.
     ///
-    /// Threshold logic (implemented by assumption):
-    ///     If ALL contours have elliptic_ratio < 1.3 we treat the vessel as "elliptic"
-    ///     and use a more lenient threshold of 0.70 * biggest_area.
-    ///     Otherwise we use a stricter threshold of 0.50 * biggest_area (50%).
+    /// Returns
+    /// -------
+    /// mla : float
+    ///     Minimal lumen area in the units of the input data (e.g. mm²).
+    /// max_stenosis : float
+    ///     ``1 - (mla / max_area)``.
+    /// stenosis_length_mm : float
+    ///     Length in mm of the longest contiguous region where the contour
+    ///     area falls below the threshold.
     pub fn get_summary(&self) -> PyResult<(f64, f64, f64)> {
         let geometry = self.to_rust_geometry()?;
 
@@ -1075,13 +1171,17 @@ impl PyGeometry {
         Ok((mla, max_stenosis, longest_mm))
     }
 
-    /// Centers the entire geometry to a specific contour type
+    /// Center the entire geometry on a specific contour type.
     ///
-    /// Args:
-    ///     contour_type (str): Type of contour to center on ("Lumen", "Eem", "Wall", etc.)
+    /// Parameters
+    /// ----------
+    /// contour_type : PyContourType
+    ///     Contour type to center on (e.g. ``PyContourType.Lumen``).
     ///
-    /// Returns:
-    ///     PyGeometry: A new geometry centered on the specified contour type
+    /// Returns
+    /// -------
+    /// PyGeometry
+    ///     New geometry centered on the specified contour type.
     #[pyo3(signature = (contour_type))]
     pub fn center_to_contour(&self, contour_type: PyContourType) -> PyResult<PyGeometry> {
         let rust_contour_type: crate::intravascular::io::geometry::ContourType =
@@ -1107,17 +1207,24 @@ impl PyGeometry {
     }
 }
 
-/// Python representation of a diastolic/systolic geometry pair
+/// Python representation of a diastolic/systolic geometry pair.
 ///
-/// Attributes:
-///     dia_geom (PyGeometry): Diastolic geometry
-///     sys_geom (PyGeometry): Systolic geometry
+/// Attributes
+/// ----------
+/// geom_a : PyGeometry
+///     First geometry (typically diastolic).
+/// geom_b : PyGeometry
+///     Second geometry (typically systolic).
+/// label : str
+///     Human-readable label for this geometry pair.
 ///
-/// Example:
-///     >>> pair = PyGeometryPair(
-///     ...     dia_geom=diastole,
-///     ...     sys_geom=systole
-///     ... )
+/// Examples
+/// --------
+/// >>> pair = PyGeometryPair(
+/// ...     geom_a=diastole,
+/// ...     geom_b=systole,
+/// ...     label="Pat00_rest"
+/// ... )
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyGeometryPair {
@@ -1150,13 +1257,19 @@ impl PyGeometryPair {
         )
     }
 
-    /// Get summaries for both diastolic and systolic geometries.
+    /// Get summaries for both geometries and a per-frame deformation table.
     ///
-    /// Returns a tuple: ((dia_mla, dia_max_stenosis, dia_len_mm), (sys_mla, sys_max_stenosis, sys_len_mm))
-    /// and a matrix (N, 6): (contour id, area_dia, ellip_dia, area_sys, ellip_sys, z-coordinate)
+    /// Calls :meth:`PyGeometry.get_summary` on each contained geometry and
+    /// additionally computes per-frame area and elliptic ratio for both
+    /// phases.
     ///
-    /// This calls ``get_summary()`` on each contained PyGeometry and returns both results.
-    /// and additionally assesses dynamic between the two PyGeometry object (area, elliptic ratio)
+    /// Returns
+    /// -------
+    /// summaries : tuple
+    ///     ``((dia_mla, dia_max_stenosis, dia_len_mm), (sys_mla, sys_max_stenosis, sys_len_mm))``.
+    /// table : list of list of float
+    ///     Matrix of shape ``(N, 6)`` with columns
+    ///     ``[id, area_dia, ellip_dia, area_sys, ellip_sys, z]``.
     pub fn get_summary(&self) -> PyResult<(((f64, f64, f64), (f64, f64, f64)), Vec<[f64; 6]>)> {
         let dia = self.geom_a.get_summary()?;
         let sys = self.geom_b.get_summary()?;
@@ -1305,19 +1418,23 @@ impl PyGeometryPair {
     }
 }
 
-/// Python representation of a centerline point
+/// Python representation of a centerline point.
 ///
-/// Combines a contour point with its normal vector
+/// Combines a contour point with its local normal vector.
 ///
-/// Attributes:
-///     contour_point (PyContourPoint): Position in 3D space
-///     normal (Tuple[float, float, float]): Normal vector (nx, ny, nz)
+/// Attributes
+/// ----------
+/// contour_point : PyContourPoint
+///     Position of the centerline point in 3D space.
+/// normal : tuple of float
+///     Normal vector ``(nx, ny, nz)`` at this centerline position.
 ///
-/// Example:
-///     >>> cl_point = PyCenterlinePoint(
-///     ...     contour_point=point,
-///     ...     normal=(0.0, 1.0, 0.0)
-///     ... )
+/// Examples
+/// --------
+/// >>> cl_point = PyCenterlinePoint(
+/// ...     contour_point=point,
+/// ...     normal=(0.0, 1.0, 0.0)
+/// ... )
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyCenterlinePoint {
@@ -1371,13 +1488,16 @@ impl From<&PyCenterlinePoint> for CenterlinePoint {
     }
 }
 
-/// Python representation of a vessel centerline
+/// Python representation of a vessel centerline.
 ///
-/// Attributes:
-///     points (List[PyCenterlinePoint]): Ordered points along centerline
+/// Attributes
+/// ----------
+/// points : list of PyCenterlinePoint
+///     Ordered list of centerline points.
 ///
-/// Example:
-///     >>> centerline = PyCenterline(points=[p1, p2, p3])
+/// Examples
+/// --------
+/// >>> centerline = PyCenterline(points=[p1, p2, p3])
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyCenterline {
@@ -1392,17 +1512,22 @@ impl PyCenterline {
         Self { points }
     }
 
-    /// Build a Centerline from a flat list of PyContourPoint.
+    /// Build a centerline from a flat list of ``PyContourPoint`` objects.
     ///
-    /// Args:
-    ///     contour_points (List[PyContourPoint]): sequence of points in order.
+    /// Parameters
+    /// ----------
+    /// contour_points : list of PyContourPoint
+    ///     Ordered sequence of contour points.
     ///
-    /// Returns:
-    ///     PyCenterline
+    /// Returns
+    /// -------
+    /// PyCenterline
+    ///     Centerline constructed from the provided points.
     ///
-    /// Example:
-    ///     >>> pts = [PyContourPoint(...), PyContourPoint(...), ...]
-    ///     >>> cl = PyCenterline.from_contour_points(pts)
+    /// Examples
+    /// --------
+    /// >>> pts = [PyContourPoint(...), PyContourPoint(...), ...]
+    /// >>> cl = PyCenterline.from_contour_points(pts)
     #[staticmethod]
     fn from_contour_points(contour_points: Vec<PyContourPoint>) -> PyResult<Self> {
         // convert Python points → Rust ContourPoint
@@ -1487,21 +1612,31 @@ impl From<Centerline> for PyCenterline {
     }
 }
 
-/// Python representation of a measurement record
+/// Python representation of a per-frame measurement record.
 ///
-/// Attributes:
-///     frame (int): Frame number
-///     phase (str): Cardiac phase ('D'/'S') for diastole or systole
-///     measurement_1 (float, optional): Primary measurement. In coronary artery anomalies thickness between aorta and coronary.
-///     measurement_2 (float, optional): Secondary measurement. In coronary artery anomalies thickness between pulmonary artery and coronary.
+/// Attributes
+/// ----------
+/// frame : int
+///     Frame number within the acquisition sequence.
+/// phase : str
+///     Cardiac phase identifier: ``"D"`` for diastole or ``"S"`` for
+///     systole.
+/// measurement_1 : float or None
+///     Primary measurement value.  In coronary artery anomalies this is
+///     the wall thickness between the aorta and the coronary artery.
+/// measurement_2 : float or None
+///     Secondary measurement value.  In coronary artery anomalies this is
+///     the wall thickness between the pulmonary artery and the coronary
+///     artery.
 ///
-/// Example:
-///     >>> record = PyRecord(
-///     ...     frame=5,
-///     ...     phase="D",
-///     ...     measurement_1=1.4,
-///     ...     measurement_2=2.1
-///     ... )
+/// Examples
+/// --------
+/// >>> record = PyRecord(
+/// ...     frame=5,
+/// ...     phase="D",
+/// ...     measurement_1=1.4,
+/// ...     measurement_2=2.1
+/// ... )
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyRecord {

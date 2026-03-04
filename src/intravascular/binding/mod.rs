@@ -25,7 +25,11 @@ fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<(u32, u32, f64, f64, f64, f64, f64
         .collect()
 }
 
-/// Processes four geometries in parallel from folders.
+/// Process four intravascular imaging geometries in parallel from CSV folders.
+///
+/// Reads REST and STRESS acquisitions from two input folders, aligns frames
+/// within and between each cardiac phase in parallel, and writes interpolated
+/// OBJ meshes.
 ///
 /// .. code-block:: text
 ///
@@ -35,47 +39,91 @@ fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<(u32, u32, f64, f64, f64, f64, f64
 ///       ▼            ▼
 ///    systole ──▶ systole
 ///
-///
-/// Args:
-///     input_path_a: Path to e.g. REST input file
-///     input_path_b: Path to e.g. STRESS input file
-///     step_rotation_deg (default 0.5°): Rotation step in degree
-///     range_rotation_deg (default 90°): Rotation (+/-) range in degree, for 90° total range 180°
-///     image_center (default (4.5mm, 4.5mm)): in mm
-///     radius (default 0.5mm): in mm for catheter
-///     n_points (default 20): number of points for catheter, more points stronger influence of image center
-///     write_obj (default true): Wether to write OBJ files
-///     watertight (default true): Wether to write shell or watertight mesh to OBJ.
-///     output_path_a (default "output/rest"):
-///     output_path_b (default "output/stress"):
-///     output_path_c (default "output/diastole"):
-///     output_path_d (default "output/systole"):
-///     interpolation_steps (default 28): Number of interpolated meshes
-///     bruteforce (default false): Wether to use bruteforce alignment (comparison for every step size)
-///     sample_size (default 200): number of points to downsample to
-///     contour_type (default [PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall])
-///     smooth (default true): bool smooth after alignment with 3-point moving average
-///     postprocessing (default true): adjusts spacing within/between geometry/geometries to have equal offsets
-///
 /// .. warning::
 ///
-///    The CSV must have **no header**. Each row is (frame index, x-coord (mm), y-coord (mm), z-coord (mm)):
+///    The CSV must have **no header**. Each row is
+///    ``(frame index, x-coord (mm), y-coord (mm), z-coord (mm))``:
 ///
 /// .. code-block:: text
 ///
 ///    185, 5.32, 2.37, 0.0
 ///    ...
 ///
-/// Returns:
-///     ``PyGeometryPair`` for rest, stress, diastole, systole.
-///     A 4-tuple of ``Vec<id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y>``
-///     for (diastole logs, systole logs, diastole stress logs, systole stress logs).
+/// Parameters
+/// ----------
+/// input_path_a : str
+///     Path to the REST input folder.
+/// input_path_b : str
+///     Path to the STRESS input folder.
+/// label : str, optional
+///     Label used for output filenames.  Default is ``"full"``.
+/// diastole : bool, optional
+///     Whether to process the diastolic phase.  Default is ``True``.
+/// step_rotation_deg : float, optional
+///     Rotation step in degrees.  Default is ``0.5``.
+/// range_rotation_deg : float, optional
+///     Rotation search range (±) in degrees; a range of 90° gives 180°
+///     total.  Default is ``90.0``.
+/// image_center : tuple of float, optional
+///     Image center ``(x, y)`` in mm.  Default is ``(4.5, 4.5)``.
+/// radius : float, optional
+///     Catheter radius in mm.  Default is ``0.5``.
+/// n_points : int, optional
+///     Number of catheter points; more points increases the influence of
+///     the image center.  Default is ``20``.
+/// write_obj : bool, optional
+///     Whether to write OBJ files to disk.  Default is ``True``.
+/// watertight : bool, optional
+///     Whether to write a watertight or shell mesh.  Default is ``True``.
+/// output_path_a : str, optional
+///     Output directory for REST results.  Default is ``"output/rest"``.
+/// output_path_b : str, optional
+///     Output directory for STRESS results.  Default is ``"output/stress"``.
+/// output_path_c : str, optional
+///     Output directory for DIASTOLE results.  Default is
+///     ``"output/diastole"``.
+/// output_path_d : str, optional
+///     Output directory for SYSTOLE results.  Default is
+///     ``"output/systole"``.
+/// interpolation_steps : int, optional
+///     Number of interpolated meshes between phases.  Default is ``28``.
+/// bruteforce : bool, optional
+///     Whether to use brute-force alignment (one comparison per step).
+///     Default is ``False``.
+/// sample_size : int, optional
+///     Number of points to downsample to during alignment.  Default is
+///     ``500``.
+/// contour_types : list of PyContourType, optional
+///     Contour types to export.  Default is
+///     ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
+/// smooth : bool, optional
+///     Whether to smooth frames after alignment using a 3-point moving
+///     average.  Default is ``True``.
+/// postprocessing : bool, optional
+///     Whether to adjust spacing within/between geometries to equal
+///     offsets.  Default is ``True``.
 ///
-/// Example:
-///     >>> import multimodars as mm
-///     >>> rest, stress, dia, sys, _ = mm.from_file_full(
-///     ...     "data/ivus_rest", "data/ivus_stress"
-///     ... )
+/// Returns
+/// -------
+/// rest : PyGeometryPair
+///     Aligned geometry pair for the REST condition.
+/// stress : PyGeometryPair
+///     Aligned geometry pair for the STRESS condition.
+/// diastole : PyGeometryPair
+///     Aligned geometry pair for the diastolic phase.
+/// systole : PyGeometryPair
+///     Aligned geometry pair for the systolic phase.
+/// logs : tuple of list
+///     4-tuple of alignment logs ``(logs_a, logs_b, logs_c, logs_d)``;
+///     each entry is a list of
+///     ``(id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y)``.
+///
+/// Examples
+/// --------
+/// >>> import multimodars as mm
+/// >>> rest, stress, dia, sys, _ = mm.from_file_full(
+/// ...     "data/ivus_rest", "data/ivus_stress"
+/// ... )
 #[pyfunction]
 #[pyo3(
     signature = (
@@ -194,9 +242,10 @@ pub fn from_file_full(
     ))
 }
 
-/// Processes two geometries in parallel.
+/// Process two intravascular imaging geometry pairs in parallel from CSV folders.
 ///
-/// Pipeline:
+/// Reads REST and STRESS acquisitions and aligns frames within each pair
+/// independently (diastole → systole), then writes interpolated OBJ meshes.
 ///
 /// .. code-block:: text
 ///
@@ -206,44 +255,76 @@ pub fn from_file_full(
 ///        ▼                         ▼
 ///    systole                   systole
 ///
-/// Args:
-///     input_path_a: Path to e.g. REST input file
-///     input_path_b: Path to e.g. STRESS input file
-///     step_rotation_deg (default 0.5°): Rotation step in degree
-///     range_rotation_deg (default 90°): Rotation (+/-) range in degree, for 90° total range 180°
-///     image_center (default (4.5mm, 4.5mm)): in mm
-///     radius (default 0.5mm): in mm for catheter
-///     n_points (default 20): number of points for catheter, more points stronger influence of image center
-///     write_obj (default true): Wether to write OBJ files
-///     watertight (default true): Wether to write shell or watertight mesh to OBJ.
-///     output_path_a (default "output/rest"):
-///     output_path_b (default "output/stress"):
-///     interpolation_steps (default 28): Number of interpolated meshes
-///     bruteforce (default false): Wether to use bruteforce alignment (comparison for every step size)
-///     sample_size (default 200): number of points to downsample to
-///     contour_type (default [PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall])
-///     smooth (default true): bool smooth after alignment with 3-point moving average
-///     postprocessing (default true): adjusts spacing within/between geometry/geometries to have equal offsets
-///
 /// .. warning::
 ///
-///    The CSV must have **no header**. Each row is (frame index, x-coord (mm), y-coord (mm), z-coord (mm)):
+///    The CSV must have **no header**. Each row is
+///    ``(frame index, x-coord (mm), y-coord (mm), z-coord (mm))``:
 ///
 /// .. code-block:: text
 ///
 ///    185, 5.32, 2.37, 0.0
 ///    ...
 ///
-/// Returns:
-///     A ``PyGeometryPair`` for rest, stress.
-///     A 4-tuple of ``Vec<id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y>``
-///     for (diastole logs, systole logs, diastole stress logs, systole stress logs).
+/// Parameters
+/// ----------
+/// input_path_a : str
+///     Path to the REST input folder.
+/// input_path_b : str
+///     Path to the STRESS input folder.
+/// label : str, optional
+///     Label used for output filenames.  Default is ``"double_pair"``.
+/// diastole : bool, optional
+///     Whether to process the diastolic phase.  Default is ``True``.
+/// step_rotation_deg : float, optional
+///     Rotation step in degrees.  Default is ``0.5``.
+/// range_rotation_deg : float, optional
+///     Rotation search range (±) in degrees.  Default is ``90.0``.
+/// image_center : tuple of float, optional
+///     Image center ``(x, y)`` in mm.  Default is ``(4.5, 4.5)``.
+/// radius : float, optional
+///     Catheter radius in mm.  Default is ``0.5``.
+/// n_points : int, optional
+///     Number of catheter points.  Default is ``20``.
+/// write_obj : bool, optional
+///     Whether to write OBJ files.  Default is ``True``.
+/// watertight : bool, optional
+///     Whether to write a watertight or shell mesh.  Default is ``True``.
+/// output_path_a : str, optional
+///     Output directory for REST results.  Default is ``"output/rest"``.
+/// output_path_b : str, optional
+///     Output directory for STRESS results.  Default is ``"output/stress"``.
+/// interpolation_steps : int, optional
+///     Number of interpolated meshes.  Default is ``28``.
+/// bruteforce : bool, optional
+///     Whether to use brute-force alignment.  Default is ``False``.
+/// sample_size : int, optional
+///     Number of points to downsample to.  Default is ``500``.
+/// contour_types : list of PyContourType, optional
+///     Contour types to export.  Default is
+///     ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
+/// smooth : bool, optional
+///     Whether to smooth frames after alignment.  Default is ``True``.
+/// postprocessing : bool, optional
+///     Whether to equalise spacing within/between geometries.  Default is
+///     ``True``.
 ///
-/// Example:
-///     >>> import multimodars as mm
-///     >>> rest, stress, _ = mm.from_file_doublepair(
-///     ...     "data/ivus_rest", "data/ivus_stress"
-///     ... )
+/// Returns
+/// -------
+/// rest : PyGeometryPair
+///     Aligned geometry pair for the REST condition.
+/// stress : PyGeometryPair
+///     Aligned geometry pair for the STRESS condition.
+/// logs : tuple of list
+///     4-tuple of alignment logs ``(logs_a, logs_b, logs_c, logs_d)``;
+///     each entry is a list of
+///     ``(id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y)``.
+///
+/// Examples
+/// --------
+/// >>> import multimodars as mm
+/// >>> rest, stress, _ = mm.from_file_doublepair(
+/// ...     "data/ivus_rest", "data/ivus_stress"
+/// ... )
 #[pyfunction]
 #[pyo3(signature = (
     input_path_a,
@@ -339,8 +420,10 @@ pub fn from_file_doublepair(
     ))
 }
 
-/// Processes two geometries (rest and stress) in parallel from an input CSV,
-/// returning a single ``PyGeometryPair`` for the chosen phase.
+/// Process a single diastole/systole pair from an input CSV folder.
+///
+/// Reads one acquisition folder, aligns the diastolic and systolic frames,
+/// and returns a single ``PyGeometryPair``.
 ///
 /// .. code-block:: text
 ///
@@ -350,46 +433,76 @@ pub fn from_file_doublepair(
 ///         ▼
 ///       systole
 ///
-/// Args:
-///     input_path: Path to the input CSV file.  
-///     step_rotation_deg (default 0.5°) – Rotation step in degree
-///     range_rotation_deg (default 90°) – Rotation (+/-) range in degree, for 90° total range 180°
-///     image_center (default (4.5mm, 4.5mm)): Center coordinates (x, y).  
-///     radius (default 0.5mm): in mm for catheter
-///     n_points (default 20): number of points for catheter, more points stronger influence of image center
-///     write_obj (default true): Wether to write OBJ files
-///     watertight (default true): Wether to write shell or watertight mesh to OBJ.
-///     output_path: Path to write the processed geometry.
-///     interpolation_steps (default 28): Number of interpolated meshes
-///     bruteforce (default false): Wether to use bruteforce alignment (comparison for every step size)
-///     sample_size (default 200): number of points to downsample to
-///     contour_type (default [PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall])
-///     smooth (default true): bool smooth after alignment with 3-point moving average
-///     postprocessing (default true): adjusts spacing within/between geometry/geometries to have equal offsets
-///
 /// .. warning::
 ///
-///    The CSV must have **no header**. Each row is:
+///    The CSV must have **no header**. Each row is
+///    ``(frame index, x-coord (mm), y-coord (mm), z-coord (mm))``:
 ///
 /// .. code-block:: text
 ///
 ///    185, 5.32, 2.37, 0.0
 ///    ...
 ///
-/// Returns:
-///     A single ``PyGeometryPair`` for (rest or stress) geometry.
-///     A 2-tuple of ``Vec<id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y>``
-///     for (diastole logs, systole logs).
+/// Parameters
+/// ----------
+/// input_path : str
+///     Path to the input CSV file.
+/// label : str, optional
+///     Label used for output filenames.  Default is ``"single_pair"``.
+/// diastole : bool, optional
+///     Whether to process the diastolic phase.  Default is ``True``.
+/// step_rotation_deg : float, optional
+///     Rotation step in degrees.  Default is ``0.5``.
+/// range_rotation_deg : float, optional
+///     Rotation search range (±) in degrees.  Default is ``90.0``.
+/// image_center : tuple of float, optional
+///     Image center ``(x, y)`` in mm.  Default is ``(4.5, 4.5)``.
+/// radius : float, optional
+///     Catheter radius in mm.  Default is ``0.5``.
+/// n_points : int, optional
+///     Number of catheter points.  Default is ``20``.
+/// write_obj : bool, optional
+///     Whether to write OBJ files.  Default is ``True``.
+/// watertight : bool, optional
+///     Whether to write a watertight or shell mesh.  Default is ``True``.
+/// output_path : str, optional
+///     Directory path to write the processed geometry.  Default is
+///     ``"output/singlepair"``.
+/// interpolation_steps : int, optional
+///     Number of interpolated meshes.  Default is ``28``.
+/// bruteforce : bool, optional
+///     Whether to use brute-force alignment.  Default is ``False``.
+/// sample_size : int, optional
+///     Number of points to downsample to.  Default is ``500``.
+/// contour_types : list of PyContourType, optional
+///     Contour types to export.  Default is
+///     ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
+/// smooth : bool, optional
+///     Whether to smooth frames after alignment.  Default is ``True``.
+/// postprocessing : bool, optional
+///     Whether to equalise spacing within/between geometries.  Default is
+///     ``True``.
 ///
-/// Raises:
-///     **RuntimeError** if the Rust pipeline fails.
+/// Returns
+/// -------
+/// pair : PyGeometryPair
+///     Aligned diastole/systole geometry pair.
+/// logs : tuple of list
+///     2-tuple of alignment logs ``(logs_a, logs_b)``; each entry is a list
+///     of ``(id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y)``.
 ///
-/// Example:
-///     >>> import multimodars as mm
-///     >>> pair, _ = mm.from_file_singlepair(
-///     ...     "data/ivus_rest.csv",
-///     ...     "output/rest"
-///     ... )
+/// Raises
+/// ------
+/// RuntimeError
+///     If the Rust processing pipeline fails.
+///
+/// Examples
+/// --------
+/// >>> import multimodars as mm
+/// >>> pair, _ = mm.from_file_singlepair(
+/// ...     "data/ivus_rest.csv",
+/// ...     "output/rest"
+/// ... )
 #[pyfunction]
 #[pyo3(signature = (
     input_path,
@@ -467,46 +580,75 @@ pub fn from_file_singlepair(
     Ok((py_geom_ab, (py_logs_a, py_logs_b)))
 }
 
-/// Processes a single geometry (either diastole or systole) from an IVUS CSV file.
+/// Process a single intravascular imaging geometry from a CSV file.
+///
+/// Reads one phase (diastole or systole) from an IVUS CSV file, aligns frames
+/// within the geometry, and optionally writes OBJ output.
 ///
 /// .. code-block:: text
 ///
 ///    Rest/Stress pipeline (choose phase via `diastole` flag):
 ///      e.g. diastole
 ///
-/// Args:
-///     input_path: Path to the input CSV (no header; columns: frame, x, y, z).  
-///     step_rotation_deg (default 0.5°): Rotation step in degree
-///     range_rotation_deg (default 90°): Rotation (+/-) range in degree, for 90° total range 180°
-///     diastole (default true): If true, process the diastole phase; otherwise systole.  
-///     image_center (default (4.5mm, 4.5mm)): (x, y) center for processing.  
-///     radius (default: 0.5mm): Radius around center to consider for catheter.  
-///     n_points (default 20): number of points for catheter, more points stronger influence of image center.
-///     write_obj (default true): Wether to write OBJ files.
-///     watertight (default true): Wether to write shell or watertight mesh to OBJ.
-///     output_path (default "output/single"): Where to write the processed geometry.  
-///     bruteforce (default false): Wether to use bruteforce alignment (comparison for every step size).
-///     sample_size (default 200): number of points to downsample to
-///     contour_type (default [PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall])
-///     smooth (default true): bool smooth after alignment with 3-point moving average
-///     postprocessing (default true): adjusts spacing within/between geometry/geometries to have equal offsets
+/// Parameters
+/// ----------
+/// input_path : str
+///     Path to the input CSV (no header; columns: frame, x, y, z).
+/// label : str, optional
+///     Label used for output filenames.  Default is ``"single"``.
+/// diastole : bool, optional
+///     When ``True`` process the diastolic phase; otherwise systole.
+///     Default is ``True``.
+/// step_rotation_deg : float, optional
+///     Rotation step in degrees.  Default is ``0.5``.
+/// range_rotation_deg : float, optional
+///     Rotation search range (±) in degrees.  Default is ``90.0``.
+/// image_center : tuple of float, optional
+///     Image center ``(x, y)`` in mm.  Default is ``(4.5, 4.5)``.
+/// radius : float, optional
+///     Catheter radius in mm.  Default is ``0.5``.
+/// n_points : int, optional
+///     Number of catheter points.  Default is ``20``.
+/// write_obj : bool, optional
+///     Whether to write OBJ files.  Default is ``True``.
+/// watertight : bool, optional
+///     Whether to write a watertight or shell mesh.  Default is ``True``.
+/// output_path : str, optional
+///     Directory path to write the processed geometry.  Default is
+///     ``"output/single"``.
+/// bruteforce : bool, optional
+///     Whether to use brute-force alignment.  Default is ``False``.
+/// sample_size : int, optional
+///     Number of points to downsample to.  Default is ``200``.
+/// contour_types : list of PyContourType, optional
+///     Contour types to export.  Default is
+///     ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
+/// smooth : bool, optional
+///     Whether to smooth frames after alignment.  Default is ``True``.
 ///
-/// Returns:
-///     A ``PyGeometry`` containing the processed contour for the chosen phase.
-///     A ``Vec<id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y>``.
+/// Returns
+/// -------
+/// geom : PyGeometry
+///     Processed geometry for the chosen phase.
+/// logs : list
+///     Alignment log entries; each entry is
+///     ``(id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y)``.
 ///
-/// Raises:
-///     **RuntimeError** if the underlying Rust pipeline fails.
+/// Raises
+/// ------
+/// RuntimeError
+///     If the underlying Rust pipeline fails.
 ///
-/// Example:
-///     >>> import multimodars as mm
-///     >>> geom, _ = mm.from_file_single(
-///     ...     "data/ivus.csv",
-///     ...     steps_best_rotation=0.5,
-///     ...     range_rotation_rad=90,
-///     ...     output_path="out/single",
-///     ...     diastole=False
-///     ... )
+/// Examples
+/// --------
+/// >>> import multimodars as mm
+/// >>> geom, _ = mm.from_file_single(
+/// ...     "data/ivus.csv",
+/// ...     steps_best_rotation=0.5,
+/// ...     range_rotation_rad=90,
+/// ...     output_path="out/single",
+/// ...     diastole=False
+/// ... )
 ///
 #[pyfunction]
 #[pyo3(signature = (
@@ -572,8 +714,11 @@ pub fn from_file_single(
     Ok((py_geom, py_logs))
 }
 
-/// Process four existing ``PyGeometry`` objects (rest‑dia, rest‑sys, stress‑dia, stress‑sys)
-/// in parallel, aligning and interpolating between phases.
+/// Process four ``PyInputData`` objects in parallel, aligning and interpolating between phases.
+///
+/// Accepts pre-loaded input data for REST diastole, REST systole, STRESS
+/// diastole, and STRESS systole, then aligns frames within and between
+/// each cardiac phase.
 ///
 /// .. code-block:: text
 ///
@@ -583,41 +728,85 @@ pub fn from_file_single(
 ///       ▼            ▼
 ///    systole ──▶ systole
 ///
-/// Args:
-///     input_data_a: Input ``PyInputData`` at e.g diastole for REST.  
-///     input_data_b: Input ``PyInputData`` at e.g. systole for REST.  
-///     input_data_c: Input ``PyInputData`` at e.g. diastole for STRESS.  
-///     input_data_d: Input ``PyInputData`` at e.g. systole for STRESS.  
-///     step_rotation_deg (default 0.5°): Rotation step in degree
-///     range_rotation_deg (default 90°): Rotation (+/-) range in degree, for 90° total range 180°
-///     write_obj (default True): Wether to write OBJ files.
-///     watertight (default True): Wether to write shell or watertight mesh to OBJ.
-///     output_path_a (default "output/rest"): Output directory for e.g. REST results.  
-///     output_path_b (default "output/stress"): Output directory for e.g. STRESS results.  
-///     output_path_c (default "output/diastole"): Output for e.g. DIASTOLE results.  
-///     output_path_d (default "output/systole"): Output for e.g. SYSTOLE results.  
-///     interpolation_steps (default 28): Number of interpolation steps between phases.  
-///     bruteforce (default False): Wether to use bruteforce alignment (comparison for every step size).
-///     sample_size (default 200): number of points to downsample to
-///     contour_type (default [PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall])
-///     smooth (default true): bool smooth after alignment with 3-point moving average
-///     postprocessing (default true): adjusts spacing within/between geometry/geometries to have equal offsets
+/// Parameters
+/// ----------
+/// input_data_a : PyInputData
+///     Diastolic REST input data.
+/// input_data_b : PyInputData
+///     Systolic REST input data.
+/// input_data_c : PyInputData
+///     Diastolic STRESS input data.
+/// input_data_d : PyInputData
+///     Systolic STRESS input data.
+/// label : str, optional
+///     Label used for output filenames.  Default is ``"full"``.
+/// diastole : bool, optional
+///     Whether to process the diastolic phase.  Default is ``True``.
+/// step_rotation_deg : float, optional
+///     Rotation step in degrees.  Default is ``0.5``.
+/// range_rotation_deg : float, optional
+///     Rotation search range (±) in degrees.  Default is ``90.0``.
+/// image_center : tuple of float, optional
+///     Image center ``(x, y)`` in mm.  Default is ``(4.5, 4.5)``.
+/// radius : float, optional
+///     Catheter radius in mm.  Default is ``0.5``.
+/// n_points : int, optional
+///     Number of catheter points.  Default is ``20``.
+/// write_obj : bool, optional
+///     Whether to write OBJ files.  Default is ``True``.
+/// watertight : bool, optional
+///     Whether to write a watertight or shell mesh.  Default is ``True``.
+/// output_path_a : str, optional
+///     Output directory for REST results.  Default is ``"output/rest"``.
+/// output_path_b : str, optional
+///     Output directory for STRESS results.  Default is ``"output/stress"``.
+/// output_path_c : str, optional
+///     Output directory for DIASTOLE results.  Default is
+///     ``"output/diastole"``.
+/// output_path_d : str, optional
+///     Output directory for SYSTOLE results.  Default is
+///     ``"output/systole"``.
+/// interpolation_steps : int, optional
+///     Number of interpolation steps between phases.  Default is ``28``.
+/// bruteforce : bool, optional
+///     Whether to use brute-force alignment.  Default is ``False``.
+/// sample_size : int, optional
+///     Number of points to downsample to.  Default is ``200``.
+/// contour_types : list of PyContourType, optional
+///     Contour types to export.  Default is
+///     ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
+/// smooth : bool, optional
+///     Whether to smooth frames after alignment.  Default is ``True``.
+/// postprocessing : bool, optional
+///     Whether to equalise spacing within/between geometries.  Default is
+///     ``True``.
 ///
-/// Returns:
-///     A ``PyGeometryPair`` for rest, stress, diastole, systole.
-///     A 4-tuple of ``Vec<id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y>``
-///     for (diastole logs, systole logs, diastole stress logs, systole stress logs).
-///
-/// Raises:
-///     **RuntimeError** if any Rust‑side processing fails.
-///
-/// Example
+/// Returns
 /// -------
+/// rest : PyGeometryPair
+///     Aligned geometry pair for the REST condition.
+/// stress : PyGeometryPair
+///     Aligned geometry pair for the STRESS condition.
+/// diastole : PyGeometryPair
+///     Aligned geometry pair for the diastolic phase.
+/// systole : PyGeometryPair
+///     Aligned geometry pair for the systolic phase.
+/// logs : tuple of list
+///     4-tuple of alignment logs ``(logs_a, logs_b, logs_c, logs_d)``;
+///     each entry is a list of
+///     ``(id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y)``.
+///
+/// Raises
+/// ------
+/// RuntimeError
+///     If any Rust-side processing fails.
+///
+/// Examples
+/// --------
 ///
 /// .. code-block:: python
 ///
 ///    import multimodars as mm
-///    # Assume you have four PyGeometry objects from earlier:
 ///    rest, stress, dia, sys, _ = mm.from_array_full(
 ///        rest_dia, rest_sys, stress_dia, stress_sys,
 ///        steps_best_rotation=0.1,
@@ -763,9 +952,11 @@ pub fn from_array_full(
     ))
 }
 
-/// Processes two geometries in parallel.
+/// Process two ``PyInputData`` pairs in parallel, aligning frames within each pair independently.
 ///
-/// Pipeline:
+/// Accepts pre-loaded data for REST (diastole + systole) and STRESS
+/// (diastole + systole), aligns each pair independently, and writes
+/// interpolated OBJ meshes.
 ///
 /// .. code-block:: text
 ///
@@ -775,35 +966,71 @@ pub fn from_array_full(
 ///        ▼                         ▼
 ///    systole                   systole
 ///
-/// Args:
-///     input_data_a: Input ``PyInputData`` at e.g diastole for REST.  
-///     input_data_b: Input ``PyInputData`` at e.g. systole for REST.  
-///     input_data_c: Input ``PyInputData`` at e.g. diastole for STRESS.  
-///     input_data_d: Input ``PyInputData`` at e.g. systole for STRESS.  
-///     step_rotation_deg (default 0.5°): Rotation step in degree.
-///     range_rotation_deg (default 90°): Rotation (+/-) range in degree, for 90° total range 180°.
-///     write_obj (default True): Wether to write OBJ files.
-///     watertight (default True): Wether to write shell or watertight mesh to OBJ.
-///     output_path_a (default "output/rest"): Output directory for e.g. REST results.  
-///     output_path_b (default "output/stress"): Output directory for e.g. STRESS results.  
-///     interpolation_steps (default 28): Number of interpolation steps between phases.  
-///     bruteforce (default False): Wether to use bruteforce alignment (comparison for every step size).
-///     sample_size (default 200) number of points to downsample to
-///     contour_type (default [PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall])
-///     smooth (default true): bool smooth after alignment with 3-point moving average
-///     postprocessing (default true): adjusts spacing within/between geometry/geometries to have equal offsets
+/// Parameters
+/// ----------
+/// input_data_a : PyInputData
+///     Diastolic REST input data.
+/// input_data_b : PyInputData
+///     Systolic REST input data.
+/// input_data_c : PyInputData
+///     Diastolic STRESS input data.
+/// input_data_d : PyInputData
+///     Systolic STRESS input data.
+/// label : str, optional
+///     Label used for output filenames.  Default is ``"double_pair"``.
+/// diastole : bool, optional
+///     Whether to process the diastolic phase.  Default is ``True``.
+/// step_rotation_deg : float, optional
+///     Rotation step in degrees.  Default is ``0.5``.
+/// range_rotation_deg : float, optional
+///     Rotation search range (±) in degrees.  Default is ``90.0``.
+/// image_center : tuple of float, optional
+///     Image center ``(x, y)`` in mm.  Default is ``(4.5, 4.5)``.
+/// radius : float, optional
+///     Catheter radius in mm.  Default is ``0.5``.
+/// n_points : int, optional
+///     Number of catheter points.  Default is ``20``.
+/// write_obj : bool, optional
+///     Whether to write OBJ files.  Default is ``True``.
+/// watertight : bool, optional
+///     Whether to write a watertight or shell mesh.  Default is ``True``.
+/// output_path_a : str, optional
+///     Output directory for REST results.  Default is ``"output/rest"``.
+/// output_path_b : str, optional
+///     Output directory for STRESS results.  Default is ``"output/stress"``.
+/// interpolation_steps : int, optional
+///     Number of interpolation steps between phases.  Default is ``28``.
+/// bruteforce : bool, optional
+///     Whether to use brute-force alignment.  Default is ``False``.
+/// sample_size : int, optional
+///     Number of points to downsample to.  Default is ``200``.
+/// contour_types : list of PyContourType, optional
+///     Contour types to export.  Default is
+///     ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
+/// smooth : bool, optional
+///     Whether to smooth frames after alignment.  Default is ``True``.
+/// postprocessing : bool, optional
+///     Whether to equalise spacing within/between geometries.  Default is
+///     ``True``.
 ///
-/// Returns:
-///     A tuple ``(rest_pair, stress_pair)`` of type ``(PyGeometryPair, PyGeometryPair)``,
-///     containing the interpolated diastole/systole geometries for REST and STRESS.
-///     A 4-tuple of ``Vec<id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y>``
-///     for (diastole logs, systole logs, diastole stress logs, systole stress logs).
-///
-/// Raises:
-///     **RuntimeError** if any Rust‑side processing fails.
-///
-/// Example
+/// Returns
 /// -------
+/// rest : PyGeometryPair
+///     Aligned geometry pair for the REST condition.
+/// stress : PyGeometryPair
+///     Aligned geometry pair for the STRESS condition.
+/// logs : tuple of list
+///     4-tuple of alignment logs ``(logs_a, logs_b, logs_c, logs_d)``;
+///     each entry is a list of
+///     ``(id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y)``.
+///
+/// Raises
+/// ------
+/// RuntimeError
+///     If any Rust-side processing fails.
+///
+/// Examples
+/// --------
 ///
 /// .. code-block:: python
 ///
@@ -932,39 +1159,73 @@ pub fn from_array_doublepair(
     ))
 }
 
-/// Interpolate between two existing ``PyGeometry`` objects (diastole and systole)
-/// and return a ``PyGeometryPair`` containing both phases.
+/// Align and interpolate between two ``PyInputData`` objects (diastole and systole).
+///
+/// Accepts pre-loaded diastolic and systolic input data, aligns frames
+/// between the two phases, and returns a single ``PyGeometryPair``.
 ///
 /// .. code-block:: text
 ///
 ///    Geometry pipeline:
 ///      diastole ──▶ systole
 ///
-/// Args:
-///     input_data_a: Input ``PyInputData`` at e.g diastole for REST.  
-///     input_data_b: Input ``PyInputData`` at e.g. systole for REST.  
-///     step_rotation_deg (default 0.5°): Rotation step in degree
-///     range_rotation_deg (default 90°): Rotation (+/-) range in degree, for 90° total range 180°
-///     write_obj (default True): Wether to write OBJ files.
-///     watertight (default True): Wether to write shell or watertight mesh to OBJ.
-///     output_path: Directory path to write interpolated output files.  
-///     interpolation_steps (default 28): Number of steps to interpolate between diastole and systole.  
-///     bruteforce (default False): Wether to use bruteforce alignment (comparison for every step size).
-///     sample_size (default 200): number of points to downsample to
-///     contour_type (default [PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall])
-///     smooth (default true): bool smooth after alignment with 3-point moving average
-///     postprocessing (default true): adjusts spacing within/between geometry/geometries to have equal offsets
+/// Parameters
+/// ----------
+/// input_data_a : PyInputData
+///     Diastolic input data.
+/// input_data_b : PyInputData
+///     Systolic input data.
+/// label : str, optional
+///     Label used for output filenames.  Default is ``"single_pair"``.
+/// diastole : bool, optional
+///     Whether to process the diastolic phase.  Default is ``True``.
+/// step_rotation_deg : float, optional
+///     Rotation step in degrees.  Default is ``0.5``.
+/// range_rotation_deg : float, optional
+///     Rotation search range (±) in degrees.  Default is ``90.0``.
+/// image_center : tuple of float, optional
+///     Image center ``(x, y)`` in mm.  Default is ``(4.5, 4.5)``.
+/// radius : float, optional
+///     Catheter radius in mm.  Default is ``0.5``.
+/// n_points : int, optional
+///     Number of catheter points.  Default is ``20``.
+/// write_obj : bool, optional
+///     Whether to write OBJ files.  Default is ``True``.
+/// watertight : bool, optional
+///     Whether to write a watertight or shell mesh.  Default is ``True``.
+/// output_path : str, optional
+///     Directory path to write interpolated output files.  Default is
+///     ``"output/singlepair"``.
+/// interpolation_steps : int, optional
+///     Number of interpolation steps between phases.  Default is ``28``.
+/// bruteforce : bool, optional
+///     Whether to use brute-force alignment.  Default is ``False``.
+/// sample_size : int, optional
+///     Number of points to downsample to.  Default is ``200``.
+/// contour_types : list of PyContourType, optional
+///     Contour types to export.  Default is
+///     ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
+/// smooth : bool, optional
+///     Whether to smooth frames after alignment.  Default is ``True``.
+/// postprocessing : bool, optional
+///     Whether to equalise spacing within/between geometries.  Default is
+///     ``True``.
 ///
-/// Returns:
-///     A ``PyGeometryPair`` tuple containing the diastole and systole geometries with interpolation applied.
-///     A 2-tuple of ``Vec<id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y>``
-///     for (diastole logs, systole logs).
-///
-/// Raises:
-///     **RuntimeError** if the underlying Rust function fails.
-///
-/// Example
+/// Returns
 /// -------
+/// pair : PyGeometryPair
+///     Aligned diastole/systole geometry pair with interpolation applied.
+/// logs : tuple of list
+///     2-tuple of alignment logs ``(logs_a, logs_b)``; each entry is a list
+///     of ``(id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y)``.
+///
+/// Raises
+/// ------
+/// RuntimeError
+///     If the underlying Rust function fails.
+///
+/// Examples
+/// --------
 ///
 /// .. code-block:: python
 ///
@@ -1065,45 +1326,75 @@ pub fn from_array_singlepair(
     Ok((py_geom_ab, (py_logs_a, py_logs_b)))
 }
 
-/// Processes a single geometry (either diastole or systole) from an IVUS CSV file.
+/// Process a single geometry phase from a ``PyInputData`` object.
+///
+/// Accepts pre-loaded input data for one cardiac phase, aligns frames
+/// within the geometry, and optionally writes OBJ output.
 ///
 /// .. code-block:: text
 ///
 ///    Rest/Stress pipeline (choose phase via `diastole` flag):
 ///      e.g. diastole
 ///
-/// Args:
-///     input_data_a: Input ``PyInputData`` at e.g diastole for REST. ///     step_rotation_deg (default 0.5°): Rotation step in degree
-///     range_rotation_deg (default 90°): Rotation (+/-) range in degree, for 90° total range 180°
-///     diastole (default true): If true, process the diastole phase; otherwise systole.  
-///     image_center (default (4.5mm, 4.5mm)): (x, y) center for processing.  
-///     radius (default: 0.5mm): Radius around center to consider for catheter.  
-///     n_points (default 20): number of points for catheter, more points stronger influence of image center.
-///     write_obj (default true): Wether to write OBJ files.
-///     watertight (default true): Wether to write shell or watertight mesh to OBJ.
-///     output_path (default "output/single"): Where to write the processed geometry.  
-///     bruteforce (default false): Wether to use bruteforce alignment (comparison for every step size).
-///     sample_size (default 200): number of points to downsample to
-///     contour_type (default [PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall])
-///     smooth (default true): bool smooth after alignment with 3-point moving average
-///     postprocessing (default true): adjusts spacing within/between geometry/geometries to have equal offsets
+/// Parameters
+/// ----------
+/// input_data : PyInputData
+///     Input data for a single cardiac phase (e.g. diastolic REST).
+/// label : str, optional
+///     Label used for output filenames.  Default is ``"single"``.
+/// diastole : bool, optional
+///     When ``True`` process the diastolic phase; otherwise systole.
+///     Default is ``True``.
+/// step_rotation_deg : float, optional
+///     Rotation step in degrees.  Default is ``0.5``.
+/// range_rotation_deg : float, optional
+///     Rotation search range (±) in degrees.  Default is ``90.0``.
+/// image_center : tuple of float, optional
+///     Image center ``(x, y)`` in mm.  Default is ``(4.5, 4.5)``.
+/// radius : float, optional
+///     Catheter radius in mm.  Default is ``0.5``.
+/// n_points : int, optional
+///     Number of catheter points.  Default is ``20``.
+/// write_obj : bool, optional
+///     Whether to write OBJ files.  Default is ``False``.
+/// watertight : bool, optional
+///     Whether to write a watertight or shell mesh.  Default is ``True``.
+/// output_path : str, optional
+///     Directory path to write the processed geometry.  Default is
+///     ``"output/single"``.
+/// bruteforce : bool, optional
+///     Whether to use brute-force alignment.  Default is ``False``.
+/// sample_size : int, optional
+///     Number of points to downsample to.  Default is ``200``.
+/// contour_types : list of PyContourType, optional
+///     Contour types to export.  Default is
+///     ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
+/// smooth : bool, optional
+///     Whether to smooth frames after alignment.  Default is ``True``.
 ///
-/// Returns:
-///     A ``PyGeometry`` containing the processed contour for the chosen phase.
-///     A ``Vec<id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y>``.
+/// Returns
+/// -------
+/// geom : PyGeometry
+///     Processed geometry for the chosen phase.
+/// logs : list
+///     Alignment log entries; each entry is
+///     ``(id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y)``.
 ///
-/// Raises:
-///     **RuntimeError** if the underlying Rust pipeline fails.
+/// Raises
+/// ------
+/// RuntimeError
+///     If the underlying Rust pipeline fails.
 ///
-/// Example:
-///     >>> import multimodars as mm
-///     >>> geom, _ = mm.from_array_single(
-///     ...     input_data,
-///     ...     steps_best_rotation=0.5,
-///     ...     range_rotation_rad=90,
-///     ...     output_path="out/single",
-///     ...     diastole=False
-///     ... )
+/// Examples
+/// --------
+/// >>> import multimodars as mm
+/// >>> geom, _ = mm.from_array_single(
+/// ...     input_data,
+/// ...     steps_best_rotation=0.5,
+/// ...     range_rotation_rad=90,
+/// ...     output_path="out/single",
+/// ...     diastole=False
+/// ... )
 ///
 #[pyfunction]
 #[pyo3(signature = (
@@ -1174,20 +1465,30 @@ pub fn from_array_single(
 
 /// Convert a ``PyGeometry`` object into one or more OBJ files and write them to disk.
 ///
-/// This function takes a Python-exposed geometry (``PyGeometry``), converts it into the
-/// corresponding Rust geometry, and writes the specified contour types as OBJ meshes
-/// without UV coordinates. Each contour type is written to its own file, with a
-/// corresponding MTL material file.
+/// Converts the Python-exposed geometry into the corresponding Rust
+/// representation and writes the specified contour types as OBJ meshes
+/// without UV coordinates.  Each contour type is written to its own file
+/// together with a corresponding MTL material file.
 ///
-/// Args:
-///     geometry: Input ``PyGeometry`` instance containing the mesh data.
-///     output_path: Directory path where the OBJ and MTL files will be written.
-///     watertight (default True): Whether to write shell or watertight mesh to OBJ.
-///     contour_types (default [Lumen, Catheter, Wall]): Which contour types to export.
-///     filename_prefix (default ""): Optional prefix for all filenames.
+/// Parameters
+/// ----------
+/// geometry : PyGeometry
+///     Input geometry instance containing the mesh data.
+/// output_path : str
+///     Directory path where the OBJ and MTL files will be written.
+/// watertight : bool, optional
+///     Whether to write a watertight or shell mesh.  Default is ``True``.
+/// contour_types : list of PyContourType, optional
+///     Contour types to export.  Default is
+///     ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
+/// filename_prefix : str, optional
+///     Optional prefix prepended to all output filenames.  Default is
+///     ``""``.
 ///
-/// Returns:
-///     Returns a `PyRuntimeError` if any of the underlying file writes fail.
+/// Raises
+/// ------
+/// RuntimeError
+///     If any of the underlying file writes fail.
 #[pyfunction]
 #[pyo3(
     signature = (

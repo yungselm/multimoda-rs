@@ -13,27 +13,35 @@ use crate::ccta::adjust_mesh::scale_coronary::{
 use crate::intravascular::binding::classes::{PyCenterline, PyFrame};
 use pyo3::prelude::*;
 
-/// Finds points that are bounded by spheres along a coronary vessel centerline.
+/// Find points bounded by spheres along a coronary vessel centerline.
+///
 /// This version accepts and returns simple Python lists of tuples.
 ///
-/// Args:
-///     centerline: PyCenterline object representing the vessel centerline
-///     points: List of (x, y, z) tuples containing point coordinates
-///     radius: Radius of the bounding spheres around each centerline point
+/// Parameters
+/// ----------
+/// centerline : PyCenterline
+///     Centerline of the vessel.
+/// points : list of tuple of float
+///     List of ``(x, y, z)`` point coordinates.
+/// radius : float
+///     Radius of the bounding spheres around each centerline point.
 ///
-/// Returns:
-///     List of (x, y, z) tuples: Filtered points that are inside the bounding spheres
+/// Returns
+/// -------
+/// bounded_points : list of tuple of float
+///     Filtered points that are inside the bounding spheres.
 ///
-/// Example:
-///     >>> import multimodars as mm
-///     >>>
-///     >>> # Load centerline and point cloud  
-///     >>> centerline = mm.load_centerline("path/to/centerline.json")
-///     >>> points = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), ...]  # or mesh.vertices.tolist()
-///     >>>
-///     >>> # Find points bounded by centerline spheres
-///     >>> bounded_points = mm.find_centerline_bounded_points(centerline, points, 2.0)
-///     >>> print(f"Found {len(bounded_points)} points inside vessel bounds")
+/// Examples
+/// --------
+/// >>> import multimodars as mm
+/// >>>
+/// >>> # Load centerline and point cloud
+/// >>> centerline = mm.load_centerline("path/to/centerline.json")
+/// >>> points = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), ...]  # or mesh.vertices.tolist()
+/// >>>
+/// >>> # Find points bounded by centerline spheres
+/// >>> bounded_points = mm.find_centerline_bounded_points(centerline, points, 2.0)
+/// >>> print(f"Found {len(bounded_points)} points inside vessel bounds")
 #[pyfunction]
 pub fn find_centerline_bounded_points_simple(
     centerline: PyCenterline,
@@ -48,21 +56,31 @@ pub fn find_centerline_bounded_points_simple(
     Ok(result_points)
 }
 
-/// Remove occluded / overlapping points seen from the centerline.
+/// Remove occluded points using ray-triangle intersection testing.
 ///
-/// For each centerline point, we keep at most one point per angular bin
-/// (quantized theta/phi) — the point with the smallest radius (closest to the center).
+/// For each centerline point, candidate points that are occluded by the mesh
+/// surface (represented as triangles) are removed via ray casting.  This is
+/// intended to run as a cleanup step after bounding-sphere selection.
 ///
-/// Args:
-///     `centerline`: centerline used as vantage points
-///     `points`: candidate points (e.g., output of find_centerline_bounded_points)
-///     `radius`: same bounding sphere radius used to gather points (we only consider points within this distance from each cl point)
-///     `angular_tolerance_deg`: angular bin size in degrees (e.g. 8.0). Smaller = stricter separation.
+/// Parameters
+/// ----------
+/// centerline_coronary : PyCenterline
+///     Centerline of the coronary vessel used as vantage points.
+/// centerline_aorta : PyCenterline
+///     Centerline of the aorta used as additional vantage points.
+/// range_coronary : int
+///     Number of centerline points considered around each coronary point.
+/// points : list of tuple of float
+///     Candidate ``(x, y, z)`` points, e.g. output of
+///     :func:`find_centerline_bounded_points`.
+/// faces : list of tuple of tuple of float
+///     Triangle faces as ``((v0x, v0y, v0z), (v1x, v1y, v1z), (v2x, v2y, v2z))``
+///     triples representing the mesh surface.
 ///
-/// Returns:
-///    Filtered list of points with occluded points removed.
-///
-/// This is intended to run as a separate cleanup step after your existing selection.
+/// Returns
+/// -------
+/// filtered_points : list of tuple of float
+///     Points with occluded entries removed.
 #[pyfunction]
 pub fn remove_occluded_points_ray_triangle(
     centerline_coronary: PyCenterline,
@@ -90,15 +108,22 @@ pub fn remove_occluded_points_ray_triangle(
     Ok(result)
 }
 
-/// Adjust centerline-based diameter by morphing points outward or inward.
+/// Adjust the vessel diameter by morphing points outward or inward along the centerline.
 ///
-/// Args:
-///     centerline: PyCenterline object representing the vessel centerline
-///     points: List of (x, y, z) tuples containing point coordinates
-///     diameter_adjustment_mm: Amount to adjust diameter (positive to expand, negative to contract)
+/// Parameters
+/// ----------
+/// centerline : PyCenterline
+///     Centerline of the vessel.
+/// points : list of tuple of float
+///     Input ``(x, y, z)`` point coordinates.
+/// diameter_adjustment_mm : float
+///     Amount to adjust the diameter in mm.  Positive values expand the
+///     vessel; negative values contract it.
 ///
-/// Returns:
-///     List of (x, y, z) tuples: Adjusted point coordinates
+/// Returns
+/// -------
+/// adjusted_points : list of tuple of float
+///     Morphed ``(x, y, z)`` point coordinates.
 #[pyfunction]
 pub fn adjust_diameter_centerline_morphing_simple(
     centerline: PyCenterline,
@@ -113,21 +138,29 @@ pub fn adjust_diameter_centerline_morphing_simple(
     Ok(result_points)
 }
 
-/// Find points that are within a specified frame region along the centerline.
+/// Find points that lie within a specified frame region along the centerline.
 ///
-/// Args:
-///     centerline: PyCenterline object representing the vessel centerline
-///     start_frame: PyFrame
-///     end_frame: PyFrame
-///     points: list of (x, y, z) tuples containing point coordinates
+/// Parameters
+/// ----------
+/// centerline : PyCenterline
+///     Centerline of the vessel.
+/// frames : list of PyFrame
+///     Frames defining the region of interest along the centerline.
+/// points : list of tuple of float
+///     Input ``(x, y, z)`` point coordinates.
 ///
-/// Returns:
-///     Tuple of three lists of (x, y, z) tuples:
-///         - proximal_points: points before the start frame region
-///         - distal_points: points after the end frame region
-///         - points_between: points within the frame region
-/// Example:
-///     >>> import multimodars as mm
+/// Returns
+/// -------
+/// proximal_points : list of tuple of float
+///     Points located before the first frame in the region.
+/// distal_points : list of tuple of float
+///     Points located after the last frame in the region.
+/// points_between : list of tuple of float
+///     Points located within the frame region.
+///
+/// Examples
+/// --------
+/// >>> import multimodars as mm
 #[pyfunction]
 pub fn find_points_by_cl_region(
     centerline: PyCenterline,
@@ -149,18 +182,29 @@ pub fn find_points_by_cl_region(
     Ok(result_points)
 }
 
-/// Clean up points based on their neigbouring points and a list of reference points.
+/// Clean up outlier points based on neighbourhood density and reference points.
 ///
-/// Args:
-///     points_to_cleanup: list of (x, y, z) tuples containing point coordinates
-///     reference_points: list of (x, y, z) tuples containing point coordinates
+/// Parameters
+/// ----------
+/// points_to_cleanup : list of tuple of float
+///     Input ``(x, y, z)`` points to be filtered.
+/// reference_points : list of tuple of float
+///     Reference ``(x, y, z)`` points used to absorb outliers.
+/// neighborhood_radius : float
+///     Radius used to determine the neighbourhood for density estimation.
+/// min_neigbor_ratio : float
+///     Minimum fraction of neighbours required to keep a point.
 ///
-/// Returns:
-///     Tuple of two lists of (x, y, z) tuples:
-///         - cleaned_points: removed outliers
-///         - reference_points: added outliers
-/// Example:
-///     >>> import multimodars as mm
+/// Returns
+/// -------
+/// cleaned_points : list of tuple of float
+///     Points from ``points_to_cleanup`` with outliers removed.
+/// augmented_reference : list of tuple of float
+///     Reference points augmented with the removed outliers.
+///
+/// Examples
+/// --------
+/// >>> import multimodars as mm
 #[pyfunction]
 pub fn clean_outlier_points(
     points_to_cleanup: Vec<(f64, f64, f64)>,
@@ -178,20 +222,33 @@ pub fn clean_outlier_points(
     Ok(result_points)
 }
 
-/// Find optimal scaling for distal and proximal region.
+/// Find the optimal diameter scaling for the proximal and distal regions.
 ///
-/// Args:
-///     anomalous_points: list of (x, y, z) tuples containing proximal frame coordinates
-///     n_proximal: number of proximal points to compare
-///     n_distal: number of distal points to compare
-///     centerline: PyCenterline for the region
-///     proximal_reference: list of (x, y, z) with the region of interest points from the CCTA mesh
-///     distal_reference: list of (x, y, z) tuples containing distal frame coordinates
+/// Parameters
+/// ----------
+/// anomalous_points : list of tuple of float
+///     ``(x, y, z)`` coordinates of the anomalous vessel region.
+/// n_proximal : int
+///     Number of proximal points used for comparison.
+/// n_distal : int
+///     Number of distal points used for comparison.
+/// centerline : PyCenterline
+///     Centerline of the vessel region.
+/// proximal_reference : list of tuple of float
+///     Reference ``(x, y, z)`` points from the CCTA mesh for the proximal region.
+/// distal_reference : list of tuple of float
+///     Reference ``(x, y, z)`` points for the distal region.
 ///
-/// Returns:
-///     Tuple of two floats with proximal and distal scaling distance
-/// Example:
-///     >>> import multimodars as mm
+/// Returns
+/// -------
+/// proximal_scaling : float
+///     Optimal scaling distance for the proximal region.
+/// distal_scaling : float
+///     Optimal scaling distance for the distal region.
+///
+/// Examples
+/// --------
+/// >>> import multimodars as mm
 #[pyfunction]
 pub fn find_proximal_distal_scaling(
     anomalous_points: Vec<(f64, f64, f64)>,
@@ -213,17 +270,25 @@ pub fn find_proximal_distal_scaling(
     Ok((prox_dist, distal_dist))
 }
 
-/// Find optimal scaling for aorta using intramural region.
+/// Find the optimal aortic diameter scaling using the intramural region.
 ///
-/// Args:
-///     intramural_points: list of (x, y, z) tuples containing proximal frame coordinates
-///     reference_opints: list of (x, y, z) with the region of interest points from the CCTA mesh
-///     centerline: PyCenterline of the aorta
+/// Parameters
+/// ----------
+/// intramural_points : list of tuple of float
+///     ``(x, y, z)`` coordinates of the intramural vessel region.
+/// reference_points : list of tuple of float
+///     Reference ``(x, y, z)`` points from the CCTA mesh.
+/// centerline : PyCenterline
+///     Centerline of the aorta.
 ///
-/// Returns:
-///     float with best scaling distance
-/// Example:
-///     >>> import multimodars as mm
+/// Returns
+/// -------
+/// scaling : float
+///     Optimal scaling distance for the aortic region.
+///
+/// Examples
+/// --------
+/// >>> import multimodars as mm
 #[pyfunction]
 pub fn find_aortic_scaling(
     intramural_points: Vec<(f64, f64, f64)>,
