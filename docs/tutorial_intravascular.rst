@@ -99,51 +99,27 @@ For a single pair (e.g. only diastole/systole of one state) the simpler function
 
 2. Workflow numpy arrays and Finetuning
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-Here the geometry can be directly built from arrays with the same structure as before.
-``numpy_to_geometry`` accepts ``lumen_arr``, ``eem_arr``, ``catheter_arr``, ``wall_arr`` and ``reference_arr``:
-
-.. code-block:: python
-
-    before_geom = mm.numpy_to_geometry(
-        lumen_arr=before_arr,
-        eem_arr=np.array([]),
-        catheter_arr=np.array([]),
-        wall_arr=np.array([]),
-        reference_arr=before_ref,
-    )
-
-    after_geom = mm.numpy_to_geometry(
-        lumen_arr=after_arr,
-        eem_arr=np.array([]),
-        catheter_arr=np.array([]),
-        wall_arr=np.array([]),
-        reference_arr=after_ref,
-    )
-
 To call ``from_array_singlepair`` the contours and reference point from the geometry must be packed into
-a ``PyInputData`` object first:
+a ``PyInputData`` object first. We assume that ``before_arr``, ``after_arr``, ``before_ref`` and ``after_arr``
+are all Numpy arrays with N(4, ) shape:
 
 .. code-block:: python
 
-    contours = []
-    ref_pt = None
-    for frame in before_geom.frames:
-        contours.append(frame.lumen)
-        if frame.reference_point is not None:
-            ref_pt = frame.reference_point
-
-    before_input_data = mm.PyInputData(
-        lumen=contours,
-        eem=None,
-        calcification=None,
-        sidebranch=None,
+    before_input_data = mm.numpy_to_inputdata(
+        lumen_arr=before_arr,
+        ref_point=before_ref,
         record=None,
-        ref_point=ref_pt,
         diastole=True,
-        label="before"
+        label="prestent",
     )
 
-    # repeat for after_input_data ...
+    after_input_data = mm.numpy_to_inputdata(
+        lumen_arr=after_arr,
+        ref_point=after_ref,
+        record=None,
+        diastole=True,
+        label="poststent",
+    )
 
     pair, _ = mm.from_array_singlepair(
         input_data_a=before_input_data,
