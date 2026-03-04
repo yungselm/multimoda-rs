@@ -40,7 +40,7 @@
 - Centerline Alignment
   - Align registered geometries onto a vessel centerline using three‑point or manual rotation methods.
 - Geometry Utilities
-  - Smooth contours, reorder frames to minimize spatial and index jumps, compute areas and elliptic ratios, find farthest/closest point pairs, and more.
+  - Smooth contours, compute areas and elliptic ratios, find farthest/closest point pairs, and more.
 
 ## Installation
 

@@ -17,6 +17,68 @@ def label_geometry(
     tolerance_float: float = 1e-6,
     control_plot: bool = True,
 ) -> Tuple[dict, Tuple[any, any, any]]:
+    """Label CCTA mesh vertices as aorta, RCA, or LCA using centerline-based region detection.
+
+    Loads a 3-D surface mesh and three centerlines (aorta, RCA, LCA), then assigns
+    each mesh vertex to one of the anatomical regions.  For anomalous vessels an
+    additional occlusion-removal step uses ray-triangle intersection to strip
+    intramural segments, followed by adjacency-map reclassification to clean up
+    isolated mis-labelled vertices. Herfore, a ray is cast from every aorta point to the centerline
+    points of the anomalous section and if 3 faces are intersected by the ray the points from
+    the first face must correspond to the intramural section.
+
+    Parameters
+    ----------
+    path_ccta_geometry : Path or str
+        Path to the CCTA surface mesh file (any format supported by
+        :func:`multimodars.io.read_geometrical.read_mesh`).
+    path_centerline_aorta : Path or str
+        Path to a CSV file containing the aortic centerline (comma-delimited,
+        columns: x, y, z, …).
+    path_centerline_rca : Path or str
+        Path to a CSV file containing the RCA centerline.
+    path_centerline_lca : Path or str
+        Path to a CSV file containing the LCA centerline.
+    anomalous_rca : bool, optional
+        When ``True`` applies ray-triangle occlusion removal to the RCA region
+        to handle anomalous (intramural) courses.  Default is ``False``.
+    anomalous_lca : bool, optional
+        When ``True`` applies ray-triangle occlusion removal to the LCA region.
+        Default is ``False``.
+    n_points_intramural : int, optional
+        Number of coronary centerline points examined during occlusion removal
+        (the intramural segment length).  Default is ``120``.
+    bounding_sphere_radius_mm : float, optional
+        Radius in millimetres of the rolling sphere used to collect candidate
+        mesh vertices around each centerline point.  Default is ``3.0``.
+    tolerance_float : float, optional
+        Distance tolerance used when matching mesh vertices to points during
+        face lookup.  Default is ``1e-6``.
+    control_plot : bool, optional
+        When ``True`` opens an interactive 3-D scene showing the labelled mesh
+        after processing.  Default is ``True``.
+
+    Returns
+    -------
+    results : dict
+        Dictionary with keys:
+
+        * ``"mesh"`` - the original :class:`trimesh.Trimesh` object.
+        * ``"aorta_points"`` - list of ``(x, y, z)`` tuples for aortic vertices.
+        * ``"rca_points"`` - list of ``(x, y, z)`` tuples for RCA vertices.
+        * ``"lca_points"`` - list of ``(x, y, z)`` tuples for LCA vertices.
+        * ``"rca_removed_points"`` - RCA vertices removed by occlusion detection.
+        * ``"lca_removed_points"`` - LCA vertices removed by occlusion detection.
+
+    centerlines : tuple
+        A 3-tuple ``(cl_rca, cl_lca, cl_aorta)`` of ``PyCenterline`` objects.
+
+    Raises
+    ------
+    Exception
+        Re-raises any error that occurs while reading the mesh or centerline
+        files, after printing a descriptive message.
+    """
     import multimodars as mm
     from multimodars.io.read_geometrical import read_mesh
 
@@ -154,8 +216,28 @@ def label_geometry(
 def _prepare_faces_for_rust(
     mesh: trimesh.Trimesh, *, points=None, face_indices=None, tol: float = 1e-6
 ):
-    """
-    Convert selected mesh faces to the Rust-friendly format.
+    """Convert selected mesh faces to the Rust-friendly format.
+
+    Parameters
+    ----------
+    mesh : trimesh.Trimesh
+        Source mesh whose faces will be converted.
+    points : list of tuple, optional
+        If provided and *face_indices* is ``None``, the face indices are
+        derived by finding which faces reference vertices closest to these
+        points (within *tol*).
+    face_indices : list of int, optional
+        Explicit list of face indices to convert.  When given, *points* is
+        ignored.  When both are ``None``, all faces are converted.
+    tol : float, optional
+        Distance tolerance for vertex matching when using *points*.
+        Default is ``1e-6``.
+
+    Returns
+    -------
+    list of tuple
+        Each element is a ``((x0,y0,z0), (x1,y1,z1), (x2,y2,z2))`` triple of
+        vertex coordinate tuples suitable for passing to Rust functions.
     """
     if face_indices is None:
         if points is not None:
@@ -174,9 +256,28 @@ def _prepare_faces_for_rust(
 
 
 def _find_faces_for_points(mesh: trimesh.Trimesh, points_found, tol: float = 1e-6):
-    """
-    For each point in points_found find nearest vertex on `mesh` (within tol)
-    and return the list of face indices that reference any of those vertices.
+    """Find face indices whose vertices are within tolerance of the given points.
+
+    For each point in *points_found* the nearest mesh vertex is located.
+    Any face that references at least one of those vertices is included in the
+    result.
+
+    Parameters
+    ----------
+    mesh : trimesh.Trimesh
+        Mesh to search.
+    points_found : array-like of shape (N, 3)
+        Query points.
+    tol : float, optional
+        Maximum distance from a query point to a mesh vertex for the vertex to
+        be considered a match.  Default is ``1e-6``.
+
+    Returns
+    -------
+    list of int
+        Indices into ``mesh.faces`` for all faces that contain at least one
+        matched vertex.  Returns an empty list when *points_found* is empty or
+        no vertices fall within *tol*.
     """
     points_array = np.asarray(points_found, dtype=np.float64)
     if points_array.size == 0:
@@ -207,7 +308,23 @@ def _find_faces_for_points(mesh: trimesh.Trimesh, points_found, tol: float = 1e-
 
 
 def _find_aortic_points(all_vertices, rca_points, lca_points):
-    """Find aortic points (points not in RCA or LCA)."""
+    """Return mesh vertices that belong neither to the RCA nor to the LCA region.
+
+    Parameters
+    ----------
+    all_vertices : array-like of shape (N, 3)
+        All vertex coordinates of the mesh.
+    rca_points : list of tuple
+        Vertices classified as RCA.
+    lca_points : list of tuple
+        Vertices classified as LCA.
+
+    Returns
+    -------
+    list of tuple
+        ``(x, y, z)`` tuples for vertices not present in *rca_points* or
+        *lca_points*.
+    """
     rca_set = set(rca_points)
     lca_set = set(lca_points)
     aortic_points = [
@@ -219,6 +336,29 @@ def _find_aortic_points(all_vertices, rca_points, lca_points):
 
 
 def _final_reclassification(results: dict) -> dict:
+    """Refine vertex labels using a mesh adjacency map.
+
+    Applies two adjacency-based correction rules:
+
+    * **Logic A** - An isolated RCA or LCA vertex (no same-label neighbours) is
+      re-assigned to the aorta class.
+    * **Logic B** - A vertex that was removed by occlusion detection but whose
+      neighbours are predominantly (> 70 %) the corresponding coronary label is
+      restored to that label.
+
+    Parameters
+    ----------
+    results : dict
+        Dictionary produced by :func:`label_geometry` containing keys
+        ``"mesh"``, ``"rca_points"``, ``"lca_points"``,
+        ``"rca_removed_points"``, and ``"lca_removed_points"``.
+
+    Returns
+    -------
+    dict
+        Updated dictionary with the same keys as *results* plus
+        ``"aorta_points"``, with corrected point lists.
+    """
     mesh = results["mesh"]
     n_vertices = len(mesh.vertices)
 
@@ -310,11 +450,35 @@ def _labeled_geometry_plot(
     cl_lca=None,
     cl_aorta=None,
 ):
-    """Create a debug plot showing different point classifications with colors:
-    - Yellow: Aortic points (points not in RCA or LCA)
-    - Blue: RCA coronary points
-    - Green: LCA coronary points
-    - Red: Removed points (from occlusion removal)
+    """Open an interactive 3-D scene visualising the labelled mesh regions.
+
+    Colour coding:
+
+    * **Yellow** - aortic vertices (not in RCA or LCA).
+    * **Blue** - RCA coronary vertices.
+    * **Green** - LCA coronary vertices.
+    * **Red** - vertices removed by occlusion detection.
+    * **Dark blue / dark green / dark yellow** - RCA / LCA / aorta centerline
+      points.
+
+    Parameters
+    ----------
+    mesh : trimesh.Trimesh
+        The surface mesh displayed semi-transparently in the background.
+    rca_points : list of tuple
+        RCA vertex coordinates.
+    lca_points : list of tuple
+        LCA vertex coordinates.
+    rca_removed_points : list of tuple
+        RCA vertices that were flagged by occlusion removal.
+    lca_removed_points : list of tuple
+        LCA vertices that were flagged by occlusion removal.
+    cl_rca : PyCenterline, optional
+        RCA centerline object; plotted when provided.
+    cl_lca : PyCenterline, optional
+        LCA centerline object; plotted when provided.
+    cl_aorta : PyCenterline, optional
+        Aorta centerline object; plotted when provided.
     """
     from trimesh.points import PointCloud
 
@@ -407,6 +571,37 @@ def label_anomalous_region(
     results_key: str = "rca_points",
     debug_plot: bool = False,
 ) -> dict:
+    """Partition a coronary region into proximal, anomalous, and distal sub-regions.
+
+    Uses the intravascular imaging frames to determine where along the centerline
+    the anomalous (intramural) segment begins and ends, then tags each mesh
+    vertex accordingly.
+
+    Parameters
+    ----------
+    centerline : PyCenterline
+        Centerline of the coronary vessel of interest.
+    frames : list of PyFrame
+        Ordered list of intravascular imaging frames for the vessel.
+    results : dict
+        Labelled results dictionary (e.g. from :func:`label_geometry`).
+        Must contain the key specified by *results_key*.
+    results_key : str, optional
+        Key in *results* whose point list is partitioned.
+        Default is ``"rca_points"``.
+    debug_plot : bool, optional
+        When ``True`` opens an interactive visualisation of the three
+        sub-regions.  Default is ``False``.
+
+    Returns
+    -------
+    dict
+        The input *results* dictionary extended with three new keys:
+
+        * ``"proximal_points"`` - vertices proximal to the anomalous segment.
+        * ``"distal_points"`` - vertices distal to the anomalous segment.
+        * ``"anomalous_points"`` - vertices within the anomalous segment.
+    """
     import multimodars as mm
     import numpy as np
     import trimesh
@@ -431,7 +626,24 @@ def label_anomalous_region(
 
 
 def _plot_anomalous_region(results, centerline):
-    """Plot the results."""
+    """Open an interactive 3-D scene visualising the anomalous region sub-classes.
+
+    Colour coding:
+
+    * **Blue** - proximal points.
+    * **Red** - anomalous (intramural) points.
+    * **Green** - distal points.
+    * **Yellow** - centerline points.
+
+    Parameters
+    ----------
+    results : dict
+        Dictionary containing ``"proximal_points"``, ``"anomalous_points"``,
+        and ``"distal_points"`` keys (as returned by
+        :func:`label_anomalous_region`).
+    centerline : PyCenterline or None
+        Centerline to overlay; skipped when ``None``.
+    """
     import numpy as np
     import trimesh
     from trimesh.points import PointCloud
@@ -478,17 +690,34 @@ def scale_region_centerline_morphing(
     centerline,
     diameter_adjustment_mm: float,
 ) -> trimesh.Trimesh:
-    """
-    Scale a specific region of the mesh using centerline-based radial morphing.
+    """Scale a mesh region radially around its centerline.
 
-    Args:
-        mesh: The original mesh
-        region_points: List of points defining the region to scale
-        centerline: PyCenterline object for the region
-        diameter_adjustment_mm: Amount to adjust diameter (positive to expand, negative to contract)
+    Each vertex in *region_points* is displaced along the direction from the
+    nearest centerline point outward (positive *diameter_adjustment_mm*) or
+    inward (negative).
 
-    Returns:
-        A new mesh with the region scaled using centerline-based morphing
+    Parameters
+    ----------
+    mesh : trimesh.Trimesh
+        The original mesh.  A copy is returned; the input is not modified.
+    region_points : list of tuple
+        ``(x, y, z)`` coordinates of the vertices to be scaled.  Only vertices
+        present in this list are moved.
+    centerline : PyCenterline
+        Centerline of the vessel region used as the morphing axis.
+    diameter_adjustment_mm : float
+        Diameter change in millimetres.  Positive values expand the lumen;
+        negative values contract it.
+
+    Returns
+    -------
+    trimesh.Trimesh
+        A new mesh with the selected region scaled.
+
+    Warns
+    -----
+    If no vertices matching *region_points* are found in the mesh, a warning
+    is printed and the unmodified copy is returned.
     """
     import multimodars as mm
 
@@ -537,7 +766,25 @@ def compare_centerline_scaling(
     region_points: list,
     centerline=None,
 ):
-    """Create a visualization comparing original vs centerline-scaled mesh."""
+    """Open three interactive scenes comparing the original and scaled meshes.
+
+    * **Scene 1** - original mesh with the scaled region highlighted in red and
+      the centerline in cyan.
+    * **Scene 2** - scaled mesh with the same overlays.
+    * **Scene 3** - side-by-side view: original (blue-ish) shifted 150 mm along
+      the x-axis next to the scaled mesh (orange-ish).
+
+    Parameters
+    ----------
+    original_mesh : trimesh.Trimesh
+        Mesh before scaling.
+    scaled_mesh : trimesh.Trimesh
+        Mesh after scaling (e.g. from :func:`scale_region_centerline_morphing`).
+    region_points : list of tuple
+        ``(x, y, z)`` coordinates of the scaled region, highlighted in red.
+    centerline : PyCenterline, optional
+        Centerline overlaid in cyan; skipped when ``None``.
+    """
     from trimesh.points import PointCloud
 
     print(f"\n=== CENTERLINE SCALING COMPARISON ===")
@@ -605,6 +852,37 @@ def find_distal_and_proximal_scaling(
     prox_range: int = 2,
     debug_plot: bool = True,
 ) -> Tuple[float, float]:
+    """Compute the optimal radial scaling factors for the proximal and distal segments.
+
+    Collects lumen wall points from the first *prox_range* and last *dist_range*
+    imaging frames as reference geometry, then calls the Rust
+    ``find_proximal_distal_scaling`` routine to find the scaling factors that
+    best match the anomalous segment endpoints to those references.
+
+    Parameters
+    ----------
+    frames : list of PyFrame
+        Ordered intravascular imaging frames for the vessel.
+    centerline : PyCenterline
+        Centerline of the vessel region.
+    results : dict
+        Labelled results dictionary containing ``"anomalous_points"``.
+    dist_range : int, optional
+        Number of frames from the distal end used as the distal reference.
+        Default is ``3``.
+    prox_range : int, optional
+        Number of frames from the proximal end used as the proximal reference.
+        Default is ``2``.
+    debug_plot : bool, optional
+        Reserved for future use; currently unused.  Default is ``True``.
+
+    Returns
+    -------
+    prox_scaling : float
+        Optimal radial scaling factor for the proximal segment.
+    dist_scaling : float
+        Optimal radial scaling factor for the distal segment.
+    """
     import multimodars as mm
 
     frame_points_dist = [
@@ -637,6 +915,30 @@ def find_aorta_scaling(
     results: dict,
     debug_plot: bool = True,
 ) -> float:
+    """Compute the optimal radial scaling factor for the aortic wall region.
+
+    Extracts reconstructed wall points from the intravascular frames (using
+    ``aortic_thickness`` and the ``"Wall"`` extras) as a reference, then calls
+    the Rust ``find_aortic_scaling`` routine to determine the factor that best
+    aligns the removed RCA points to those references.
+
+    Parameters
+    ----------
+    frames : list of PyFrame
+        Intravascular imaging frames containing ``aortic_thickness`` and
+        ``extras["Wall"]`` data.
+    centerline : PyCenterline
+        Centerline of the aortic region.
+    results : dict
+        Labelled results dictionary containing ``"rca_removed_points"``.
+    debug_plot : bool, optional
+        Reserved for future use; currently unused.  Default is ``True``.
+
+    Returns
+    -------
+    float
+        Optimal radial scaling factor for the aortic segment.
+    """
     import multimodars as mm
 
     reference_points = _extract_wall_from_frames(frames)
@@ -653,6 +955,31 @@ def find_aorta_scaling(
 
 
 def _extract_wall_from_frames(frames) -> List[Tuple[float, float, float]]:
+    """Extract reconstructed aortic wall points from intravascular imaging frames.
+
+    Iterates over *frames* looking for those that carry ``aortic_thickness``
+    data.  From each such frame, a subset of the ``"Wall"`` extra contour points
+    is sampled (indices in the range ``[step, 2*step)`` where
+    ``step = n_points // 8``) to represent the aortic wall.
+
+    Parameters
+    ----------
+    frames : list of PyFrame
+        Intravascular imaging frames.  Frames without ``aortic_thickness`` are
+        skipped.
+
+    Returns
+    -------
+    list of tuple
+        ``(x, y, z)`` tuples of wall sample points from the last eligible frame.
+        Returns ``None`` if no eligible frame is found.
+
+    Raises
+    ------
+    ValueError
+        If an eligible frame is missing the ``"Wall"`` extras entry or that
+        entry is empty.
+    """
     # since geometries always have the same number of points per frame we can take one frame
     n_points = len(frames[0].lumen.points)
     step = n_points // 8

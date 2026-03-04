@@ -7,10 +7,6 @@ from ._converters import (
     numpy_to_centerline,
     numpy_to_inputdata,
 )
-from ._wrappers import (
-    from_file,
-    from_array,
-)
 from .io import read_geometrical, write_geometries
 from .ccta.adjust_ccta import (
     label_geometry,
@@ -37,9 +33,6 @@ __all__ = [
     "numpy_to_geometry",
     "numpy_to_centerline",
     "numpy_to_inputdata",
-    # Wrapper functions
-    "from_file",
-    "from_array",
     # Processing functions (from Rust)
     "from_file_full",
     "from_file_doublepair",
@@ -54,6 +47,9 @@ __all__ = [
     "to_obj",
     "find_centerline_bounded_points_simple",
     "find_proximal_distal_scaling",
+    # I/O
+    "read_geometrical",
+    "write_geometries",
     # CCTA module
     "label_geometry",
     "label_anomalous_region",

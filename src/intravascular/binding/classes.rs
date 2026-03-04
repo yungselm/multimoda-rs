@@ -300,7 +300,6 @@ impl PyContourPoint {
         }
     }
 
-    // Add a __repr__ method
     fn __repr__(&self) -> String {
         format!(
             "Point(frame_id={}, pt_id={}, x={:.2}, y={:.2}, z={:.2}, aortic={})",
@@ -308,7 +307,6 @@ impl PyContourPoint {
         )
     }
 
-    // Add a __str__ method for human-readable output
     fn __str__(&self) -> String {
         format!(
             "Point(frame_id={}, pt_id={}, x={:.2}, y={:.2}, z={:.2}, aortic={})",
@@ -344,7 +342,6 @@ impl From<&ContourPoint> for PyContourPoint {
     }
 }
 
-// Conversion from Python type to Rust type
 impl From<&PyContourPoint> for ContourPoint {
     fn from(point: &PyContourPoint) -> Self {
         Self {
@@ -358,7 +355,6 @@ impl From<&PyContourPoint> for ContourPoint {
     }
 }
 
-// Implement conversion for references
 impl From<&&ContourPoint> for PyContourPoint {
     fn from(point: &&ContourPoint) -> Self {
         (*point).into()
