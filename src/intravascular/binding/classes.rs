@@ -254,7 +254,6 @@ impl From<&InputData> for PyInputData {
     }
 }
 
-// Also provide owned conversion if you want to convert InputData (by value)
 impl From<InputData> for PyInputData {
     fn from(input: InputData) -> Self {
         PyInputData::from(&input)
@@ -356,7 +355,6 @@ impl PyContourPoint {
     }
 }
 
-// Conversion from Rust type to Python type
 impl From<&ContourPoint> for PyContourPoint {
     fn from(point: &ContourPoint) -> Self {
         Self {
@@ -763,7 +761,6 @@ impl PyContourType {
     }
 }
 
-// Conversion between Rust ContourType and PyContourType
 impl From<ContourType> for PyContourType {
     fn from(contour_type: ContourType) -> Self {
         match contour_type {
@@ -790,26 +787,10 @@ impl From<PyContourType> for ContourType {
     }
 }
 
-// Also implement for references
 impl From<&PyContourType> for ContourType {
     fn from(py_contour_type: &PyContourType) -> Self {
         (*py_contour_type).into()
     }
-}
-
-#[pyclass]
-#[derive(Debug, Clone)]
-pub struct PyFrame {
-    #[pyo3(get, set)]
-    pub id: u32,
-    #[pyo3(get, set)]
-    pub centroid: (f64, f64, f64),
-    #[pyo3(get, set)]
-    pub lumen: PyContour,
-    #[pyo3(get, set)]
-    pub extras: HashMap<String, PyContour>, // String keys for ContourType
-    #[pyo3(get, set)]
-    pub reference_point: Option<PyContourPoint>,
 }
 
 /// Python representation of a single intravascular imaging frame.
@@ -837,6 +818,21 @@ pub struct PyFrame {
 /// ...     extras={"Eem": eem_contour},
 /// ...     reference_point=ref_point
 /// ... )
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct PyFrame {
+    #[pyo3(get, set)]
+    pub id: u32,
+    #[pyo3(get, set)]
+    pub centroid: (f64, f64, f64),
+    #[pyo3(get, set)]
+    pub lumen: PyContour,
+    #[pyo3(get, set)]
+    pub extras: HashMap<String, PyContour>, // String keys for ContourType
+    #[pyo3(get, set)]
+    pub reference_point: Option<PyContourPoint>,
+}
+
 #[pymethods]
 impl PyFrame {
     #[new]
@@ -868,6 +864,17 @@ impl PyFrame {
         )
     }
 
+    /// Rotate all contour points in the frame by the given angle.
+    ///
+    /// Parameters
+    /// ----------
+    /// angle_deg : float
+    ///     Rotation angle in degrees.
+    ///
+    /// Returns
+    /// -------
+    /// frame : PyFrame
+    ///     New frame with all contours rotated.
     #[pyo3(signature = (angle_deg))]
     pub fn rotate(&self, angle_deg: f64) -> PyResult<PyFrame> {
         let mut rust_frame = self.to_rust_frame()?;
@@ -875,6 +882,21 @@ impl PyFrame {
         Ok(PyFrame::from(&rust_frame))
     }
 
+    /// Translate all contour points in the frame by the given offsets.
+    ///
+    /// Parameters
+    /// ----------
+    /// dx : float
+    ///     Translation along the x-axis in mm.
+    /// dy : float
+    ///     Translation along the y-axis in mm.
+    /// dz : float
+    ///     Translation along the z-axis in mm.
+    ///
+    /// Returns
+    /// -------
+    /// frame : PyFrame
+    ///     New frame with all contours translated.
     #[pyo3(signature = (dx, dy, dz))]
     pub fn translate(&self, dx: f64, dy: f64, dz: f64) -> PyResult<PyFrame> {
         let mut rust_frame = self.to_rust_frame()?;
@@ -882,6 +904,12 @@ impl PyFrame {
         Ok(PyFrame::from(&rust_frame))
     }
 
+    /// Sort contour points in the frame by their angular position.
+    ///
+    /// Returns
+    /// -------
+    /// frame : PyFrame
+    ///     New frame with contour points sorted angularly.
     pub fn sort_frame_points(&self) -> PyResult<PyFrame> {
         let mut rust_frame = self.to_rust_frame()?;
         rust_frame.sort_frame_points();
@@ -1247,7 +1275,6 @@ impl PyGeometryPair {
         }
     }
 
-    // Add a __repr__ method
     fn __repr__(&self) -> String {
         format!(
             "GeometryPair {} (diastolic: {} frames, systolic: {} frames)",
@@ -1478,7 +1505,6 @@ impl From<&CenterlinePoint> for PyCenterlinePoint {
     }
 }
 
-// Conversion from PyCenterlinePoint to Rust CenterlinePoint
 impl From<&PyCenterlinePoint> for CenterlinePoint {
     fn from(p: &PyCenterlinePoint) -> Self {
         CenterlinePoint {
@@ -1596,7 +1622,6 @@ impl PyCenterline {
     }
 }
 
-// Conversion from Python to Rust for entire back-and-forth
 impl From<&Centerline> for PyCenterline {
     fn from(cl: &Centerline) -> Self {
         let points = cl.points.iter().map(|p| p.into()).collect();
@@ -1604,7 +1629,6 @@ impl From<&Centerline> for PyCenterline {
     }
 }
 
-// Conversion from Python to Rust for entire back-and-forth
 impl From<Centerline> for PyCenterline {
     fn from(cl: Centerline) -> Self {
         let points = cl.points.iter().map(|p| p.into()).collect();
@@ -1652,7 +1676,6 @@ pub struct PyRecord {
 
 #[pymethods]
 impl PyRecord {
-    /// Python constructor
     #[new]
     fn new(
         frame: u32,
@@ -1676,7 +1699,6 @@ impl PyRecord {
     }
 }
 
-// Convert PyRecord → Record (for passing into your Rust core)
 impl PyRecord {
     pub fn to_rust_record(&self) -> Record {
         Record {
@@ -1688,7 +1710,6 @@ impl PyRecord {
     }
 }
 
-// Convert &Record → PyRecord (for returning back out)
 impl From<&Record> for PyRecord {
     fn from(r: &Record) -> Self {
         PyRecord {
@@ -1700,7 +1721,6 @@ impl From<&Record> for PyRecord {
     }
 }
 
-// Conversion from Rust to Python types
 impl From<&Geometry> for PyGeometry {
     fn from(geometry: &Geometry) -> Self {
         PyGeometry {
