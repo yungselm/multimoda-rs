@@ -188,9 +188,9 @@ def _input_data_to_numpy(input_data) -> dict[str, Union[np.ndarray, List[str], b
 
 def numpy_to_inputdata(
     lumen_arr: np.ndarray,
-    record: Optional[np.ndarray],
     ref_point: np.ndarray,
     diastole: bool,
+    record: Optional[np.ndarray] = None,
     eem_arr: Optional[np.ndarray] = None,
     calcification: Optional[np.ndarray] = None,
     sidebranch: Optional[np.ndarray] = None,
