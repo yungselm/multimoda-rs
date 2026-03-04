@@ -9,4 +9,4 @@ PyGeometryPair
    :undoc-members:
    :show-inheritance:
    :inherited-members:
-   :exclude-members: geom_a, geom_b
+   :exclude-members: geom_a, geom_b, label

@@ -9,4 +9,4 @@ PyContour
    :undoc-members:
    :show-inheritance:
    :inherited-members:
-   :exclude-members: id, original_frame, points, centroid, kind
+   :exclude-members: id, original_frame, points, centroid, kind, aortic_thickness, pulmonary_thickness
