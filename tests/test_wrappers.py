@@ -1,15 +1,14 @@
 # tests/test_wrappers.py
 import pytest
 import numpy as np
-from multimodars._wrappers import from_file, from_array
+from multimodars import from_file_single, from_array_single
 
 
 def test_basic_wrapper_functionality(sample_rest_dia_arr, tmp_path):
     """Test basic wrapper functionality with simplified expectations"""
     try:
         # Test single mode with basic parameters
-        result = from_array(
-            mode="single",
+        result = from_array_single(
             input_data=sample_rest_dia_arr,
             label="test",
             diastole=True,
@@ -35,8 +34,7 @@ def test_basic_wrapper_functionality(sample_rest_dia_arr, tmp_path):
 def test_file_wrapper_basic(tmp_path):
     """Test file-based wrapper with simplified expectations"""
     try:
-        result = from_file(
-            mode="single",
+        result = from_file_single(
             input_path="data/fixtures/idealized_geometry",
             label="test",
             diastole=True,
