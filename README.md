@@ -75,7 +75,8 @@ maturin develop
 
 
 ## Quickstart Example
-Download the example data from the latest release and place it in your working directory. A Jupyter Notebook with step-by-step examples is available at `examples/ivus_to_centerline.ipynb`.
+Download the [example.zip](https://github.com/yungselm/multimoda-rs/releases/tag/v0.2.2) from the latest release and place it in your working directory. A Jupyter Notebook with step-by-step examples is available at `examples/ivus_to_centerline.ipynb`.
+Provided you extraced examples to the project root you can just copy paste the below example to ensure proper setup:
 
 ```python
 import multimodars as mm
@@ -83,8 +84,8 @@ import numpy as np
 
 # IVUS pullbacks: full alignment of rest/stress & diastole/systole
 rest, stress, dia, sys, _ = mm.from_file_full(
-    input_path_a="ivus_rest",
-    input_path_b="ivus_stress",
+    input_path_a="examples/data/ivus_rest",
+    input_path_b="examples/data/ivus_stress",
     label="full",
     step_rotation_deg=0.1,
     range_rotation_deg=90,
@@ -97,12 +98,12 @@ rest, stress, dia, sys, _ = mm.from_file_full(
     output_path_b="output/stress",
     output_path_c="output/diastole",
     output_path_d="output/systole",
-    interpolation_steps=28,
+    interpolation_steps=0,
     contour_types=[mm.PyContourType.Lumen, mm.PyContourType.Catheter, mm.PyContourType.Wall]
 )
 
 # Load raw centerline and align geometry onto it
-cl_raw = np.genfromtxt("centerline_raw.csv", delimiter=",")
+cl_raw = np.genfromtxt("examples/data/centerline_raw.csv", delimiter=",")
 centerline = mm.numpy_to_centerline(cl_raw)
 
 aligned_pair, cl_resampled = mm.align_three_point(
