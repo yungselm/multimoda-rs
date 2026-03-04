@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import math
 
 def centerline_to_obj(cl, filename: str) -> None:

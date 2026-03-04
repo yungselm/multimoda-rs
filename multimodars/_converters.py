@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 from typing import Union, Tuple, List, Optional, Dict
 import multimodars as mm

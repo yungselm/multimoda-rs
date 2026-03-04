@@ -1,7 +1,7 @@
 ## Pull Request Checklist
 
 - [ ] I have added tests that prove the fix is effective or that the feature works.
-- [ ] I ran `pytest` (or `nox` / your CI command) locally and all tests pass.
+- [ ] I ran `pytest` locally and all tests pass.
 - [ ] I updated `CHANGELOG.md` (or NEWS) and bumped the package version if applicable.
 - [ ] I added/updated documentation (README, docstrings, or docs).
 - [ ] This PR is linked to an issue: fixes #<issue-number> (if applicable).
