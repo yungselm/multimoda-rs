@@ -1219,6 +1219,110 @@ impl PyGeometry {
         rust_geometry.center_to_contour(rust_contour_type);
         Ok(PyGeometry::from(&rust_geometry))
     }
+
+    /// Return the frame whose centroid z-coordinate is closest to ``z``.
+    ///
+    /// Parameters
+    /// ----------
+    /// z : float
+    ///     Target z position in the same units as the geometry.
+    ///
+    /// Returns
+    /// -------
+    /// PyFrame
+    ///     Frame with centroid z nearest to ``z``.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the geometry contains no frames.
+    ///
+    /// Examples
+    /// --------
+    /// >>> frame = geometry.get_frame_at_z(34.8)
+    #[pyo3(signature = (z))]
+    pub fn get_frame_at_z(&self, z: f64) -> PyResult<PyFrame> {
+        self.frames
+            .iter()
+            .min_by(|a, b| {
+                let da = (a.centroid.2 - z).abs();
+                let db = (b.centroid.2 - z).abs();
+                da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .cloned()
+            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("geometry contains no frames"))
+    }
+
+    /// Return the frame at position ``index``.
+    ///
+    /// Parameters
+    /// ----------
+    /// index : int
+    ///     Zero-based index of the frame to retrieve.
+    ///
+    /// Returns
+    /// -------
+    /// PyFrame
+    ///     Frame at the given index.
+    ///
+    /// Raises
+    /// ------
+    /// IndexError
+    ///     If ``index`` is out of range.
+    ///
+    /// Examples
+    /// --------
+    /// >>> frame = geometry.get_frame_at_index(0)
+    #[pyo3(signature = (index))]
+    pub fn get_frame_at_index(&self, index: usize) -> PyResult<PyFrame> {
+        self.frames
+            .get(index)
+            .cloned()
+            .ok_or_else(|| pyo3::exceptions::PyIndexError::new_err(format!(
+                "index {} out of range for geometry with {} frames",
+                index,
+                self.frames.len()
+            )))
+    }
+
+    /// Return a new geometry with the frame at ``index`` replaced by ``frame``.
+    ///
+    /// Parameters
+    /// ----------
+    /// index : int
+    ///     Zero-based index of the frame to replace.
+    /// frame : PyFrame
+    ///     Replacement frame.
+    ///
+    /// Returns
+    /// -------
+    /// PyGeometry
+    ///     New geometry with the specified frame replaced.
+    ///
+    /// Raises
+    /// ------
+    /// IndexError
+    ///     If ``index`` is out of range.
+    ///
+    /// Examples
+    /// --------
+    /// >>> new_geom = geometry.replace_frame(5, other_frame)
+    #[pyo3(signature = (index, frame))]
+    pub fn replace_frame(&self, index: usize, frame: PyFrame) -> PyResult<PyGeometry> {
+        if index >= self.frames.len() {
+            return Err(pyo3::exceptions::PyIndexError::new_err(format!(
+                "index {} is out of range for geometry with {} frames",
+                index,
+                self.frames.len()
+            )));
+        }
+        let mut new_frames = self.frames.clone();
+        new_frames[index] = frame;
+        Ok(PyGeometry {
+            frames: new_frames,
+            label: self.label.clone(),
+        })
+    }
 }
 
 impl PyGeometry {

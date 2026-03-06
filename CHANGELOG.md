@@ -3,6 +3,21 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.3] - 2026-03-06
+
+### Added
+- Type stubs for the Rust-implemented interface (via maturin)
+- `PyFrame.get_frame_at_z`: retrieve a frame by its z position
+- `PyFrame.get_frame_at_index`: retrieve a frame by its index
+- `PyFrame.replace_frame`: replace an existing frame with another
+
+### Changed
+- CI pipeline now tests against Python 3.10 through 3.13
+- Updated documentation to reflect the current interface and Python version requirements
+- Added direct download links to example data in the README and documentation
+- Migrated to modern NumPy-style type annotations throughout the Python codebase
+- All imports are now top-level across all Python modules
+
 ## [0.2.2] - 2026-03-03
 
 ### Changed
