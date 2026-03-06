@@ -94,13 +94,13 @@ Alignment is a two-stage pipeline producing spatially and rotationally consisten
 
 - **CCTA-border adjustments:** Given the higher resolution of intravascular imaging, the aligned intravascular anatomy is treated as the anatomical ground truth. CCTA dimensions are adjusted to fit the proximal and distal ends of the vessel. For CAAs, the aorta is additionally adjusted to match the measured intramural wall.
 
-![Figure 3: Top left shows the inital labeling of the coronary arteries and aorta based on centerlines. In a second step the regions to be replaced are identified based on the aligned 3D intravascular model. In a last step the CCT proximal and distal borders can be adjusted to best match intravascular borders. \label{fig:labeling}](figures/Figure3.png){width=80%}
+![Figure 3: Top left shows the initial labeling of the coronary arteries and aorta based on centerlines. In a second step the regions to be replaced are identified based on the aligned 3D intravascular model. In a last step the CCT proximal and distal borders can be adjusted to best match intravascular borders. \label{fig:labeling}](figures/Figure3.png){width=80%}
 
 ## Performance and parallelisation
 
 Rust (Rayon) provides hierarchical data parallelism and SIMD-enabled coordinate transforms. Point rotations and nearest-neighbour searches parallelize across cores; independent pullbacks and frames are processed concurrently when dependencies allow. Typical production workflows downsample contours to 200–500 points/frame to balance sub-pixel accuracy and compute.
 
-Empirical performance on a 16-core CPU: an OCT pullback with 280 frames and a rotation search range of $\pm3°$ (final accuracy 0.01°) saw alignment time reduced from **$~150 s$** to **$~18 s$** with the optimized mutliscale search. 
+Empirical performance on a 16-core CPU: an OCT pullback with 280 frames and a rotation search range of $\pm3°$ (final accuracy 0.01°) saw alignment time reduced from **$~150 s$** to **$~18 s$** with the optimized multiscale search. 
 
 ![Figure 4: Multiscale intra-pullback alignment workflow (coarse-to-fine angular search and centroid propagation). \label{fig:algo}](figures/Figure4.jpg){width=80%}
 
@@ -114,7 +114,7 @@ The core is implemented in Rust and exposed to Python via PyO3; packaging uses `
 
 # AI usage disclosure
 
-No generative AI was used for architectural design or core algorithms. Generative AI was used for creating documentation docstrings, bug fixing, and minor inline code changes.
+No generative AI was used for architectural design or core algorithms. Generative AI was used for creating documentation and docstrings, bug fixing, and minor inline code changes.
 For this manuscript generative AI was only used for grammatical changes.
 
 # Acknowledgements
