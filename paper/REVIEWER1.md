@@ -67,7 +67,7 @@ I tested the examples with multimodars version 0.2.1, which is the latest versio
 - [x] The Python code uses star imports, which makes the interface opaque. For example, PyContour is explicitly exported in ``__init__.py`` but imported through a star import.
 - [x] The Python code uses imports outside the top level, which is generally discouraged.
 
-**Answer:** Thank you very much for this careful evaulation, I adusted all the modules to use only top level imports and adjusted the type annotation.
+**Answer:** Thank you very much for this careful evaulation, I adusted all the modules to use only top level imports and adjusted the type annotation. Additionally checked with which python versions it runs (>=3.10)
 
 - [x] No type stubs are included for the parts of the interface that are implemented in Rust, which makes the interface less clear and prevents type checking of code that uses the library. The authors should consider adding stubs for at least the parts of the interface that they consider to be public. This would significantly improve the user experience. See e.g. https://www.maturin.rs/project_layout.html#adding-python-type-information and https://pyo3.rs/v0.27.1/type-stub.html for more information on how to do this.
 
@@ -119,7 +119,7 @@ These sections should be added to the guidelines or removed from the TOC.
 
 - [x] The CI pipeline only tests the library against Python 3.12, and could be improved by testing with all supported Python versions.
 
-**Answer:** Thank you for this important point, since the specified numpy verison needs python >=3.8 I adjusted the pyproject.toml and the CI pipelines to match version >=3.9.
+**Answer:** Thank you for this important point, since the specified numpy verison needs python >=3.8 I adjusted the pyproject.toml and the CI pipelines to match version >=3.10.
 
 ## Paper
 ### Authors
