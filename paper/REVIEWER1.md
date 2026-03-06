@@ -79,6 +79,8 @@ I tested the examples with multimodars version 0.2.1, which is the latest versio
 
 **Answer:** These were very helpful suggestions by the reviewer, I decided for now to remove them entirely, since error handling and so on is much easier by using the Rust bindings (e.g. from_file_full).
 
+*Removed:* io/_wrappers.py
+
 ### Contributing
 
 - [x] CONTRIBUTING.md lacks the following sections that are mentioned in the TOC: Suggesting Enhancements, Your First Code Contribution, Pull Request Process, Coding Style & Tests, Writing Documentation, Where to Get Help.
@@ -88,9 +90,13 @@ These sections should be added to the guidelines or removed from the TOC.
 
 **Answer:** Thank you very much for highlighting this important point. I added the corresponding sections to the CONTRIBUTING.md file.
 
+*Changed:* Added the corresponding sections to ``CONTRIBUTING.md``
+
 - [x] The bug issue template can be improved. It currently asks which browser is used and asks for information about the smartphone running the software, both of which are not relevant for this project.
 
 **Answer:** I thank the reviewer for highlighting this, I adjusted the report sheet accordingly.
+
+*Changed:* ``bug_report.md``
 
 ### Documentation
 
@@ -98,19 +104,29 @@ These sections should be added to the guidelines or removed from the TOC.
 
 **Answer:** I thank the reviewer for highlighting this. I changed to ``multimodars``.
 
-- [] https://multimoda-rs.readthedocs.io/en/latest/installation.html mentions a minimum Python version of 3.12, which does not match the minimum of 3.8 in pyproject.toml.
-- [] The project combines multiple docstring styles, e.g. NumPyDoc in from_file, Google-style in centerline_to_obj and no predefined style in read_mesh. The documentation would be improved by using a consistent style across the codebase.
-- [] The repository could link more clearly to the documentation by listing it in the 'About' section.
-- [] API documentation for core functions like from_file and from_array are difficult to find, because they are located in a wrappers submodule. The discoverability of these functions could be improved.
+- [x] https://multimoda-rs.readthedocs.io/en/latest/installation.html mentions a minimum Python version of 3.12, which does not match the minimum of 3.8 in pyproject.toml.
+- [x] The project combines multiple docstring styles, e.g. NumPyDoc in from_file, Google-style in centerline_to_obj and no predefined style in read_mesh. The documentation would be improved by using a consistent style across the codebase.
+
+**Answer:** I adjusted the CI pipeline to account for different python versions and have the same information about python version in pyproject.toml and documentaiton
+
+- [x] The repository could link more clearly to the documentation by listing it in the 'About' section.
+
+**Answer:** Added the link to the About section.
+
+- [x] API documentation for core functions like from_file and from_array are difficult to find, because they are located in a wrappers submodule. The discoverability of these functions could be improved.
 
 ### CI
 
-- [] The CI pipeline only tests the library against Python 3.12, and could be improved by testing with all supported Python versions.
+- [x] The CI pipeline only tests the library against Python 3.12, and could be improved by testing with all supported Python versions.
+
+**Answer:** Thank you for this important point, since the specified numpy verison needs python >=3.8 I adjusted the pyproject.toml and the CI pipelines to match version >=3.9.
 
 ## Paper
 ### Authors
 
-- [] Christoph Gräni does not seem to have contributed to the code and the role of this author is unclear.
+- [x] Christoph Gräni does not seem to have contributed to the code and the role of this author is unclear.
+
+**Answer:** Prof. Christoph Gräni was my supervisor at the time of submission and is responsible for the clinical link of the project and providing access to the needed data for this project.
 
 ### Figures
 

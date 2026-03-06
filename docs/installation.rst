@@ -14,7 +14,7 @@ Pre-built binaries are available on PyPI for installation via pip. For the pytho
 mentioned below, wheels are automatically generated for each release of ``multimodars``, allowing you to
 install multimodars without having to compile anything.
 
-* Ensure that you have ``python`` installed on your machine, version 3.12 or higher (64-bits).
+* Ensure that you have ``python`` installed on your machine, version 3.9 or higher (64-bits).
 
 * Install multimodars::
 

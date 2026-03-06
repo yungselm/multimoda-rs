@@ -6,7 +6,7 @@ authors = [
 ]
 description = "A Rust-powered cardiac multi-image modality fusion package"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 dependencies = [
     "numpy>=2.0.0,<3.0.0",
     "trimesh>=4.8.0",
