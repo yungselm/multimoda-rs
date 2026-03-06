@@ -4,6 +4,8 @@ We thank @crnh for the careful evaluation of our manuscript and codebase and the
 ### Running the examples
 I tested the examples with multimodars version 0.2.1, which is the latest version available on PyPI.
 
+**Answer:** Please not that the review is now performed on the latest version v0.2.2
+
 ### Quickstart example in Readme
 - [x] from_file should check if all required parameters are present and raise an exception with a clear message if not (the same applies to other wrapper functions). The example code does not seem to specify all required parameters.
 
@@ -71,23 +73,28 @@ I tested the examples with multimodars version 0.2.1, which is the latest versio
 
 **Answer:** I did not know this feature! The automatic generation sounds very interesting, however since it was tagged as still experimental I decided for a manual version for now, since it also does not seem to support the function-based declaration.
 
-- [] ``multimodars`` provides a unified interface to multiple functions through a set of wrapper functions, such as from_file and from_array. This is good, but any parameters that are required by the underlying functions are passed through **kwargs, which requires the user to consult the documentation of these functions to understand the meaning of the parameters. The interface could be improved in a few ways:
-    - [] The wrapper functions could explicitly document the meaning of all supported parameters;
-    - [] The wrapper functions could use a combination of TypedDict unpacking (to specify which parameters are supported) combined with overloads to specify which parameters are required for which mode. This would improve the user experience by enabling auto-completions and type checking for the parameters of the wrapper functions. More information: https://typing.python.org/en/latest/spec/callables.html#unpack-kwargs and https://typing.python.org/en/latest/spec/overload.html.
+- [x] ``multimodars`` provides a unified interface to multiple functions through a set of wrapper functions, such as from_file and from_array. This is good, but any parameters that are required by the underlying functions are passed through **kwargs, which requires the user to consult the documentation of these functions to understand the meaning of the parameters. The interface could be improved in a few ways:
+    - [x] The wrapper functions could explicitly document the meaning of all supported parameters;
+    - [x] The wrapper functions could use a combination of TypedDict unpacking (to specify which parameters are supported) combined with overloads to specify which parameters are required for which mode. This would improve the user experience by enabling auto-completions and type checking for the parameters of the wrapper functions. More information: https://typing.python.org/en/latest/spec/callables.html#unpack-kwargs and https://typing.python.org/en/latest/spec/overload.html.
+
+**Answer:** These were very helpful suggestions by the reviewer, I decided for now to remove them entirely, since error handling and so on is much easier by using the Rust bindings (e.g. from_file_full).
 
 ### Contributing
 
-- [] CONTRIBUTING.md lacks the following sections that are mentioned in the TOC: Suggesting Enhancements, Your First Code Contribution, Pull Request Process, Coding Style & Tests, Writing Documentation, Where to Get Help.
+- [x] CONTRIBUTING.md lacks the following sections that are mentioned in the TOC: Suggesting Enhancements, Your First Code Contribution, Pull Request Process, Coding Style & Tests, Writing Documentation, Where to Get Help.
 These sections should be added to the guidelines or removed from the TOC.
-- [] CONTRIBUTING.md does not mention the required code style (probably Black) and docstring style (looks like NumPyDoc).
-- [] The code style can partially be inferred from the pre-commit configuration, but it should be explicitly stated in the contributing guidelines.
+- [x] CONTRIBUTING.md does not mention the required code style (probably Black) and docstring style (looks like NumPyDoc).
+- [x] The code style can partially be inferred from the pre-commit configuration, but it should be explicitly stated in the contributing guidelines.
+
+**Answer:** Thank you very much for highlighting this important point. I added the corresponding sections to the CONTRIBUTING.md file.
+
 - [x] The bug issue template can be improved. It currently asks which browser is used and asks for information about the smartphone running the software, both of which are not relevant for this project.
 
 **Answer:** I thank the reviewer for highlighting this, I adjusted the report sheet accordingly.
 
 ### Documentation
 
-- [] The documentation contains phrases like "There are two ways you can use pyradiomics: 1. Install via pip 2. Install from source", which should be removed or updated to match the actual module name.
+- [x] The documentation contains phrases like "There are two ways you can use pyradiomics: 1. Install via pip 2. Install from source", which should be removed or updated to match the actual module name.
 
 **Answer:** I thank the reviewer for highlighting this. I changed to ``multimodars``.
 
