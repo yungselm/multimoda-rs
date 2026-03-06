@@ -4,7 +4,19 @@ import numpy as np
 import trimesh
 from pathlib import Path
 import warnings
-from typing import Optional, Tuple, List
+from trimesh.points import PointCloud
+from ..multimodars import (
+    find_centerline_bounded_points_simple,
+    remove_occluded_points_ray_triangle,
+    clean_outlier_points,
+    build_adjacency_map,
+    find_points_by_cl_region,
+    adjust_diameter_centerline_morphing_simple,
+    find_proximal_distal_scaling,
+    find_aortic_scaling,
+)
+from .._converters import numpy_to_centerline
+from ..io.read_geometrical import read_mesh
 
 
 def label_geometry(
@@ -18,7 +30,7 @@ def label_geometry(
     bounding_sphere_radius_mm: float = 3.0,
     tolerance_float: float = 1e-6,
     control_plot: bool = True,
-) -> Tuple[dict, Tuple[any, any, any]]:
+) -> tuple[dict, tuple[any, any, any]]:
     """Label CCTA mesh vertices as aorta, RCA, or LCA using centerline-based region detection.
 
     Loads a 3-D surface mesh and three centerlines (aorta, RCA, LCA), then assigns
@@ -81,9 +93,6 @@ def label_geometry(
         Re-raises any error that occurs while reading the mesh or centerline
         files, after printing a descriptive message.
     """
-    import multimodars as mm
-    from multimodars.io.read_geometrical import read_mesh
-
     try:
         mesh = read_mesh(path_ccta_geometry)
         print(f"Loaded mesh: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces")
@@ -93,7 +102,7 @@ def label_geometry(
 
     try:
         cl_aorta_raw = np.genfromtxt(path_centerline_aorta, delimiter=",")
-        cl_aorta = mm.numpy_to_centerline(cl_aorta_raw)
+        cl_aorta = numpy_to_centerline(cl_aorta_raw)
         print(f"Loaded aorta centerline: {len(cl_aorta.points)} points")
     except Exception as e:
         print(f"Error reading Aorta centerline from {path_centerline_aorta}: {e}")
@@ -101,7 +110,7 @@ def label_geometry(
 
     try:
         cl_lca_raw = np.genfromtxt(path_centerline_lca, delimiter=",")
-        cl_lca = mm.numpy_to_centerline(cl_lca_raw)
+        cl_lca = numpy_to_centerline(cl_lca_raw)
         print(f"Loaded LCA centerline: {len(cl_lca.points)} points")
     except Exception as e:
         print(f"Error reading LCA centerline from {path_centerline_lca}: {e}")
@@ -109,7 +118,7 @@ def label_geometry(
 
     try:
         cl_rca_raw = np.genfromtxt(path_centerline_rca, delimiter=",")
-        cl_rca = mm.numpy_to_centerline(cl_rca_raw)
+        cl_rca = numpy_to_centerline(cl_rca_raw)
         print(f"Loaded RCA centerline: {len(cl_rca.points)} points")
     except Exception as e:
         print(f"Error reading RCA centerline from {path_centerline_rca}: {e}")
@@ -118,10 +127,10 @@ def label_geometry(
     points_list = [tuple(vertex) for vertex in mesh.vertices.tolist()]
 
     # Rust implementation using a rolling sphere with fixed radius
-    rca_points_found = mm.find_centerline_bounded_points_simple(
+    rca_points_found = find_centerline_bounded_points_simple(
         cl_rca, points_list, bounding_sphere_radius_mm
     )
-    lca_points_found = mm.find_centerline_bounded_points_simple(
+    lca_points_found = find_centerline_bounded_points_simple(
         cl_lca, points_list, bounding_sphere_radius_mm
     )
 
@@ -138,7 +147,7 @@ def label_geometry(
         )
         # Rust implementation, that creates ray between aortic and coronary centerline, and
         # removes faces if 3 consecutive faces are "pierced" by the ray
-        final_rca_points_found = mm.remove_occluded_points_ray_triangle(
+        final_rca_points_found = remove_occluded_points_ray_triangle(
             centerline_coronary=cl_rca,
             centerline_aorta=cl_aorta,
             range_coronary=n_points_intramural,
@@ -157,7 +166,7 @@ def label_geometry(
         lca_faces_for_rust = _prepare_faces_for_rust(
             mesh, points=lca_points_found, tol=tolerance_float
         )
-        final_lca_points_found = mm.remove_occluded_points_ray_triangle(
+        final_lca_points_found = remove_occluded_points_ray_triangle(
             centerline_coronary=cl_lca,
             centerline_aorta=cl_aorta,
             range_coronary=n_points_intramural,
@@ -176,10 +185,10 @@ def label_geometry(
         mesh.vertices, final_rca_points_found, final_lca_points_found
     )
     print(f"length before: {len(final_lca_points_found)}")
-    final_lca_points, final_aortic_points = mm.clean_outlier_points(
+    final_lca_points, final_aortic_points = clean_outlier_points(
         final_lca_points_found, aortic_points, 2.0, 0.4
     )  # based on patient data, only precleaning anyways, rest done by final_reclassification
-    final_rca_points, final_aortic_points = mm.clean_outlier_points(
+    final_rca_points, final_aortic_points = clean_outlier_points(
         final_rca_points_found, final_aortic_points, 2.0, 0.4
     )
     aortic_points = _find_aortic_points(
@@ -385,9 +394,7 @@ def _final_reclassification(results: dict) -> dict:
             labels[coord_to_idx[pt]] = 4
 
     # 3. Build Adjacency Map
-    import multimodars as mm
-
-    adj_map = mm.build_adjacency_map(mesh.faces.tolist())
+    adj_map = build_adjacency_map(mesh.faces.tolist())
 
     new_labels = labels.copy()
 
@@ -482,8 +489,6 @@ def _labeled_geometry_plot(
     cl_aorta : PyCenterline, optional
         Aorta centerline object; plotted when provided.
     """
-    from trimesh.points import PointCloud
-
     all_vertices = mesh.vertices
     aortic_points = _find_aortic_points(all_vertices, rca_points, lca_points)
 
@@ -604,11 +609,7 @@ def label_anomalous_region(
         * ``"distal_points"`` - vertices distal to the anomalous segment.
         * ``"anomalous_points"`` - vertices within the anomalous segment.
     """
-    import multimodars as mm
-    import numpy as np
-    import trimesh
-
-    proximal_points, distal_points, anomalous_points = mm.find_points_by_cl_region(
+    proximal_points, distal_points, anomalous_points = find_points_by_cl_region(
         centerline=centerline,
         frames=frames,
         points=results[results_key],
@@ -646,10 +647,6 @@ def _plot_anomalous_region(results, centerline):
     centerline : PyCenterline or None
         Centerline to overlay; skipped when ``None``.
     """
-    import numpy as np
-    import trimesh
-    from trimesh.points import PointCloud
-
     print(f"\n=== ANOMALOUS REGION VISUALIZATION ===")
 
     scene_geoms = []
@@ -721,8 +718,6 @@ def scale_region_centerline_morphing(
     If no vertices matching *region_points* are found in the mesh, a warning
     is printed and the unmodified copy is returned.
     """
-    import multimodars as mm
-
     scaled_mesh = mesh.copy()
 
     region_vertex_indices = []
@@ -746,7 +741,7 @@ def scale_region_centerline_morphing(
     region_vertices_list = [
         tuple(vertex) for vertex in scaled_mesh.vertices[region_vertex_indices]
     ]
-    adjusted_points = mm.adjust_diameter_centerline_morphing_simple(
+    adjusted_points = adjust_diameter_centerline_morphing_simple(
         centerline=centerline,
         points=region_vertices_list,
         diameter_adjustment_mm=diameter_adjustment_mm,
@@ -787,8 +782,6 @@ def compare_centerline_scaling(
     centerline : PyCenterline, optional
         Centerline overlaid in cyan; skipped when ``None``.
     """
-    from trimesh.points import PointCloud
-
     print(f"\n=== CENTERLINE SCALING COMPARISON ===")
 
     region_array = np.array(region_points, dtype=np.float64)
@@ -853,7 +846,7 @@ def find_distal_and_proximal_scaling(
     dist_range: int = 3,
     prox_range: int = 2,
     debug_plot: bool = True,
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     """Compute the optimal radial scaling factors for the proximal and distal segments.
 
     Collects lumen wall points from the first *prox_range* and last *dist_range*
@@ -885,8 +878,6 @@ def find_distal_and_proximal_scaling(
     dist_scaling : float
         Optimal radial scaling factor for the distal segment.
     """
-    import multimodars as mm
-
     frame_points_dist = [
         (p.x, p.y, p.z) for f in frames[-dist_range:] for p in f.lumen.points
     ]
@@ -897,7 +888,7 @@ def find_distal_and_proximal_scaling(
     n_section: int = int(np.ceil(0.25 * n_anomalous_points))
 
     print("=== Finding best scaling factors ===")
-    prox_scaling, dist_scaling = mm.find_proximal_distal_scaling(
+    prox_scaling, dist_scaling = find_proximal_distal_scaling(
         results["anomalous_points"],
         n_section,
         n_section,
@@ -941,12 +932,10 @@ def find_aorta_scaling(
     float
         Optimal radial scaling factor for the aortic segment.
     """
-    import multimodars as mm
-
     reference_points = _extract_wall_from_frames(frames)
 
     print("=== Finding best scaling factor ===")
-    scaling = mm.find_aortic_scaling(
+    scaling = find_aortic_scaling(
         results["rca_removed_points"],  # For now work with removed points
         reference_points,
         centerline,
@@ -956,7 +945,7 @@ def find_aorta_scaling(
     return scaling
 
 
-def _extract_wall_from_frames(frames) -> List[Tuple[float, float, float]]:
+def _extract_wall_from_frames(frames) -> list[tuple[float, float, float]]:
     """Extract reconstructed aortic wall points from intravascular imaging frames.
 
     Iterates over *frames* looking for those that carry ``aortic_thickness``

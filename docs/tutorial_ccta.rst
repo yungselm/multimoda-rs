@@ -1,10 +1,14 @@
 
 .. note::
 
-    Also download the example data and jupyter notebooks from the current release from the
-    `Github Releases page <https://github.com/yungselm/multimoda-rs/releases>`_ to follow
-    this tutorial step-by-step. Specifically, the test_adjust_ccta.py allows you to also 
-    display the trimesh debug plots.
+    Also download the example data and jupyter notebooks to follow this tutorial step-by-step.
+    Use the direct download link:
+    `examples.zip <https://github.com/yungselm/multimoda-rs/releases/latest/download/examples.zip>`_
+    (SHA256: ``a8bd47f8e7e7f901254d3341cba1afd517febd39a3665f3c6cdf10925e8ccc68``)
+
+    Alternatively, browse all releases on the
+    `Github Releases page <https://github.com/yungselm/multimoda-rs/releases>`_.
+    Specifically, the test_adjust_ccta.py allows you to also display the trimesh debug plots.
 
 Tutorial - CCTA Module
 =======================

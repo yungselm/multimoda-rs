@@ -36,12 +36,12 @@ I tested the examples with multimodars version 0.2.1, which is the latest versio
 **Answer:** As stated above, the reasoning for this was to keep the repository lean for future additional data. If the reviewer does not agree with this design choice, I will adjust the repository accordingly.
 
 - [x] Cell 2 loads the example data from different file names than the names used to save them in cell 1 (e.g. dia_lumen.obj vs rest_dia.obj), which causes the code to raise an exception.
-- [x] The notebook imports the same dependencies multiple times.
+- [] The notebook imports the same dependencies multiple times.
 - [x] I was unable to run the stent example, because I could not find the required data in the repository or the releases.
 - [x] The data required for the 'Alignment from array' example is not included in the examples archive and had to be downloaded separately from the repository. The output of the example is not visualized.
 - [x] The other examples in the notebook run without errors and the visualizations are clear.
 
-**Answer:** I thank the reviewr for his patience, I updated the whole Jupyter notebook, to match the new version v0.2.2.
+**Answer:** I thank the reviewer for his patience, I updated the whole Jupyter notebook, to match the new version v0.2.2.
 
 *Changed:* Completely overworked examples Jupyter Notebook.
 
@@ -51,18 +51,25 @@ I tested the examples with multimodars version 0.2.1, which is the latest versio
 
 ### Tutorial - Intravascular Module (from the documentation)
 
-- [] It would be very helpful if the tutorial could be downloaded as a Jupyter notebook right from the documentation. The documentation states the notebook should be in the releases, but I could not find it there.
+- [x] It would be very helpful if the tutorial could be downloaded as a Jupyter notebook right from the documentation. The documentation states the notebook should be in the releases, but I could not find it there.
 
-- [] The tutorial seems to have been written for a version of the software with a different interface, e.g. arguments like rest_input_path and rest_output_path are not supported by from_file, but it does take two parameters named input_path_a and input_path_b. However, the docstring still mentions the old parameters. Furthermore, other required parameters (e.g. label) seem to be missing from the tutorial.
+**Answer:** I added the corresponding section on top of the tutorial pages in the documentation, with a direct download link to the latest example files.
+
+- [x] The tutorial seems to have been written for a version of the software with a different interface, e.g. arguments like rest_input_path and rest_output_path are not supported by from_file, but it does take two parameters named input_path_a and input_path_b. However, the docstring still mentions the old parameters. Furthermore, other required parameters (e.g. label) seem to be missing from the tutorial.
+
+**Answer:** I am very sorry about this confusion, I have now correctly updated documentation again to match the new version.
 
 ### Code style and interface design
 
-- [] The code uses old-style annotations (e.g. List instead of list, Union instead of |). These are required if supporting Python 3.8 and older, but since this Python version is EOL, the authors should consider dropping support for it and using modern type annotations.
-- [] The Python code uses star imports, which makes the interface opaque. For example, PyContour is explicitly exported in ``__init__.py`` but imported through a star import.
-- [] The Python code uses imports outside the top level, which is generally discouraged.
+- [x] The code uses old-style annotations (e.g. List instead of list, Union instead of |). These are required if supporting Python 3.8 and older, but since this Python version is EOL, the authors should consider dropping support for it and using modern type annotations.
+- [x] The Python code uses star imports, which makes the interface opaque. For example, PyContour is explicitly exported in ``__init__.py`` but imported through a star import.
+- [x] The Python code uses imports outside the top level, which is generally discouraged.
+
+**Answer:** Thank you very much for this careful evaulation, I adusted all the modules to use only top level imports and adjusted the type annotation.
+
 - [] No type stubs are included for the parts of the interface that are implemented in Rust, which makes the interface less clear and prevents type checking of code that uses the library. The authors should consider adding stubs for at least the parts of the interface that they consider to be public. This would significantly improve the user experience. See e.g. https://www.maturin.rs/project_layout.html#adding-python-type-information and https://pyo3.rs/v0.27.1/type-stub.html for more information on how to do this.
 - [] ``multimodars`` provides a unified interface to multiple functions through a set of wrapper functions, such as from_file and from_array. This is good, but any parameters that are required by the underlying functions are passed through **kwargs, which requires the user to consult the documentation of these functions to understand the meaning of the parameters. The interface could be improved in a few ways:
-    - []The wrapper functions could explicitly document the meaning of all supported parameters;
+    - [] The wrapper functions could explicitly document the meaning of all supported parameters;
     - [] The wrapper functions could use a combination of TypedDict unpacking (to specify which parameters are supported) combined with overloads to specify which parameters are required for which mode. This would improve the user experience by enabling auto-completions and type checking for the parameters of the wrapper functions. More information: https://typing.python.org/en/latest/spec/callables.html#unpack-kwargs and https://typing.python.org/en/latest/spec/overload.html.
 
 ### Contributing

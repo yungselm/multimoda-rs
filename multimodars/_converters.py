@@ -1,11 +1,19 @@
 from __future__ import annotations
 
 import numpy as np
-from typing import Union, Tuple, List, Optional, Dict
-import multimodars as mm
+from .multimodars import (
+    PyContour,
+    PyCenterline,
+    PyGeometry,
+    PyGeometryPair,
+    PyFrame,
+    PyInputData,
+    PyContourPoint,
+    PyRecord,
+)
 
 
-def to_array(generic) -> Union[np.ndarray, dict, Tuple[dict, dict]]:
+def to_array(generic) -> np.ndarray | dict | tuple[dict, dict]:
     """
     Convert various multimodars Py* objects into numpy array(s) or dictionaries of arrays.
 
@@ -25,12 +33,12 @@ def to_array(generic) -> Union[np.ndarray, dict, Tuple[dict, dict]]:
         A dictionary with keys for each contour type and "reference",
         each containing a 2D array of shape (M, 4), where M is the number of points in that layer.
 
-    Tuple[dict[str, np.ndarray], dict[str, np.ndarray]]
+    tuple[dict[str, np.ndarray], dict[str, np.ndarray]]
         For PyGeometryPair:
         A tuple of two dictionaries (one for geom_a, one for geom_b), each in the same format
         as returned for a single PyGeometry.
 
-    dict[str, Union[np.ndarray, List[str], bool]]
+    dict[str, np.ndarray | list[str] | bool]
         For PyInputData:
         A dictionary containing arrays for each contour type and metadata.
 
@@ -135,7 +143,7 @@ def _geometry_to_numpy(geom) -> dict[str, np.ndarray]:
     return result
 
 
-def _input_data_to_numpy(input_data) -> dict[str, Union[np.ndarray, List[str], bool]]:
+def _input_data_to_numpy(input_data) -> dict[str, np.ndarray | list[str] | bool]:
     """Convert PyInputData to dictionary of numpy arrays and metadata."""
     result = {
         "lumen": np.zeros((0, 4), dtype=float),
@@ -192,12 +200,12 @@ def numpy_to_inputdata(
     lumen_arr: np.ndarray,
     ref_point: np.ndarray,
     diastole: bool,
-    record: Optional[np.ndarray] = None,
-    eem_arr: Optional[np.ndarray] = None,
-    calcification: Optional[np.ndarray] = None,
-    sidebranch: Optional[np.ndarray] = None,
+    record: np.ndarray | None = None,
+    eem_arr: np.ndarray | None = None,
+    calcification: np.ndarray | None = None,
+    sidebranch: np.ndarray | None = None,
     label: str = "",
-) -> mm.PyInputData:
+) -> PyInputData:
     """
     Build a ``PyInputData`` from numpy arrays, grouping by frame index into frames.
 
@@ -232,10 +240,7 @@ def numpy_to_inputdata(
     ValueError
         If ``lumen_arr`` is empty.
     """
-    import numpy as np
-    from . import PyContour, PyContourPoint, PyRecord, PyInputData
-
-    def _to_numeric_array(arr: Optional[np.ndarray], name: str) -> np.ndarray:
+    def _to_numeric_array(arr: np.ndarray | None, name: str) -> np.ndarray:
         if arr is None:
             return np.zeros((0, 4), dtype=float)
         # Handle structured arrays with named fields
@@ -287,7 +292,7 @@ def numpy_to_inputdata(
             kind=contour_type,
         )
 
-    def _records_from_array(arr: Optional[np.ndarray]):
+    def _records_from_array(arr: np.ndarray | None):
         if arr is None:
             return None
         # If structured with fields, try to coerce to (N,4) or (N,3)
@@ -428,12 +433,12 @@ def numpy_to_inputdata(
 
 def numpy_to_geometry(
     lumen_arr: np.ndarray,
-    eem_arr: Optional[np.ndarray] = None,
-    catheter_arr: Optional[np.ndarray] = None,
-    wall_arr: Optional[np.ndarray] = None,
-    reference_arr: Optional[np.ndarray] = None,
+    eem_arr: np.ndarray | None = None,
+    catheter_arr: np.ndarray | None = None,
+    wall_arr: np.ndarray | None = None,
+    reference_arr: np.ndarray | None = None,
     label: str = "",
-) -> mm.PyGeometry:
+) -> PyGeometry:
     """
     Build a ``PyGeometry`` from numpy arrays, grouping by frame index into frames.
 
@@ -465,9 +470,7 @@ def numpy_to_geometry(
     ValueError
         If ``lumen_arr`` is empty.
     """
-    from . import PyContour, PyContourPoint, PyFrame, PyGeometry
-
-    def _to_numeric_array(arr: Optional[np.ndarray], layer_name: str) -> np.ndarray:
+    def _to_numeric_array(arr: np.ndarray | None, layer_name: str) -> np.ndarray:
         if arr is None:
             return np.zeros((0, 4), dtype=float)
         # Handle structured arrays
@@ -595,7 +598,7 @@ def numpy_to_geometry(
 def numpy_to_centerline(
     arr: np.ndarray,
     aortic: bool = False,
-) -> mm.PyCenterline:
+) -> PyCenterline:
     """
     Build a ``PyCenterline`` from a numpy array.
 
@@ -621,9 +624,6 @@ def numpy_to_centerline(
         If ``arr`` is not ``(N, 3)``, is empty, all values in a coordinate
         column are NaN, or fewer than two points remain after interpolation.
     """
-    import numpy as np
-    from . import PyContourPoint, PyCenterline
-
     arr = np.asarray(arr, dtype=float)
 
     if arr.ndim != 2 or arr.shape[1] != 3:
@@ -688,7 +688,7 @@ def array_to_pyinputdata(
     reference=None,
     diastole: bool = True,
     label: str = "",
-) -> mm.PyInputData:
+) -> PyInputData:
     """
     Create a ``PyInputData`` from either ``Py*`` objects or NumPy arrays.
 
@@ -729,12 +729,6 @@ def array_to_pyinputdata(
     ValueError
         If a layer array has an incompatible shape or unsupported format.
     """
-    from . import (
-        PyContour,
-        PyContourPoint,
-        PyRecord,
-        PyInputData,
-    )
 
     def _to_numeric_array(arr, layer_name: str):
         if arr is None:
@@ -963,7 +957,7 @@ def array_to_pyinputdata(
     return pyinput
 
 
-def geometry_to_frames_array(geometry: mm.PyGeometry) -> Dict[str, np.ndarray]:
+def geometry_to_frames_array(geometry: PyGeometry) -> dict[str, np.ndarray]:
     """
     Convert a ``PyGeometry`` to a nested dictionary of numpy arrays by frame.
 

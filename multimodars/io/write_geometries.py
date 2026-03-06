@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from ..multimodars import PyCenterline
 
 def centerline_to_obj(cl, filename: str) -> None:
     """
@@ -13,8 +14,6 @@ def centerline_to_obj(cl, filename: str) -> None:
         cl:        A PyCenterline instance
         filename:  Path to write (e.g. "my_centerline.obj")
     """
-    from ..multimodars import PyCenterline
-
     if not isinstance(cl, PyCenterline):
         raise TypeError("Expected PyCenterline instance")
     
