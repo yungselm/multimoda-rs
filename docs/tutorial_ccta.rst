@@ -4,7 +4,7 @@
     Also download the example data and jupyter notebooks to follow this tutorial step-by-step.
     Use the direct download link:
     `examples.zip <https://github.com/yungselm/multimoda-rs/releases/latest/download/examples.zip>`_
-    (SHA256: ``a8bd47f8e7e7f901254d3341cba1afd517febd39a3665f3c6cdf10925e8ccc68``)
+    (SHA256: ``d11ebc7607f43ab4571fb51c9ac9178caac57774cf5d97f4f068ace4eb070fee``)
 
     Alternatively, browse all releases on the
     `Github Releases page <https://github.com/yungselm/multimoda-rs/releases>`_.

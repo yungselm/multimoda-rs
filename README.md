@@ -75,7 +75,7 @@ maturin develop
 
 
 ## Quickstart Example
-Download [examples.zip](https://github.com/yungselm/multimoda-rs/releases/latest/download/examples.zip) (SHA256: `a8bd47f8e7e7f901254d3341cba1afd517febd39a3665f3c6cdf10925e8ccc68`) from the latest release and place it in your working directory. A Jupyter Notebook with step-by-step examples is available at `examples/ivus_to_centerline.ipynb`.
+Download [examples.zip](https://github.com/yungselm/multimoda-rs/releases/latest/download/examples.zip) (SHA256: `d11ebc7607f43ab4571fb51c9ac9178caac57774cf5d97f4f068ace4eb070fee`) from the latest release and place it in your working directory. A Jupyter Notebook with step-by-step examples is available at `examples/ivus_to_centerline.ipynb`.
 Provided you extraced examples to the project root you can just copy paste the below example to ensure proper setup:
 
 ```python

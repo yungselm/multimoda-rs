@@ -38,12 +38,12 @@ I tested the examples with multimodars version 0.2.1, which is the latest versio
 **Answer:** As stated above, the reasoning for this was to keep the repository lean for future additional data. If the reviewer does not agree with this design choice, I will adjust the repository accordingly.
 
 - [x] Cell 2 loads the example data from different file names than the names used to save them in cell 1 (e.g. dia_lumen.obj vs rest_dia.obj), which causes the code to raise an exception.
-- [] The notebook imports the same dependencies multiple times.
+- [x] The notebook imports the same dependencies multiple times.
 - [x] I was unable to run the stent example, because I could not find the required data in the repository or the releases.
 - [x] The data required for the 'Alignment from array' example is not included in the examples archive and had to be downloaded separately from the repository. The output of the example is not visualized.
 - [x] The other examples in the notebook run without errors and the visualizations are clear.
 
-**Answer:** I thank the reviewer for his patience, I updated the whole Jupyter notebook, to match the new version v0.2.2.
+**Answer:** I thank the reviewer for his patience, I updated the whole Jupyter notebook and the example data, to match the new version v0.2.2. I also added all the imports to the first two cells.
 
 *Changed:* Completely overworked examples Jupyter Notebook.
 
