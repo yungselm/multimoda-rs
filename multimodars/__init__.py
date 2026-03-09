@@ -11,6 +11,8 @@ from .multimodars import (
     PyInputData,
     PyRecord,
     PyContourType,
+)
+from ._processing import (
     from_file_full,
     from_file_doublepair,
     from_file_singlepair,
@@ -24,7 +26,6 @@ from .multimodars import (
     align_combined,
     to_obj,
     find_centerline_bounded_points_simple,
-    find_proximal_distal_scaling,
 )
 from ._converters import (
     to_array,
@@ -39,6 +40,7 @@ from .ccta.adjust_ccta import (
     scale_region_centerline_morphing,
     find_distal_and_proximal_scaling,
     find_aorta_scaling,
+    remove_anomalous_points_from_mesh,
 )
 
 __all__ = [
@@ -72,7 +74,6 @@ __all__ = [
     "align_combined",
     "to_obj",
     "find_centerline_bounded_points_simple",
-    "find_proximal_distal_scaling",
     # I/O
     "read_geometrical",
     "write_geometries",
@@ -82,4 +83,5 @@ __all__ = [
     "scale_region_centerline_morphing",
     "find_distal_and_proximal_scaling",
     "find_aorta_scaling",
+    "remove_anomalous_points_from_mesh",
 ]
