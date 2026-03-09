@@ -4,8 +4,8 @@ import numpy as np
 import trimesh
 from pathlib import Path
 import warnings
-from trimesh.points import PointCloud
 from ..multimodars import (
+    PyGeometry,
     find_centerline_bounded_points_simple,
     remove_occluded_points_ray_triangle,
     clean_outlier_points,
@@ -17,6 +17,7 @@ from ..multimodars import (
 )
 from .._converters import numpy_to_centerline
 from ..io.read_geometrical import read_mesh
+from .debug_plots import labeled_geometry_plot, plot_anomalous_region, compare_centerline_scaling
 
 
 def label_geometry(
@@ -34,7 +35,7 @@ def label_geometry(
     """Label CCTA mesh vertices as aorta, RCA, or LCA using centerline-based region detection.
 
     Loads a 3-D surface mesh and three centerlines (aorta, RCA, LCA), then assigns
-    each mesh vertex to one of the anatomical regions.  For anomalous vessels an
+    each mesh vertex to one of the anatomical regions. For anomalous vessels an
     additional occlusion-removal step uses ray-triangle intersection to strip
     intramural segments, followed by adjacency-map reclassification to clean up
     isolated mis-labelled vertices. Herfore, a ray is cast from every aorta point to the centerline
@@ -188,11 +189,15 @@ def label_geometry(
     final_lca_points, final_aortic_points = clean_outlier_points(
         final_lca_points_found, aortic_points, 2.0, 0.4
     )  # based on patient data, only precleaning anyways, rest done by final_reclassification
-    final_rca_points, final_aortic_points = clean_outlier_points(
+    final_rca_points, _aortic_points = clean_outlier_points(
         final_rca_points_found, final_aortic_points, 2.0, 0.4
     )
-    aortic_points = _find_aortic_points(
+    final_aortic_points = _find_aortic_points(
         mesh.vertices, final_rca_points, final_lca_points
+    )
+    # add also the rca_removed points and lca_removed points to aortic points
+    final_aortic_points = list(
+        set(final_aortic_points) | set(rca_removed_points) | set(lca_removed_points)
     )
     print(f"length after: {len(final_lca_points)}")
 
@@ -210,7 +215,7 @@ def label_geometry(
     new_results = _final_reclassification(results)
 
     if control_plot:
-        _labeled_geometry_plot(
+        labeled_geometry_plot(
             mesh=new_results["mesh"],
             rca_points=new_results["rca_points"],
             lca_points=new_results["lca_points"],
@@ -449,128 +454,6 @@ def _final_reclassification(results: dict) -> dict:
     return updated_results
 
 
-def _labeled_geometry_plot(
-    mesh: trimesh.Trimesh,
-    rca_points: list,
-    lca_points: list,
-    rca_removed_points: list,
-    lca_removed_points: list,
-    cl_rca=None,
-    cl_lca=None,
-    cl_aorta=None,
-):
-    """Open an interactive 3-D scene visualising the labelled mesh regions.
-
-    Colour coding:
-
-    * **Yellow** - aortic vertices (not in RCA or LCA).
-    * **Blue** - RCA coronary vertices.
-    * **Green** - LCA coronary vertices.
-    * **Red** - vertices removed by occlusion detection.
-    * **Dark blue / dark green / dark yellow** - RCA / LCA / aorta centerline
-      points.
-
-    Parameters
-    ----------
-    mesh : trimesh.Trimesh
-        The surface mesh displayed semi-transparently in the background.
-    rca_points : list of tuple
-        RCA vertex coordinates.
-    lca_points : list of tuple
-        LCA vertex coordinates.
-    rca_removed_points : list of tuple
-        RCA vertices that were flagged by occlusion removal.
-    lca_removed_points : list of tuple
-        LCA vertices that were flagged by occlusion removal.
-    cl_rca : PyCenterline, optional
-        RCA centerline object; plotted when provided.
-    cl_lca : PyCenterline, optional
-        LCA centerline object; plotted when provided.
-    cl_aorta : PyCenterline, optional
-        Aorta centerline object; plotted when provided.
-    """
-    all_vertices = mesh.vertices
-    aortic_points = _find_aortic_points(all_vertices, rca_points, lca_points)
-
-    print(f"\n=== DEBUG PLOT STATISTICS ===")
-    print(f"Total mesh vertices: {len(all_vertices)}")
-    print(f"Aortic points (yellow): {len(aortic_points)}")
-    print(f"RCA coronary points (blue): {len(rca_points)}")
-    print(f"LCA coronary points (green): {len(lca_points)}")
-    print(f"RCA reassigned points (red): {len(rca_removed_points)}")
-    print(f"LCA reassigned points (red): {len(lca_removed_points)}")
-
-    scene_geoms = []
-
-    # Add mesh (semi-transparent)
-    mesh_visual = mesh.copy()
-    mesh_visual.visual.face_colors = [200, 200, 200, 100]  # Semi-transparent gray
-    scene_geoms.append(mesh_visual)
-
-    if aortic_points:
-        aortic_array = np.array(aortic_points, dtype=np.float64)
-        aortic_colors = np.tile([255, 255, 0, 255], (len(aortic_points), 1))  # Yellow
-        scene_geoms.append(PointCloud(aortic_array, colors=aortic_colors))
-
-    if rca_points:
-        rca_array = np.array(rca_points, dtype=np.float64)
-        rca_colors = np.tile([0, 0, 255, 255], (len(rca_points), 1))  # Blue
-        scene_geoms.append(PointCloud(rca_array, colors=rca_colors))
-
-    if lca_points:
-        lca_array = np.array(lca_points, dtype=np.float64)
-        lca_colors = np.tile([0, 255, 0, 255], (len(lca_points), 1))  # Green
-        scene_geoms.append(PointCloud(lca_array, colors=lca_colors))
-
-    all_removed = rca_removed_points + lca_removed_points
-    if all_removed:
-        removed_array = np.array(all_removed, dtype=np.float64)
-        removed_colors = np.tile([255, 0, 0, 255], (len(all_removed), 1))  # Red
-        scene_geoms.append(PointCloud(removed_array, colors=removed_colors))
-
-    if cl_rca is not None:
-        rca_centerline_points = np.array(
-            [
-                (p.contour_point.x, p.contour_point.y, p.contour_point.z)
-                for p in cl_rca.points
-            ],
-            dtype=np.float64,
-        )
-        scene_geoms.append(
-            PointCloud(rca_centerline_points, colors=[0, 100, 200, 255])
-        )  # Dark blue
-
-    if cl_lca is not None:
-        lca_centerline_points = np.array(
-            [
-                (p.contour_point.x, p.contour_point.y, p.contour_point.z)
-                for p in cl_lca.points
-            ],
-            dtype=np.float64,
-        )
-        scene_geoms.append(
-            PointCloud(lca_centerline_points, colors=[0, 150, 0, 255])
-        )  # Dark green
-
-    if cl_aorta is not None:
-        aorta_centerline_points = np.array(
-            [
-                (p.contour_point.x, p.contour_point.y, p.contour_point.z)
-                for p in cl_aorta.points
-            ],
-            dtype=np.float64,
-        )
-        scene_geoms.append(
-            PointCloud(aorta_centerline_points, colors=[200, 200, 0, 255])
-        )  # Dark yellow
-
-    scene1 = trimesh.Scene(scene_geoms)
-
-    print("\nShowing Scene 1: Mesh with colored points")
-    print("Colors: Yellow=Aorta, Blue=RCA, Green=LCA, Red=Removed")
-    scene1.show()
-
-
 def label_anomalous_region(
     centerline,
     frames,
@@ -620,7 +503,7 @@ def label_anomalous_region(
     results["anomalous_points"] = anomalous_points
 
     if debug_plot:
-        _plot_anomalous_region(
+        plot_anomalous_region(
             results=results,
             centerline=centerline,
         )
@@ -628,59 +511,180 @@ def label_anomalous_region(
     return results
 
 
-def _plot_anomalous_region(results, centerline):
-    """Open an interactive 3-D scene visualising the anomalous region sub-classes.
+def remove_anomalous_points_from_mesh(results: dict) -> dict:
+    """Remove anomalous vertices from the mesh and update all point lists.
 
-    Colour coding:
-
-    * **Blue** - proximal points.
-    * **Red** - anomalous (intramural) points.
-    * **Green** - distal points.
-    * **Yellow** - centerline points.
+    Deletes the vertices listed under ``"anomalous_points"`` (and any faces
+    referencing them) from the mesh, remaps the remaining faces, and rebuilds
+    every coordinate list in *results* to reflect the new vertex indices.
 
     Parameters
     ----------
     results : dict
-        Dictionary containing ``"proximal_points"``, ``"anomalous_points"``,
-        and ``"distal_points"`` keys (as returned by
-        :func:`label_anomalous_region`).
-    centerline : PyCenterline or None
-        Centerline to overlay; skipped when ``None``.
+        Dictionary produced by :func:`label_anomalous_region` containing at
+        minimum the keys ``"mesh"`` and ``"anomalous_points"``.  Any of
+        ``"aorta_points"``, ``"rca_points"``, ``"lca_points"``,
+        ``"rca_removed_points"``, ``"lca_removed_points"``,
+        ``"proximal_points"``, and ``"distal_points"`` are also updated if
+        present.
+
+    Returns
+    -------
+    dict
+        Updated *results* dict with ``"mesh"`` replaced by the trimmed mesh
+        and all coordinate lists remapped to the new vertex set. Additionally
+        new entry with ``"boundary_points"``.
     """
-    print(f"\n=== ANOMALOUS REGION VISUALIZATION ===")
+    mesh: trimesh.Trimesh = results["mesh"]
+    anomalous_points: list = results.get("anomalous_points", [])
 
-    scene_geoms = []
+    if not anomalous_points:
+        return results
 
-    if results["proximal_points"]:
-        proximal_array = np.array(results["proximal_points"])
-        proximal_cloud = PointCloud(proximal_array, colors=[0, 0, 255, 255])  # Blue
-        scene_geoms.append(proximal_cloud)
+    # 1. Map coordinates -> vertex index
+    coord_to_idx = {tuple(coord): i for i, coord in enumerate(mesh.vertices)}
 
-    if results["anomalous_points"]:
-        anomalous_array = np.array(results["anomalous_points"])
-        anomalous_cloud = PointCloud(anomalous_array, colors=[255, 0, 0, 255])  # Red
-        scene_geoms.append(anomalous_cloud)
+    # 2. Collect vertex indices to remove
+    remove_indices = set()
+    for pt in anomalous_points:
+        idx = coord_to_idx.get(tuple(pt))
+        if idx is not None:
+            remove_indices.add(idx)
 
-    if results["distal_points"]:
-        distal_array = np.array(results["distal_points"])
-        distal_cloud = PointCloud(distal_array, colors=[0, 255, 0, 255])  # Green
-        scene_geoms.append(distal_cloud)
+    if not remove_indices:
+        return results
 
-    if centerline is not None:
-        centerline_points = np.array(
-            [
-                (p.contour_point.x, p.contour_point.y, p.contour_point.z)
-                for p in centerline.points
-            ],
-            dtype=np.float64,
-        )
-        centerline_cloud = PointCloud(
-            centerline_points, colors=[255, 255, 0, 255]
-        )  # Yellow
-        scene_geoms.append(centerline_cloud)
+    n_vertices = len(mesh.vertices)
+    keep_mask = np.ones(n_vertices, dtype=bool)
+    keep_mask[list(remove_indices)] = False
 
-    scene = trimesh.Scene(scene_geoms)
-    scene.show()
+    # 3. Build adjacency map and find boundary vertices before removing faces:
+    #    kept vertices that had at least one removed neighbour will form the
+    #    open boundary ring used for stitching.
+    adj_map = build_adjacency_map(mesh.faces.tolist())
+    boundary_indices = {
+        i
+        for i in range(n_vertices)
+        if keep_mask[i] and any(j in remove_indices for j in adj_map.get(i, []))
+    }
+    boundary_points = [tuple(mesh.vertices[i]) for i in boundary_indices]
+
+    # 4. Drop faces that reference any removed vertex
+    face_keep_mask = np.all(keep_mask[mesh.faces], axis=1)
+    new_faces = mesh.faces[face_keep_mask]
+
+    # 5. Remap vertex indices in the kept faces
+    new_index = np.full(n_vertices, -1, dtype=np.int64)
+    new_index[keep_mask] = np.arange(keep_mask.sum(), dtype=np.int64)
+    new_faces = new_index[new_faces]
+
+    new_vertices = mesh.vertices[keep_mask]
+    new_mesh = trimesh.Trimesh(vertices=new_vertices, faces=new_faces, process=False)
+
+    # 6. Rebuild the results dict with updated coordinate lists
+    new_coord_set = {tuple(v) for v in new_vertices}
+
+    updated = dict(results)
+    updated["mesh"] = new_mesh
+    updated["anomalous_points"] = []
+    updated["boundary_points"] = boundary_points
+
+    for key in (
+        "aorta_points",
+        "rca_points",
+        "lca_points",
+        "rca_removed_points",
+        "lca_removed_points",
+        "proximal_points",
+        "distal_points",
+    ):
+        if key in updated:
+            updated[key] = [p for p in updated[key] if tuple(p) in new_coord_set]
+
+    return updated
+
+
+def stitch_ccta_to_intravascular(
+    iv_mesh: PyGeometry,
+    mesh: trimesh.Trimesh,
+    results: dict,
+) -> trimesh.Trimesh:
+    proximal_centroid = iv_mesh.frames[0].centroid
+    distal_centroid = iv_mesh.frames[-1].centroid
+
+    proximal_boundary_pts = []
+    distal_boundary_pts = []
+
+    for pt in results["boundary_points"]:
+        distance_prox = np.linalg.norm(np.array(proximal_centroid) - np.array(pt))
+        distance_dist = np.linalg.norm(np.array(distal_centroid) - np.array(pt))
+        if distance_prox <= distance_dist:
+            proximal_boundary_pts.append(pt)
+        else:
+            distal_boundary_pts.append(pt)
+    
+    prox_boundary_pts_ord = _order_points_list(mesh, proximal_boundary_pts)
+    dist_boundary_pts_ord = _order_points_list(mesh, distal_boundary_pts)
+
+
+def _order_points_list(mesh: trimesh.Trimesh, points: list) -> list:
+    """Order boundary points into a connected ring by walking mesh edges.
+
+    Starting from the first point in *points*, the function follows edges to
+    unvisited boundary neighbours until no further boundary neighbour can be
+    reached.
+
+    Parameters
+    ----------
+    mesh : trimesh.Trimesh
+        The mesh whose edge connectivity is used for traversal.
+    points : list of tuple
+        Boundary point coordinates to order.
+
+    Returns
+    -------
+    list of tuple
+        The same points reordered so that consecutive entries share a mesh edge.
+    """
+    if len(points) <= 1:
+        return list(points)
+
+    coord_to_idx = {tuple(coord): i for i, coord in enumerate(mesh.vertices)}
+
+    boundary_indices = []
+    idx_to_pt = {}
+    for pt in points:
+        idx = coord_to_idx.get(tuple(pt))
+        if idx is not None:
+            boundary_indices.append(idx)
+            idx_to_pt[idx] = pt
+
+    if not boundary_indices:
+        return list(points)
+
+    boundary_set = set(boundary_indices)
+    adj_map = build_adjacency_map(mesh.faces.tolist())
+
+    # Restrict adjacency to boundary-only neighbours
+    boundary_adj = {
+        i: [n for n in adj_map.get(i, []) if n in boundary_set]
+        for i in boundary_indices
+    }
+
+    start = boundary_indices[0]
+    ordered = [start]
+    visited = {start}
+    current = start
+
+    while True:
+        next_candidates = [n for n in boundary_adj[current] if n not in visited]
+        if not next_candidates:
+            break
+        current = next_candidates[0]
+        ordered.append(current)
+        visited.add(current)
+
+    return [idx_to_pt[i] for i in ordered]
 
 
 def scale_region_centerline_morphing(
@@ -755,88 +759,6 @@ def scale_region_centerline_morphing(
     scaled_mesh.vertices.flags["WRITEABLE"] = False
 
     return scaled_mesh
-
-
-def compare_centerline_scaling(
-    original_mesh: trimesh.Trimesh,
-    scaled_mesh: trimesh.Trimesh,
-    region_points: list,
-    centerline=None,
-):
-    """Open three interactive scenes comparing the original and scaled meshes.
-
-    * **Scene 1** - original mesh with the scaled region highlighted in red and
-      the centerline in cyan.
-    * **Scene 2** - scaled mesh with the same overlays.
-    * **Scene 3** - side-by-side view: original (blue-ish) shifted 150 mm along
-      the x-axis next to the scaled mesh (orange-ish).
-
-    Parameters
-    ----------
-    original_mesh : trimesh.Trimesh
-        Mesh before scaling.
-    scaled_mesh : trimesh.Trimesh
-        Mesh after scaling (e.g. from :func:`scale_region_centerline_morphing`).
-    region_points : list of tuple
-        ``(x, y, z)`` coordinates of the scaled region, highlighted in red.
-    centerline : PyCenterline, optional
-        Centerline overlaid in cyan; skipped when ``None``.
-    """
-    print(f"\n=== CENTERLINE SCALING COMPARISON ===")
-
-    region_array = np.array(region_points, dtype=np.float64)
-    region_colors = np.tile([255, 0, 0, 255], (len(region_points), 1))  # Red
-
-    # Scene 1: Original mesh with region highlighted
-    scene1 = trimesh.Scene(
-        [original_mesh, PointCloud(region_array, colors=region_colors)]
-    )
-    original_mesh.visual.face_colors = [200, 200, 200, 100]  # Semi-transparent
-
-    if centerline is not None:
-        centerline_points = np.array(
-            [
-                (p.contour_point.x, p.contour_point.y, p.contour_point.z)
-                for p in centerline.points
-            ],
-            dtype=np.float64,
-        )
-        centerline_colors = np.tile(
-            [0, 255, 255, 255], (len(centerline_points), 1)
-        )  # Cyan
-        scene1.add_geometry(PointCloud(centerline_points, colors=centerline_colors))
-
-    print("Showing Scene 1: Original mesh with RCA region (red) and centerline (cyan)")
-    scene1.show()
-
-    # Scene 2: Scaled mesh with region highlighted
-    scene2 = trimesh.Scene(
-        [scaled_mesh, PointCloud(region_array, colors=region_colors)]
-    )
-    scaled_mesh.visual.face_colors = [200, 200, 200, 100]  # Semi-transparent
-
-    if centerline is not None:
-        scene2.add_geometry(PointCloud(centerline_points, colors=centerline_colors))
-
-    print("Showing Scene 2: Scaled mesh with RCA region (red) and centerline (cyan)")
-    scene2.show()
-
-    # Scene 3: Side-by-side comparison
-    scaled_mesh_shifted = scaled_mesh.copy()
-    shift_amount = np.array([150, 0, 0])  # Adjust based on your mesh size
-    scaled_mesh_shifted.apply_translation(shift_amount)
-
-    scene3 = trimesh.Scene([original_mesh, scaled_mesh_shifted])
-
-    original_mesh.visual.face_colors = [0, 100, 200, 100]  # Blue-ish
-    scaled_mesh_shifted.visual.face_colors = [200, 100, 0, 100]  # Orange-ish
-
-    if centerline is not None:
-        centerline_shifted = centerline_points + shift_amount
-        scene3.add_geometry(PointCloud(centerline_shifted, colors=centerline_colors))
-
-    print("Showing Scene 3: Side-by-side comparison (Blue=Original, Orange=Scaled)")
-    scene3.show()
 
 
 def find_distal_and_proximal_scaling(
