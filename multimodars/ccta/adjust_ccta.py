@@ -15,7 +15,7 @@ from ..multimodars import (
     find_proximal_distal_scaling,
     find_aortic_scaling,
 )
-from .._converters import numpy_to_centerline
+from .._converters import numpy_to_centerline, geometry_to_trimesh
 from ..io.read_geometrical import read_mesh
 from .debug_plots import labeled_geometry_plot, plot_anomalous_region, compare_centerline_scaling
 
@@ -604,27 +604,85 @@ def remove_anomalous_points_from_mesh(results: dict) -> dict:
     return updated
 
 
+
 def stitch_ccta_to_intravascular(
     iv_mesh: PyGeometry,
     mesh: trimesh.Trimesh,
     results: dict,
-) -> trimesh.Trimesh:
+) -> dict:
+    """
+    Uses an aligned intravascular mesh and stitches it to a CCTA mesh using the following steps.
+    """
     proximal_centroid = iv_mesh.frames[0].centroid
     distal_centroid = iv_mesh.frames[-1].centroid
+    proximal_points = iv_mesh.frames[0].lumen.points
+    distal_points = iv_mesh.frames[-1].lumen.points
 
+    prox_boundary_pts, dist_boundary_pts = _prepare_prox_dist_boundary_pts(
+        mesh,
+        results,
+        proximal_centroid,
+        distal_centroid,
+    )
+    prox_point_step = len(proximal_points) // len(prox_boundary_pts)
+    dist_point_step = len(distal_points) // len(dist_boundary_pts)
+
+    # Adjust start point
+    prox_boundary_pts, dist_boundary_pts = _adjust_start_point(
+        prox_boundary_pts,
+        dist_boundary_pts,
+        proximal_points,
+        distal_points,
+    )
+
+    # Check direction of boundary points by keeping only
+    prox_boundary_pts, dist_boundary_pts = _check_ring_direction(
+        prox_boundary_pts,
+        dist_boundary_pts,
+        proximal_points,
+        distal_points,
+        prox_point_step,
+        dist_point_step,
+    )
+
+    # Step 3: stitch each boundary ring to its IV ring
+    prox_patch = _stitch_boundary_ring(prox_boundary_pts, proximal_points, prox_point_step)
+    dist_patch = _stitch_boundary_ring(dist_boundary_pts, distal_points, dist_point_step)
+    test_mesh = geometry_to_trimesh(iv_mesh)
+    test_mesh.update_faces(test_mesh.unique_faces())
+    test_mesh.update_faces(test_mesh.nondegenerate_faces())
+    test_mesh.fix_normals()
+    mesh = trimesh.util.concatenate([mesh, prox_patch, dist_patch, test_mesh])
+    mesh.merge_vertices()
+    mesh.export("test_mesh.stl")
+    results["prox_boundary_points"] = prox_boundary_pts
+    results["dist_boundary_points"] = dist_boundary_pts
+    results["mesh"] = mesh
+    
+    return results 
+
+
+def _prepare_prox_dist_boundary_pts(
+        mesh: trimesh.Trimesh, 
+        results: dict, 
+        prox_centroid: tuple[float, float, float],
+        dist_centroid: tuple[float, float, float],
+) -> tuple[list, list]:
     proximal_boundary_pts = []
     distal_boundary_pts = []
-
+    print(f"Number of boundary points: {len(results["boundary_points"])}")
     for pt in results["boundary_points"]:
-        distance_prox = np.linalg.norm(np.array(proximal_centroid) - np.array(pt))
-        distance_dist = np.linalg.norm(np.array(distal_centroid) - np.array(pt))
+        distance_prox = np.linalg.norm(np.array(prox_centroid) - np.array(pt))
+        distance_dist = np.linalg.norm(np.array(dist_centroid) - np.array(pt))
         if distance_prox <= distance_dist:
             proximal_boundary_pts.append(pt)
         else:
             distal_boundary_pts.append(pt)
-    
+
     prox_boundary_pts_ord = _order_points_list(mesh, proximal_boundary_pts)
     dist_boundary_pts_ord = _order_points_list(mesh, distal_boundary_pts)
+
+    return prox_boundary_pts_ord, dist_boundary_pts_ord
 
 
 def _order_points_list(mesh: trimesh.Trimesh, points: list) -> list:
@@ -684,7 +742,160 @@ def _order_points_list(mesh: trimesh.Trimesh, points: list) -> list:
         ordered.append(current)
         visited.add(current)
 
-    return [idx_to_pt[i] for i in ordered]
+    # If connectivity reached all points, done
+    if len(visited) == len(boundary_indices):
+        return [idx_to_pt[i] for i in ordered]
+
+    # Connectivity is broken —> fall back to plane-fit + counterclockwise projection
+    pts_array = np.array([idx_to_pt[i] for i in boundary_indices], dtype=np.float64)
+    centroid = pts_array.mean(axis=0)
+    centered = pts_array - centroid
+
+    # Fit plane via SVD: the normal is the right-singular vector with smallest singular value
+    _, _, Vt = np.linalg.svd(centered)
+    normal = Vt[-1]  # plane normal
+
+    # Build an orthonormal 2-D basis on the plane
+    u = Vt[0]
+    v = np.cross(normal, u)
+
+    # Project each point to 2-D and compute its angle around the centroid
+    angles = np.arctan2(centered @ v, centered @ u)
+    order = np.argsort(angles)  # counterclockwise by ascending angle
+
+    return [idx_to_pt[boundary_indices[k]] for k in order]
+
+
+def _adjust_start_point(
+    prox_boundary_pts: list,
+    dist_boundary_pts: list,
+    proximal_points,
+    distal_points,
+) -> tuple[list, list]:
+    """Rotate each boundary ring so the point nearest to iv point 0 is first."""
+
+    def _rotate_to_nearest(boundary_pts: list, iv_pt) -> list:
+        iv_arr = np.array([iv_pt.x, iv_pt.y, iv_pt.z])
+        dists = [np.linalg.norm(np.array(pt) - iv_arr) for pt in boundary_pts]
+        start_idx = int(np.argmin(dists))
+        return boundary_pts[start_idx:] + boundary_pts[:start_idx]
+
+    prox_boundary_pts = _rotate_to_nearest(prox_boundary_pts, proximal_points[0])
+    dist_boundary_pts = _rotate_to_nearest(dist_boundary_pts, distal_points[0])
+    return prox_boundary_pts, dist_boundary_pts
+
+
+def _check_ring_direction(
+    prox_boundary_pts: list,
+    dist_boundary_pts: list,
+    proximal_points,
+    distal_points,
+    prox_point_step: int,
+    dist_point_step: int,
+) -> tuple[list, list]:
+    """Ensure boundary rings wind in the same direction as the IV point rings.
+
+    Subsamples the IV points (every *step*-th, starting at 0) to match the
+    number of boundary points, then computes total point-wise distance for
+    the ring as-is and with the order reversed (keeping index 0 fixed).
+    The order with the smaller total distance is returned.
+    """
+
+    def _total_dist(boundary_pts: list, iv_subsampled) -> float:
+        n = min(len(boundary_pts), len(iv_subsampled))
+        return sum(
+            np.linalg.norm(
+                np.array(boundary_pts[i])
+                - np.array([iv_subsampled[i].x, iv_subsampled[i].y, iv_subsampled[i].z])
+            )
+            for i in range(n)
+        )
+
+    def _check_direction(boundary_pts: list, iv_pts, step: int) -> list:
+        iv_sub = iv_pts[0::step][: len(boundary_pts)]
+        reversed_pts = [boundary_pts[0]] + list(reversed(boundary_pts[1:]))
+        if _total_dist(reversed_pts, iv_sub) < _total_dist(boundary_pts, iv_sub):
+            return reversed_pts
+        return boundary_pts
+
+    prox_boundary_pts = _check_direction(prox_boundary_pts, proximal_points, prox_point_step)
+    dist_boundary_pts = _check_direction(dist_boundary_pts, distal_points, dist_point_step)
+    return prox_boundary_pts, dist_boundary_pts
+
+
+def _stitch_boundary_ring(
+    boundary_pts: list,
+    iv_pts,
+    step: int,
+) -> trimesh.Trimesh:
+    """Create a patch mesh stitching an IV lumen ring to a CCTA boundary ring.
+
+    For each pair of consecutive boundary vertices (b, b+1), *step* IV points
+    are assigned (the first ``r = n_iv % n_boundary`` segments receive
+    ``step + 1`` points to absorb the remainder without gaps).  Each segment
+    is split at its midpoint:
+
+    * Indices [0, mid)      → fan triangles into boundary[b].
+    * Indices [mid, end-1)  → fan triangles into boundary[b+1].
+    * One bridging triangle: (boundary[b], boundary[b+1], iv[mid]).
+
+    Parameters
+    ----------
+    boundary_pts : list of tuple
+        Ordered CCTA boundary vertices.
+    iv_pts : list of Point
+        Ordered IV lumen points (with .x / .y / .z attributes).
+    step : int
+        Base number of IV points per boundary segment
+        (``len(iv_pts) // len(boundary_pts)``).
+
+    Returns
+    -------
+    trimesh.Trimesh
+        Patch mesh with combined vertices and stitching faces.
+    """
+    n_boundary = len(boundary_pts)
+    n_iv = len(iv_pts)
+    remainder = n_iv % n_boundary  # extra IV points distributed to first segments
+
+    b_arr = np.array(boundary_pts, dtype=np.float64)
+    iv_arr = np.array([(p.x, p.y, p.z) for p in iv_pts], dtype=np.float64)
+
+    # Vertices: boundary indices 0..n_boundary-1, IV indices n_boundary..n_boundary+n_iv-1
+    vertices = np.vstack([b_arr, iv_arr])
+
+    faces = []
+    iv_start = 0
+
+    for b in range(n_boundary):
+        b_next = (b + 1) % n_boundary
+        seg_len = step + 1 if b < remainder else step
+        iv_end = iv_start + seg_len
+        mid = iv_start + seg_len // 2
+
+        # First half: fan into boundary[b]
+        for i in range(iv_start, mid):
+            i_next = (i + 1) % n_iv
+            faces.append((n_boundary + i, n_boundary + i_next, b))
+
+        # Second half: fan into boundary[b+1]
+        for i in range(mid, iv_end - 1):
+            i_next = (i + 1) % n_iv
+            faces.append((n_boundary + i, n_boundary + i_next, b_next))
+
+        # Bridging triangle connecting both boundary vertices at the midpoint
+        faces.append((b, b_next, n_boundary + mid))
+
+        iv_start = iv_end
+
+    print(f"Stitching: {len(faces)}/{n_iv} triangles created "
+          f"(n_boundary={n_boundary}, n_iv={n_iv}, step={step}, remainder={remainder})")
+
+    return trimesh.Trimesh(
+        vertices=vertices,
+        faces=np.array(faces, dtype=np.int64),
+        process=False,
+    )
 
 
 def scale_region_centerline_morphing(

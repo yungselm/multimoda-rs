@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import trimesh
 from .multimodars import (
     PyContour,
     PyCenterline,
@@ -10,6 +11,7 @@ from .multimodars import (
     PyInputData,
     PyContourPoint,
     PyRecord,
+    PyContourType,
 )
 
 
@@ -1006,3 +1008,64 @@ def geometry_to_frames_array(geometry: PyGeometry) -> dict[str, np.ndarray]:
         result[str(frame.id)] = frame_data
 
     return result
+
+
+def geometry_to_trimesh(
+    geometry: PyGeometry,
+    contour_type: PyContourType = None,
+) -> trimesh.Trimesh:
+    """Build a trimesh surface from one contour type across all frames.
+
+    Parameters
+    ----------
+    geometry:
+        The geometry whose frames supply the contours.
+    contour_type:
+        Which contour type to use.  Defaults to ``PyContourType.Lumen``.
+
+    Returns
+    -------
+    trimesh.Trimesh
+        Closed tube mesh with one quad-strip per adjacent contour pair.
+        Each quad is split into two triangles.
+    """
+    if contour_type is None:
+        contour_type = PyContourType.Lumen
+
+    if contour_type == PyContourType.Lumen:
+        contours = geometry.get_lumen_contours()
+    else:
+        contours = geometry.get_contours_by_type(contour_type.name)
+
+    if len(contours) < 2:
+        raise ValueError("Need at least two contours to build a mesh.")
+
+    n = len(contours[0].points)  # points per contour (same for all)
+
+    # --- vertices -----------------------------------------------------------
+    vertices = np.array(
+        [pt for c in contours for pt in c.points_as_tuples()],
+        dtype=np.float64,
+    )  # shape: (n_contours * n, 3)
+
+    # --- faces --------------------------------------------------------------
+    faces = []
+    n_contours = len(contours)
+    for i in range(n_contours - 1):
+        base_i = i * n
+        base_j = (i + 1) * n
+        for j in range(n):
+            j1 = (j + 1) % n
+            # quad corners: a-b (contour i), c-d (contour i+1)
+            a = base_i + j
+            b = base_i + j1
+            c = base_j + j1
+            d = base_j + j
+            faces.append([a, b, d])
+            faces.append([b, c, d])
+
+    return trimesh.Trimesh(
+        vertices=vertices,
+        faces=np.array(faces, dtype=np.int64),
+        process=False,
+    )

@@ -41,6 +41,7 @@ from .ccta.adjust_ccta import (
     find_distal_and_proximal_scaling,
     find_aorta_scaling,
     remove_anomalous_points_from_mesh,
+    stitch_ccta_to_intravascular,
 )
 
 __all__ = [
@@ -84,4 +85,5 @@ __all__ = [
     "find_distal_and_proximal_scaling",
     "find_aorta_scaling",
     "remove_anomalous_points_from_mesh",
+    "stitch_ccta_to_intravascular",
 ]
