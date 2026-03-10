@@ -645,9 +645,15 @@ def stitch_ccta_to_intravascular(
         dist_point_step,
     )
 
+    # Use the midpoint of the IV mesh as an "inside" reference so that each
+    # patch's normals can be checked and flipped to point outward.
+    prox_c = np.array(iv_mesh.frames[0].centroid)
+    dist_c = np.array(iv_mesh.frames[-1].centroid)
+    iv_midpoint = (prox_c + dist_c) / 2.0
+
     # Step 3: stitch each boundary ring to its IV ring
-    prox_patch = _stitch_boundary_ring(prox_boundary_pts, proximal_points, prox_point_step)
-    dist_patch = _stitch_boundary_ring(dist_boundary_pts, distal_points, dist_point_step)
+    prox_patch = _stitch_boundary_ring(prox_boundary_pts, proximal_points, prox_point_step, iv_midpoint)
+    dist_patch = _stitch_boundary_ring(dist_boundary_pts, distal_points, dist_point_step, iv_midpoint)
     test_mesh = geometry_to_trimesh(iv_mesh)
     test_mesh.update_faces(test_mesh.unique_faces())
     test_mesh.update_faces(test_mesh.nondegenerate_faces())
@@ -827,6 +833,7 @@ def _stitch_boundary_ring(
     boundary_pts: list,
     iv_pts,
     step: int,
+    outward_reference: np.ndarray | None = None,
 ) -> trimesh.Trimesh:
     """Create a patch mesh stitching an IV lumen ring to a CCTA boundary ring.
 
@@ -883,19 +890,40 @@ def _stitch_boundary_ring(
             i_next = (i + 1) % n_iv
             faces.append((n_boundary + i, n_boundary + i_next, b_next))
 
-        # Bridging triangle connecting both boundary vertices at the midpoint
-        faces.append((b, b_next, n_boundary + mid))
+        # Bridging triangle connecting both boundary vertices at the midpoint.
+        # Winding is reversed vs the naive (b, b_next, mid) order so that the
+        # shared edges with the adjacent fan triangles are traversed in opposite
+        # directions — the requirement for consistent outward normals.
+        faces.append((b_next, b, n_boundary + mid))
 
         iv_start = iv_end
 
     print(f"Stitching: {len(faces)}/{n_iv} triangles created "
           f"(n_boundary={n_boundary}, n_iv={n_iv}, step={step}, remainder={remainder})")
 
-    return trimesh.Trimesh(
+    patch = trimesh.Trimesh(
         vertices=vertices,
         faces=np.array(faces, dtype=np.int64),
         process=False,
     )
+
+    if outward_reference is not None:
+        # After the bridging-winding fix all faces in this patch are consistently
+        # oriented, but the whole patch may still face inward (this happens for
+        # the proximal ring because its IV lumen winds in the opposite sense vs
+        # the distal ring when viewed from a fixed external direction).
+        # Detect this by checking whether the average face normal points away
+        # from the known "inside" reference (the IV-mesh midpoint).
+        face_normals = patch.face_normals  # (N, 3), unit normals per face
+        valid = ~np.isnan(face_normals).any(axis=1)
+        if valid.any():
+            avg_normal = face_normals[valid].mean(axis=0)
+            patch_center = patch.triangles_center[valid].mean(axis=0)
+            outward = patch_center - outward_reference
+            if np.dot(avg_normal, outward) < 0:
+                patch.faces = patch.faces[:, ::-1]
+
+    return patch
 
 
 def scale_region_centerline_morphing(
