@@ -645,21 +645,30 @@ def stitch_ccta_to_intravascular(
         dist_point_step,
     )
 
-    # Use the midpoint of the IV mesh as an "inside" reference so that each
-    # patch's normals can be checked and flipped to point outward.
+    # Compute the vessel axis so each patch can be flipped to face outward.
+    # frames[0] is the "proximal" end, frames[-1] the "distal" end.
+    # The outward direction for the proximal patch points away from the mesh
+    # interior (toward frames[0]), and vice-versa for the distal patch.
     prox_c = np.array(iv_mesh.frames[0].centroid)
     dist_c = np.array(iv_mesh.frames[-1].centroid)
-    iv_midpoint = (prox_c + dist_c) / 2.0
+    prox_outward = prox_c - dist_c   # points toward the proximal end
+    dist_outward = dist_c - prox_c   # points toward the distal end
 
     # Step 3: stitch each boundary ring to its IV ring
-    prox_patch = _stitch_boundary_ring(prox_boundary_pts, proximal_points, prox_point_step, iv_midpoint)
-    dist_patch = _stitch_boundary_ring(dist_boundary_pts, distal_points, dist_point_step, iv_midpoint)
+    prox_patch = _stitch_boundary_ring(prox_boundary_pts, proximal_points, prox_point_step, prox_outward)
+    dist_patch = _stitch_boundary_ring(dist_boundary_pts, distal_points, dist_point_step, dist_outward)
     test_mesh = geometry_to_trimesh(iv_mesh)
     test_mesh.update_faces(test_mesh.unique_faces())
     test_mesh.update_faces(test_mesh.nondegenerate_faces())
     test_mesh.fix_normals()
     mesh = trimesh.util.concatenate([mesh, prox_patch, dist_patch, test_mesh])
     mesh.merge_vertices()
+    mesh.fill_holes()
+    # Remove topology issues that cause smoothing spikes:
+    mesh.update_faces(mesh.unique_faces())
+    mesh.update_faces(mesh.nondegenerate_faces())
+    mesh.remove_unreferenced_vertices()
+    mesh.fix_normals()
     mesh.export("test_mesh.stl")
     results["prox_boundary_points"] = prox_boundary_pts
     results["dist_boundary_points"] = dist_boundary_pts
@@ -833,7 +842,7 @@ def _stitch_boundary_ring(
     boundary_pts: list,
     iv_pts,
     step: int,
-    outward_reference: np.ndarray | None = None,
+    outward_direction: np.ndarray | None = None,
 ) -> trimesh.Trimesh:
     """Create a patch mesh stitching an IV lumen ring to a CCTA boundary ring.
 
@@ -907,20 +916,19 @@ def _stitch_boundary_ring(
         process=False,
     )
 
-    if outward_reference is not None:
+    if outward_direction is not None:
         # After the bridging-winding fix all faces in this patch are consistently
         # oriented, but the whole patch may still face inward (this happens for
         # the proximal ring because its IV lumen winds in the opposite sense vs
         # the distal ring when viewed from a fixed external direction).
-        # Detect this by checking whether the average face normal points away
-        # from the known "inside" reference (the IV-mesh midpoint).
+        # Compare the average face normal against the known vessel-axis direction
+        # that points outward for this patch.  For an approximately flat annular
+        # patch the average normal is a reliable indicator of face orientation.
         face_normals = patch.face_normals  # (N, 3), unit normals per face
         valid = ~np.isnan(face_normals).any(axis=1)
         if valid.any():
             avg_normal = face_normals[valid].mean(axis=0)
-            patch_center = patch.triangles_center[valid].mean(axis=0)
-            outward = patch_center - outward_reference
-            if np.dot(avg_normal, outward) < 0:
+            if np.dot(avg_normal, outward_direction) < 0:
                 patch.faces = patch.faces[:, ::-1]
 
     return patch

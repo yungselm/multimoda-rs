@@ -1064,8 +1064,20 @@ def geometry_to_trimesh(
             faces.append([a, b, d])
             faces.append([b, c, d])
 
-    return trimesh.Trimesh(
+    mesh = trimesh.Trimesh(
         vertices=vertices,
         faces=np.array(faces, dtype=np.int64),
         process=False,
     )
+
+    # Ensure normals point away from the vessel lumen (outward).
+    # Use the first ring's centroid as the "inside" reference and the first
+    # face's centre as the sample point — if the face normal points toward the
+    # centroid the whole mesh is wound inward and all faces are flipped.
+    first_centroid = np.array(contours[0].centroid, dtype=np.float64)
+    first_face_center = mesh.triangles_center[0]
+    first_normal = mesh.face_normals[0]
+    if np.dot(first_normal, first_face_center - first_centroid) < 0:
+        mesh.faces = mesh.faces[:, ::-1]
+
+    return mesh
