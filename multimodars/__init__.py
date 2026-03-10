@@ -43,6 +43,7 @@ from .ccta.adjust_ccta import (
     remove_anomalous_points_from_mesh,
     stitch_ccta_to_intravascular,
 )
+from .ccta.fixing_functions import fix_and_remesh_stitched_mesh
 
 __all__ = [
     # Core classes
@@ -86,4 +87,5 @@ __all__ = [
     "find_aorta_scaling",
     "remove_anomalous_points_from_mesh",
     "stitch_ccta_to_intravascular",
+    "fix_and_remesh_stitched_mesh",
 ]

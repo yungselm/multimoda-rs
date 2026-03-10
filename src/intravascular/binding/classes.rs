@@ -3,6 +3,7 @@ use crate::intravascular::io::input::{
     Centerline, CenterlinePoint, ContourPoint, InputData, Record,
 };
 use crate::intravascular::processing::align_between::GeometryPair;
+use crate::intravascular::processing::process_utils::downsample_contour_points;
 use anyhow::{anyhow, Result};
 use nalgebra::Vector3;
 use pyo3::prelude::*;
@@ -1318,6 +1319,63 @@ impl PyGeometry {
         }
         let mut new_frames = self.frames.clone();
         new_frames[index] = frame;
+        Ok(PyGeometry {
+            frames: new_frames,
+            label: self.label.clone(),
+        })
+    }
+
+    /// Return a new geometry with ``n_points`` per ContourType.
+    ///
+    /// Parameters
+    /// ----------
+    /// n_points : int
+    ///     Number of points remaining per Contour.
+    ///
+    /// Returns
+    /// -------
+    /// PyGeometry
+    ///     New downsampled geometry.
+    ///
+    /// Examples
+    /// --------
+    /// >>> new_geom = geometry.downsample(100)
+    #[pyo3(signature = (n_points))]
+    pub fn downsample(&self, n_points: usize) -> PyResult<PyGeometry> {
+        let downsample_contour = |contour: &PyContour| -> PyContour {
+            let rust_points: Vec<ContourPoint> =
+                contour.points.iter().map(ContourPoint::from).collect();
+            let downsampled = downsample_contour_points(&rust_points, n_points);
+            PyContour {
+                points: downsampled.iter().map(PyContourPoint::from).collect(),
+                ..contour.clone()
+            }
+        };
+
+        let new_frames = self
+            .frames
+            .iter()
+            .map(|frame| {
+                let new_lumen = downsample_contour(&frame.lumen);
+                let new_extras = frame
+                    .extras
+                    .iter()
+                    .map(|(key, contour)| {
+                        if key == "Catheter" {
+                            (key.clone(), contour.clone())
+                        } else {
+                            (key.clone(), downsample_contour(contour))
+                        }
+                    })
+                    .collect();
+                PyFrame {
+                    lumen: new_lumen,
+                    extras: new_extras,
+                    ..frame.clone()
+                }
+            })
+            .collect();
+
         Ok(PyGeometry {
             frames: new_frames,
             label: self.label.clone(),

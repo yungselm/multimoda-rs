@@ -604,15 +604,16 @@ def remove_anomalous_points_from_mesh(results: dict) -> dict:
     return updated
 
 
-
 def stitch_ccta_to_intravascular(
     iv_mesh: PyGeometry,
     mesh: trimesh.Trimesh,
     results: dict,
+    n_points_iv_cont: int = 100,
 ) -> dict:
     """
     Uses an aligned intravascular mesh and stitches it to a CCTA mesh using the following steps.
     """
+    iv_mesh = iv_mesh.downsample(n_points_iv_cont)
     proximal_centroid = iv_mesh.frames[0].centroid
     distal_centroid = iv_mesh.frames[-1].centroid
     proximal_points = iv_mesh.frames[0].lumen.points
@@ -662,14 +663,15 @@ def stitch_ccta_to_intravascular(
     test_mesh.update_faces(test_mesh.nondegenerate_faces())
     test_mesh.fix_normals()
     mesh = trimesh.util.concatenate([mesh, prox_patch, dist_patch, test_mesh])
+    trimesh.tol.merge = 0.001
     mesh.merge_vertices()
-    mesh.fill_holes()
-    # Remove topology issues that cause smoothing spikes:
+    if not mesh.is_watertight:
+        mesh.fill_holes()
     mesh.update_faces(mesh.unique_faces())
     mesh.update_faces(mesh.nondegenerate_faces())
     mesh.remove_unreferenced_vertices()
     mesh.fix_normals()
-    mesh.export("test_mesh.stl")
+
     results["prox_boundary_points"] = prox_boundary_pts
     results["dist_boundary_points"] = dist_boundary_pts
     results["mesh"] = mesh
