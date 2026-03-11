@@ -28,7 +28,7 @@ def fix_and_remesh_stitched_mesh(
     mesh: trimesh.Trimesh,
     *,
     target_edge_length_mm: float | None = None,
-    remesh_iterations: int = 5,
+    remesh_iterations: int = 10,
     verbose: bool = False,
 ) -> trimesh.Trimesh:
     """Fill holes and remesh a stitched mesh, replicating Meshmixer workflow.
@@ -36,7 +36,7 @@ def fix_and_remesh_stitched_mesh(
     Steps
     -----
     1. Repair non-manifold edges/vertices.
-    2. Close holes – flat fill (all holes).
+    2. Close holes - flat fill (all holes).
     3. Isotropic remesh to ``target_edge_length_mm``.
 
     Parameters
@@ -48,7 +48,7 @@ def fix_and_remesh_stitched_mesh(
         uses the 25th-percentile edge length of the input mesh (preserves
         the fine IV-mesh resolution as reference).
     remesh_iterations:
-        Number of isotropic remeshing iterations (default 5).
+        Number of isotropic remeshing iterations (default 10).
     verbose:
         Print progress info.
     """

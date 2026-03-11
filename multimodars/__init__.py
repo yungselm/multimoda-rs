@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+from importlib.metadata import version
+
 from .multimodars import (
     PyContourPoint,
     PyContour,
@@ -11,8 +14,6 @@ from .multimodars import (
     PyInputData,
     PyRecord,
     PyContourType,
-)
-from ._processing import (
     from_file_full,
     from_file_doublepair,
     from_file_singlepair,
@@ -26,6 +27,7 @@ from ._processing import (
     align_combined,
     to_obj,
     find_centerline_bounded_points_simple,
+    find_proximal_distal_scaling,
 )
 from ._converters import (
     to_array,
@@ -34,9 +36,11 @@ from ._converters import (
     numpy_to_inputdata,
 )
 from .io import read_geometrical, write_geometries
-from .ccta.adjust_ccta import (
+from .ccta.labeling import (
     label_geometry,
     label_anomalous_region,
+)
+from .ccta.manipulating import (
     scale_region_centerline_morphing,
     find_distal_and_proximal_scaling,
     find_aorta_scaling,
@@ -76,6 +80,7 @@ __all__ = [
     "align_combined",
     "to_obj",
     "find_centerline_bounded_points_simple",
+    "find_proximal_distal_scaling",
     # I/O
     "read_geometrical",
     "write_geometries",
@@ -89,3 +94,20 @@ __all__ = [
     "stitch_ccta_to_intravascular",
     "fix_and_remesh_stitched_mesh",
 ]
+
+# def _print_banner():
+#     v = version("multimodars")
+#     print(r"""
+#   .__   __  .__                   .___                    
+#   _____  __ __|  |_/  |_|__| _____   ____   __| _/____ _______  ______
+#  /     \|  |  \  |\   __\  |/     \ /  _ \ / __ |\__  \\_  __ \/  ___/
+# |  Y Y  \  |  /  |_|  | |  |  Y Y  (  <_> ) /_/ | / __ \|  | \/\___ \ 
+# |__|_|  /____/|____/__| |__|__|_|  /\____/\____ |(____  /__|  /____  >
+#       \/                         \/            \/     \/           \/  
+# """)
+#     print(f"  version  : {v}")
+#     print(f"  docs     : https://multimoda-rs.readthedocs.io")
+#     print(f"  license  : MIT\n")
+
+# if os.environ.get("MULTIMODARS_SILENT", "0") == "0":
+#     _print_banner()
