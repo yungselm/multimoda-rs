@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import trimesh
+from ..ccta.manipulating import order_points_list
 
 try:
     import pymeshlab
@@ -10,11 +11,42 @@ except ImportError:
 
 
 def manual_hole_fill(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
-    """
-    """
+    """Fill holes by fan-triangulating each boundary loop to its centroid."""
     outline = mesh.outline()
-    print(outline)
-    return mesh
+
+    new_vertices = list(mesh.vertices)
+    new_faces = list(mesh.faces)
+
+    # Build a lookup from coordinate tuple -> vertex index (original mesh)
+    coord_to_idx = {tuple(v): i for i, v in enumerate(mesh.vertices)}
+
+    for entity in outline.entities:
+        pts = outline.vertices[entity.points]
+
+        ordered = order_points_list(mesh, pts)
+        if len(ordered) < 3:
+            continue
+
+        ordered_arr = np.array(ordered)
+        centroid = ordered_arr.mean(axis=0)
+
+        centroid_idx = len(new_vertices)
+        new_vertices.append(centroid)
+
+        n = len(ordered)
+        for i in range(n):
+            i0 = coord_to_idx.get(tuple(ordered[i]))
+            i1 = coord_to_idx.get(tuple(ordered[(i + 1) % n]))
+            if i0 is not None and i1 is not None:
+                new_faces.append([i0, i1, centroid_idx])
+
+    result = trimesh.Trimesh(
+        vertices=np.array(new_vertices),
+        faces=np.array(new_faces),
+        process=False,
+    )
+    result.fix_normals()
+    return result
 
 def _trimesh_to_meshset(mesh: trimesh.Trimesh):
     ms = pymeshlab.MeshSet()

@@ -605,13 +605,13 @@ def _prepare_prox_dist_boundary_pts(
         else:
             distal_boundary_pts.append(pt)
 
-    prox_boundary_pts_ord = _order_points_list(mesh, proximal_boundary_pts)
-    dist_boundary_pts_ord = _order_points_list(mesh, distal_boundary_pts)
+    prox_boundary_pts_ord = order_points_list(mesh, proximal_boundary_pts)
+    dist_boundary_pts_ord = order_points_list(mesh, distal_boundary_pts)
 
     return prox_boundary_pts_ord, dist_boundary_pts_ord
 
 
-def _order_points_list(mesh: trimesh.Trimesh, points: list) -> list:
+def order_points_list(mesh: trimesh.Trimesh, points: list) -> list:
     """Order boundary points into a connected ring by walking mesh edges.
 
     Starting from the first point in *points*, the function follows edges to
