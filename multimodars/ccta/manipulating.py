@@ -523,6 +523,7 @@ def stitch_ccta_to_intravascular(
     Uses an aligned intravascular mesh and stitches it to a CCTA mesh using the following steps.
     """
     iv_mesh = iv_mesh.downsample(n_points_iv_cont)
+    iv_mesh_points = [(p.x, p.y, p.z) for frame in iv_mesh.frames for p in frame.lumen.points]
     proximal_centroid = iv_mesh.frames[0].centroid
     distal_centroid = iv_mesh.frames[-1].centroid
     proximal_points = iv_mesh.frames[0].lumen.points
@@ -583,9 +584,10 @@ def stitch_ccta_to_intravascular(
 
     results["prox_boundary_points"] = prox_boundary_pts
     results["dist_boundary_points"] = dist_boundary_pts
+    results["anomalous_points"] = iv_mesh_points
     results["mesh"] = mesh
     
-    return results 
+    return results
 
 
 def _prepare_prox_dist_boundary_pts(
