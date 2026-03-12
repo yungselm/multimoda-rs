@@ -2,10 +2,21 @@ from __future__ import annotations
 
 import numpy as np
 import trimesh
-import pymeshlab
+
+try:
+    import pymeshlab
+except ImportError:
+    pymeshlab = None  # type: ignore[assignment]
 
 
-def _trimesh_to_meshset(mesh: trimesh.Trimesh) -> pymeshlab.MeshSet:
+def manual_hole_fill(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
+    """
+    """
+    outline = mesh.outline()
+    print(outline)
+    return mesh
+
+def _trimesh_to_meshset(mesh: trimesh.Trimesh):
     ms = pymeshlab.MeshSet()
     m = pymeshlab.Mesh(
         vertex_matrix=mesh.vertices.astype(np.float64),
@@ -15,7 +26,7 @@ def _trimesh_to_meshset(mesh: trimesh.Trimesh) -> pymeshlab.MeshSet:
     return ms
 
 
-def _meshset_to_trimesh(ms: pymeshlab.MeshSet) -> trimesh.Trimesh:
+def _meshset_to_trimesh(ms) -> trimesh.Trimesh:
     m = ms.current_mesh()
     return trimesh.Trimesh(
         vertices=m.vertex_matrix(),
@@ -52,6 +63,12 @@ def fix_and_remesh_stitched_mesh(
     verbose:
         Print progress info.
     """
+
+    if pymeshlab is None:
+        raise ImportError(
+            "pymeshlab is required for fix_and_remesh_stitched_mesh. "
+            "Install it with: pip install 'multimodars[meshlab]'"
+        )
 
     def _log(label: str, m: trimesh.Trimesh) -> None:
         if verbose:
