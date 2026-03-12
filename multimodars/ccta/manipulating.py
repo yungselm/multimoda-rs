@@ -93,7 +93,6 @@ def find_distal_and_proximal_scaling(
     results: dict,
     dist_range: int = 3,
     prox_range: int = 2,
-    debug_plot: bool = True,
 ) -> tuple[float, float]:
     """Compute the optimal radial scaling factors for the proximal and distal segments.
 
@@ -135,7 +134,7 @@ def find_distal_and_proximal_scaling(
     n_anomalous_points = len(results["anomalous_points"])
     n_section: int = int(np.ceil(0.25 * n_anomalous_points))
 
-    print("=== Finding best scaling factors ===")
+    print("\n=== Finding best scaling factors ===")
     prox_scaling, dist_scaling = find_proximal_distal_scaling(
         results["anomalous_points"],
         n_section,
@@ -144,8 +143,9 @@ def find_distal_and_proximal_scaling(
         frame_points_prox,
         frame_points_dist,
     )
-    print(f"Best proximal scaling: {prox_scaling}")
-    print(f"Best distal scaling: {dist_scaling}")
+    print(f"Best proximal scaling: {np.round(prox_scaling, 2)} mm")
+    print(f"Best distal scaling: {np.round(dist_scaling, 2)} mm")
+    print("====================================\n")
 
     return prox_scaling, dist_scaling
 
@@ -154,7 +154,6 @@ def find_aorta_scaling(
     frames,
     centerline,
     results: dict,
-    debug_plot: bool = True,
 ) -> float:
     """Compute the optimal radial scaling factor for the aortic wall region.
 
@@ -182,13 +181,14 @@ def find_aorta_scaling(
     """
     reference_points = _extract_wall_from_frames(frames)
 
-    print("=== Finding best scaling factor ===")
+    print("\n=== Finding best scaling factor ===")
     scaling = find_aortic_scaling(
         results["rca_removed_points"],  # For now work with removed points
         reference_points,
         centerline,
     )
-    print(f"Best aortic scaling: {scaling}")
+    print(f"Best aortic scaling: {np.round(scaling, 2)} mm")
+    print("====================================\n")
 
     return scaling
 
@@ -255,34 +255,50 @@ def _extract_wall_from_frames(frames) -> list[tuple[float, float, float]]:
     return reference_points
 
 
-def remove_anomalous_points_from_mesh(results: dict) -> dict:
-    """Remove anomalous vertices from the mesh and update all point lists.
+def remove_labeled_points_from_mesh(
+    results: dict,
+    region_keys: list[str] | str = "anomalous_points",
+) -> dict:
+    """Remove one or more labeled regions of vertices from the mesh.
 
-    Deletes the vertices listed under ``"anomalous_points"`` (and any faces
-    referencing them) from the mesh, remaps the remaining faces, and rebuilds
-    every coordinate list in *results* to reflect the new vertex indices.
+    Collects all points stored under *region_keys*, deletes the corresponding
+    vertices (and any faces referencing them) from the mesh, remaps the
+    remaining faces, and rebuilds every coordinate list in *results* to
+    reflect the new vertex indices.
 
     Parameters
     ----------
     results : dict
-        Dictionary produced by :func:`label_anomalous_region` containing at
-        minimum the keys ``"mesh"`` and ``"anomalous_points"``.  Any of
+        Dictionary containing at minimum the key ``"mesh"``.  Any of
         ``"aorta_points"``, ``"rca_points"``, ``"lca_points"``,
         ``"rca_removed_points"``, ``"lca_removed_points"``,
         ``"proximal_points"``, and ``"distal_points"`` are also updated if
         present.
+    region_keys : str or list of str
+        Key(s) in *results* whose point lists should be removed from the mesh.
+        Defaults to ``"anomalous_points"`` for backwards compatibility.
 
     Returns
     -------
     dict
-        Updated *results* dict with ``"mesh"`` replaced by the trimmed mesh
-        and all coordinate lists remapped to the new vertex set. Additionally
-        new entry with ``"boundary_points"``.
+        Updated *results* dict with ``"mesh"`` replaced by the trimmed mesh,
+        all *region_keys* cleared, and all other coordinate lists remapped to
+        the new vertex set.  A new ``"boundary_points"`` entry is added
+        containing the open-boundary ring vertices adjacent to the removed
+        region(s).
     """
-    mesh: trimesh.Trimesh = results["mesh"]
-    anomalous_points: list = results.get("anomalous_points", [])
+    if isinstance(region_keys, str):
+        region_keys = [region_keys]
 
-    if not anomalous_points:
+    mesh: trimesh.Trimesh = results["mesh"]
+
+    points_to_remove = [
+        pt
+        for key in region_keys
+        for pt in results.get(key, [])
+    ]
+
+    if not points_to_remove:
         return results
 
     # 1. Map coordinates -> vertex index
@@ -290,7 +306,7 @@ def remove_anomalous_points_from_mesh(results: dict) -> dict:
 
     # 2. Collect vertex indices to remove
     remove_indices = set()
-    for pt in anomalous_points:
+    for pt in points_to_remove:
         idx = coord_to_idx.get(tuple(pt))
         if idx is not None:
             remove_indices.add(idx)
@@ -330,8 +346,10 @@ def remove_anomalous_points_from_mesh(results: dict) -> dict:
 
     updated = dict(results)
     updated["mesh"] = new_mesh
-    updated["anomalous_points"] = []
     updated["boundary_points"] = boundary_points
+
+    for key in region_keys:
+        updated[key] = []
 
     for key in (
         "aorta_points",
@@ -342,8 +360,155 @@ def remove_anomalous_points_from_mesh(results: dict) -> dict:
         "proximal_points",
         "distal_points",
     ):
+        if key in updated and key not in region_keys:
+            updated[key] = [p for p in updated[key] if tuple(p) in new_coord_set]
+
+    return updated
+
+
+def keep_labeled_points_from_mesh(
+    results: dict,
+    region_key: str,
+) -> dict:
+    """Keep only the labeled region of vertices and remove everything else.
+
+    Retains only the vertices stored under *region_key* (and the faces that
+    reference exclusively those vertices), remaps faces, and rebuilds every
+    coordinate list in *results* to reflect the new vertex indices.
+
+    Parameters
+    ----------
+    results : dict
+        Dictionary containing at minimum the key ``"mesh"``.  Any of
+        ``"aorta_points"``, ``"rca_points"``, ``"lca_points"``,
+        ``"rca_removed_points"``, ``"lca_removed_points"``,
+        ``"proximal_points"``, and ``"distal_points"`` are also updated if
+        present.
+    region_key : str
+        Key in *results* whose point list defines the vertices to *keep*.
+
+    Returns
+    -------
+    dict
+        Updated *results* dict with ``"mesh"`` replaced by the trimmed mesh
+        and all other coordinate lists filtered to the surviving vertex set.
+        A new ``"boundary_points"`` entry is added containing the open-boundary
+        ring vertices adjacent to the removed region.
+    """
+    mesh: trimesh.Trimesh = results["mesh"]
+
+    points_to_keep = results.get(region_key, [])
+    if not points_to_keep:
+        return results
+
+    coord_to_idx = {tuple(coord): i for i, coord in enumerate(mesh.vertices)}
+
+    keep_indices = set()
+    for pt in points_to_keep:
+        idx = coord_to_idx.get(tuple(pt))
+        if idx is not None:
+            keep_indices.add(idx)
+
+    if not keep_indices:
+        return results
+
+    n_vertices = len(mesh.vertices)
+    keep_mask = np.zeros(n_vertices, dtype=bool)
+    keep_mask[list(keep_indices)] = True
+    remove_indices = set(range(n_vertices)) - keep_indices
+
+    # Boundary: kept vertices that had at least one removed neighbour
+    adj_map = build_adjacency_map(mesh.faces.tolist())
+    boundary_indices = {
+        i
+        for i in keep_indices
+        if any(j in remove_indices for j in adj_map.get(i, []))
+    }
+    boundary_points = [tuple(mesh.vertices[i]) for i in boundary_indices]
+
+    # Drop faces that reference any removed vertex
+    face_keep_mask = np.all(keep_mask[mesh.faces], axis=1)
+    new_faces = mesh.faces[face_keep_mask]
+
+    # Remap vertex indices
+    new_index = np.full(n_vertices, -1, dtype=np.int64)
+    new_index[keep_mask] = np.arange(keep_mask.sum(), dtype=np.int64)
+    new_faces = new_index[new_faces]
+
+    new_vertices = mesh.vertices[keep_mask]
+    new_mesh = trimesh.Trimesh(vertices=new_vertices, faces=new_faces, process=False)
+
+    new_coord_set = {tuple(v) for v in new_vertices}
+
+    updated = dict(results)
+    updated["mesh"] = new_mesh
+    updated["boundary_points"] = boundary_points
+
+    for key in (
+        "aorta_points",
+        "rca_points",
+        "lca_points",
+        "rca_removed_points",
+        "lca_removed_points",
+        "proximal_points",
+        "distal_points",
+        region_key,
+    ):
         if key in updated:
             updated[key] = [p for p in updated[key] if tuple(p) in new_coord_set]
+
+    return updated
+
+
+def sync_results_to_mesh(
+    results: dict,
+    old_mesh: trimesh.Trimesh,
+    new_mesh: trimesh.Trimesh,
+) -> dict:
+    """Update all coordinate lists in *results* after vertices have been moved.
+
+    Use this after :func:`scale_region_centerline_morphing` to keep the stored
+    point lists consistent with the new vertex positions.  The two meshes must
+    have the same vertex count and ordering (only positions change, no vertices
+    are added or removed).
+
+    Parameters
+    ----------
+    results : dict
+        Results dict whose coordinate lists should be refreshed.
+    old_mesh : trimesh.Trimesh
+        The mesh whose vertex positions match the current coordinate lists.
+    new_mesh : trimesh.Trimesh
+        The mesh with updated vertex positions (same indices, new coordinates).
+
+    Returns
+    -------
+    dict
+        Updated *results* with ``"mesh"`` replaced by *new_mesh* and all
+        coordinate lists remapped to the new vertex positions.
+    """
+    old_coord_to_idx = {tuple(v): i for i, v in enumerate(old_mesh.vertices)}
+
+    updated = dict(results)
+    updated["mesh"] = new_mesh
+
+    for key in (
+        "aorta_points",
+        "rca_points",
+        "lca_points",
+        "rca_removed_points",
+        "lca_removed_points",
+        "proximal_points",
+        "distal_points",
+        "anomalous_points",
+        "boundary_points",
+    ):
+        if key not in updated or not updated[key]:
+            continue
+        indices = [old_coord_to_idx.get(tuple(p)) for p in updated[key]]
+        updated[key] = [
+            tuple(new_mesh.vertices[i]) for i in indices if i is not None
+        ]
 
     return updated
 
