@@ -10,8 +10,6 @@ requires-python = ">=3.10"
 dependencies = [
     "numpy>=2.0.0,<3.0.0",
     "trimesh>=4.8.0",
-    "pyglet<2",
-    "pymeshlab",
 ]
 classifiers = [
     "Programming Language :: Rust",
@@ -47,3 +45,5 @@ test = [
     "ruff",
     "black",
 ]
+viz = ["pyglet<2"]
+meshlab = ["pymeshlab>=2023.12"]
