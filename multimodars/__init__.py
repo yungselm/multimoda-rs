@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import os
-from importlib.metadata import version
+# import os
+# from importlib.metadata import version
 
 from .multimodars import (
     PyContourPoint,
@@ -44,10 +44,13 @@ from .ccta.manipulating import (
     scale_region_centerline_morphing,
     find_distal_and_proximal_scaling,
     find_aorta_scaling,
-    remove_anomalous_points_from_mesh,
+    remove_labeled_points_from_mesh,
+    keep_labeled_points_from_mesh,
+    sync_results_to_mesh,
     stitch_ccta_to_intravascular,
 )
-from .ccta.fixing_functions import fix_and_remesh_stitched_mesh
+from .ccta.fixing_functions import fix_and_remesh_stitched_mesh, manual_hole_fill
+from .ccta.debug_plots import plot_results_key
 
 __all__ = [
     # Core classes
@@ -90,9 +93,13 @@ __all__ = [
     "scale_region_centerline_morphing",
     "find_distal_and_proximal_scaling",
     "find_aorta_scaling",
-    "remove_anomalous_points_from_mesh",
+    "remove_labeled_points_from_mesh",
+    "keep_labeled_points_from_mesh",
+    "sync_results_to_mesh",
     "stitch_ccta_to_intravascular",
     "fix_and_remesh_stitched_mesh",
+    "manual_hole_fill",
+    "plot_results_key",
 ]
 
 # def _print_banner():

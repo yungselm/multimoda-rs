@@ -1,190 +1,116 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import trimesh
 from trimesh.points import PointCloud
 
+if TYPE_CHECKING:
+    from ..multimodars import PyCenterline
 
-def labeled_geometry_plot(
-    mesh: trimesh.Trimesh,
-    rca_points: list,
-    lca_points: list,
-    rca_removed_points: list,
-    lca_removed_points: list,
-    cl_rca=None,
-    cl_lca=None,
-    cl_aorta=None,
+
+def plot_results_key(
+    results: dict,
+    aorta_points: bool = True,
+    rca_points: bool = False,
+    lca_points: bool = False,
+    rca_removed_points: bool = False,
+    proximal_points: bool = False,
+    distal_points: bool = False,
+    anomalous_points: bool = False,
+    cl_rca: PyCenterline | None = None,
+    cl_lca: PyCenterline | None = None,
+    cl_aorta: PyCenterline | None = None,
 ):
-    """Open an interactive 3-D scene visualising the labelled mesh regions.
+    """Open an interactive 3-D scene visualising selected regions from a results dict.
+
+    Toggle which regions are shown by passing ``True``/``False`` for each flag.
 
     Colour coding:
 
-    * **Yellow** - aortic vertices (not in RCA or LCA).
-    * **Blue** - RCA coronary vertices.
-    * **Green** - LCA coronary vertices.
-    * **Red** - vertices removed by occlusion detection.
-    * **Dark blue / dark green / dark yellow** - RCA / LCA / aorta centerline
-      points.
-
-    Parameters
-    ----------
-    mesh : trimesh.Trimesh
-        The surface mesh displayed semi-transparently in the background.
-    rca_points : list of tuple
-        RCA vertex coordinates.
-    lca_points : list of tuple
-        LCA vertex coordinates.
-    rca_removed_points : list of tuple
-        RCA vertices that were flagged by occlusion removal.
-    lca_removed_points : list of tuple
-        LCA vertices that were flagged by occlusion removal.
-    cl_rca : PyCenterline, optional
-        RCA centerline object; plotted when provided.
-    cl_lca : PyCenterline, optional
-        LCA centerline object; plotted when provided.
-    cl_aorta : PyCenterline, optional
-        Aorta centerline object; plotted when provided.
-    """
-    rca_set = set(rca_points)
-    lca_set = set(lca_points)
-    aortic_points = [
-        tuple(vertex)
-        for vertex in mesh.vertices
-        if tuple(vertex) not in rca_set and tuple(vertex) not in lca_set
-    ]
-
-    print(f"\n=== DEBUG PLOT STATISTICS ===")
-    print(f"Total mesh vertices: {len(mesh.vertices)}")
-    print(f"Aortic points (yellow): {len(aortic_points)}")
-    print(f"RCA coronary points (blue): {len(rca_points)}")
-    print(f"LCA coronary points (green): {len(lca_points)}")
-    print(f"RCA reassigned points (red): {len(rca_removed_points)}")
-    print(f"LCA reassigned points (red): {len(lca_removed_points)}")
-
-    scene_geoms = []
-
-    # Add mesh (semi-transparent)
-    mesh_visual = mesh.copy()
-    mesh_visual.visual.face_colors = [200, 200, 200, 100]  # Semi-transparent gray
-    scene_geoms.append(mesh_visual)
-
-    if aortic_points:
-        aortic_array = np.array(aortic_points, dtype=np.float64)
-        aortic_colors = np.tile([255, 255, 0, 255], (len(aortic_points), 1))  # Yellow
-        scene_geoms.append(PointCloud(aortic_array, colors=aortic_colors))
-
-    if rca_points:
-        rca_array = np.array(rca_points, dtype=np.float64)
-        rca_colors = np.tile([0, 0, 255, 255], (len(rca_points), 1))  # Blue
-        scene_geoms.append(PointCloud(rca_array, colors=rca_colors))
-
-    if lca_points:
-        lca_array = np.array(lca_points, dtype=np.float64)
-        lca_colors = np.tile([0, 255, 0, 255], (len(lca_points), 1))  # Green
-        scene_geoms.append(PointCloud(lca_array, colors=lca_colors))
-
-    all_removed = rca_removed_points + lca_removed_points
-    if all_removed:
-        removed_array = np.array(all_removed, dtype=np.float64)
-        removed_colors = np.tile([255, 0, 0, 255], (len(all_removed), 1))  # Red
-        scene_geoms.append(PointCloud(removed_array, colors=removed_colors))
-
-    if cl_rca is not None:
-        rca_centerline_points = np.array(
-            [
-                (p.contour_point.x, p.contour_point.y, p.contour_point.z)
-                for p in cl_rca.points
-            ],
-            dtype=np.float64,
-        )
-        scene_geoms.append(
-            PointCloud(rca_centerline_points, colors=[0, 100, 200, 255])
-        )  # Dark blue
-
-    if cl_lca is not None:
-        lca_centerline_points = np.array(
-            [
-                (p.contour_point.x, p.contour_point.y, p.contour_point.z)
-                for p in cl_lca.points
-            ],
-            dtype=np.float64,
-        )
-        scene_geoms.append(
-            PointCloud(lca_centerline_points, colors=[0, 150, 0, 255])
-        )  # Dark green
-
-    if cl_aorta is not None:
-        aorta_centerline_points = np.array(
-            [
-                (p.contour_point.x, p.contour_point.y, p.contour_point.z)
-                for p in cl_aorta.points
-            ],
-            dtype=np.float64,
-        )
-        scene_geoms.append(
-            PointCloud(aorta_centerline_points, colors=[200, 200, 0, 255])
-        )  # Dark yellow
-
-    scene1 = trimesh.Scene(scene_geoms)
-
-    print("\nShowing Scene 1: Mesh with colored points")
-    print("Colors: Yellow=Aorta, Blue=RCA, Green=LCA, Red=Removed")
-    scene1.show()
-
-
-def plot_anomalous_region(results, centerline):
-    """Open an interactive 3-D scene visualising the anomalous region sub-classes.
-
-    Colour coding:
-
-    * **Blue** - proximal points.
-    * **Red** - anomalous (intramural) points.
-    * **Green** - distal points.
-    * **Yellow** - centerline points.
+    * **Yellow** - aortic points.
+    * **Blue** - RCA coronary points.
+    * **Green** - LCA coronary points.
+    * **Red** - removed / reassigned points (RCA + LCA combined).
+    * **Cyan** - proximal points.
+    * **Magenta** - distal points.
+    * **Orange** - anomalous (intramural) points.
 
     Parameters
     ----------
     results : dict
-        Dictionary containing ``"proximal_points"``, ``"anomalous_points"``,
-        and ``"distal_points"`` keys (as returned by
-        :func:`~multimodars.ccta.adjust_ccta.label_anomalous_region`).
-    centerline : PyCenterline or None
-        Centerline to overlay; skipped when ``None``.
+        Dictionary with keys ``"aorta_points"``, ``"rca_points"``,
+        ``"lca_points"``, ``"rca_removed_points"``, ``"proximal_points"``,
+        ``"distal_points"``, ``"anomalous_points"`` - each a list of
+        ``(x, y, z)`` tuples.
+    aorta_points : bool
+        Show aortic points (yellow).
+    rca_points : bool
+        Show RCA coronary points (blue).
+    lca_points : bool
+        Show LCA coronary points (green).
+    rca_removed_points : bool
+        Show removed RCA points (red).
+    proximal_points : bool
+        Show proximal points (cyan).
+    distal_points : bool
+        Show distal points (magenta).
+    anomalous_points : bool
+        Show anomalous points (orange).
     """
-    print(f"\n=== ANOMALOUS REGION VISUALIZATION ===")
+    print("\n=== RESULTS KEY PLOT ===")
+
+    region_config = [
+        ("aorta_points",     aorta_points,     [255, 255,   0, 255], "Yellow  = Aorta"),
+        ("rca_points",       rca_points,       [  0,   0, 255, 255], "Blue    = RCA"),
+        ("lca_points",       lca_points,       [  0, 255,   0, 255], "Green   = LCA"),
+        ("rca_removed_points", rca_removed_points, [255, 0, 0, 255], "Red     = Removed"),
+        ("proximal_points",  proximal_points,  [  0, 255, 255, 255], "Cyan    = Proximal"),
+        ("distal_points",    distal_points,    [255,   0, 255, 255], "Magenta = Distal"),
+        ("anomalous_points", anomalous_points, [255, 165,   0, 255], "Orange  = Anomalous"),
+    ]
 
     scene_geoms = []
+    for key, enabled, color, label in region_config:
+        pts = results.get(key, [])
+        print(f"  {label:30s}  n={len(pts):6d}  {'[shown]' if enabled and pts else '[hidden]'}")
+        if enabled and pts:
+            arr = np.array(pts, dtype=np.float64)
+            colors = np.tile(color, (len(pts), 1))
+            scene_geoms.append(PointCloud(arr, colors=colors))
 
-    if results["proximal_points"]:
-        proximal_array = np.array(results["proximal_points"])
-        proximal_cloud = PointCloud(proximal_array, colors=[0, 0, 255, 255])  # Blue
-        scene_geoms.append(proximal_cloud)
+    if not scene_geoms:
+        print("Nothing to show - all regions are disabled or empty.")
+        return
+    
+    mesh_visual = results["mesh"]
+    mesh_visual.visual.face_colors = [200, 200, 200, 100]
+    scene_geoms.append(mesh_visual)
 
-    if results["anomalous_points"]:
-        anomalous_array = np.array(results["anomalous_points"])
-        anomalous_cloud = PointCloud(anomalous_array, colors=[255, 0, 0, 255])  # Red
-        scene_geoms.append(anomalous_cloud)
-
-    if results["distal_points"]:
-        distal_array = np.array(results["distal_points"])
-        distal_cloud = PointCloud(distal_array, colors=[0, 255, 0, 255])  # Green
-        scene_geoms.append(distal_cloud)
-
-    if centerline is not None:
-        centerline_points = np.array(
-            [
-                (p.contour_point.x, p.contour_point.y, p.contour_point.z)
-                for p in centerline.points
-            ],
-            dtype=np.float64,
-        )
-        centerline_cloud = PointCloud(
-            centerline_points, colors=[255, 255, 0, 255]
-        )  # Yellow
-        scene_geoms.append(centerline_cloud)
+    if cl_rca:
+        rca = _get_cl_arry(cl_rca)
+        scene_geoms.append(PointCloud(rca, colors=[0, 100, 200, 255]))
+    if cl_lca:
+        lca = _get_cl_arry(cl_lca)
+        scene_geoms.append(PointCloud(lca, colors=[0, 150, 0, 255]))
+    if cl_aorta:
+        ao = _get_cl_arry(cl_aorta)
+        scene_geoms.append(PointCloud(ao, colors=[200, 200, 0, 255]))
 
     scene = trimesh.Scene(scene_geoms)
     scene.show()
+
+
+def _get_cl_arry(cl: PyCenterline) -> np.array:
+    cl = np.array(
+        [
+            (p.contour_point.x, p.contour_point.y, p.contour_point.z)
+            for p in cl.points
+        ],
+        dtype=np.float64,
+    )
+    return cl
 
 
 def compare_centerline_scaling(
