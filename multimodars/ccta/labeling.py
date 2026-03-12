@@ -11,7 +11,7 @@ from ..multimodars import (
 )
 from .._converters import numpy_to_centerline
 from ..io.read_geometrical import read_mesh
-from .debug_plots import labeled_geometry_plot, plot_anomalous_region, compare_centerline_scaling
+from .debug_plots import plot_results_key, compare_centerline_scaling
 
 def label_geometry(
     path_ccta_geometry: Path | str,
@@ -208,15 +208,18 @@ def label_geometry(
     new_results = _final_reclassification(results)
 
     if control_plot:
-        labeled_geometry_plot(
-            mesh=new_results["mesh"],
-            rca_points=new_results["rca_points"],
-            lca_points=new_results["lca_points"],
-            rca_removed_points=new_results["rca_removed_points"],
-            lca_removed_points=new_results["lca_removed_points"],
+        plot_results_key(
+            new_results,
+            aorta_points=True,
+            rca_points=True,
+            lca_points=True,
+            rca_removed_points=True,
+            proximal_points=True,
+            distal_points=False,
+            anomalous_points=False,
             cl_rca=cl_rca,
             cl_lca=cl_lca,
-            cl_aorta=cl_aorta,
+            cl_aorta=cl_aorta,     
         )
 
     return new_results, (cl_rca, cl_lca, cl_aorta)
@@ -495,10 +498,32 @@ def label_anomalous_region(
     results["distal_points"] = distal_points
     results["anomalous_points"] = anomalous_points
 
+    all_coronary = (
+        set(results.get("rca_points", []))
+        | set(results.get("lca_points", []))
+        | set(proximal_points)
+        | set(distal_points)
+        | set(anomalous_points)
+    )
+    results["aorta_points"] = [
+        tuple(v)
+        for v in results["mesh"].vertices
+        if tuple(v) not in all_coronary
+    ]
+
     if debug_plot:
-        plot_anomalous_region(
+        plot_results_key(
             results=results,
-            centerline=centerline,
+            aorta_points=False,
+            rca_points=False,
+            lca_points=False,
+            rca_removed_points=False,
+            proximal_points=True,
+            distal_points=False,
+            anomalous_points=False,
+            cl_rca=centerline,
+            cl_lca=None,
+            cl_aorta=None,     
         )
 
     return results
