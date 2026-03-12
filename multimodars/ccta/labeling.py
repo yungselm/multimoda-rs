@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+
 from pathlib import Path
 import trimesh
 import numpy as np
@@ -8,23 +11,25 @@ from ..multimodars import (
     clean_outlier_points,
     build_adjacency_map,
     find_points_by_cl_region,
+    PyCenterline,
 )
 from .._converters import numpy_to_centerline
 from ..io.read_geometrical import read_mesh
 from .debug_plots import plot_results_key, compare_centerline_scaling
 
+
 def label_geometry(
-    path_ccta_geometry: Path | str,
-    path_centerline_aorta: Path | str,
-    path_centerline_rca: Path | str,
-    path_centerline_lca: Path | str,
+    path_ccta_geometry: Path | str | trimesh.Trimesh,
+    path_centerline_aorta: Path | str | PyCenterline,
+    path_centerline_rca: Path | str | PyCenterline,
+    path_centerline_lca: Path | str | PyCenterline,
     anomalous_rca: bool = False,
     anomalous_lca: bool = False,
     n_points_intramural: int = 120,
     bounding_sphere_radius_mm: float = 3.0,
     tolerance_float: float = 1e-6,
     control_plot: bool = True,
-) -> tuple[dict, tuple[any, any, any]]:
+) -> tuple[dict, tuple[PyCenterline, PyCenterline, PyCenterline]]:
     """Label CCTA mesh vertices as aorta, RCA, or LCA using centerline-based region detection.
 
     Loads a 3-D surface mesh and three centerlines (aorta, RCA, LCA), then assigns
@@ -87,36 +92,61 @@ def label_geometry(
         Re-raises any error that occurs while reading the mesh or centerline
         files, after printing a descriptive message.
     """
-    try:
-        mesh = read_mesh(path_ccta_geometry)
-        print(f"Loaded mesh: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces")
-    except Exception as e:
-        print(f"Error reading CCTA mesh from {path_ccta_geometry}: {e}")
-        raise
+    if isinstance(path_ccta_geometry, trimesh.Trimesh):
+        mesh = path_ccta_geometry
+        print(f"Using provided mesh: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces")
+    else:
+        try:
+            mesh = read_mesh(path_ccta_geometry)
+            print(f"Loaded mesh: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces")
+        except Exception as e:
+            print(f"Error reading CCTA mesh from {path_ccta_geometry}: {e}")
+            raise
 
-    try:
-        cl_aorta_raw = np.genfromtxt(path_centerline_aorta, delimiter=",")
-        cl_aorta = numpy_to_centerline(cl_aorta_raw)
-        print(f"Loaded aorta centerline: {len(cl_aorta.points)} points")
-    except Exception as e:
-        print(f"Error reading Aorta centerline from {path_centerline_aorta}: {e}")
-        raise
+    if isinstance(path_centerline_aorta, PyCenterline):
+        cl_aorta = path_centerline_aorta
+        print(f"Using provided aorta centerline: {len(cl_aorta.points)} points")
+    elif isinstance(path_centerline_aorta, np.ndarray):
+        cl_aorta = numpy_to_centerline(path_centerline_aorta)
+        print(f"Using provided aorta centerline: {len(cl_aorta.points)} points")
+    else:
+        try:
+            cl_aorta_raw = np.genfromtxt(path_centerline_aorta, delimiter=",")
+            cl_aorta = numpy_to_centerline(cl_aorta_raw)
+            print(f"Loaded aorta centerline: {len(cl_aorta.points)} points")
+        except Exception as e:
+            print(f"Error reading Aorta centerline from {path_centerline_aorta}: {e}")
+            raise
 
-    try:
-        cl_lca_raw = np.genfromtxt(path_centerline_lca, delimiter=",")
-        cl_lca = numpy_to_centerline(cl_lca_raw)
-        print(f"Loaded LCA centerline: {len(cl_lca.points)} points")
-    except Exception as e:
-        print(f"Error reading LCA centerline from {path_centerline_lca}: {e}")
-        raise
+    if isinstance(path_centerline_lca, PyCenterline):
+        cl_lca = path_centerline_lca
+        print(f"Using provided LCA centerline: {len(cl_lca.points)} points")
+    elif isinstance(path_centerline_lca, np.ndarray):
+        cl_lca = numpy_to_centerline(path_centerline_lca)
+        print(f"Using provided LCA centerline: {len(cl_lca.points)} points")
+    else:
+        try:
+            cl_lca_raw = np.genfromtxt(path_centerline_lca, delimiter=",")
+            cl_lca = numpy_to_centerline(cl_lca_raw)
+            print(f"Loaded LCA centerline: {len(cl_lca.points)} points")
+        except Exception as e:
+            print(f"Error reading LCA centerline from {path_centerline_lca}: {e}")
+            raise
 
-    try:
-        cl_rca_raw = np.genfromtxt(path_centerline_rca, delimiter=",")
-        cl_rca = numpy_to_centerline(cl_rca_raw)
-        print(f"Loaded RCA centerline: {len(cl_rca.points)} points")
-    except Exception as e:
-        print(f"Error reading RCA centerline from {path_centerline_rca}: {e}")
-        raise
+    if isinstance(path_centerline_rca, PyCenterline):
+        cl_rca = path_centerline_rca
+        print(f"Using provided RCA centerline: {len(cl_rca.points)} points")
+    elif isinstance(path_centerline_rca, np.ndarray):
+        cl_rca = numpy_to_centerline(path_centerline_rca)
+        print(f"Using provided RCA centerline: {len(cl_rca.points)} points")
+    else:
+        try:
+            cl_rca_raw = np.genfromtxt(path_centerline_rca, delimiter=",")
+            cl_rca = numpy_to_centerline(cl_rca_raw)
+            print(f"Loaded RCA centerline: {len(cl_rca.points)} points")
+        except Exception as e:
+            print(f"Error reading RCA centerline from {path_centerline_rca}: {e}")
+            raise
 
     points_list = [tuple(vertex) for vertex in mesh.vertices.tolist()]
 
@@ -219,7 +249,7 @@ def label_geometry(
             anomalous_points=False,
             cl_rca=cl_rca,
             cl_lca=cl_lca,
-            cl_aorta=cl_aorta,     
+            cl_aorta=cl_aorta,
         )
 
     return new_results, (cl_rca, cl_lca, cl_aorta)
@@ -506,9 +536,7 @@ def label_anomalous_region(
         | set(anomalous_points)
     )
     results["aorta_points"] = [
-        tuple(v)
-        for v in results["mesh"].vertices
-        if tuple(v) not in all_coronary
+        tuple(v) for v in results["mesh"].vertices if tuple(v) not in all_coronary
     ]
 
     if debug_plot:
@@ -519,11 +547,11 @@ def label_anomalous_region(
             lca_points=False,
             rca_removed_points=False,
             proximal_points=True,
-            distal_points=False,
-            anomalous_points=False,
+            distal_points=True,
+            anomalous_points=True,
             cl_rca=centerline,
             cl_lca=None,
-            cl_aorta=None,     
+            cl_aorta=None,
         )
 
     return results

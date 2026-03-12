@@ -48,6 +48,47 @@ def manual_hole_fill(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
     result.fix_normals()
     return result
 
+def postprocess_stitched_mesh(
+    mesh: trimesh.Trimesh,
+    *,
+    postprocessing: bool = False,
+    target_edge_length_mm: float | None = None,
+    remesh_iterations: int = 10,
+    verbose: bool = False,
+    **kwargs,
+) -> trimesh.Trimesh:
+    """Optionally remesh and smooth a stitched mesh.
+
+    Parameters
+    ----------
+    mesh:
+        Input stitched mesh.
+    postprocessing:
+        When ``True``, run :func:`fix_and_remesh_stitched_mesh` followed by
+        Taubin smoothing.  Requires pymeshlab to be installed.
+    target_edge_length_mm:
+        Passed to :func:`fix_and_remesh_stitched_mesh`.
+    remesh_iterations:
+        Passed to :func:`fix_and_remesh_stitched_mesh`.
+    verbose:
+        Passed to :func:`fix_and_remesh_stitched_mesh`.
+    **kwargs:
+        Additional keyword arguments passed to :func:`fix_and_remesh_stitched_mesh`.
+    """
+    if not postprocessing:
+        return mesh
+
+    mesh = fix_and_remesh_stitched_mesh(
+        mesh,
+        target_edge_length_mm=target_edge_length_mm,
+        remesh_iterations=remesh_iterations,
+        verbose=verbose,
+        **kwargs,
+    )
+    trimesh.smoothing.filter_taubin(mesh)
+    return mesh
+
+
 def _trimesh_to_meshset(mesh: trimesh.Trimesh):
     ms = pymeshlab.MeshSet()
     m = pymeshlab.Mesh(

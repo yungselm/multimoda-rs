@@ -36,6 +36,7 @@ from ._converters import (
     numpy_to_inputdata,
 )
 from .io import read_geometrical, write_geometries
+from .ccta import label, scale, stitch
 from .ccta.labeling import (
     label_geometry,
     label_anomalous_region,
@@ -88,6 +89,9 @@ __all__ = [
     "read_geometrical",
     "write_geometries",
     # CCTA module
+    "label",
+    "scale",
+    "stitch",
     "label_geometry",
     "label_anomalous_region",
     "scale_region_centerline_morphing",
@@ -98,6 +102,7 @@ __all__ = [
     "sync_results_to_mesh",
     "stitch_ccta_to_intravascular",
     "fix_and_remesh_stitched_mesh",
+    "postprocess_stitched_mesh",
     "manual_hole_fill",
     "plot_results_key",
 ]

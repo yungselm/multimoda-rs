@@ -28,6 +28,7 @@
 - [] Create ostium frames for smoother connection to aorta (define range cl points, and function of lumen increase)
 - [] Write Pytests for the new functions
 - [] Write a more stable function to find intramural points on aorta (for now works with excluded RCA points)
+- [] fix centerline resampling
 
 # CCTA clinical assessment (v0.3.0)
 - [] automatically find the required reference points for alignment
