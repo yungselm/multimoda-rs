@@ -7,6 +7,7 @@ from . import fixing_functions
 
 from pathlib import Path
 from typing import TYPE_CHECKING
+import numpy as np
 import trimesh
 
 if TYPE_CHECKING:
@@ -196,22 +197,23 @@ def scale(
         centerline=cl_vessel,
         diameter_adjustment_mm=distal_scaling,
     )
+    results = manipulating.sync_results_to_mesh(results, results['mesh'], scaled_distal)
 
     scaled_distal_aortic = manipulating.scale_region_centerline_morphing(
-        mesh=scaled_distal,
+        mesh=results['mesh'],
         region_points=results['aorta_points'] + results['rca_removed_points'],
         centerline=cl_aorta,
         diameter_adjustment_mm=aortic_scaling,
     )
-    results = manipulating.sync_results_to_mesh(results, scaled_distal, scaled_distal_aortic)
-    
+    results = manipulating.sync_results_to_mesh(results, results['mesh'], scaled_distal_aortic)
+
     scaled_proximal = manipulating.scale_region_centerline_morphing(
         mesh=results['mesh'],
         region_points=results['proximal_points'],
         centerline=cl_vessel,
         diameter_adjustment_mm=prox_scaling,
     )
-    results = manipulating.sync_results_to_mesh(results, scaled_distal_aortic, scaled_proximal)
+    results = manipulating.sync_results_to_mesh(results, results['mesh'], scaled_proximal)
 
     return results
 
@@ -276,3 +278,88 @@ def stitch(
     )
 
     return stitched
+
+
+def _extract_region_with_border_faces(
+    mesh: trimesh.Trimesh,
+    region_points: list,
+) -> trimesh.Trimesh:
+    """Return a sub-mesh containing every face that touches at least one vertex
+    in *region_points*.
+
+    Unlike :func:`manipulating.keep_labeled_points_from_mesh`, which only keeps
+    faces whose *all* vertices belong to the region, this function uses an
+    **at-least-one-vertex** criterion.  The result therefore includes the thin
+    ring of adjacent-region vertices that share a face with the target region,
+    giving seamless overlapping boundaries when meshes of different labels are
+    exported side-by-side.
+    """
+    coord_to_idx = {tuple(v): i for i, v in enumerate(mesh.vertices)}
+    keep_indices = np.array(
+        [coord_to_idx[tuple(p)] for p in region_points if tuple(p) in coord_to_idx],
+        dtype=np.int64,
+    )
+    if keep_indices.size == 0:
+        return trimesh.Trimesh()
+
+    face_mask = np.isin(mesh.faces, keep_indices).any(axis=1)
+    selected_faces = mesh.faces[face_mask]
+
+    used = np.unique(selected_faces)
+    remap = np.full(len(mesh.vertices), -1, dtype=np.int64)
+    remap[used] = np.arange(len(used), dtype=np.int64)
+
+    return trimesh.Trimesh(
+        vertices=mesh.vertices[used],
+        faces=remap[selected_faces],
+        process=False,
+    )
+
+
+def export_section_stl(
+    results: dict,
+    type: str = "all",
+    output_dir: Path | str | None = None,
+) -> None:
+    """Export the mesh (or a labeled sub-region) as an STL file.
+
+    Parameters
+    ----------
+    results : dict
+        Labeled results dictionary containing ``"mesh"`` and the point-label
+        lists produced by :func:`label` / :func:`scale`.
+    type : str, optional
+        Which region to export.  One of:
+
+        * ``"all"``   - the full mesh as-is.
+        * ``"aorta"`` - only the aorta region.
+        * ``"rca"``   - only the RCA region (includes adjacent aorta ring).
+        * ``"lca"``   - only the LCA region (includes adjacent aorta ring).
+
+        Default is ``"all"``.
+    output_dir : Path, str, or None, optional
+        Directory in which to write the STL file.  Defaults to the current
+        working directory when ``None``.
+    """
+    output_dir = Path(output_dir) if output_dir is not None else Path(".")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    mesh: trimesh.Trimesh = results["mesh"]
+
+    _REGION_KEYS = {
+        "aorta": "aorta_points",
+        "rca":   "rca_points",
+        "lca":   "lca_points",
+    }
+
+    if type == "all":
+        mesh.export(str(output_dir / "all.stl"))
+    elif type in _REGION_KEYS:
+        region_points = results.get(_REGION_KEYS[type], [])
+        sub_mesh = _extract_region_with_border_faces(mesh, region_points)
+        sub_mesh.export(str(output_dir / f"{type}.stl"))
+    else:
+        raise ValueError(
+            f"Unknown export type {type!r}. "
+            f"Choose one of: 'all', 'aorta', 'rca', 'lca'."
+        )

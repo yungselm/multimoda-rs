@@ -82,7 +82,7 @@ def scale_region_centerline_morphing(
     )
 
     # Clear mesh cache since we modified vertices directly
-    scaled_mesh.vertices.flags["WRITEABLE"] = False
+    scaled_mesh.vertices.flags['WRITEABLE'] = False
 
     return scaled_mesh
 
@@ -131,12 +131,12 @@ def find_distal_and_proximal_scaling(
     frame_points_prox = [
         (p.x, p.y, p.z) for f in frames[0:prox_range] for p in f.lumen.points
     ]
-    n_anomalous_points = len(results["anomalous_points"])
+    n_anomalous_points = len(results['anomalous_points'])
     n_section: int = int(np.ceil(0.25 * n_anomalous_points))
 
     print("\n=== Finding best scaling factors ===")
     prox_scaling, dist_scaling = find_proximal_distal_scaling(
-        results["anomalous_points"],
+        results['anomalous_points'],
         n_section,
         n_section,
         centerline,
@@ -183,7 +183,7 @@ def find_aorta_scaling(
 
     print("\n=== Finding best scaling factor ===")
     scaling = find_aortic_scaling(
-        results["rca_removed_points"],  # For now work with removed points
+        results['rca_removed_points'],  # For now work with removed points
         reference_points,
         centerline,
     )
@@ -231,7 +231,7 @@ def _extract_wall_from_frames(frames) -> list[tuple[float, float, float]]:
     for frame in frames:
         if frame.lumen.aortic_thickness is None:
             continue
-        if "Wall" not in frame.extras or frame.extras["Wall"] is None:
+        if "Wall" not in frame.extras or frame.extras['Wall'] is None:
             raise ValueError(
                 f"No Wall extras found for frame {getattr(frame, 'frame', '?')}"
             )
@@ -290,7 +290,7 @@ def remove_labeled_points_from_mesh(
     if isinstance(region_keys, str):
         region_keys = [region_keys]
 
-    mesh: trimesh.Trimesh = results["mesh"]
+    mesh: trimesh.Trimesh = results['mesh']
 
     points_to_remove = [
         pt
@@ -345,8 +345,8 @@ def remove_labeled_points_from_mesh(
     new_coord_set = {tuple(v) for v in new_vertices}
 
     updated = dict(results)
-    updated["mesh"] = new_mesh
-    updated["boundary_points"] = boundary_points
+    updated['mesh'] = new_mesh
+    updated['boundary_points'] = boundary_points
 
     for key in region_keys:
         updated[key] = []
@@ -395,7 +395,7 @@ def keep_labeled_points_from_mesh(
         A new ``"boundary_points"`` entry is added containing the open-boundary
         ring vertices adjacent to the removed region.
     """
-    mesh: trimesh.Trimesh = results["mesh"]
+    mesh: trimesh.Trimesh = results['mesh']
 
     points_to_keep = results.get(region_key, [])
     if not points_to_keep:
@@ -441,8 +441,8 @@ def keep_labeled_points_from_mesh(
     new_coord_set = {tuple(v) for v in new_vertices}
 
     updated = dict(results)
-    updated["mesh"] = new_mesh
-    updated["boundary_points"] = boundary_points
+    updated['mesh'] = new_mesh
+    updated['boundary_points'] = boundary_points
 
     for key in (
         "aorta_points",
@@ -490,7 +490,7 @@ def sync_results_to_mesh(
     old_coord_to_idx = {tuple(v): i for i, v in enumerate(old_mesh.vertices)}
 
     updated = dict(results)
-    updated["mesh"] = new_mesh
+    updated['mesh'] = new_mesh
 
     for key in (
         "aorta_points",
@@ -582,10 +582,11 @@ def stitch_ccta_to_intravascular(
     mesh.remove_unreferenced_vertices()
     mesh.fix_normals()
 
-    results["prox_boundary_points"] = prox_boundary_pts
-    results["dist_boundary_points"] = dist_boundary_pts
-    results["anomalous_points"] = iv_mesh_points
-    results["mesh"] = mesh
+    results['prox_boundary_points'] = prox_boundary_pts
+    results['dist_boundary_points'] = dist_boundary_pts
+    results['anomalous_points'] = iv_mesh_points
+    results['rca_points'] = iv_mesh_points + results['distal_points'] + results['proximal_points']
+    results['mesh'] = mesh
     
     return results
 
@@ -599,7 +600,7 @@ def _prepare_prox_dist_boundary_pts(
     proximal_boundary_pts = []
     distal_boundary_pts = []
     print(f"Number of boundary points: {len(results['boundary_points'])}")
-    for pt in results["boundary_points"]:
+    for pt in results['boundary_points']:
         distance_prox = np.linalg.norm(np.array(prox_centroid) - np.array(pt))
         distance_dist = np.linalg.norm(np.array(dist_centroid) - np.array(pt))
         if distance_prox <= distance_dist:

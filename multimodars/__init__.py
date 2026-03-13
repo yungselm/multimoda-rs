@@ -36,7 +36,7 @@ from ._converters import (
     numpy_to_inputdata,
 )
 from .io import read_geometrical, write_geometries
-from .ccta import label, scale, stitch
+from .ccta import label, scale, stitch, export_section_stl
 from .ccta.labeling import (
     label_geometry,
     label_anomalous_region,
@@ -92,6 +92,7 @@ __all__ = [
     "label",
     "scale",
     "stitch",
+    "export_section_stl",
     "label_geometry",
     "label_anomalous_region",
     "scale_region_centerline_morphing",
