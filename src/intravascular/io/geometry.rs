@@ -361,6 +361,19 @@ impl Contour {
         }
     }
 
+    /// Rotate the Vec so the point currently at position `shift` moves to
+    /// index 0, then reassign `point_index` sequentially.  X/Y/Z unchanged.
+    pub fn rotate_and_reindex(&mut self, shift: usize) {
+        let n = self.points.len();
+        if n == 0 || shift == 0 {
+            return;
+        }
+        self.points.rotate_left(shift % n);
+        for (i, pt) in self.points.iter_mut().enumerate() {
+            pt.point_index = i as u32;
+        }
+    }
+
     /// Rotates a contour around its centroid by the specified angle (in radians)
     pub fn rotate_contour(&mut self, angle: f64) {
         if angle == 0.0 {
@@ -808,6 +821,32 @@ impl Geometry {
         for frame in self.frames.iter_mut() {
             frame.rotate_frame(angle_rad);
             frame.sort_frame_points();
+        }
+    }
+
+    /// Rotate all frame contour point Vecs so that the point with the highest
+    /// Z-value in frame 0's lumen becomes Vec index 0.  The same rotation
+    /// offset is applied to every contour in every frame, and `point_index`
+    /// fields are reassigned sequentially (0, 1, 2, …).
+    /// X/Y/Z coordinates are never modified.
+    pub fn sort_frame_points_by_z(&mut self) {
+        let shift = match self.frames.first() {
+            Some(f) => f
+                .lumen
+                .points
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.z.partial_cmp(&b.z).unwrap())
+                .map(|(i, _)| i)
+                .unwrap_or(0),
+            None => return,
+        };
+
+        for frame in self.frames.iter_mut() {
+            frame.lumen.rotate_and_reindex(shift);
+            for contour in frame.extras.values_mut() {
+                contour.rotate_and_reindex(shift);
+            }
         }
     }
 

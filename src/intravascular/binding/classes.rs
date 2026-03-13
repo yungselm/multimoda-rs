@@ -1103,6 +1103,21 @@ impl PyGeometry {
         Ok(PyGeometry::from(&rust_geometry))
     }
 
+    /// Re-index all frame contour points so the point with the highest Z-value
+    /// in frame 0's lumen gets ``point_index = 0``.  The same index offset is
+    /// applied to every contour in every frame.  Physical point positions are
+    /// unchanged — only the ``point_index`` fields are reassigned.
+    ///
+    /// Returns
+    /// -------
+    /// PyGeometry
+    ///     New geometry with re-indexed frames.
+    pub fn sort_frame_points(&self) -> PyResult<PyGeometry> {
+        let mut rust_geometry = self.to_rust_geometry()?;
+        rust_geometry.sort_frame_points_by_z();
+        Ok(PyGeometry::from(&rust_geometry))
+    }
+
     /// Apply smoothing to all frames using a three-point moving average.
     ///
     /// Returns

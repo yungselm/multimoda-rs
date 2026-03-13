@@ -221,13 +221,22 @@ def stitch(
     results: dict,
     geometry: PyGeometry,
     postprocessing: bool = False,
+    region_remove: list[str] | str = ["anomalous_points", "proximal_points"],
+    prox_start_mode: str = "highest_z",
+    dist_start_mode: str = "nearest_iv",
     **postprocessing_kwargs,
 ) -> dict:
     """Stitch a CCTA mesh to the intravascular geometry and optionally remesh.
 
     Removes labeled anatomical regions from the CCTA mesh, then stitches the
     remaining surface to the intravascular geometry reconstructed from
-    *geometry*.  When *postprocessing* is ``True`` **and** pymeshlab is
+    *geometry*. 
+    
+    *Anomalous vessel*: The recommended approach for anomalies is to remove anomalous points
+    and proximal points and stitch the intravascular vessel directly to aorta with highest_z
+    approach (default).
+    
+    When *postprocessing* is ``True`` **and** pymeshlab is
     installed, the stitched mesh is repaired, isotropically remeshed, and
     smoothed with a Taubin filter before being returned.
 
@@ -244,6 +253,12 @@ def stitch(
         When ``True``, run :func:`fixing_functions.fix_and_remesh_stitched_mesh`
         followed by Taubin smoothing on the stitched mesh.  Silently skipped
         if pymeshlab is not installed.  Default is ``False``.
+    prox_start_mode : str, optional
+        How to choose index 0 of the proximal boundary ring before stitching.
+        ``"nearest_iv"`` (default) rotates to the point closest to IV point 0;
+        ``"highest_z"`` rotates to the point with the largest z-coordinate.
+    dist_start_mode : str, optional
+        Same as *prox_start_mode* but for the distal boundary ring.
     **postprocessing_kwargs
         Keyword arguments forwarded to
         :func:`fixing_functions.fix_and_remesh_stitched_mesh`, e.g.
@@ -261,12 +276,14 @@ def stitch(
             "Install it with: pip install 'multimodars[meshlab]'"
         )
 
-    updated_results = manipulating.remove_labeled_points_from_mesh(results)
+    updated_results = manipulating.remove_labeled_points_from_mesh(results, region_remove)
 
     stitched = manipulating.stitch_ccta_to_intravascular(
         geometry,
         updated_results['mesh'],
         updated_results,
+        prox_start_mode=prox_start_mode,
+        dist_start_mode=dist_start_mode,
     )
 
     stitched['mesh'] = fixing_functions.manual_hole_fill(stitched['mesh'])

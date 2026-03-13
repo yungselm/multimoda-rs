@@ -513,12 +513,35 @@ def sync_results_to_mesh(
     return updated
 
 
+def _rotate_to_nearest_iv(boundary_pts: list, iv_pt) -> list:
+    """Rotate a boundary ring so the point nearest to *iv_pt* is first."""
+    iv_arr = np.array([iv_pt.x, iv_pt.y, iv_pt.z])
+    dists = [np.linalg.norm(np.array(pt) - iv_arr) for pt in boundary_pts]
+    start_idx = int(np.argmin(dists))
+    return boundary_pts[start_idx:] + boundary_pts[:start_idx]
+
+
+def _adjust_start_point_by_z(boundary_pts: list) -> list:
+    """Rotate a boundary ring so the point with the highest z-value is first."""
+    start_idx = int(np.argmax([pt[2] for pt in boundary_pts]))
+    return boundary_pts[start_idx:] + boundary_pts[:start_idx]
+
+
 def stitch_ccta_to_intravascular(
     iv_mesh: PyGeometry,
     mesh: trimesh.Trimesh,
     results: dict,
     n_points_iv_cont: int = 100,
+    prox_start_mode: str = "nearest_iv",
+    dist_start_mode: str = "nearest_iv",
 ) -> dict:
+    """
+    ``prox_start_mode`` / ``dist_start_mode`` control how index 0 of each
+    boundary ring is chosen before stitching:
+
+    * ``"nearest_iv"`` (default) - rotate to the point closest to IV point 0.
+    * ``"highest_z"`` - rotate to the point with the largest z-coordinate.
+    """
     """
     Uses an aligned intravascular mesh and stitches it to a CCTA mesh using the following steps.
     """
@@ -539,24 +562,21 @@ def stitch_ccta_to_intravascular(
     dist_point_step = len(distal_points) // len(dist_boundary_pts)
 
     # Adjust start point
-    prox_boundary_pts, dist_boundary_pts = _adjust_start_point(
-        prox_boundary_pts,
-        dist_boundary_pts,
-        proximal_points,
-        distal_points,
-    )
+    if prox_start_mode == "highest_z" or dist_start_mode == "highest_z":
+        iv_mesh = iv_mesh.sort_frame_points()
+        proximal_points = iv_mesh.frames[0].lumen.points
+        distal_points = iv_mesh.frames[-1].lumen.points
+    if prox_start_mode == "highest_z":
+        prox_boundary_pts = _adjust_start_point_by_z(prox_boundary_pts)
+    else:
+        prox_boundary_pts = _rotate_to_nearest_iv(prox_boundary_pts, proximal_points[0])
+    if dist_start_mode == "highest_z":
+        dist_boundary_pts = _adjust_start_point_by_z(dist_boundary_pts)
+    else:
+        dist_boundary_pts = _rotate_to_nearest_iv(dist_boundary_pts, distal_points[0])
 
-    # Check direction of boundary points by keeping only
-    prox_boundary_pts, dist_boundary_pts = _check_ring_direction(
-        prox_boundary_pts,
-        dist_boundary_pts,
-        proximal_points,
-        distal_points,
-        prox_point_step,
-        dist_point_step,
-    )
-
-    # Compute the vessel axis so each patch can be flipped to face outward.
+    # Compute the vessel axis so each patch can be flipped to face outward,
+    # and also used as the consistent reference normal for direction checking.
     # frames[0] is the "proximal" end, frames[-1] the "distal" end.
     # The outward direction for the proximal patch points away from the mesh
     # interior (toward frames[0]), and vice-versa for the distal patch.
@@ -564,6 +584,26 @@ def stitch_ccta_to_intravascular(
     dist_c = np.array(iv_mesh.frames[-1].centroid)
     prox_outward = prox_c - dist_c   # points toward the proximal end
     dist_outward = dist_c - prox_c   # points toward the distal end
+
+    # Check / fix winding direction of each boundary ring vs its IV ring
+    # independently, using the method that matches the start-point strategy.
+    if prox_start_mode == "highest_z":
+        prox_boundary_pts = _fix_ring_direction_by_winding(
+            prox_boundary_pts, proximal_points
+        )
+    else:
+        prox_boundary_pts = _fix_ring_direction_by_distance(
+            prox_boundary_pts, proximal_points, prox_point_step
+        )
+
+    if dist_start_mode == "highest_z":
+        dist_boundary_pts = _fix_ring_direction_by_winding(
+            dist_boundary_pts, distal_points
+        )
+    else:
+        dist_boundary_pts = _fix_ring_direction_by_distance(
+            dist_boundary_pts, distal_points, dist_point_step
+        )
 
     # Step 3: stitch each boundary ring to its IV ring
     prox_patch = _stitch_boundary_ring(prox_boundary_pts, proximal_points, prox_point_step, prox_outward)
@@ -695,61 +735,85 @@ def order_points_list(mesh: trimesh.Trimesh, points: list) -> list:
     return [idx_to_pt[boundary_indices[k]] for k in order]
 
 
-def _adjust_start_point(
-    prox_boundary_pts: list,
-    dist_boundary_pts: list,
-    proximal_points,
-    distal_points,
-) -> tuple[list, list]:
-    """Rotate each boundary ring so the point nearest to iv point 0 is first."""
+def _signed_area_projected(pts: list, normal: np.ndarray) -> float:
+    """Signed area of a polygon projected onto the plane with the given normal.
 
-    def _rotate_to_nearest(boundary_pts: list, iv_pt) -> list:
-        iv_arr = np.array([iv_pt.x, iv_pt.y, iv_pt.z])
-        dists = [np.linalg.norm(np.array(pt) - iv_arr) for pt in boundary_pts]
-        start_idx = int(np.argmin(dists))
-        return boundary_pts[start_idx:] + boundary_pts[:start_idx]
-
-    prox_boundary_pts = _rotate_to_nearest(prox_boundary_pts, proximal_points[0])
-    dist_boundary_pts = _rotate_to_nearest(dist_boundary_pts, distal_points[0])
-    return prox_boundary_pts, dist_boundary_pts
-
-
-def _check_ring_direction(
-    prox_boundary_pts: list,
-    dist_boundary_pts: list,
-    proximal_points,
-    distal_points,
-    prox_point_step: int,
-    dist_point_step: int,
-) -> tuple[list, list]:
-    """Ensure boundary rings wind in the same direction as the IV point rings.
-
-    Subsamples the IV points (every *step*-th, starting at 0) to match the
-    number of boundary points, then computes total point-wise distance for
-    the ring as-is and with the order reversed (keeping index 0 fixed).
-    The order with the smaller total distance is returned.
+    Positive = CCW when viewed from the normal direction.
     """
+    ref = np.array([1.0, 0.0, 0.0]) if abs(normal[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+    u = np.cross(normal, ref)
+    u /= np.linalg.norm(u)
+    v = np.cross(normal, u)
+    arr = np.array(pts)
+    us = arr @ u
+    vs = arr @ v
+    return float(0.5 * np.sum(us * np.roll(vs, -1) - np.roll(us, -1) * vs))
 
-    def _total_dist(boundary_pts: list, iv_subsampled) -> float:
-        n = min(len(boundary_pts), len(iv_subsampled))
+
+def _newell_normal(pts: list) -> np.ndarray:
+    """Compute a polygon's outward normal via Newell's method.
+
+    The resulting normal points in the direction from which the polygon
+    appears CCW — so ``_signed_area_projected(pts, _newell_normal(pts))``
+    is always positive for any non-degenerate polygon.
+    """
+    normal = np.zeros(3)
+    n = len(pts)
+    arr = np.array(pts)
+    for i in range(n):
+        c = arr[i]
+        nx = arr[(i + 1) % n]
+        normal[0] += (c[1] - nx[1]) * (c[2] + nx[2])
+        normal[1] += (c[2] - nx[2]) * (c[0] + nx[0])
+        normal[2] += (c[0] - nx[0]) * (c[1] + nx[1])
+    length = np.linalg.norm(normal)
+    return normal / length if length > 1e-10 else np.array([0.0, 0.0, 1.0])
+
+
+def _fix_ring_direction_by_distance(
+    boundary_pts: list,
+    iv_pts,
+    point_step: int,
+) -> list:
+    """Subsample IV points to match the boundary ring count, then compare total
+    point-wise distance for the ring as-is vs reversed (index 0 kept fixed).
+    Works reliably when both rings start near the same spatial location
+    (i.e. after ``_rotate_to_nearest_iv``).
+    """
+    iv_sub = iv_pts[0::point_step][: len(boundary_pts)]
+    reversed_pts = [boundary_pts[0]] + list(reversed(boundary_pts[1:]))
+
+    def total_dist(bpts):
+        n = min(len(bpts), len(iv_sub))
         return sum(
             np.linalg.norm(
-                np.array(boundary_pts[i])
-                - np.array([iv_subsampled[i].x, iv_subsampled[i].y, iv_subsampled[i].z])
+                np.array(bpts[i])
+                - np.array([iv_sub[i].x, iv_sub[i].y, iv_sub[i].z])
             )
             for i in range(n)
         )
 
-    def _check_direction(boundary_pts: list, iv_pts, step: int) -> list:
-        iv_sub = iv_pts[0::step][: len(boundary_pts)]
-        reversed_pts = [boundary_pts[0]] + list(reversed(boundary_pts[1:]))
-        if _total_dist(reversed_pts, iv_sub) < _total_dist(boundary_pts, iv_sub):
-            return reversed_pts
-        return boundary_pts
+    return reversed_pts if total_dist(reversed_pts) < total_dist(boundary_pts) else boundary_pts
 
-    prox_boundary_pts = _check_direction(prox_boundary_pts, proximal_points, prox_point_step)
-    dist_boundary_pts = _check_direction(dist_boundary_pts, distal_points, dist_point_step)
-    return prox_boundary_pts, dist_boundary_pts
+
+def _fix_ring_direction_by_winding(
+    boundary_pts: list,
+    iv_pts,
+) -> list:
+    """Match the CCTA boundary ring's winding direction to the IV ring.
+
+    Uses Newell's method on the IV ring to get a reference normal that by
+    construction makes the IV ring appear CCW.  Projecting the CCTA ring onto
+    that same normal gives a negative signed area when it winds in the opposite
+    direction — in which case the ring is reversed (keeping index 0 fixed).
+    """
+    iv_arr = [[p.x, p.y, p.z] for p in iv_pts]
+    normal = _newell_normal(iv_arr)
+    # iv_sign is always positive by Newell construction; only check b_sign
+    b_sign = _signed_area_projected(boundary_pts, normal)
+    if b_sign < 0:
+        return [boundary_pts[0]] + list(reversed(boundary_pts[1:]))
+    return boundary_pts
 
 
 def _stitch_boundary_ring(
