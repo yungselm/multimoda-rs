@@ -7,7 +7,7 @@ Covers:
   - manipulating: remove_labeled_points_from_mesh,
                   keep_labeled_points_from_mesh, sync_results_to_mesh,
                   order_points_list, scale_region_centerline_morphing,
-                  _adjust_start_point, _check_ring_direction,
+                  _rotate_to_nearest_iv, _fix_ring_direction_by_distance,
                   _stitch_boundary_ring
 """
 from __future__ import annotations
@@ -27,8 +27,8 @@ from multimodars.ccta.labeling import (
     _prepare_faces_for_rust,
 )
 from multimodars.ccta.manipulating import (
-    _adjust_start_point,
-    _check_ring_direction,
+    _fix_ring_direction_by_distance,
+    _rotate_to_nearest_iv,
     _stitch_boundary_ring,
     keep_labeled_points_from_mesh,
     order_points_list,
@@ -533,10 +533,10 @@ class TestScaleRegionCenterlineMorphing:
 
 
 # ===========================================================================
-# manipulating._adjust_start_point
+# manipulating._rotate_to_nearest_iv
 # ===========================================================================
 
-class TestAdjustStartPoint:
+class TestRotateToNearestIv:
     def test_rotates_to_nearest_iv_point(self):
         prox = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (2.0, 0.0, 0.0), (3.0, 0.0, 0.0)]
         dist = [(0.0, 1.0, 0.0), (1.0, 1.0, 0.0), (2.0, 1.0, 0.0)]
@@ -544,18 +544,16 @@ class TestAdjustStartPoint:
         prox_iv = _make_iv_pts([(2.0, 0.0, 0.0)])  # nearest to prox[2]
         dist_iv = _make_iv_pts([(2.0, 1.0, 0.0)])  # nearest to dist[2]
 
-        new_prox, new_dist = _adjust_start_point(prox, dist, prox_iv, dist_iv)
+        new_prox = _rotate_to_nearest_iv(prox, prox_iv[0])
+        new_dist = _rotate_to_nearest_iv(dist, dist_iv[0])
         assert new_prox[0] == (2.0, 0.0, 0.0)
         assert new_dist[0] == (2.0, 1.0, 0.0)
 
     def test_length_and_set_preserved(self):
         prox = [(float(i), 0.0, 0.0) for i in range(5)]
         dist = [(float(i), 1.0, 0.0) for i in range(5)]
-        new_prox, new_dist = _adjust_start_point(
-            prox, dist,
-            _make_iv_pts([(3.0, 0.0, 0.0)]),
-            _make_iv_pts([(4.0, 1.0, 0.0)]),
-        )
+        new_prox = _rotate_to_nearest_iv(prox, _make_iv_pts([(3.0, 0.0, 0.0)])[0])
+        new_dist = _rotate_to_nearest_iv(dist, _make_iv_pts([(4.0, 1.0, 0.0)])[0])
         assert len(new_prox) == len(prox)
         assert set(new_prox) == set(prox)
         assert set(new_dist) == set(dist)
@@ -563,32 +561,25 @@ class TestAdjustStartPoint:
     def test_already_at_start_unchanged(self):
         """If the nearest IV point already matches the first boundary point, no rotation."""
         prox = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (2.0, 0.0, 0.0)]
-        dist = [(0.0, 1.0, 0.0)]
-        new_prox, _ = _adjust_start_point(
-            prox, dist,
-            _make_iv_pts([(0.0, 0.0, 0.0)]),  # nearest to prox[0] = no rotation
-            _make_iv_pts([(0.0, 1.0, 0.0)]),
-        )
+        new_prox = _rotate_to_nearest_iv(prox, _make_iv_pts([(0.0, 0.0, 0.0)])[0])
         assert new_prox == prox
 
 
 # ===========================================================================
-# manipulating._check_ring_direction
+# manipulating._fix_ring_direction_by_distance
 # ===========================================================================
 
-class TestCheckRingDirection:
+class TestFixRingDirectionByDistance:
     def test_correct_direction_unchanged(self):
         """Ring already matches IV order → not reversed."""
         n = 6
         angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
         prox = [(float(np.cos(a)), float(np.sin(a)), 0.0) for a in angles]
-        dist = [(float(np.cos(a)), float(np.sin(a)), 1.0) for a in angles]
 
         # IV points in the same order with step=1
         prox_iv = _make_iv_pts(prox)
-        dist_iv = _make_iv_pts(dist)
 
-        new_prox, _ = _check_ring_direction(prox, dist, prox_iv, dist_iv, 1, 1)
+        new_prox = _fix_ring_direction_by_distance(prox, prox_iv, 1)
         assert new_prox[0] == prox[0]
         assert len(new_prox) == n
 
@@ -596,14 +587,12 @@ class TestCheckRingDirection:
         """Ring in wrong direction → first element fixed, rest reversed."""
         n = 4
         prox = [(float(i), 0.0, 0.0) for i in range(n)]
-        dist = [(float(i), 1.0, 0.0) for i in range(n)]
 
         # IV points arranged so reversed_prox has smaller total distance
         iv_for_prox = [(float(n - 1 - i), 0.0, 0.0) for i in range(n)]
         prox_iv = _make_iv_pts(iv_for_prox)
-        dist_iv = _make_iv_pts(dist)
 
-        new_prox, _ = _check_ring_direction(prox, dist, prox_iv, dist_iv, 1, 1)
+        new_prox = _fix_ring_direction_by_distance(prox, prox_iv, 1)
         # After reversal: [prox[0]] + reversed(prox[1:]) = [0, 3, 2, 1]
         assert new_prox[0] == prox[0]
         assert new_prox[1] == prox[-1]
@@ -612,12 +601,8 @@ class TestCheckRingDirection:
         n = 5
         prox = [(float(i), 0.0, 0.0) for i in range(n)]
         dist = [(float(i), 1.0, 0.0) for i in range(n)]
-        new_prox, new_dist = _check_ring_direction(
-            prox, dist,
-            _make_iv_pts(prox),
-            _make_iv_pts(dist),
-            1, 1,
-        )
+        new_prox = _fix_ring_direction_by_distance(prox, _make_iv_pts(prox), 1)
+        new_dist = _fix_ring_direction_by_distance(dist, _make_iv_pts(dist), 1)
         assert len(new_prox) == n
         assert len(new_dist) == n
 

@@ -25,8 +25,9 @@
 - [x] Shrink/Expand CCTA to best match aortic wall
 - [x] Write a more stable clean up function by going along every face of a vertix adn then check if most vertices are from the same type
 - [x] Remove points inside of anomalous region, connect remaining points to proximal and distal points, without resampling of the anomalous region
-- [] Create ostium frames for smoother connection to aorta (define range cl points, and function of lumen increase)
-- [] Write Pytests for the new functions
+(- [] Create ostium frames for smoother connection to aorta (define range cl points, and function of lumen increase))
+    -> [x] replaced with direct connection to aorta bypassing the proximal segment
+- [x] Write Pytests for the new functions
 - [] Write a more stable function to find intramural points on aorta (for now works with excluded RCA points)
 - [] fix centerline resampling
 
