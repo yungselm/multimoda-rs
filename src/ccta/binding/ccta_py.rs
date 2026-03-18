@@ -304,6 +304,31 @@ pub fn find_aortic_scaling(
     Ok(dist)
 }
 
+
+/// Build a vertex adjacency map from a triangle mesh face list.
+///
+/// For each triangle face, all three undirected edges are recorded so that
+/// every vertex maps to the set of vertices it shares an edge with.
+///
+/// Parameters
+/// ----------
+/// faces : list of list of int
+///     Triangle faces, each represented as a three-element array of vertex
+///     indices ``[v0, v1, v2]``.
+///
+/// Returns
+/// -------
+/// adjacency_map : dict of int to set of int
+///     Mapping from each vertex index to the set of its directly connected
+///     neighbour vertex indices.
+///
+/// Examples
+/// --------
+/// >>> import multimodars as mm
+/// >>>
+/// >>> faces = [[0, 1, 2], [1, 2, 3]]
+/// >>> adj = mm.build_adjacency_map(faces)
+/// >>> print(adj[1])  # {0, 2, 3}
 #[pyfunction]
 pub fn build_adjacency_map(faces: Vec<[usize; 3]>) -> HashMap<usize, HashSet<usize>> {
     let mut adjacency: HashMap<usize, HashSet<usize>> = HashMap::new();
@@ -325,6 +350,35 @@ pub fn build_adjacency_map(faces: Vec<[usize; 3]>) -> HashMap<usize, HashSet<usi
     adjacency
 }
 
+/// Smooth per-vertex mesh labels by majority voting over neighbours.
+///
+/// In each iteration every vertex whose label differs from the unanimous
+/// majority of its neighbours is reassigned to that majority label.  Only
+/// flips where *all* neighbours agree are applied, making the smoothing
+/// conservative.
+///
+/// Parameters
+/// ----------
+/// labels : list of int
+///     Per-vertex label values (``u8``), indexed by vertex index.
+/// adjacency_map : dict of int to set of int
+///     Vertex adjacency map as returned by :func:`build_adjacency_map`.
+/// iterations : int
+///     Number of smoothing passes to perform.
+///
+/// Returns
+/// -------
+/// smoothed_labels : list of int
+///     Updated per-vertex label values after smoothing.
+///
+/// Examples
+/// --------
+/// >>> import multimodars as mm
+/// >>>
+/// >>> faces = [[0, 1, 2], [1, 2, 3]]
+/// >>> adj = mm.build_adjacency_map(faces)
+/// >>> labels = [0, 1, 0, 0]
+/// >>> smoothed = mm.smooth_mesh_labels(labels, adj, iterations=3)
 #[pyfunction]
 pub fn smooth_mesh_labels(
     labels: Vec<u8>,

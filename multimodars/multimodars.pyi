@@ -411,6 +411,13 @@ def find_aortic_scaling(
 ) -> float: ...
 
 
+def find_centerline_bounded_points_simple(
+    centerline: PyCenterline,
+    points: list[tuple[float, float, float]],
+    radius: float,
+) -> list[tuple[float, float, float]]: ...
+
+
 def build_adjacency_map(
     faces: list[list[int]],
 ) -> dict[int, set[int]]: ...

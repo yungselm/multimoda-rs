@@ -19,7 +19,8 @@ from .multimodars import (
     align_combined as _align_combined,
     to_obj as _to_obj,
     find_centerline_bounded_points_simple as _find_centerline_bounded_points_simple,
-    find_proximal_distal_scaling as _find_proximal_distal_scaling
+    find_proximal_distal_scaling as _find_proximal_distal_scaling,
+    build_adjacency_map as _build_adjacency_map
 )
 
 _AlignLog = list[tuple[int, int, float, float, float, float, float]]
@@ -1379,4 +1380,79 @@ def find_centerline_bounded_points_simple(
         centerline,
         points, 
         radius
+    )
+
+
+def find_proximal_distal_scaling(
+    anomalous_points: list[tuple[float, float, float]],
+    n_proximal: int,
+    n_distal: int,
+    centerline: PyCenterline,
+    proximal_reference: list[tuple[float, float, float]],
+    distal_reference: list[tuple[float, float, float]]
+):
+    """Find the optimal diameter scaling for the proximal and distal regions.
+
+    Parameters
+    ----------
+    anomalous_points : list of tuple of float
+        ``(x, y, z)`` coordinates of the anomalous vessel region.
+    n_proximal : int
+        Number of proximal points used for comparison.
+    n_distal : int
+        Number of distal points used for comparison.
+    centerline : PyCenterline
+        Centerline of the vessel region.
+    proximal_reference : list of tuple of float
+        Reference ``(x, y, z)`` points from the CCTA mesh for the proximal region.
+    distal_reference : list of tuple of float
+        Reference ``(x, y, z)`` points for the distal region.
+
+    Returns
+    -------
+    proximal_scaling : float
+        Optimal scaling distance for the proximal region.
+    distal_scaling : float
+        Optimal scaling distance for the distal region.
+
+    Examples
+    --------
+    >>> import multimodars as mm"""
+    return _find_proximal_distal_scaling(
+        anomalous_points,
+        n_proximal,
+        n_distal,
+        centerline,
+        proximal_reference,
+        distal_reference,
+    )
+
+def build_adjacency_map(
+    faces: list[list[int]],
+) -> dict[int, set[int]]:
+    """Build a vertex adjacency map from a triangle mesh face list.
+    For each triangle face, all three undirected edges are recorded so that
+    every vertex maps to the set of vertices it shares an edge with.
+
+    Parameters
+    ----------
+    faces : list of list of int
+        Triangle faces, each represented as a three-element array of vertex
+        indices ``[v0, v1, v2]``.
+
+    Returns
+    -------
+    adjacency_map : dict of int to set of int
+        Mapping from each vertex index to the set of its directly connected
+        neighbour vertex indices.
+
+    Examples
+    --------
+    >>> import multimodars as mm
+    >>>
+    >>> faces = [[0, 1, 2], [1, 2, 3]]
+    >>> adj = mm.build_adjacency_map(faces)
+    >>> print(adj[1])  # {0, 2, 3}"""
+    return _build_adjacency_map(
+        faces,
     )

@@ -14,6 +14,8 @@ from .multimodars import (
     PyInputData,
     PyRecord,
     PyContourType,
+)
+from ._processing import (
     from_file_full,
     from_file_doublepair,
     from_file_singlepair,
@@ -28,6 +30,7 @@ from .multimodars import (
     to_obj,
     find_centerline_bounded_points_simple,
     find_proximal_distal_scaling,
+    build_adjacency_map,
 )
 from ._converters import (
     to_array,
@@ -70,7 +73,7 @@ __all__ = [
     "numpy_to_geometry",
     "numpy_to_centerline",
     "numpy_to_inputdata",
-    # Processing functions (from Rust)
+    # Processing functions (Python wrappers in _processing.py)
     "from_file_full",
     "from_file_doublepair",
     "from_file_singlepair",
@@ -85,6 +88,7 @@ __all__ = [
     "to_obj",
     "find_centerline_bounded_points_simple",
     "find_proximal_distal_scaling",
+    "build_adjacency_map",
     # I/O
     "read_geometrical",
     "write_geometries",
