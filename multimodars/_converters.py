@@ -6,7 +6,6 @@ from .multimodars import (
     PyContour,
     PyCenterline,
     PyGeometry,
-    PyGeometryPair,
     PyFrame,
     PyInputData,
     PyContourPoint,
@@ -242,11 +241,12 @@ def numpy_to_inputdata(
     ValueError
         If ``lumen_arr`` is empty.
     """
+
     def _to_numeric_array(arr: np.ndarray | None, name: str) -> np.ndarray:
         if arr is None:
             return np.zeros((0, 4), dtype=float)
         # Handle structured arrays with named fields
-        if arr.ndim == 1 and getattr(arr, "dtype", None).names:
+        if arr.ndim == 1 and arr.dtype.names:
             try:
                 arr = np.vstack([arr[n] for n in arr.dtype.names]).T
             except Exception:
@@ -298,7 +298,7 @@ def numpy_to_inputdata(
         if arr is None:
             return None
         # If structured with fields, try to coerce to (N,4) or (N,3)
-        if arr.ndim == 1 and getattr(arr, "dtype", None).names:
+        if arr.ndim == 1 and arr.dtype.names:
             # Try to create a 2D array with numeric fields where appropriate
             try:
                 arr = np.vstack([arr[n] for n in arr.dtype.names]).T
@@ -472,6 +472,7 @@ def numpy_to_geometry(
     ValueError
         If ``lumen_arr`` is empty.
     """
+
     def _to_numeric_array(arr: np.ndarray | None, layer_name: str) -> np.ndarray:
         if arr is None:
             return np.zeros((0, 4), dtype=float)
@@ -486,7 +487,7 @@ def numpy_to_geometry(
 
     def build_contour_from_array(
         arr: np.ndarray, frame_id: int, contour_type: str
-    ) -> PyContour:
+    ) -> PyContour | None:
         """Build a PyContour from array points for a specific frame."""
         if arr.size == 0:
             return None
@@ -556,7 +557,7 @@ def numpy_to_geometry(
         )
 
     # Get all unique frame indices from all arrays
-    all_frames = set()
+    all_frames: set[int] = set()
     for arr in [lumen_arr, eem_arr, catheter_arr, wall_arr]:
         if arr.size > 0:
             all_frames.update(arr[:, 0].astype(int))
@@ -959,7 +960,7 @@ def array_to_pyinputdata(
     return pyinput
 
 
-def geometry_to_frames_array(geometry: PyGeometry) -> dict[str, np.ndarray]:
+def geometry_to_frames_array(geometry: PyGeometry) -> dict[str, dict[str, np.ndarray]]:
     """
     Convert a ``PyGeometry`` to a nested dictionary of numpy arrays by frame.
 
@@ -1012,7 +1013,7 @@ def geometry_to_frames_array(geometry: PyGeometry) -> dict[str, np.ndarray]:
 
 def geometry_to_trimesh(
     geometry: PyGeometry,
-    contour_type: PyContourType = None,
+    contour_type: PyContourType | None = None,
 ) -> trimesh.Trimesh:
     """Build a trimesh surface from one contour type across all frames.
 

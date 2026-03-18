@@ -50,14 +50,14 @@ def scale_region_centerline_morphing(
     """
     scaled_mesh = mesh.copy()
 
-    region_vertex_indices = []
+    region_vertex_indices_list: list[int] = []
     region_set = set(region_points)
 
     for idx, vertex in enumerate(scaled_mesh.vertices):
         if tuple(vertex) in region_set:
-            region_vertex_indices.append(idx)
+            region_vertex_indices_list.append(idx)
 
-    region_vertex_indices = np.array(region_vertex_indices)
+    region_vertex_indices = np.array(region_vertex_indices_list)
 
     if len(region_vertex_indices) == 0:
         print("Warning: No vertices found for scaling region")
@@ -82,7 +82,7 @@ def scale_region_centerline_morphing(
     )
 
     # Clear mesh cache since we modified vertices directly
-    scaled_mesh.vertices.flags['WRITEABLE'] = False
+    scaled_mesh.vertices.flags["WRITEABLE"] = False
 
     return scaled_mesh
 
@@ -131,12 +131,12 @@ def find_distal_and_proximal_scaling(
     frame_points_prox = [
         (p.x, p.y, p.z) for f in frames[0:prox_range] for p in f.lumen.points
     ]
-    n_anomalous_points = len(results['anomalous_points'])
+    n_anomalous_points = len(results["anomalous_points"])
     n_section: int = int(np.ceil(0.25 * n_anomalous_points))
 
     print("\n=== Finding best scaling factors ===")
     prox_scaling, dist_scaling = find_proximal_distal_scaling(
-        results['anomalous_points'],
+        results["anomalous_points"],
         n_section,
         n_section,
         centerline,
@@ -180,10 +180,12 @@ def find_aorta_scaling(
         Optimal radial scaling factor for the aortic segment.
     """
     reference_points = _extract_wall_from_frames(frames)
+    if reference_points is None:
+        raise ValueError("No aortic wall points found in frames for scaling reference")
 
     print("\n=== Finding best scaling factor ===")
     scaling = find_aortic_scaling(
-        results['rca_removed_points'],  # For now work with removed points
+        results["rca_removed_points"],  # For now work with removed points
         reference_points,
         centerline,
     )
@@ -193,7 +195,7 @@ def find_aorta_scaling(
     return scaling
 
 
-def _extract_wall_from_frames(frames) -> list[tuple[float, float, float]]:
+def _extract_wall_from_frames(frames) -> list[tuple[float, float, float]] | None:
     """Extract reconstructed aortic wall points from intravascular imaging frames.
 
     Iterates over *frames* looking for those that carry ``aortic_thickness``
@@ -231,7 +233,7 @@ def _extract_wall_from_frames(frames) -> list[tuple[float, float, float]]:
     for frame in frames:
         if frame.lumen.aortic_thickness is None:
             continue
-        if "Wall" not in frame.extras or frame.extras['Wall'] is None:
+        if "Wall" not in frame.extras or frame.extras["Wall"] is None:
             raise ValueError(
                 f"No Wall extras found for frame {getattr(frame, 'frame', '?')}"
             )
@@ -290,13 +292,9 @@ def remove_labeled_points_from_mesh(
     if isinstance(region_keys, str):
         region_keys = [region_keys]
 
-    mesh: trimesh.Trimesh = results['mesh']
+    mesh: trimesh.Trimesh = results["mesh"]
 
-    points_to_remove = [
-        pt
-        for key in region_keys
-        for pt in results.get(key, [])
-    ]
+    points_to_remove = [pt for key in region_keys for pt in results.get(key, [])]
 
     if not points_to_remove:
         return results
@@ -345,8 +343,8 @@ def remove_labeled_points_from_mesh(
     new_coord_set = {tuple(v) for v in new_vertices}
 
     updated = dict(results)
-    updated['mesh'] = new_mesh
-    updated['boundary_points'] = boundary_points
+    updated["mesh"] = new_mesh
+    updated["boundary_points"] = boundary_points
 
     for key in region_keys:
         updated[key] = []
@@ -395,7 +393,7 @@ def keep_labeled_points_from_mesh(
         A new ``"boundary_points"`` entry is added containing the open-boundary
         ring vertices adjacent to the removed region.
     """
-    mesh: trimesh.Trimesh = results['mesh']
+    mesh: trimesh.Trimesh = results["mesh"]
 
     points_to_keep = results.get(region_key, [])
     if not points_to_keep:
@@ -420,9 +418,7 @@ def keep_labeled_points_from_mesh(
     # Boundary: kept vertices that had at least one removed neighbour
     adj_map = build_adjacency_map(mesh.faces.tolist())
     boundary_indices = {
-        i
-        for i in keep_indices
-        if any(j in remove_indices for j in adj_map.get(i, []))
+        i for i in keep_indices if any(j in remove_indices for j in adj_map.get(i, []))
     }
     boundary_points = [tuple(mesh.vertices[i]) for i in boundary_indices]
 
@@ -441,8 +437,8 @@ def keep_labeled_points_from_mesh(
     new_coord_set = {tuple(v) for v in new_vertices}
 
     updated = dict(results)
-    updated['mesh'] = new_mesh
-    updated['boundary_points'] = boundary_points
+    updated["mesh"] = new_mesh
+    updated["boundary_points"] = boundary_points
 
     for key in (
         "aorta_points",
@@ -490,7 +486,7 @@ def sync_results_to_mesh(
     old_coord_to_idx = {tuple(v): i for i, v in enumerate(old_mesh.vertices)}
 
     updated = dict(results)
-    updated['mesh'] = new_mesh
+    updated["mesh"] = new_mesh
 
     for key in (
         "aorta_points",
@@ -506,9 +502,7 @@ def sync_results_to_mesh(
         if key not in updated or not updated[key]:
             continue
         indices = [old_coord_to_idx.get(tuple(p)) for p in updated[key]]
-        updated[key] = [
-            tuple(new_mesh.vertices[i]) for i in indices if i is not None
-        ]
+        updated[key] = [tuple(new_mesh.vertices[i]) for i in indices if i is not None]
 
     return updated
 
@@ -546,7 +540,9 @@ def stitch_ccta_to_intravascular(
     Uses an aligned intravascular mesh and stitches it to a CCTA mesh using the following steps.
     """
     iv_mesh = iv_mesh.downsample(n_points_iv_cont)
-    iv_mesh_points = [(p.x, p.y, p.z) for frame in iv_mesh.frames for p in frame.lumen.points]
+    iv_mesh_points = [
+        (p.x, p.y, p.z) for frame in iv_mesh.frames for p in frame.lumen.points
+    ]
     proximal_centroid = iv_mesh.frames[0].centroid
     distal_centroid = iv_mesh.frames[-1].centroid
     proximal_points = iv_mesh.frames[0].lumen.points
@@ -582,8 +578,8 @@ def stitch_ccta_to_intravascular(
     # interior (toward frames[0]), and vice-versa for the distal patch.
     prox_c = np.array(iv_mesh.frames[0].centroid)
     dist_c = np.array(iv_mesh.frames[-1].centroid)
-    prox_outward = prox_c - dist_c   # points toward the proximal end
-    dist_outward = dist_c - prox_c   # points toward the distal end
+    prox_outward = prox_c - dist_c  # points toward the proximal end
+    dist_outward = dist_c - prox_c  # points toward the distal end
 
     # Check / fix winding direction of each boundary ring vs its IV ring
     # independently, using the method that matches the start-point strategy.
@@ -606,8 +602,12 @@ def stitch_ccta_to_intravascular(
         )
 
     # Step 3: stitch each boundary ring to its IV ring
-    prox_patch = _stitch_boundary_ring(prox_boundary_pts, proximal_points, prox_point_step, prox_outward)
-    dist_patch = _stitch_boundary_ring(dist_boundary_pts, distal_points, dist_point_step, dist_outward)
+    prox_patch = _stitch_boundary_ring(
+        prox_boundary_pts, proximal_points, prox_point_step, prox_outward
+    )
+    dist_patch = _stitch_boundary_ring(
+        dist_boundary_pts, distal_points, dist_point_step, dist_outward
+    )
     test_mesh = geometry_to_trimesh(iv_mesh)
     test_mesh.update_faces(test_mesh.unique_faces())
     test_mesh.update_faces(test_mesh.nondegenerate_faces())
@@ -622,25 +622,27 @@ def stitch_ccta_to_intravascular(
     mesh.remove_unreferenced_vertices()
     mesh.fix_normals()
 
-    results['prox_boundary_points'] = prox_boundary_pts
-    results['dist_boundary_points'] = dist_boundary_pts
-    results['anomalous_points'] = iv_mesh_points
-    results['rca_points'] = iv_mesh_points + results['distal_points'] + results['proximal_points']
-    results['mesh'] = mesh
-    
+    results["prox_boundary_points"] = prox_boundary_pts
+    results["dist_boundary_points"] = dist_boundary_pts
+    results["anomalous_points"] = iv_mesh_points
+    results["rca_points"] = (
+        iv_mesh_points + results["distal_points"] + results["proximal_points"]
+    )
+    results["mesh"] = mesh
+
     return results
 
 
 def _prepare_prox_dist_boundary_pts(
-        mesh: trimesh.Trimesh, 
-        results: dict, 
-        prox_centroid: tuple[float, float, float],
-        dist_centroid: tuple[float, float, float],
+    mesh: trimesh.Trimesh,
+    results: dict,
+    prox_centroid: tuple[float, float, float],
+    dist_centroid: tuple[float, float, float],
 ) -> tuple[list, list]:
     proximal_boundary_pts = []
     distal_boundary_pts = []
     print(f"Number of boundary points: {len(results['boundary_points'])}")
-    for pt in results['boundary_points']:
+    for pt in results["boundary_points"]:
         distance_prox = np.linalg.norm(np.array(prox_centroid) - np.array(pt))
         distance_dist = np.linalg.norm(np.array(dist_centroid) - np.array(pt))
         if distance_prox <= distance_dist:
@@ -740,7 +742,9 @@ def _signed_area_projected(pts: list, normal: np.ndarray) -> float:
 
     Positive = CCW when viewed from the normal direction.
     """
-    ref = np.array([1.0, 0.0, 0.0]) if abs(normal[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+    ref = (
+        np.array([1.0, 0.0, 0.0]) if abs(normal[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+    )
     u = np.cross(normal, ref)
     u /= np.linalg.norm(u)
     v = np.cross(normal, u)
@@ -787,13 +791,16 @@ def _fix_ring_direction_by_distance(
         n = min(len(bpts), len(iv_sub))
         return sum(
             np.linalg.norm(
-                np.array(bpts[i])
-                - np.array([iv_sub[i].x, iv_sub[i].y, iv_sub[i].z])
+                np.array(bpts[i]) - np.array([iv_sub[i].x, iv_sub[i].y, iv_sub[i].z])
             )
             for i in range(n)
         )
 
-    return reversed_pts if total_dist(reversed_pts) < total_dist(boundary_pts) else boundary_pts
+    return (
+        reversed_pts
+        if total_dist(reversed_pts) < total_dist(boundary_pts)
+        else boundary_pts
+    )
 
 
 def _fix_ring_direction_by_winding(
@@ -885,8 +892,10 @@ def _stitch_boundary_ring(
 
         iv_start = iv_end
 
-    print(f"Stitching: {len(faces)}/{n_iv} triangles created "
-          f"(n_boundary={n_boundary}, n_iv={n_iv}, step={step}, remainder={remainder})")
+    print(
+        f"Stitching: {len(faces)}/{n_iv} triangles created "
+        f"(n_boundary={n_boundary}, n_iv={n_iv}, step={step}, remainder={remainder})"
+    )
 
     patch = trimesh.Trimesh(
         vertices=vertices,

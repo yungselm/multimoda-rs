@@ -239,6 +239,8 @@ class PyGeometry:
     def get_frame_at_z(self, z: float) -> PyFrame: ...
     def get_frame_at_index(self, index: int) -> PyFrame: ...
     def replace_frame(self, index: int, frame: PyFrame) -> PyGeometry: ...
+    def downsample(self, n_points: int) -> PyGeometry: ...
+    def sort_frame_points(self) -> PyGeometry: ...
 
 
 class PyGeometryPair:
@@ -354,6 +356,285 @@ class PyInputData:
         label: str,
     ) -> None: ...
     def __repr__(self) -> str: ...
+
+# ---------------------------------------------------------------------------
+# CCTA mesh labelling and scaling functions
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Processing functions — from CSV files
+# ---------------------------------------------------------------------------
+
+def from_file_full(
+    input_path_a: str,
+    input_path_b: str,
+    label: str = ...,
+    diastole: bool = ...,
+    step_rotation_deg: float = ...,
+    range_rotation_deg: float = ...,
+    image_center: tuple[float, float] = ...,
+    radius: float = ...,
+    n_points: int = ...,
+    write_obj: bool = ...,
+    watertight: bool = ...,
+    output_path_a: str = ...,
+    output_path_b: str = ...,
+    output_path_c: str = ...,
+    output_path_d: str = ...,
+    interpolation_steps: int = ...,
+    bruteforce: bool = ...,
+    sample_size: int = ...,
+    contour_types: list[PyContourType] | None = ...,
+    smooth: bool = ...,
+    postprocessing: bool = ...,
+) -> tuple[
+    PyGeometryPair,
+    PyGeometryPair,
+    PyGeometryPair,
+    PyGeometryPair,
+    tuple[_AlignLog, _AlignLog, _AlignLog, _AlignLog],
+]: ...
+
+
+def from_file_doublepair(
+    input_path_a: str,
+    input_path_b: str,
+    label: str = ...,
+    diastole: bool = ...,
+    step_rotation_deg: float = ...,
+    range_rotation_deg: float = ...,
+    image_center: tuple[float, float] = ...,
+    radius: float = ...,
+    n_points: int = ...,
+    write_obj: bool = ...,
+    watertight: bool = ...,
+    output_path_a: str = ...,
+    output_path_b: str = ...,
+    interpolation_steps: int = ...,
+    bruteforce: bool = ...,
+    sample_size: int = ...,
+    contour_types: list[PyContourType] | None = ...,
+    smooth: bool = ...,
+    postprocessing: bool = ...,
+) -> tuple[
+    PyGeometryPair,
+    PyGeometryPair,
+    tuple[_AlignLog, _AlignLog, _AlignLog, _AlignLog],
+]: ...
+
+
+def from_file_singlepair(
+    input_path: str,
+    label: str = ...,
+    diastole: bool = ...,
+    step_rotation_deg: float = ...,
+    range_rotation_deg: float = ...,
+    image_center: tuple[float, float] = ...,
+    radius: float = ...,
+    n_points: int = ...,
+    write_obj: bool = ...,
+    watertight: bool = ...,
+    output_path: str = ...,
+    interpolation_steps: int = ...,
+    bruteforce: bool = ...,
+    sample_size: int = ...,
+    contour_types: list[PyContourType] | None = ...,
+    smooth: bool = ...,
+    postprocessing: bool = ...,
+) -> tuple[PyGeometryPair, tuple[_AlignLog, _AlignLog]]: ...
+
+
+def from_file_single(
+    input_path: str,
+    label: str = ...,
+    diastole: bool = ...,
+    step_rotation_deg: float = ...,
+    range_rotation_deg: float = ...,
+    image_center: tuple[float, float] = ...,
+    radius: float = ...,
+    n_points: int = ...,
+    write_obj: bool = ...,
+    watertight: bool = ...,
+    output_path: str = ...,
+    bruteforce: bool = ...,
+    sample_size: int = ...,
+    contour_types: list[PyContourType] | None = ...,
+    smooth: bool = ...,
+) -> tuple[PyGeometry, _AlignLog]: ...
+
+
+# ---------------------------------------------------------------------------
+# Processing functions — from PyInputData arrays
+# ---------------------------------------------------------------------------
+
+def from_array_full(
+    input_data_a: PyInputData,
+    input_data_b: PyInputData,
+    input_data_c: PyInputData,
+    input_data_d: PyInputData,
+    label: str = ...,
+    diastole: bool = ...,
+    step_rotation_deg: float = ...,
+    range_rotation_deg: float = ...,
+    image_center: tuple[float, float] = ...,
+    radius: float = ...,
+    n_points: int = ...,
+    write_obj: bool = ...,
+    watertight: bool = ...,
+    output_path_a: str = ...,
+    output_path_b: str = ...,
+    output_path_c: str = ...,
+    output_path_d: str = ...,
+    interpolation_steps: int = ...,
+    bruteforce: bool = ...,
+    sample_size: int = ...,
+    contour_types: list[PyContourType] | None = ...,
+    smooth: bool = ...,
+    postprocessing: bool = ...,
+) -> tuple[
+    PyGeometryPair,
+    PyGeometryPair,
+    PyGeometryPair,
+    PyGeometryPair,
+    tuple[_AlignLog, _AlignLog, _AlignLog, _AlignLog],
+]: ...
+
+
+def from_array_doublepair(
+    input_data_a: PyInputData,
+    input_data_b: PyInputData,
+    input_data_c: PyInputData,
+    input_data_d: PyInputData,
+    label: str = ...,
+    diastole: bool = ...,
+    step_rotation_deg: float = ...,
+    range_rotation_deg: float = ...,
+    image_center: tuple[float, float] = ...,
+    radius: float = ...,
+    n_points: int = ...,
+    write_obj: bool = ...,
+    watertight: bool = ...,
+    output_path_a: str = ...,
+    output_path_b: str = ...,
+    interpolation_steps: int = ...,
+    bruteforce: bool = ...,
+    sample_size: int = ...,
+    contour_types: list[PyContourType] | None = ...,
+    smooth: bool = ...,
+    postprocessing: bool = ...,
+) -> tuple[
+    PyGeometryPair,
+    PyGeometryPair,
+    tuple[_AlignLog, _AlignLog, _AlignLog, _AlignLog],
+]: ...
+
+
+def from_array_singlepair(
+    input_data_a: PyInputData,
+    input_data_b: PyInputData,
+    label: str = ...,
+    diastole: bool = ...,
+    step_rotation_deg: float = ...,
+    range_rotation_deg: float = ...,
+    image_center: tuple[float, float] = ...,
+    radius: float = ...,
+    n_points: int = ...,
+    write_obj: bool = ...,
+    watertight: bool = ...,
+    output_path: str = ...,
+    interpolation_steps: int = ...,
+    bruteforce: bool = ...,
+    sample_size: int = ...,
+    contour_types: list[PyContourType] | None = ...,
+    smooth: bool = ...,
+    postprocessing: bool = ...,
+) -> tuple[PyGeometryPair, tuple[_AlignLog, _AlignLog]]: ...
+
+
+def from_array_single(
+    input_data: PyInputData,
+    label: str = ...,
+    diastole: bool = ...,
+    step_rotation_deg: float = ...,
+    range_rotation_deg: float = ...,
+    image_center: tuple[float, float] = ...,
+    radius: float = ...,
+    n_points: int = ...,
+    write_obj: bool = ...,
+    watertight: bool = ...,
+    output_path: str = ...,
+    bruteforce: bool = ...,
+    sample_size: int = ...,
+    contour_types: list[PyContourType] | None = ...,
+    smooth: bool = ...,
+) -> tuple[PyGeometry, _AlignLog]: ...
+
+
+# ---------------------------------------------------------------------------
+# Alignment functions
+# ---------------------------------------------------------------------------
+
+def align_three_point(
+    centerline: PyCenterline,
+    geometry_pair: PyGeometryPair,
+    aortic_ref_pt: tuple[float, float, float],
+    upper_ref_pt: tuple[float, float, float],
+    lower_ref_pt: tuple[float, float, float],
+    angle_step_deg: float = ...,
+    write: bool = ...,
+    watertight: bool = ...,
+    interpolation_steps: int = ...,
+    output_dir: str = ...,
+    contour_types: list[PyContourType] | None = ...,
+    case_name: str = ...,
+) -> tuple[PyGeometryPair, PyCenterline]: ...
+
+
+def align_manual(
+    centerline: PyCenterline,
+    geometry_pair: PyGeometryPair,
+    rotation_angle: float,
+    ref_point: tuple[float, float, float],
+    write: bool = ...,
+    watertight: bool = ...,
+    interpolation_steps: int = ...,
+    output_dir: str = ...,
+    contour_types: list[PyContourType] | None = ...,
+    case_name: str = ...,
+) -> tuple[PyGeometryPair, PyCenterline]: ...
+
+
+def align_combined(
+    centerline: PyCenterline,
+    geom_pair: PyGeometryPair,
+    aortic_ref_pt: tuple[float, float, float],
+    upper_ref_pt: tuple[float, float, float],
+    lower_ref_pt: tuple[float, float, float],
+    points: list[tuple[float, float, float]],
+    angle_step_deg: float = ...,
+    angle_range_deg: float = ...,
+    index_range: int = ...,
+    write: bool = ...,
+    watertight: bool = ...,
+    interpolation_steps: int = ...,
+    output_dir: str = ...,
+    contour_types: list[PyContourType] | None = ...,
+    case_name: str = ...,
+) -> tuple[PyGeometryPair, PyCenterline]: ...
+
+
+# ---------------------------------------------------------------------------
+# OBJ export
+# ---------------------------------------------------------------------------
+
+def to_obj(
+    geometry: PyGeometry,
+    output_path: str,
+    watertight: bool = ...,
+    contour_types: list[PyContourType] | None = ...,
+    filename_prefix: str = ...,
+) -> None: ...
+
 
 # ---------------------------------------------------------------------------
 # CCTA mesh labelling and scaling functions

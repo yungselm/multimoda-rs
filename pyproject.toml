@@ -44,6 +44,11 @@ test = [
     "pytest-cov",
     "ruff",
     "black",
+    "mypy",
 ]
 viz = ["pyglet<2"]
 meshlab = ["pymeshlab>=2023.12"]
+
+[tool.mypy]
+ignore_missing_imports = true
+exclude = ["examples/", "performance/", ".venv/"]

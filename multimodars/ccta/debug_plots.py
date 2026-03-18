@@ -62,19 +62,31 @@ def plot_results_key(
     print("\n=== RESULTS KEY PLOT ===")
 
     region_config = [
-        ("aorta_points",     aorta_points,     [255, 255,   0, 255], "Yellow  = Aorta"),
-        ("rca_points",       rca_points,       [  0,   0, 255, 255], "Blue    = RCA"),
-        ("lca_points",       lca_points,       [  0, 255,   0, 255], "Green   = LCA"),
-        ("rca_removed_points", rca_removed_points, [255, 0, 0, 255], "Red     = Removed"),
-        ("proximal_points",  proximal_points,  [  0, 255, 255, 255], "Cyan    = Proximal"),
-        ("distal_points",    distal_points,    [255,   0, 255, 255], "Magenta = Distal"),
-        ("anomalous_points", anomalous_points, [255, 165,   0, 255], "Orange  = Anomalous"),
+        ("aorta_points", aorta_points, [255, 255, 0, 255], "Yellow  = Aorta"),
+        ("rca_points", rca_points, [0, 0, 255, 255], "Blue    = RCA"),
+        ("lca_points", lca_points, [0, 255, 0, 255], "Green   = LCA"),
+        (
+            "rca_removed_points",
+            rca_removed_points,
+            [255, 0, 0, 255],
+            "Red     = Removed",
+        ),
+        ("proximal_points", proximal_points, [0, 255, 255, 255], "Cyan    = Proximal"),
+        ("distal_points", distal_points, [255, 0, 255, 255], "Magenta = Distal"),
+        (
+            "anomalous_points",
+            anomalous_points,
+            [255, 165, 0, 255],
+            "Orange  = Anomalous",
+        ),
     ]
 
     scene_geoms = []
     for key, enabled, color, label in region_config:
         pts = results.get(key, [])
-        print(f"  {label:30s}  n={len(pts):6d}  {'[shown]' if enabled and pts else '[hidden]'}")
+        print(
+            f"  {label:30s}  n={len(pts):6d}  {'[shown]' if enabled and pts else '[hidden]'}"
+        )
         if enabled and pts:
             arr = np.array(pts, dtype=np.float64)
             colors = np.tile(color, (len(pts), 1))
@@ -83,7 +95,7 @@ def plot_results_key(
     if not scene_geoms:
         print("Nothing to show - all regions are disabled or empty.")
         return
-    
+
     mesh_visual = results["mesh"]
     mesh_visual.visual.face_colors = [200, 200, 200, 100]
     scene_geoms.append(mesh_visual)
@@ -102,15 +114,12 @@ def plot_results_key(
     scene.show()
 
 
-def _get_cl_arry(cl: PyCenterline) -> np.array:
-    cl = np.array(
-        [
-            (p.contour_point.x, p.contour_point.y, p.contour_point.z)
-            for p in cl.points
-        ],
+def _get_cl_arry(cl: PyCenterline) -> np.ndarray:
+    arr = np.array(
+        [(p.contour_point.x, p.contour_point.y, p.contour_point.z) for p in cl.points],
         dtype=np.float64,
     )
-    return cl
+    return arr
 
 
 def compare_centerline_scaling(
@@ -139,7 +148,7 @@ def compare_centerline_scaling(
     centerline : PyCenterline, optional
         Centerline overlaid in cyan; skipped when ``None``.
     """
-    print(f"\n=== CENTERLINE SCALING COMPARISON ===")
+    print("\n=== CENTERLINE SCALING COMPARISON ===")
 
     region_array = np.array(region_points, dtype=np.float64)
     region_colors = np.tile([255, 0, 0, 255], (len(region_points), 1))  # Red
