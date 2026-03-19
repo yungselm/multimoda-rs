@@ -213,7 +213,8 @@ impl Contour {
             for j in i + 1..self.points.len() {
                 let dx = self.points[i].x - self.points[j].x;
                 let dy = self.points[i].y - self.points[j].y;
-                let dist = (dx * dx + dy * dy).sqrt();
+                let dz = self.points[i].z - self.points[j].z;
+                let dist = (dx * dx + dy * dy + dz * dz).sqrt();
                 if dist > max_dist {
                     max_dist = dist;
                     farthest_pair = (&self.points[i], &self.points[j]);
@@ -293,9 +294,36 @@ impl Contour {
         (best_pair, min_dist)
     }
 
+    /// Finds the minimum diameter in 3D by pairing each point with the point at
+    /// the opposite index (i + n/2) and returning the pair with the smallest 3D distance.
+    pub fn find_closest_opposite_3d(&self) -> ((&ContourPoint, &ContourPoint), f64) {
+        let n = self.points.len();
+        assert!(n > 2, "Need at least 3 points");
+
+        let half = n / 2;
+        let mut min_dist = f64::MAX;
+        let mut best_pair = (&self.points[0], &self.points[half]);
+
+        for i in 0..n {
+            let j = (i + half) % n;
+            let pi = &self.points[i];
+            let pj = &self.points[j];
+            let dx = pi.x - pj.x;
+            let dy = pi.y - pj.y;
+            let dz = pi.z - pj.z;
+            let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+            if dist < min_dist {
+                min_dist = dist;
+                best_pair = (pi, pj);
+            }
+        }
+
+        (best_pair, min_dist)
+    }
+
     pub fn elliptic_ratio(&self) -> f64 {
         let major_length = self.find_farthest_points().1;
-        let minor_length = self.find_closest_opposite().1;
+        let minor_length = self.find_closest_opposite_3d().1;
         if major_length < minor_length {
             minor_length / major_length
         } else {
@@ -309,13 +337,17 @@ impl Contour {
             return 0.0;
         }
 
-        let mut sum = 0.0_f64;
+        let mut cx = 0.0_f64;
+        let mut cy = 0.0_f64;
+        let mut cz = 0.0_f64;
         for i in 0..n {
             let p1 = &self.points[i];
             let p2 = &self.points[(i + 1) % n];
-            sum += p1.x * p2.y - p2.x * p1.y;
+            cx += p1.y * p2.z - p1.z * p2.y;
+            cy += p1.z * p2.x - p1.x * p2.z;
+            cz += p1.x * p2.y - p1.y * p2.x;
         }
-        0.5 * sum.abs()
+        0.5 * (cx * cx + cy * cy + cz * cz).sqrt()
     }
 
     /// Reorders `self.points` so that:

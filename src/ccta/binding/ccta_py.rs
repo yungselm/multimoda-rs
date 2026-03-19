@@ -7,8 +7,8 @@ use crate::ccta::adjust_mesh::label_coronary::{
 };
 use crate::ccta::adjust_mesh::scale_coronary::{
     centerline_based_aortic_diameter_optimization, centerline_based_diameter_morphing,
-    centerline_based_diameter_optimization, clean_up_non_section_points,
-    find_points_by_cl_region_rs,
+    centerline_based_diameter_optimization, centerline_based_wall_diameter_optimization,
+    clean_up_non_section_points, find_points_by_cl_region_rs,
 };
 use crate::intravascular::binding::classes::{PyCenterline, PyFrame};
 use pyo3::prelude::*;
@@ -304,6 +304,44 @@ pub fn find_aortic_scaling(
     Ok(dist)
 }
 
+/// Find the optimal aortic wall scaling for coronary artery anomalies
+/// using aortic points and the aortic centerline.
+/// Additionally needs a reference point on the first quarter of the first round lumen.
+/// Projects a vector from the centerline point to the reference point on the coronary
+/// and finds the best scaling along this vector
+///
+/// Parameters
+/// ----------
+/// centerline : PyCenterline
+///     Centerline of the aorta.
+/// ref_pt_coronary : tuple of float
+///     ``(x, y, z)`` coordinates of the first round ref point.
+/// aortic_pts : list of tuple of float
+///     Reference ``(x, y, z)`` points from the CCTA mesh.
+///
+/// Returns
+/// -------
+/// scaling : float
+///     Optimal scaling distance for the aortic wall.
+///
+/// Examples
+/// --------
+/// >>> import multimodars as mm
+/// >>>
+#[pyfunction]
+pub fn find_aortic_wall_scaling(
+    cl_aorta: PyCenterline,
+    ref_pt_coronary: (f64, f64, f64),
+    aortic_pts: Vec<(f64, f64, f64)>,
+) -> PyResult<f64> {
+    let rust_centerline = cl_aorta.to_rust_centerline();
+    let dist = centerline_based_wall_diameter_optimization(
+        &rust_centerline,
+        &ref_pt_coronary,
+        &aortic_pts,
+    );
+    Ok(dist)
+}
 
 /// Build a vertex adjacency map from a triangle mesh face list.
 ///

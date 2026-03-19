@@ -1291,14 +1291,13 @@ impl PyGeometry {
     /// >>> frame = geometry.get_frame_at_index(0)
     #[pyo3(signature = (index))]
     pub fn get_frame_at_index(&self, index: usize) -> PyResult<PyFrame> {
-        self.frames
-            .get(index)
-            .cloned()
-            .ok_or_else(|| pyo3::exceptions::PyIndexError::new_err(format!(
+        self.frames.get(index).cloned().ok_or_else(|| {
+            pyo3::exceptions::PyIndexError::new_err(format!(
                 "index {} out of range for geometry with {} frames",
                 index,
                 self.frames.len()
-            )))
+            ))
+        })
     }
 
     /// Return a new geometry with the frame at ``index`` replaced by ``frame``.
