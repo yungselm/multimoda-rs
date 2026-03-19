@@ -15,7 +15,7 @@ from ..multimodars import (
 )
 from .._converters import numpy_to_centerline
 from ..io.read_geometrical import read_mesh
-from .debug_plots import plot_results_key, compare_centerline_scaling
+from .debug_plots import plot_results_key
 
 
 def label_geometry(
@@ -94,11 +94,15 @@ def label_geometry(
     """
     if isinstance(path_ccta_geometry, trimesh.Trimesh):
         mesh = path_ccta_geometry
-        print(f"Using provided mesh: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces")
+        print(
+            f"Using provided mesh: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces"
+        )
     else:
         try:
             mesh = read_mesh(path_ccta_geometry)
-            print(f"Loaded mesh: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces")
+            print(
+                f"Loaded mesh: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces"
+            )
         except Exception as e:
             print(f"Error reading CCTA mesh from {path_ccta_geometry}: {e}")
             raise
@@ -204,7 +208,7 @@ def label_geometry(
     else:
         final_lca_points_found = lca_points_found.copy()
 
-    print(f"Removing LCA and RCA island points...")
+    print("Removing LCA and RCA island points...")
     aortic_points = _find_aortic_points(
         mesh.vertices, final_rca_points_found, final_lca_points_found
     )
@@ -212,7 +216,7 @@ def label_geometry(
     final_lca_points, final_aortic_points = clean_outlier_points(
         final_lca_points_found, aortic_points, 2.0, 0.4
     )  # based on patient data, only precleaning anyways, rest done by final_reclassification
-    final_rca_points, _aortic_points = clean_outlier_points(
+    final_rca_points, _ = clean_outlier_points(
         final_rca_points_found, final_aortic_points, 2.0, 0.4
     )
     final_aortic_points = _find_aortic_points(

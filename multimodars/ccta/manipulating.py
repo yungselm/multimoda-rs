@@ -5,10 +5,13 @@ import trimesh
 
 from ..multimodars import (
     PyGeometry,
+    PyFrame,
+    PyCenterline,
     build_adjacency_map,
     adjust_diameter_centerline_morphing_simple,
     find_proximal_distal_scaling,
     find_aortic_scaling,
+    find_aortic_wall_scaling as _find_aortic_wall_scaling,
 )
 from .._converters import geometry_to_trimesh
 
@@ -151,11 +154,11 @@ def find_distal_and_proximal_scaling(
 
 
 def find_aorta_scaling(
-    frames,
-    centerline,
+    frames: list[PyFrame],
+    cl_aorta: PyCenterline,
     results: dict,
 ) -> float:
-    """Compute the optimal radial scaling factor for the aortic wall region.
+    """Compute the optimal radial scaling factor for the aortic region.
 
     Extracts reconstructed wall points from the intravascular frames (using
     ``aortic_thickness`` and the ``"Wall"`` extras) as a reference, then calls
@@ -167,7 +170,7 @@ def find_aorta_scaling(
     frames : list of PyFrame
         Intravascular imaging frames containing ``aortic_thickness`` and
         ``extras["Wall"]`` data.
-    centerline : PyCenterline
+    cl_aorta : PyCenterline
         Centerline of the aortic region.
     results : dict
         Labelled results dictionary containing ``"rca_removed_points"``.
@@ -187,9 +190,58 @@ def find_aorta_scaling(
     scaling = find_aortic_scaling(
         results["rca_removed_points"],  # For now work with removed points
         reference_points,
-        centerline,
+        cl_aorta,
     )
     print(f"Best aortic scaling: {np.round(scaling, 2)} mm")
+    print("====================================\n")
+
+    return scaling
+
+
+def find_aortic_wall_scaling(
+    frames: list[PyFrame],
+    cl_aorta: PyCenterline,
+    results: dict,
+) -> float:
+    """Compute the optimal radial scaling factor for the aortic wall region.
+    This is created for anomalous coronaries, and tries to optimize the aortic wall
+    to the point on the first quarter towards the aortic wall of the first round
+    lumen (marking the end of the intramural course).
+
+    End of the intramural course is defined as the first lumen with an elliptic ratio <1.3
+
+    Parameters
+    ----------
+    frames : list of PyFrame
+        Intravascular imaging frames.
+    cl_aorta : PyCenterline
+        Centerline of the aortic region.
+    results : dict
+        Labelled results dictionary containing ``"rca_removed_points"``.
+
+    Returns
+    -------
+    float
+        Optimal radial scaling factor for the aortic wall.
+    """
+    ref_point = None
+
+    print("\n=== Finding best aortic wall scaling factor ===")
+    for frame in frames:
+        elliptic_ratio = frame.lumen.get_elliptic_ratio()
+        if elliptic_ratio < 1.3:
+            print(f"elliptic ratio <1.3 for frame index {frame.id}")
+            point_idx = len(frame.lumen) // 4
+            ref_point_ir = frame.lumen.points[point_idx]
+            ref_point = (ref_point_ir.x, ref_point_ir.y, ref_point_ir.z)
+            break
+        else:
+            continue
+
+    if ref_point is None:
+        raise ValueError("No coronary reference point found")
+    scaling = _find_aortic_wall_scaling(cl_aorta, ref_point, results["aorta_points"])
+    print(f"Best aortic wall scaling: {np.round(scaling, 2)} mm")
     print("====================================\n")
 
     return scaling
@@ -366,7 +418,7 @@ def remove_labeled_points_from_mesh(
 
 def keep_labeled_points_from_mesh(
     results: dict,
-    region_key: str,
+    region_key: str | list[str],
 ) -> dict:
     """Keep only the labeled region of vertices and remove everything else.
 
@@ -382,8 +434,10 @@ def keep_labeled_points_from_mesh(
         ``"rca_removed_points"``, ``"lca_removed_points"``,
         ``"proximal_points"``, and ``"distal_points"`` are also updated if
         present.
-    region_key : str
-        Key in *results* whose point list defines the vertices to *keep*.
+    region_key : str or list[str]
+        Key (or list of keys) in *results* whose point lists define the
+        vertices to *keep*.  When multiple keys are given the union of all
+        their point sets is kept.
 
     Returns
     -------
@@ -395,7 +449,11 @@ def keep_labeled_points_from_mesh(
     """
     mesh: trimesh.Trimesh = results["mesh"]
 
-    points_to_keep = results.get(region_key, [])
+    region_keys = [region_key] if isinstance(region_key, str) else list(region_key)
+
+    points_to_keep = []
+    for key in region_keys:
+        points_to_keep.extend(results.get(key, []))
     if not points_to_keep:
         return results
 
@@ -448,7 +506,7 @@ def keep_labeled_points_from_mesh(
         "lca_removed_points",
         "proximal_points",
         "distal_points",
-        region_key,
+        *region_keys,
     ):
         if key in updated:
             updated[key] = [p for p in updated[key] if tuple(p) in new_coord_set]

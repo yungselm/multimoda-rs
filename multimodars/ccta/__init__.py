@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from . import manipulating
 from . import labeling
-from . import debug_plots
+from . import debug_plots as debug_plots
 from . import fixing_functions
 
 from pathlib import Path
@@ -12,6 +12,7 @@ import trimesh
 
 if TYPE_CHECKING:
     from ..multimodars import PyCenterline, PyFrame, PyGeometry
+
 
 # -------------------------------
 # Convenience Functions
@@ -114,19 +115,19 @@ def label(
 
     if anomalous_rca or anomalous_lca:
         if anomalous_rca:
-            key='rca_points'
-            cl=rca_cl
+            key = "rca_points"
+            cl = rca_cl
         else:
-            key='lca_points'
-            cl=lca_cl
-        
+            key = "lca_points"
+            cl = lca_cl
+
         results = labeling.label_anomalous_region(
             centerline=cl,
             frames=aligned_frames,
             results=results,
             results_key=key,
         )
-    
+
     return results, (rca_cl, lca_cl, ao_cl)
 
 
@@ -187,35 +188,40 @@ def scale(
 
     aortic_scaling = manipulating.find_aorta_scaling(
         frames=aligned_frames,
-        centerline=cl_aorta,
+        cl_aorta=cl_aorta,
         results=results,
     )
 
     scaled_distal = manipulating.scale_region_centerline_morphing(
-        mesh=results['mesh'],
-        region_points=results['distal_points'],
+        mesh=results["mesh"],
+        region_points=results["distal_points"],
         centerline=cl_vessel,
         diameter_adjustment_mm=distal_scaling,
     )
-    results = manipulating.sync_results_to_mesh(results, results['mesh'], scaled_distal)
+    results = manipulating.sync_results_to_mesh(results, results["mesh"], scaled_distal)
 
     scaled_distal_aortic = manipulating.scale_region_centerline_morphing(
-        mesh=results['mesh'],
-        region_points=results['aorta_points'] + results['rca_removed_points'],
+        mesh=results["mesh"],
+        region_points=results["aorta_points"] + results["rca_removed_points"],
         centerline=cl_aorta,
         diameter_adjustment_mm=aortic_scaling,
     )
-    results = manipulating.sync_results_to_mesh(results, results['mesh'], scaled_distal_aortic)
+    results = manipulating.sync_results_to_mesh(
+        results, results["mesh"], scaled_distal_aortic
+    )
 
     scaled_proximal = manipulating.scale_region_centerline_morphing(
-        mesh=results['mesh'],
-        region_points=results['proximal_points'],
+        mesh=results["mesh"],
+        region_points=results["proximal_points"],
         centerline=cl_vessel,
         diameter_adjustment_mm=prox_scaling,
     )
-    results = manipulating.sync_results_to_mesh(results, results['mesh'], scaled_proximal)
+    results = manipulating.sync_results_to_mesh(
+        results, results["mesh"], scaled_proximal
+    )
 
     return results
+
 
 def stitch(
     results: dict,
@@ -230,12 +236,12 @@ def stitch(
 
     Removes labeled anatomical regions from the CCTA mesh, then stitches the
     remaining surface to the intravascular geometry reconstructed from
-    *geometry*. 
-    
+    *geometry*.
+
     *Anomalous vessel*: The recommended approach for anomalies is to remove anomalous points
     and proximal points and stitch the intravascular vessel directly to aorta with highest_z
     approach (default).
-    
+
     When *postprocessing* is ``True`` **and** pymeshlab is
     installed, the stitched mesh is repaired, isotropically remeshed, and
     smoothed with a Taubin filter before being returned.
@@ -276,20 +282,22 @@ def stitch(
             "Install it with: pip install 'multimodars[meshlab]'"
         )
 
-    updated_results = manipulating.remove_labeled_points_from_mesh(results, region_remove)
+    updated_results = manipulating.remove_labeled_points_from_mesh(
+        results, region_remove
+    )
 
     stitched = manipulating.stitch_ccta_to_intravascular(
         geometry,
-        updated_results['mesh'],
+        updated_results["mesh"],
         updated_results,
         prox_start_mode=prox_start_mode,
         dist_start_mode=dist_start_mode,
     )
 
-    stitched['mesh'] = fixing_functions.manual_hole_fill(stitched['mesh'])
+    stitched["mesh"] = fixing_functions.manual_hole_fill(stitched["mesh"])
 
-    stitched['mesh'] = fixing_functions.postprocess_stitched_mesh(
-        stitched['mesh'],
+    stitched["mesh"] = fixing_functions.postprocess_stitched_mesh(
+        stitched["mesh"],
         postprocessing=postprocessing,
         **postprocessing_kwargs,
     )
@@ -365,18 +373,94 @@ def export_section_stl(
 
     _REGION_KEYS = {
         "aorta": "aorta_points",
-        "rca":   "rca_points",
-        "lca":   "lca_points",
+        "rca": "rca_points",
+        "lca": "lca_points",
     }
 
     if type == "all":
         mesh.export(str(output_dir / "all.stl"))
     elif type in _REGION_KEYS:
         region_points = results.get(_REGION_KEYS[type], [])
-        sub_mesh = _extract_region_with_border_faces(mesh, region_points)
+        if type == "aorta":
+            sub_mesh_dict = manipulating.keep_labeled_points_from_mesh(
+                results, ["aorta_points", "rca_removed_points", "lca_removed_points"]
+            )
+            sub_mesh = sub_mesh_dict["mesh"]
+        else:
+            sub_mesh = _extract_region_with_border_faces(mesh, region_points)
         sub_mesh.export(str(output_dir / f"{type}.stl"))
     else:
         raise ValueError(
             f"Unknown export type {type!r}. "
             f"Choose one of: 'all', 'aorta', 'rca', 'lca'."
         )
+
+
+def create_wall_mesh(
+    frames: list[PyFrame] | None,
+    cl_aorta: PyCenterline,
+    cl_rca: PyCenterline,
+    cl_lca: PyCenterline,
+    results: dict,
+    aortic_scaling: float | None = None,
+    coronary_scaling: float = 1.0,
+) -> dict:
+    """Create a wall, by assigning a wall thickness for coronaries, and then finding either
+    directly the best scaling for aorta (for coronary artery anomalies), by finding the distance
+    between aortic wall and the reference point on the coronary or by directly providing a scaling factor
+    for coronarie sand aorta.
+    ...
+    """
+    if frames is None and aortic_scaling is None:
+        raise ValueError("Either provide frames or aortic scaling")
+
+    scaling_factor = 0.0
+
+    if frames is not None:
+        scaling = manipulating.find_aortic_wall_scaling(
+            frames=frames,
+            cl_aorta=cl_aorta,
+            results=results,
+        )
+        scaling_factor = scaling
+    else:
+        assert aortic_scaling is not None
+        scaling_factor = aortic_scaling
+
+    # Extract aorta sub-mesh, fill ostia holes, then scale the closed aorta directly
+    sub_mesh_dict = manipulating.keep_labeled_points_from_mesh(
+        results, ["aorta_points", "rca_removed_points", "lca_removed_points"]
+    )
+    sub_mesh = sub_mesh_dict["mesh"]
+    sub_mesh_filled = fixing_functions.manual_hole_fill(sub_mesh)
+    filled_vertices = [
+        (float(p[0]), float(p[1]), float(p[2])) for p in sub_mesh_filled.vertices
+    ]
+
+    scaled_aorta = manipulating.scale_region_centerline_morphing(
+        mesh=sub_mesh_filled,
+        region_points=filled_vertices,
+        centerline=cl_aorta,
+        diameter_adjustment_mm=scaling_factor,
+    )
+
+    # Extract and scale each coronary sub-mesh independently
+    rca_sub_dict = manipulating.keep_labeled_points_from_mesh(results, ["rca_points"])
+    scaled_rca = manipulating.scale_region_centerline_morphing(
+        mesh=rca_sub_dict["mesh"],
+        region_points=rca_sub_dict["rca_points"],
+        centerline=cl_rca,
+        diameter_adjustment_mm=coronary_scaling,
+    )
+
+    lca_sub_dict = manipulating.keep_labeled_points_from_mesh(results, ["lca_points"])
+    scaled_lca = manipulating.scale_region_centerline_morphing(
+        mesh=lca_sub_dict["mesh"],
+        region_points=lca_sub_dict["lca_points"],
+        centerline=cl_lca,
+        diameter_adjustment_mm=coronary_scaling,
+    )
+
+    results["mesh"] = trimesh.util.concatenate([scaled_aorta, scaled_rca, scaled_lca])
+
+    return results

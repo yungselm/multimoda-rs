@@ -39,7 +39,7 @@ from ._converters import (
     numpy_to_inputdata,
 )
 from .io import read_geometrical, write_geometries
-from .ccta import label, scale, stitch, export_section_stl
+from .ccta import label, scale, stitch, export_section_stl, create_wall_mesh
 from .ccta.labeling import (
     label_geometry,
     label_anomalous_region,
@@ -48,6 +48,7 @@ from .ccta.manipulating import (
     scale_region_centerline_morphing,
     find_distal_and_proximal_scaling,
     find_aorta_scaling,
+    find_aortic_wall_scaling,
     remove_labeled_points_from_mesh,
     keep_labeled_points_from_mesh,
     sync_results_to_mesh,
@@ -97,11 +98,13 @@ __all__ = [
     "scale",
     "stitch",
     "export_section_stl",
+    "create_wall_mesh",
     "label_geometry",
     "label_anomalous_region",
     "scale_region_centerline_morphing",
     "find_distal_and_proximal_scaling",
     "find_aorta_scaling",
+    "find_aortic_wall_scaling",
     "remove_labeled_points_from_mesh",
     "keep_labeled_points_from_mesh",
     "sync_results_to_mesh",
@@ -115,12 +118,12 @@ __all__ = [
 # def _print_banner():
 #     v = version("multimodars")
 #     print(r"""
-#   .__   __  .__                   .___                    
+#   .__   __  .__                   .___
 #   _____  __ __|  |_/  |_|__| _____   ____   __| _/____ _______  ______
 #  /     \|  |  \  |\   __\  |/     \ /  _ \ / __ |\__  \\_  __ \/  ___/
-# |  Y Y  \  |  /  |_|  | |  |  Y Y  (  <_> ) /_/ | / __ \|  | \/\___ \ 
+# |  Y Y  \  |  /  |_|  | |  |  Y Y  (  <_> ) /_/ | / __ \|  | \/\___ \
 # |__|_|  /____/|____/__| |__|__|_|  /\____/\____ |(____  /__|  /____  >
-#       \/                         \/            \/     \/           \/  
+#       \/                         \/            \/     \/           \/
 # """)
 #     print(f"  version  : {v}")
 #     print(f"  docs     : https://multimoda-rs.readthedocs.io")

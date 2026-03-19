@@ -48,12 +48,15 @@ def manual_hole_fill(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
     result.fix_normals()
     return result
 
+
 def postprocess_stitched_mesh(
     mesh: trimesh.Trimesh,
     *,
     postprocessing: bool = False,
     target_edge_length_mm: float | None = None,
     remesh_iterations: int = 10,
+    lamb: float = 0.5,
+    nu: float = 0.5,
     verbose: bool = False,
     **kwargs,
 ) -> trimesh.Trimesh:
@@ -85,7 +88,7 @@ def postprocess_stitched_mesh(
         verbose=verbose,
         **kwargs,
     )
-    trimesh.smoothing.filter_taubin(mesh)
+    trimesh.smoothing.filter_taubin(mesh, lamb=lamb, nu=nu)
     return mesh
 
 
@@ -156,9 +159,7 @@ def fix_and_remesh_stitched_mesh(
     # Use the fine end of the edge-length distribution as reference so that
     # the IV mesh resolution drives the target (not the coarser CCTA edges).
     if target_edge_length_mm is None:
-        target_edge_length_mm = float(
-            np.percentile(mesh.edges_unique_length, 25)
-        )
+        target_edge_length_mm = float(np.percentile(mesh.edges_unique_length, 25))
         if verbose:
             print(f"  auto target edge length = {target_edge_length_mm:.4f} mm (P25)")
 
@@ -167,7 +168,7 @@ def fix_and_remesh_stitched_mesh(
     # ------------------------------------------------------------------
     # 0.  Repair non-manifold geometry (required before hole filling)
     # ------------------------------------------------------------------
-    ms.meshing_repair_non_manifold_edges(method=0)   # 0 = remove faces
+    ms.meshing_repair_non_manifold_edges(method=0)  # 0 = remove faces
     ms.meshing_repair_non_manifold_vertices()
     ms.meshing_remove_duplicate_faces()
     ms.meshing_remove_duplicate_vertices()

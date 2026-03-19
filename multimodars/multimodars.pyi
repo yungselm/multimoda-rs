@@ -692,6 +692,13 @@ def find_aortic_scaling(
 ) -> float: ...
 
 
+def find_aortic_wall_scaling(
+    centerline: PyCenterline,
+    ref_pt_coronary: tuple[float, float, float],
+    aortic_pts: list[tuple[float, float, float]],
+) -> float: ...
+
+
 def find_centerline_bounded_points_simple(
     centerline: PyCenterline,
     points: list[tuple[float, float, float]],
