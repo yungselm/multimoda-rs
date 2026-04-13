@@ -24,7 +24,7 @@ pub fn dummy_geometry_custom(z_spacing: f64, n_frames: usize) -> Geometry {
 fn new_frame(frame_index: u32, z_coord: f64, has_ref_pt: bool) -> Frame {
     let points = vec![
         ContourPoint {
-            frame_index: frame_index,
+            frame_index,
             point_index: 0,
             x: 1.0,
             y: 3.0,
@@ -32,7 +32,7 @@ fn new_frame(frame_index: u32, z_coord: f64, has_ref_pt: bool) -> Frame {
             aortic: false,
         },
         ContourPoint {
-            frame_index: frame_index,
+            frame_index,
             point_index: 1,
             x: 0.0,
             y: 2.0,
@@ -40,7 +40,7 @@ fn new_frame(frame_index: u32, z_coord: f64, has_ref_pt: bool) -> Frame {
             aortic: false,
         },
         ContourPoint {
-            frame_index: frame_index,
+            frame_index,
             point_index: 2,
             x: 0.0,
             y: 0.0,
@@ -48,7 +48,7 @@ fn new_frame(frame_index: u32, z_coord: f64, has_ref_pt: bool) -> Frame {
             aortic: false,
         },
         ContourPoint {
-            frame_index: frame_index,
+            frame_index,
             point_index: 3,
             x: 1.0,
             y: 0.0,
@@ -56,7 +56,7 @@ fn new_frame(frame_index: u32, z_coord: f64, has_ref_pt: bool) -> Frame {
             aortic: false,
         },
         ContourPoint {
-            frame_index: frame_index,
+            frame_index,
             point_index: 4,
             x: 2.0,
             y: 0.0,
@@ -64,7 +64,7 @@ fn new_frame(frame_index: u32, z_coord: f64, has_ref_pt: bool) -> Frame {
             aortic: false,
         },
         ContourPoint {
-            frame_index: frame_index,
+            frame_index,
             point_index: 5,
             x: 2.0,
             y: 2.0,
@@ -75,7 +75,7 @@ fn new_frame(frame_index: u32, z_coord: f64, has_ref_pt: bool) -> Frame {
     let mut contour = Contour {
         id: frame_index,
         original_frame: 999,
-        points: points,
+        points,
         centroid: Some((1.0, 1.0, z_coord)),
         aortic_thickness: None,
         pulmonary_thickness: None,
@@ -85,7 +85,7 @@ fn new_frame(frame_index: u32, z_coord: f64, has_ref_pt: bool) -> Frame {
 
     let ref_point = if has_ref_pt {
         Some(ContourPoint {
-            frame_index: frame_index,
+            frame_index,
             point_index: 0,
             x: 3.0,
             y: 1.0,
@@ -363,7 +363,7 @@ pub fn dummy_geometry_aligned_long() -> Geometry {
     }
 
     let mut frames = g1.frames;
-    frames.extend(g2.frames.into_iter());
+    frames.extend(g2.frames);
 
     frames[3].reference_point = None;
 
@@ -386,7 +386,7 @@ pub fn dummy_geometry_center_reference() -> Geometry {
     }
 
     let mut frames = g1.frames;
-    frames.extend(g2.frames.into_iter());
+    frames.extend(g2.frames);
 
     let mid_idx = frames.len() / 2;
     let ref_frame_id = frames[mid_idx].lumen.original_frame;

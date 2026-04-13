@@ -103,7 +103,7 @@ pub fn read_stl_ccta<P: AsRef<Path>>(path: P) -> Result<LabeledMesh> {
 }
 
 #[allow(dead_code)]
-fn read_obj_ccta() -> () {
+fn read_obj_ccta() {
     todo!()
 }
 

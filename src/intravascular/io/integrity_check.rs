@@ -9,26 +9,23 @@ pub fn check_geometry_integrity(geometry: &Geometry) -> Result<()> {
         return Err(anyhow!("Geometry has no frames"));
     }
 
-    let checks: &[(&str, fn(&Geometry) -> Result<()>)] = &[
-        ("check_frame_ids_consecutive", check_frame_ids_consecutive),
-        ("check_centroids_match", check_centroids_match),
-        ("check_lumen_presence", check_lumen_presence),
-        ("check_reference_point", check_reference_point),
-        ("check_contour_point_counts", check_contour_point_counts),
-        (
-            "check_original_frame_consistency",
-            check_original_frame_consistency,
-        ),
-        ("check_proximal_end_index", check_proximal_end_index),
-        ("check_z_distribution", check_z_distribution),
-    ];
-
-    for (name, f) in checks {
-        if let Err(e) = f(geometry) {
-            println!("Integrity check '{}' failed: {}", name, e);
-            return Err(e);
+    macro_rules! check_integ(
+        ($function:ident) => {
+            if let Err(e) = $function(geometry) {
+                println!("Integrity check '{}' failed: {}", stringify!($function), e);
+                return Err(e);
+            }
         }
-    }
+    );
+
+    check_integ!(check_frame_ids_consecutive);
+    check_integ!(check_centroids_match);
+    check_integ!(check_lumen_presence);
+    check_integ!(check_reference_point);
+    check_integ!(check_contour_point_counts);
+    check_integ!(check_original_frame_consistency);
+    check_integ!(check_proximal_end_index);
+    check_integ!(check_z_distribution);
 
     Ok(())
 }
@@ -144,7 +141,7 @@ fn check_contour_point_counts(geometry: &Geometry) -> Result<()> {
             }
         }
 
-        for (_contour_type, contour) in &frame.extras {
+        for contour in frame.extras.values() {
             let kind = contour.kind;
             let count = contour.points.len();
             if let Some(&expected) = expected_counts.get(&kind) {
@@ -205,7 +202,7 @@ fn check_original_frame_consistency(geometry: &Geometry) -> Result<()> {
 fn check_proximal_end_index(geometry: &Geometry) -> Result<()> {
     let proximal_idx = geometry.find_proximal_end_idx();
 
-    let mut min_z = std::f64::INFINITY;
+    let mut min_z = f64::INFINITY;
     let mut min_idx = 0usize;
     for (i, f) in geometry.frames.iter().enumerate() {
         let z = f.centroid.2;

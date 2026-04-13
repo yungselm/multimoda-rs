@@ -341,14 +341,8 @@ fn trim_geom_pair(geom_pair: &GeometryPair) -> GeometryPair {
     let geom_a = &geom_pair.geom_a;
     let geom_b = &geom_pair.geom_b;
 
-    let ref_idx_a = match geom_a.find_ref_frame_idx() {
-        Ok(idx) => idx,
-        Err(_) => 0,
-    };
-    let ref_idx_b = match geom_b.find_ref_frame_idx() {
-        Ok(idx) => idx,
-        Err(_) => 0,
-    };
+    let ref_idx_a = geom_a.find_ref_frame_idx().unwrap_or_default();
+    let ref_idx_b = geom_b.find_ref_frame_idx().unwrap_or_default();
 
     let frames_after_ref_a = geom_a.frames.len() - ref_idx_a;
     let frames_after_ref_b = geom_b.frames.len() - ref_idx_b;

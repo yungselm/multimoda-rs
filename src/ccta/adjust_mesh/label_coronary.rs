@@ -54,7 +54,7 @@ fn ray_triangle_intersection(
     );
 
     let u = f * (s.0 * h.0 + s.1 * h.1 + s.2 * h.2);
-    if u < 0.0 || u > 1.0 {
+    if !(0.0..=1.0).contains(&u) {
         return None;
     }
 
@@ -264,8 +264,6 @@ fn check_centerline(centerline: Centerline) -> Centerline {
 }
 
 fn create_bounding_sphere(cl_point: &CenterlinePoint, radius: f64) -> BoundingSphere {
-    let radius = radius;
-
     BoundingSphere {
         center: (
             cl_point.contour_point.x,

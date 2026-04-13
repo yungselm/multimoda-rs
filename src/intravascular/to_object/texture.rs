@@ -2,7 +2,7 @@ use crate::intravascular::io::geometry::{Contour, Geometry};
 use image::{ImageBuffer, Rgb, Rgba};
 use std::error::Error;
 
-pub fn compute_uv_coordinates(contours: &Vec<Contour>) -> Vec<(f64, f64)> {
+pub fn compute_uv_coordinates(contours: &[Contour]) -> Vec<(f64, f64)> {
     if contours.is_empty() || contours[0].points.is_empty() {
         return Vec::new(); // or handle as needed
     }

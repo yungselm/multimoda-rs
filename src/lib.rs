@@ -1,4 +1,5 @@
 // #![deny(clippy::unwrap_used)]
+#![allow(clippy::too_many_arguments)]
 
 mod ccta;
 mod intravascular;

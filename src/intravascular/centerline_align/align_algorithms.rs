@@ -227,7 +227,7 @@ pub fn best_rotation_three_point(
         "---------------------Centerline alignment: Finding optimal rotation---------------------"
     );
 
-    while angle < 6.283185 {
+    while angle < core::f64::consts::TAU {
         // approx 360°
         let mut temp_contour = contour.clone();
 

@@ -186,7 +186,7 @@ impl From<&InputData> for PyInputData {
     fn from(input: &InputData) -> Self {
         // helper: build a single PyContour from a flattened Vec<ContourPoint>
         fn make_pycontour_from_points(
-            points: &Vec<ContourPoint>,
+            points: &[ContourPoint],
             id: u32,
             original_frame: u32,
         ) -> PyContour {
@@ -237,7 +237,7 @@ impl From<&InputData> for PyInputData {
         let record_py: Option<Vec<PyRecord>> = input
             .record
             .as_ref()
-            .map(|records| records.iter().map(|r| PyRecord::from(r)).collect());
+            .map(|records| records.iter().map(PyRecord::from).collect());
 
         let ref_point_py = PyContourPoint::from(&input.ref_point);
 
@@ -1275,14 +1275,13 @@ impl PyGeometry {
     /// >>> frame = geometry.get_frame_at_index(0)
     #[pyo3(signature = (index))]
     pub fn get_frame_at_index(&self, index: usize) -> PyResult<PyFrame> {
-        self.frames
-            .get(index)
-            .cloned()
-            .ok_or_else(|| pyo3::exceptions::PyIndexError::new_err(format!(
+        self.frames.get(index).cloned().ok_or_else(|| {
+            pyo3::exceptions::PyIndexError::new_err(format!(
                 "index {} out of range for geometry with {} frames",
                 index,
                 self.frames.len()
-            )))
+            ))
+        })
     }
 
     /// Return a new geometry with the frame at ``index`` replaced by ``frame``.
@@ -1519,7 +1518,7 @@ impl PyGeometryPair {
 
         // Data rows
         for row in &rows {
-            print_row(&row.to_vec(), &widths);
+            print_row(row, &widths);
         }
 
         // Bottom border
