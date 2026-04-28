@@ -55,8 +55,11 @@ fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<(u32, u32, f64, f64, f64, f64, f64
 ///     Path to the REST input folder.
 /// input_path_b : str
 ///     Path to the STRESS input folder.
-/// label : str, optional
-///     Label used for output filenames.  Default is ``"full"``.
+/// labels : list of str, optional
+///     Labels for the four geometries ``[rest_dia, rest_sys, stress_dia,
+///     stress_sys]``.  Must be exactly 4 strings; if a different number is
+///     supplied the last component of each input path is used instead.
+///     Default is ``[]``.
 /// diastole : bool, optional
 ///     Whether to process the diastolic phase.  Default is ``True``.
 /// step_rotation_deg : float, optional
@@ -129,7 +132,7 @@ fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<(u32, u32, f64, f64, f64, f64, f64
     signature = (
         input_path_a,
         input_path_b,
-        label = "full",
+        labels = vec![],
         diastole = true,
         step_rotation_deg = 0.5f64,
         range_rotation_deg = 90.0f64,
@@ -153,7 +156,7 @@ fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<(u32, u32, f64, f64, f64, f64, f64
 pub fn from_file_full(
     input_path_a: &str,
     input_path_b: &str,
-    label: &str,
+    labels: Vec<String>,
     diastole: bool,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
@@ -197,7 +200,7 @@ pub fn from_file_full(
         logs_c,
         logs_d,
     ) = full_processing_rs(
-        label.to_string(),
+        labels,
         image_center,
         radius,
         n_points,
@@ -210,7 +213,7 @@ pub fn from_file_full(
         diastole,
         write_obj,
         interpolation_steps,
-        rust_contour_types, // Use converted types
+        rust_contour_types,
         watertight,
         output_path_a,
         output_path_b,
@@ -271,8 +274,11 @@ pub fn from_file_full(
 ///     Path to the REST input folder.
 /// input_path_b : str
 ///     Path to the STRESS input folder.
-/// label : str, optional
-///     Label used for output filenames.  Default is ``"double_pair"``.
+/// labels : list of str, optional
+///     Labels for the four geometries ``[rest_dia, rest_sys, stress_dia,
+///     stress_sys]``.  Must be exactly 4 strings; if a different number is
+///     supplied the last component of each input path is used instead.
+///     Default is ``[]``.
 /// diastole : bool, optional
 ///     Whether to process the diastolic phase.  Default is ``True``.
 /// step_rotation_deg : float, optional
@@ -329,7 +335,7 @@ pub fn from_file_full(
 #[pyo3(signature = (
     input_path_a,
     input_path_b,
-    label = "double_pair",
+    labels = vec![],
     diastole = true,
     step_rotation_deg = 0.5f64,
     range_rotation_deg = 90.0f64,
@@ -350,7 +356,7 @@ pub fn from_file_full(
 pub fn from_file_doublepair(
     input_path_a: &str,
     input_path_b: &str,
-    label: &str,
+    labels: Vec<String>,
     diastole: bool,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
@@ -381,7 +387,7 @@ pub fn from_file_doublepair(
         contour_types.iter().map(|ct| ct.into()).collect();
 
     let (geom_ab_final, geom_cd_final, logs_a, logs_b, logs_c, logs_d) = double_pair_processing_rs(
-        label.to_string(),
+        labels,
         image_center,
         radius,
         n_points,
@@ -447,8 +453,10 @@ pub fn from_file_doublepair(
 /// ----------
 /// input_path : str
 ///     Path to the input CSV file.
-/// label : str, optional
-///     Label used for output filenames.  Default is ``"single_pair"``.
+/// labels : list of str, optional
+///     Labels for the two geometries ``[diastole, systole]``.
+///     Must be exactly 2 strings; if a different number is supplied the last
+///     component of the input path is used instead.  Default is ``[]``.
 /// diastole : bool, optional
 ///     Whether to process the diastolic phase.  Default is ``True``.
 /// step_rotation_deg : float, optional
@@ -506,7 +514,7 @@ pub fn from_file_doublepair(
 #[pyfunction]
 #[pyo3(signature = (
     input_path,
-    label = "single_pair",
+    labels = vec![],
     diastole = true,
     step_rotation_deg = 0.5f64,
     range_rotation_deg = 90.0f64,
@@ -525,7 +533,7 @@ pub fn from_file_doublepair(
 ))]
 pub fn from_file_singlepair(
     input_path: &str,
-    label: &str,
+    labels: Vec<String>,
     diastole: bool,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
@@ -552,7 +560,7 @@ pub fn from_file_singlepair(
         contour_types.iter().map(|ct| ct.into()).collect();
 
     let (geom_pair_final, logs_a, logs_b) = pair_processing_rs(
-        label.to_string(),
+        labels,
         image_center,
         radius,
         n_points,
@@ -594,8 +602,10 @@ pub fn from_file_singlepair(
 /// ----------
 /// input_path : str
 ///     Path to the input CSV (no header; columns: frame, x, y, z).
-/// label : str, optional
-///     Label used for output filenames.  Default is ``"single"``.
+/// labels : list of str, optional
+///     Label for the geometry (1 string).  If a different number is supplied
+///     the last component of the input path is used instead.  Default is
+///     ``[]``.
 /// diastole : bool, optional
 ///     When ``True`` process the diastolic phase; otherwise systole.
 ///     Default is ``True``.
@@ -653,7 +663,7 @@ pub fn from_file_singlepair(
 #[pyfunction]
 #[pyo3(signature = (
     input_path,
-    label = "single",
+    labels = vec![],
     diastole = true,
     step_rotation_deg = 0.5f64,
     range_rotation_deg = 90.0f64,
@@ -670,7 +680,7 @@ pub fn from_file_singlepair(
 ))]
 pub fn from_file_single(
     input_path: &str,
-    label: &str,
+    labels: Vec<String>,
     diastole: bool,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
@@ -689,7 +699,7 @@ pub fn from_file_single(
         contour_types.iter().map(|ct| ct.into()).collect();
 
     let (geom, logs) = single_processing_rs(
-        label.to_string(),
+        labels,
         image_center,
         radius,
         n_points,
@@ -738,8 +748,6 @@ pub fn from_file_single(
 ///     Diastolic STRESS input data.
 /// input_data_d : PyInputData
 ///     Systolic STRESS input data.
-/// label : str, optional
-///     Label used for output filenames.  Default is ``"full"``.
 /// diastole : bool, optional
 ///     Whether to process the diastolic phase.  Default is ``True``.
 /// step_rotation_deg : float, optional
@@ -823,7 +831,6 @@ pub fn from_file_single(
         input_data_b,
         input_data_c,
         input_data_d,
-        label = "full",
         diastole = true,
         step_rotation_deg = 0.5f64,
         range_rotation_deg = 90.0f64,
@@ -849,7 +856,6 @@ pub fn from_array_full(
     input_data_b: PyInputData,
     input_data_c: PyInputData,
     input_data_d: PyInputData,
-    label: &str,
     diastole: bool,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
@@ -880,6 +886,8 @@ pub fn from_array_full(
         Vec<(u32, u32, f64, f64, f64, f64, f64)>,
     ),
 )> {
+    let labels: Vec<String> = vec![]; // InputData carries its own labels
+
     let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
@@ -906,7 +914,7 @@ pub fn from_array_full(
         logs_c,
         logs_d,
     ) = full_processing_rs(
-        label.to_string(),
+        labels,
         image_center,
         radius,
         n_points,
@@ -976,8 +984,6 @@ pub fn from_array_full(
 ///     Diastolic STRESS input data.
 /// input_data_d : PyInputData
 ///     Systolic STRESS input data.
-/// label : str, optional
-///     Label used for output filenames.  Default is ``"double_pair"``.
 /// diastole : bool, optional
 ///     Whether to process the diastolic phase.  Default is ``True``.
 /// step_rotation_deg : float, optional
@@ -1051,7 +1057,6 @@ pub fn from_array_full(
         input_data_b,
         input_data_c,
         input_data_d,
-        label = "double_pair",
         diastole = true,
         step_rotation_deg = 0.5f64,
         range_rotation_deg = 90.0f64,
@@ -1075,7 +1080,6 @@ pub fn from_array_doublepair(
     input_data_b: PyInputData,
     input_data_c: PyInputData,
     input_data_d: PyInputData,
-    label: &str,
     diastole: bool,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
@@ -1102,6 +1106,8 @@ pub fn from_array_doublepair(
         Vec<(u32, u32, f64, f64, f64, f64, f64)>,
     ),
 )> {
+    let labels: Vec<String> = vec![]; // InputData carries its own labels
+
     let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
@@ -1119,7 +1125,7 @@ pub fn from_array_doublepair(
     })?;
 
     let (geom_ab_final, geom_cd_final, logs_a, logs_b, logs_c, logs_d) = double_pair_processing_rs(
-        label.to_string(),
+        labels,
         image_center,
         radius,
         n_points,
@@ -1175,8 +1181,6 @@ pub fn from_array_doublepair(
 ///     Diastolic input data.
 /// input_data_b : PyInputData
 ///     Systolic input data.
-/// label : str, optional
-///     Label used for output filenames.  Default is ``"single_pair"``.
 /// diastole : bool, optional
 ///     Whether to process the diastolic phase.  Default is ``True``.
 /// step_rotation_deg : float, optional
@@ -1242,7 +1246,6 @@ pub fn from_array_doublepair(
     signature = (
         input_data_a,
         input_data_b,
-        label = "single_pair",
         diastole = true,
         step_rotation_deg = 0.5f64,
         range_rotation_deg = 90.0f64,
@@ -1263,7 +1266,6 @@ pub fn from_array_doublepair(
 pub fn from_array_singlepair(
     input_data_a: PyInputData,
     input_data_b: PyInputData,
-    label: &str,
     diastole: bool,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
@@ -1286,6 +1288,8 @@ pub fn from_array_singlepair(
         Vec<(u32, u32, f64, f64, f64, f64, f64)>,
     ),
 )> {
+    let labels: Vec<String> = vec![]; // InputData carries its own labels
+
     let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
@@ -1297,7 +1301,7 @@ pub fn from_array_singlepair(
     })?;
 
     let (geom_ab_final, logs_a, logs_b) = pair_processing_rs(
-        label.to_string(),
+        labels,
         image_center,
         radius,
         n_points,
@@ -1340,8 +1344,6 @@ pub fn from_array_singlepair(
 /// ----------
 /// input_data : PyInputData
 ///     Input data for a single cardiac phase (e.g. diastolic REST).
-/// label : str, optional
-///     Label used for output filenames.  Default is ``"single"``.
 /// diastole : bool, optional
 ///     When ``True`` process the diastolic phase; otherwise systole.
 ///     Default is ``True``.
@@ -1399,7 +1401,6 @@ pub fn from_array_singlepair(
 #[pyfunction]
 #[pyo3(signature = (
     input_data,
-    label = "single",
     diastole = true,
     step_rotation_deg = 0.5f64,
     range_rotation_deg = 90.0f64,
@@ -1416,7 +1417,6 @@ pub fn from_array_singlepair(
 ))]
 pub fn from_array_single(
     input_data: PyInputData,
-    label: &str,
     diastole: bool,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
@@ -1431,6 +1431,8 @@ pub fn from_array_single(
     contour_types: Vec<PyContourType>,
     smooth: bool,
 ) -> PyResult<(PyGeometry, Vec<(u32, u32, f64, f64, f64, f64, f64)>)> {
+    let labels: Vec<String> = vec![]; // InputData carries its own labels
+
     let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
@@ -1439,7 +1441,7 @@ pub fn from_array_single(
     })?;
 
     let (geom_rs, logs) = single_processing_rs(
-        label.to_string(),
+        labels,
         image_center,
         radius,
         n_points,

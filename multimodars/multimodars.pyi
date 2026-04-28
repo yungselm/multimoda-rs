@@ -368,7 +368,7 @@ class PyInputData:
 def from_file_full(
     input_path_a: str,
     input_path_b: str,
-    label: str = ...,
+    labels: list[str] = ...,
     diastole: bool = ...,
     step_rotation_deg: float = ...,
     range_rotation_deg: float = ...,
@@ -399,7 +399,7 @@ def from_file_full(
 def from_file_doublepair(
     input_path_a: str,
     input_path_b: str,
-    label: str = ...,
+    labels: list[str] = ...,
     diastole: bool = ...,
     step_rotation_deg: float = ...,
     range_rotation_deg: float = ...,
@@ -425,7 +425,7 @@ def from_file_doublepair(
 
 def from_file_singlepair(
     input_path: str,
-    label: str = ...,
+    labels: list[str] = ...,
     diastole: bool = ...,
     step_rotation_deg: float = ...,
     range_rotation_deg: float = ...,
@@ -446,7 +446,7 @@ def from_file_singlepair(
 
 def from_file_single(
     input_path: str,
-    label: str = ...,
+    labels: list[str] = ...,
     diastole: bool = ...,
     step_rotation_deg: float = ...,
     range_rotation_deg: float = ...,
@@ -472,7 +472,6 @@ def from_array_full(
     input_data_b: PyInputData,
     input_data_c: PyInputData,
     input_data_d: PyInputData,
-    label: str = ...,
     diastole: bool = ...,
     step_rotation_deg: float = ...,
     range_rotation_deg: float = ...,
@@ -505,7 +504,6 @@ def from_array_doublepair(
     input_data_b: PyInputData,
     input_data_c: PyInputData,
     input_data_d: PyInputData,
-    label: str = ...,
     diastole: bool = ...,
     step_rotation_deg: float = ...,
     range_rotation_deg: float = ...,
@@ -532,7 +530,6 @@ def from_array_doublepair(
 def from_array_singlepair(
     input_data_a: PyInputData,
     input_data_b: PyInputData,
-    label: str = ...,
     diastole: bool = ...,
     step_rotation_deg: float = ...,
     range_rotation_deg: float = ...,
@@ -553,7 +550,6 @@ def from_array_singlepair(
 
 def from_array_single(
     input_data: PyInputData,
-    label: str = ...,
     diastole: bool = ...,
     step_rotation_deg: float = ...,
     range_rotation_deg: float = ...,

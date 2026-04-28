@@ -20,7 +20,7 @@ from .multimodars import (
     to_obj as _to_obj,
     find_centerline_bounded_points_simple as _find_centerline_bounded_points_simple,
     find_proximal_distal_scaling as _find_proximal_distal_scaling,
-    build_adjacency_map as _build_adjacency_map
+    build_adjacency_map as _build_adjacency_map,
 )
 
 _AlignLog = list[tuple[int, int, float, float, float, float, float]]
@@ -38,7 +38,7 @@ def _default_contour_types() -> list[PyContourType]:
 def from_file_full(
     input_path_a: str,
     input_path_b: str,
-    label: str = "full",
+    labels: list[str] | None = None,
     diastole: bool = True,
     step_rotation_deg: float = 0.5,
     range_rotation_deg: float = 90.0,
@@ -94,8 +94,11 @@ def from_file_full(
         Path to the REST input folder.
     input_path_b : str
         Path to the STRESS input folder.
-    label : str, optional
-        Label used for output filenames.  Default is ``"full"``.
+    labels : list of str, optional
+        Labels for the four geometries ``[rest_dia, rest_sys, stress_dia,
+        stress_sys]``.  Must be exactly 4 strings; if a different number is
+        supplied the last component of each input path is used instead.
+        Default is ``[]``.
     diastole : bool, optional
         Whether to process the diastolic phase.  Default is ``True``.
     step_rotation_deg : float, optional
@@ -169,7 +172,7 @@ def from_file_full(
     return _from_file_full(
         input_path_a,
         input_path_b,
-        label,
+        labels or [],
         diastole,
         step_rotation_deg,
         range_rotation_deg,
@@ -194,7 +197,7 @@ def from_file_full(
 def from_file_doublepair(
     input_path_a: str,
     input_path_b: str,
-    label: str = "double_pair",
+    labels: list[str] | None = None,
     diastole: bool = True,
     step_rotation_deg: float = 0.5,
     range_rotation_deg: float = 90.0,
@@ -245,8 +248,11 @@ def from_file_doublepair(
         Path to the REST input folder.
     input_path_b : str
         Path to the STRESS input folder.
-    label : str, optional
-        Label used for output filenames.  Default is ``"double_pair"``.
+    labels : list of str, optional
+        Labels for the four geometries ``[rest_dia, rest_sys, stress_dia,
+        stress_sys]``.  Must be exactly 4 strings; if a different number is
+        supplied the last component of each input path is used instead.
+        Default is ``[]``.
     diastole : bool, optional
         Whether to process the diastolic phase.  Default is ``True``.
     step_rotation_deg : float, optional
@@ -305,7 +311,7 @@ def from_file_doublepair(
     return _from_file_doublepair(
         input_path_a,
         input_path_b,
-        label,
+        labels or [],
         diastole,
         step_rotation_deg,
         range_rotation_deg,
@@ -327,7 +333,7 @@ def from_file_doublepair(
 
 def from_file_singlepair(
     input_path: str,
-    label: str = "single_pair",
+    labels: list[str] | None = None,
     diastole: bool = True,
     step_rotation_deg: float = 0.5,
     range_rotation_deg: float = 90.0,
@@ -371,8 +377,10 @@ def from_file_singlepair(
     ----------
     input_path : str
         Path to the input CSV folder.
-    label : str, optional
-        Label used for output filenames.  Default is ``"single_pair"``.
+    labels : list of str, optional
+        Labels for the two geometries ``[diastole, systole]``.  Must be
+        exactly 2 strings; if a different number is supplied the last
+        component of the input path is used instead.  Default is ``[]``.
     diastole : bool, optional
         Whether to process the diastolic phase.  Default is ``True``.
     step_rotation_deg : float, optional
@@ -424,7 +432,7 @@ def from_file_singlepair(
         contour_types = _default_contour_types()
     return _from_file_singlepair(
         input_path,
-        label,
+        labels or [],
         diastole,
         step_rotation_deg,
         range_rotation_deg,
@@ -445,7 +453,7 @@ def from_file_singlepair(
 
 def from_file_single(
     input_path: str,
-    label: str = "single",
+    labels: list[str] | None = None,
     diastole: bool = True,
     step_rotation_deg: float = 0.5,
     range_rotation_deg: float = 90.0,
@@ -474,8 +482,10 @@ def from_file_single(
     ----------
     input_path : str
         Path to the input CSV folder.
-    label : str, optional
-        Label used for output filenames.  Default is ``"single"``.
+    labels : list of str, optional
+        Label for the geometry (1 string).  If a different number is
+        supplied the last component of the input path is used instead.
+        Default is ``[]``.
     diastole : bool, optional
         When ``True`` process the diastolic phase; otherwise systole.
         Default is ``True``.
@@ -523,7 +533,7 @@ def from_file_single(
         contour_types = _default_contour_types()
     return _from_file_single(
         input_path,
-        label,
+        labels or [],
         diastole,
         step_rotation_deg,
         range_rotation_deg,
@@ -550,7 +560,6 @@ def from_array_full(
     input_data_b: PyInputData,
     input_data_c: PyInputData,
     input_data_d: PyInputData,
-    label: str = "full",
     diastole: bool = True,
     step_rotation_deg: float = 0.5,
     range_rotation_deg: float = 90.0,
@@ -600,8 +609,6 @@ def from_array_full(
         Diastolic STRESS input data.
     input_data_d : PyInputData
         Systolic STRESS input data.
-    label : str, optional
-        Label used for output filenames.  Default is ``"full"``.
     diastole : bool, optional
         Whether to process the diastolic phase.  Default is ``True``.
     step_rotation_deg : float, optional
@@ -672,7 +679,6 @@ def from_array_full(
         input_data_b,
         input_data_c,
         input_data_d,
-        label,
         diastole,
         step_rotation_deg,
         range_rotation_deg,
@@ -699,7 +705,6 @@ def from_array_doublepair(
     input_data_b: PyInputData,
     input_data_c: PyInputData,
     input_data_d: PyInputData,
-    label: str = "double_pair",
     diastole: bool = True,
     step_rotation_deg: float = 0.5,
     range_rotation_deg: float = 90.0,
@@ -745,8 +750,6 @@ def from_array_doublepair(
         Diastolic STRESS input data.
     input_data_d : PyInputData
         Systolic STRESS input data.
-    label : str, optional
-        Label used for output filenames.  Default is ``"double_pair"``.
     diastole : bool, optional
         Whether to process the diastolic phase.  Default is ``True``.
     step_rotation_deg : float, optional
@@ -807,7 +810,6 @@ def from_array_doublepair(
         input_data_b,
         input_data_c,
         input_data_d,
-        label,
         diastole,
         step_rotation_deg,
         range_rotation_deg,
@@ -830,7 +832,6 @@ def from_array_doublepair(
 def from_array_singlepair(
     input_data_a: PyInputData,
     input_data_b: PyInputData,
-    label: str = "single_pair",
     diastole: bool = True,
     step_rotation_deg: float = 0.5,
     range_rotation_deg: float = 90.0,
@@ -862,8 +863,6 @@ def from_array_singlepair(
         Diastolic input data.
     input_data_b : PyInputData
         Systolic input data.
-    label : str, optional
-        Label used for output filenames.  Default is ``"single_pair"``.
     diastole : bool, optional
         Whether to process the diastolic phase.  Default is ``True``.
     step_rotation_deg : float, optional
@@ -916,7 +915,6 @@ def from_array_singlepair(
     return _from_array_singlepair(
         input_data_a,
         input_data_b,
-        label,
         diastole,
         step_rotation_deg,
         range_rotation_deg,
@@ -937,7 +935,6 @@ def from_array_singlepair(
 
 def from_array_single(
     input_data: PyInputData,
-    label: str = "single",
     diastole: bool = True,
     step_rotation_deg: float = 0.5,
     range_rotation_deg: float = 90.0,
@@ -961,8 +958,6 @@ def from_array_single(
     ----------
     input_data : PyInputData
         Input data for a single cardiac phase (e.g. diastolic REST).
-    label : str, optional
-        Label used for output filenames.  Default is ``"single"``.
     diastole : bool, optional
         When ``True`` process the diastolic phase; otherwise systole.
         Default is ``True``.
@@ -1010,7 +1005,6 @@ def from_array_single(
         contour_types = _default_contour_types()
     return _from_array_single(
         input_data,
-        label,
         diastole,
         step_rotation_deg,
         range_rotation_deg,
@@ -1376,11 +1370,7 @@ def find_centerline_bounded_points_simple(
     >>> # Find points bounded by centerline spheres
     >>> bounded_points = mm.find_centerline_bounded_points(centerline, points, 2.0)
     >>> print(f"Found {len(bounded_points)} points inside vessel bounds")"""
-    return _find_centerline_bounded_points_simple(
-        centerline,
-        points, 
-        radius
-    )
+    return _find_centerline_bounded_points_simple(centerline, points, radius)
 
 
 def find_proximal_distal_scaling(
@@ -1389,7 +1379,7 @@ def find_proximal_distal_scaling(
     n_distal: int,
     centerline: PyCenterline,
     proximal_reference: list[tuple[float, float, float]],
-    distal_reference: list[tuple[float, float, float]]
+    distal_reference: list[tuple[float, float, float]],
 ):
     """Find the optimal diameter scaling for the proximal and distal regions.
 
@@ -1426,6 +1416,7 @@ def find_proximal_distal_scaling(
         proximal_reference,
         distal_reference,
     )
+
 
 def build_adjacency_map(
     faces: list[list[int]],

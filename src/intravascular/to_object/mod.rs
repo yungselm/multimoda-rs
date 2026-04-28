@@ -38,6 +38,7 @@ pub fn process_case(
     );
 
     // Write specified contour types using UV coordinates from the map
+    println!("\n");
     for contour_type in contour_types {
         if let Some(uv_coords) = uv_coords_map.get(contour_type) {
             write_geometry_vec_to_obj(
@@ -55,6 +56,7 @@ pub fn process_case(
             );
         }
     }
+    println!("\n");
 
     let label = geometries.label.clone();
     Ok(GeometryPair {
