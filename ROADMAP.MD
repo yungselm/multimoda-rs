@@ -53,6 +53,8 @@
 - [x] better summarized print statement
 - [x] for fixture use a idealized geometry to check functionality
 - [x] reference point is not rotated and translated
+- [] Improve print statements in the whole package
+- [] Improve labelling of geometries 
 
 # Prepublish checklist:
 - [x] tests/ with unit tests checking that importing and running every public function works

@@ -118,8 +118,6 @@ def find_distal_and_proximal_scaling(
     prox_range : int, optional
         Number of frames from the proximal end used as the proximal reference.
         Default is ``2``.
-    debug_plot : bool, optional
-        Reserved for future use; currently unused.  Default is ``True``.
 
     Returns
     -------
