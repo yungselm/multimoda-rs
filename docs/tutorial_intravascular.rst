@@ -14,42 +14,92 @@ Tutorial - Intravascular Module
 
 This step-by-step tutorial demonstrates how to:
 
-- Run the workflow from csv files
-- Run the workflow by building geometries from numpy arrays
-- Finetuning of alignment algorithms
+- How to prepare the segmentation data for best results
+- Run the workflow from csv files (AIVUS-CAA outpu)
+- Run the workflow by building input data from numpy arrays
+- Finetuning of alignment algorithms (in-depth parameter explanation)
 - Alignment with a centerline
 - Saving everything as .obj files
 - Utility functions to link to numpy
 - Class methods
 
-1. Workflow csv files
+1. General note on segmentation preparation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+The package is designed to work with segmented intravascular images from either IVUS or OCT. 
+Segmentation must, however, follow specific conventions to ensure optimal results. 
+The package was developed with coronary artery anomalies in mind, and specifically anomalous aortic origin of a coronary artery (AAOCA) 
+with an intramural course, in which part of the vessel traverses the aortic wall. In all cases, 
+it is essential to define a correct anatomical reference point to enable subsequent co-registration with the CCTA geometry (see :numref:`fig-dataprep`).
+
+.. figure:: ./figures/dataprep.jpg
+   :name: fig-dataprep
+   :alt: Reference point placement for intravascular segmentation
+   :align: center
+   :width: 800px
+
+   Reference point placement for intravascular segmentation data preparation.
+
+For coronary artery disease (CAD), it is sufficient to identify a bifurcation and place the reference point at the ostium of the side branch.
+For AAOCA, it is important to first identify the most proximal fully closed lumen contour in both diastole and systole, and subsequently place the reference point at the centre of the vessel on the aortic side
+(see also `True pulsatile lumen visualization in coronary artery anomalies using controlled transducer pullback and automated IVUS segmentation <https://www.jacc.org/doi/10.1016/j.jaccas.2025.104741>`_).
+
+**Rationale for the four processing modes.**
+The four alignment modes — *full*, *double-pair*, *single-pair*, and *single* — reflect the number of distinct geometric states that a given clinical question requires.
+In a standard controlled-speed IVUS pullback, each anatomical position along the vessel is sampled repeatedly across cardiac cycles.
+When pullbacks are acquired under both rest and stress conditions, each position is represented by four independent geometric states:
+rest-diastole, rest-systole, stress-diastole, and stress-systole.
+This is particularly relevant in AAOCA, where the intramural segment undergoes a complex, phase- and load-dependent deformation that can only be fully characterised by comparing all four states simultaneously (*full* mode).
+
+An important practical consequence is that heart rate differs between rest and stress.
+Because the catheter is withdrawn at a constant speed, a higher heart rate during stress results in a greater number of cardiac cycles — and thus a greater number of diastolic-systolic pairs — per unit of pullback length.
+Consequently, the axial inter-frame spacing is effectively compressed at stress relative to rest, and the two pullbacks must be resampled to a common z-grid before any cross-condition comparison can be made.
+The alignment algorithms in this package account for this discrepancy automatically.
+
+Although the *full* mode was designed with AAOCA in mind, all four modes are directly applicable to other clinical contexts.
+In coronary artery disease, for example, *single-pair* mode is well suited to comparing diastolic and systolic frames within a single pullback, while *single* mode supports standalone geometry reconstruction for pre- or post-intervention assessment.
+The *double-pair* mode is appropriate whenever two independent pullbacks must be compared (e.g., pre- vs. post-stenting, or two different patients) without the additional stress-rest dimension.
+
+2. Workflow csv files
 ^^^^^^^^^^^^^^^^^^^^^^
+
+.. note::
+
+    This workflow is based on the output of the `AIVUS <https://github.com/AI-in-Cardiovascular-Medicine/AIVUS-CAA>`_ software.
+    The preferred workflow for a more general workflow is to directly use numpy arrays, which can be easily created from the csv files, 
+    but also from any other source. The csv workflow is provided for users who are already using AIVUS and want to quickly apply the package to their data.
+
 After pip installing or locally building the package, install it in the familiar way.
 
 .. code-block:: python
 
     import multimodars as mm
 
-To run the whole workflow from .csv files the following requirements have to be met.
+To run the whole workflow from .csv files with either :func:`multimodars.from_file_full`, :func:`multimodars.from_file_doublepair`, 
+:func:`multimodars.from_file_singlepair` or :func:`multimodars.from_file_single` the following requirements have to be met.
 Files should be named ``diastolic_contours.csv``, ``systolic_contours.csv``,
 ``diastolic_reference_points.csv`` and ``systolic_reference_points.csv`` depending on the required analysis.
 Every file should be structured in the following way (no headers):
 
-+-------+---------+---------+---------+
-| ...   |   ...   |   ...   |   ...   |
-+-------+---------+---------+---------+
-| 771   | 2.4862  | 6.7096  | 24.5370 |
-+-------+---------+---------+---------+
-| 771   | 2.5118  | 6.7017  | 24.5370 |
-+-------+---------+---------+---------+
-| 771   | 2.5370  | 6.6936  | 24.5370 |
-+-------+---------+---------+---------+
-| ...   |   ...   |   ...   |   ...   |
-+-------+---------+---------+---------+
++------------+----------+----------+----------+
+| (frame id) | (x (mm)) | (y (mm)) | (z (mm)) |
++------------+----------+----------+----------+
+| ...        | ...      | ...      | ...      |
++------------+----------+----------+----------+
+| 771        | 2.4862   | 6.7096   | 24.5370  |
++------------+----------+----------+----------+
+| 771        | 2.5118   | 6.7017   | 24.5370  |
++------------+----------+----------+----------+
+| 771        | 2.5370   | 6.6936   | 24.5370  |
++------------+----------+----------+----------+
+| ...        | ...      | ...      | ...      |
++------------+----------+----------+----------+
 
-To acquire meaningful measurement data, the coordinates should be provided in mm or another SI unit instead of pixel values.
+*The first column contains the frame index of the pullback; each row represents one contour point with its corresponding x, y, and z coordinates.*
+
+To acquire meaningful measurement data, the coordinates should be provided in **mm or another SI unit** instead of pixel values.
+
 Optionally a record file can be provided `combined_sorted_manual.csv`, which should have the following structure, here the first column should contain the desired frame order and "measurement_1"
-represent the thickness of the wall between aorta and coronary and "measurement_2" for the thickness between pulmonary artery and coronary (position just for demonstration). This is based on the
+represent the thickness of the wall between aorta and coronary and "measurement_2" for the thickness between pulmonary artery and coronary (position just for demonstration) (see :numref:`fig-dataprep`). This is based on the
 output of the `AIVUS-CAA software <https://github.com/AI-in-Cardiovascular-Medicine/AIVUS-CAA/>`_:
 
 +-----------------+---------------+---------------+---------------+---------------+
@@ -68,14 +118,13 @@ output of the `AIVUS-CAA software <https://github.com/AI-in-Cardiovascular-Medic
 | 47              |  18.78        |       S       |               |               |
 +-----------------+---------------+---------------+---------------+---------------+
 
-The full workflow comparing rest vs. stress and diastole vs. systole can be run with:
+The full workflow comparing rest vs. stress and diastole vs. systole can be run with :func:`multimodars.from_file_full`:
 
 .. code-block:: python
 
     rest, stress, dia, sys, _ = mm.from_file_full(
         input_path_a="ivus_rest",
         input_path_b="ivus_stress",
-        label="full",
         step_rotation_deg=0.1,
         range_rotation_deg=90,
         image_center=(4.5, 4.5),
@@ -91,20 +140,20 @@ The full workflow comparing rest vs. stress and diastole vs. systole can be run 
         contour_types=[mm.PyContourType.Lumen, mm.PyContourType.Catheter, mm.PyContourType.Wall]
     )
 
-For a single pair (e.g. only diastole/systole of one state) the simpler function can be used:
+The workflow can also be simplified by leaving the default values and only providing input and output paths, here e.g. for a singlepair:
 
 .. code-block:: python
 
     rest, (dia_logs, sys_logs) = mm.from_file_singlepair(
         input_path="ivus_rest",
-        label="aligned",
         output_path="output/rest",
     )
 
-2. Workflow numpy arrays and Finetuning
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-To call ``from_array_singlepair`` the contours and reference point from the geometry must be packed into
-a ``PyInputData`` object first. We assume that ``before_arr``, ``after_arr``, ``before_ref`` and ``after_arr``
+3. Workflow numpy arrays
+^^^^^^^^^^^^^^^^^^^^^^^^^
+To call :func:`multimodars.from_array_full`, :func:`multimodars.from_array_doublepair`, :func:`multimodars.from_array_singlepair` 
+or :func:`multimodars.from_array_single` the contours and reference point from the geometry must be packed into
+a :class:`multimodars.PyInputData` object first. We assume that ``before_arr``, ``after_arr``, ``before_ref`` and ``after_arr``
 are all Numpy arrays with N(4, ) shape:
 
 .. code-block:: python
@@ -129,19 +178,59 @@ are all Numpy arrays with N(4, ) shape:
         input_data_a=before_input_data,
         input_data_b=after_input_data,
         label="singlepair",
-        diastole=True,
         output_path="output/stent_comparison",
         step_rotation_deg=0.01,
         range_rotation_deg=30,
     )
 
-This ``from_array_singlepair`` function automatically aligns the frames within a pullback and then between pullbacks. The algorithm translates contours to the same centroid as the most proximal contour,
-and then finds the best rotation based on contour **AND** catheter points.
+4. Finetuning of alignment algorithms (in-depth parameter explanation)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+The core idea of the underlying algorithm is to translate and rotate adjacent intravascular imaging frames to minimize the Hausdorff distances between
+the contours. Efficiency is provided by a coarse angle search and multithreaded preparation of different states.
 
-.. image:: ../paper/figures/Figure3.png
+.. image:: ../paper/figures/Figure4.jpg
    :alt: Example figure
    :align: center
    :width: 400px
+
+In this section we are going to discuss the parameters of the alignment functions and how they can influence the final results. Let's take as an
+example the :func:`multimodars.from_array_full` function:
+
+.. code-block:: python
+
+    import multimodars as mm
+
+    rest, stress, diastole, systole, (log_rest, log_stress, log_diastole, log_systole) = mm.from_array_full(
+        input_data_a=diastole_rest_input,
+        input_data_b=systole_rest_input,
+        input_data_c=diastole_stress_input,
+        input_data_d=diastole_stress_input,
+        step_rotation_deg=0.5,
+        range_rotation_deg=90,
+        image_center=(4.5, 4.5),
+        radius=0.5,
+        n_points=20,
+        write_obj=True,
+        watertight=True,
+        output_path_a="output/rest_results",
+        output_path_b="output/stress_results",
+        output_path_c="output/diastole_results",
+        output_path_d="output/systole_results",
+        interpolation_steps=28,
+        bruteforce=False,
+        sample_size=500,
+        contour_types=[mm.PyContourType.Lumen, mm.PyContourType.Catheter, mm.PyContourType.Wall],
+        smooth=True,
+        postprocessing=True,
+    )
+
+The only inputs with no defaults are ``input_data_a``, ``input_data_b``, ``input_data_c`` and ``input_data_d``.
+The other parameters 
+
+
+
+
+
 
 The number of catheter points (``n_points``) therefore influences how much weight is given to the original image center. For mostly round contours, where Hausdorff distances are similar in different angles,
 this image center can increase accuracy of the correct rotation. For stenotic sections or coronary artery anomalies, where the vessel has distinct shape difference, this number can be kept
@@ -158,7 +247,6 @@ For a single geometry reconstruction (e.g. OCT) use ``from_array_single``:
     oct_recon, _ = mm.from_array_single(
         input_data=oct_input_data,
         label="oct",
-        diastole=True,
         step_rotation_deg=0.01,
         range_rotation_deg=6,
         image_center=(5.0, 5.0),
@@ -178,7 +266,7 @@ behaviour will be rendered later on. For example here a rendering of a non-align
     :align: center
     :width: 400px
 
-2. Alignment with a centerline
+5. Alignment with a centerline
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 A centerline can be created directly from points. Points don't need any index, only x-, y- and z-coordinates:
 
@@ -247,7 +335,7 @@ Hausdorff distances between the pointcloud and the geometry, the following funct
         output_dir="test",
     )
 
-3. Saving everything as .obj files
+6. Saving everything as .obj files
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 While every wrapper function allows to directly save the created geometries as .obj files (with optional interpolation),
 it is also possible to save any created geometry directly to an object file. The ``to_obj`` function can automatically
@@ -264,7 +352,7 @@ detect the type of the object, and can be applied to PyGeometryPair, PyGeometry.
     )
 
 
-4. Utility functions to link to numpy
+7. Utility functions to link to numpy
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Any python object can be returned as numpy array, in case of PyGeometry and PyGeometryPair the different parts
 will be returned as a dictionary with their corresponding arrays (contours, catheters, walls, reference):
@@ -293,7 +381,7 @@ Returns::
         A tuple of two dictionaries (one for diastolic, one for systolic), each in the same format
         as returned for a single PyGeometry.
 
-5. Class methods
+8. Class methods
 ^^^^^^^^^^^^^^^^^
 PyContour
 --------------

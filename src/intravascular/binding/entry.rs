@@ -41,7 +41,6 @@ pub fn full_processing_rs(
     input_data_b: Option<InputData>,
     input_data_c: Option<InputData>,
     input_data_d: Option<InputData>,
-    _diastole: bool,
     write_obj: bool,
     interpolation_steps: usize,
     contour_types: Vec<ContourType>,
@@ -77,7 +76,7 @@ pub fn full_processing_rs(
                 .flatten()
                 .collect(),
         ),
-        _diastole,
+        true, // not used for full
         input_path_a.map(Path::new),
         input_path_b.map(Path::new),
         ProcessingOptions::Full,
@@ -334,7 +333,6 @@ pub fn double_pair_processing_rs(
     input_data_b: Option<InputData>,
     input_data_c: Option<InputData>,
     input_data_d: Option<InputData>,
-    _diastole: bool,
     write_obj: bool,
     interpolation_steps: usize,
     contour_types: Vec<ContourType>,
@@ -366,7 +364,7 @@ pub fn double_pair_processing_rs(
                 .flatten()
                 .collect(),
         ),
-        _diastole,
+        true, // not used for full
         input_path_a.map(Path::new),
         input_path_b.map(Path::new),
         ProcessingOptions::Full,
@@ -551,7 +549,6 @@ pub fn pair_processing_rs(
     input_path_a: Option<&str>,
     input_data_a: Option<InputData>,
     input_data_b: Option<InputData>,
-    diastole: bool,
     write_obj: bool,
     interpolation_steps: usize,
     contour_types: Vec<ContourType>,
@@ -575,7 +572,7 @@ pub fn pair_processing_rs(
                 .flatten()
                 .collect(),
         ),
-        diastole,
+        true, // not used for pair
         input_path_a.map(Path::new),
         None,
         ProcessingOptions::Pair,

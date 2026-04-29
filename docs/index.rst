@@ -9,14 +9,27 @@ Welcome to multimodars documentation!
 
 *multimodars: A Rust-powered cardiac multi-image modality fusion package.*
 
-This package aims to combine different cardiac imaging modalities to combined 3D models. A particular focus is on the fusion of intravascular 
-imaging with computed coronary tomography angiography (CCTA).
-
 .. warning::
    
    Not intended for clinical use.
 
+This package aims to combine different cardiac imaging modalities to combined 3D models. A particular focus is on the fusion of intravascular 
+imaging (either intravascular ultrasound [IVUS] or optical coherence tomography [OCT]) with a 3D geometry created from computed coronary tomography angiography (CCTA).
 
+The main functionalities are organized into two major categories:
+
+1. **Intravascular Alignment**: This category addresses the co-registration of intravascular frames through translation and rotation to minimize the distance between adjacent frames.
+   This approach is particularly useful for correcting misalignments introduced by cardiac motion during intravascular image acquisition. It further encompasses the alignment of
+   separate intravascular pullbacks (e.g., acquired under rest and stress conditions) as well as the co-registration of systolic and diastolic frames within the same pullback.
+
+2. **CCTA-Intravascular Fusion**: This category covers the fusion of intravascular frames with a three-dimensional geometry reconstructed from coronary computed tomography angiography (CCTA).
+   This is particularly valuable for generating high-resolution three-dimensional models of coronary arteries by combining the high spatial resolution of intravascular imaging with the
+   three-dimensional geometry provided by CCTA. Functionalities in this category include the anatomical labeling of CCTA geometries based on centerlines, the registration of intravascular
+   frames onto a centerline, and the subsequent fusion of the resulting geometry with the CCTA reconstruction.
+
+Intravascular image data are accepted either as CSV files following the output format of
+`AIVUS <https://github.com/AI-in-Cardiovascular-Medicine/AIVUS-CAA>`_, an open-source tool for automated intravascular ultrasound analysis,
+or directly as NumPy arrays, affording greater flexibility for integration with custom pipelines.
 
 Table of Contents
 -----------------
@@ -30,8 +43,8 @@ Table of Contents
    :maxdepth: 2
 
    installation
-   Intravascular Tutorial <tutorial_intravascular>
-   CCTA Tutorial <tutorial_ccta>
+   Intravascular Alignment Tutorial <tutorial_intravascular>
+   CCTA Intravascular Fusion Tutorial <tutorial_ccta>
    api/index
    changelog
 

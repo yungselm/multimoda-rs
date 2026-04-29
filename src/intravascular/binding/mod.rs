@@ -60,8 +60,6 @@ fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<(u32, u32, f64, f64, f64, f64, f64
 ///     stress_sys]``.  Must be exactly 4 strings; if a different number is
 ///     supplied the last component of each input path is used instead.
 ///     Default is ``[]``.
-/// diastole : bool, optional
-///     Whether to process the diastolic phase.  Default is ``True``.
 /// step_rotation_deg : float, optional
 ///     Rotation step in degrees.  Default is ``0.5``.
 /// range_rotation_deg : float, optional
@@ -133,7 +131,6 @@ fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<(u32, u32, f64, f64, f64, f64, f64
         input_path_a,
         input_path_b,
         labels = vec![],
-        diastole = true,
         step_rotation_deg = 0.5f64,
         range_rotation_deg = 90.0f64,
         image_center = (4.5f64, 4.5f64),
@@ -157,7 +154,6 @@ pub fn from_file_full(
     input_path_a: &str,
     input_path_b: &str,
     labels: Vec<String>,
-    diastole: bool,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
@@ -210,7 +206,6 @@ pub fn from_file_full(
         None,
         None,
         None,
-        diastole,
         write_obj,
         interpolation_steps,
         rust_contour_types,
@@ -279,8 +274,6 @@ pub fn from_file_full(
 ///     stress_sys]``.  Must be exactly 4 strings; if a different number is
 ///     supplied the last component of each input path is used instead.
 ///     Default is ``[]``.
-/// diastole : bool, optional
-///     Whether to process the diastolic phase.  Default is ``True``.
 /// step_rotation_deg : float, optional
 ///     Rotation step in degrees.  Default is ``0.5``.
 /// range_rotation_deg : float, optional
@@ -336,7 +329,6 @@ pub fn from_file_full(
     input_path_a,
     input_path_b,
     labels = vec![],
-    diastole = true,
     step_rotation_deg = 0.5f64,
     range_rotation_deg = 90.0f64,
     image_center = (4.5f64, 4.5f64),
@@ -357,7 +349,6 @@ pub fn from_file_doublepair(
     input_path_a: &str,
     input_path_b: &str,
     labels: Vec<String>,
-    diastole: bool,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
@@ -397,7 +388,6 @@ pub fn from_file_doublepair(
         None,
         None,
         None,
-        diastole,
         write_obj,
         interpolation_steps,
         rust_contour_types,
@@ -457,8 +447,6 @@ pub fn from_file_doublepair(
 ///     Labels for the two geometries ``[diastole, systole]``.
 ///     Must be exactly 2 strings; if a different number is supplied the last
 ///     component of the input path is used instead.  Default is ``[]``.
-/// diastole : bool, optional
-///     Whether to process the diastolic phase.  Default is ``True``.
 /// step_rotation_deg : float, optional
 ///     Rotation step in degrees.  Default is ``0.5``.
 /// range_rotation_deg : float, optional
@@ -515,7 +503,6 @@ pub fn from_file_doublepair(
 #[pyo3(signature = (
     input_path,
     labels = vec![],
-    diastole = true,
     step_rotation_deg = 0.5f64,
     range_rotation_deg = 90.0f64,
     image_center = (4.5f64, 4.5f64),
@@ -534,7 +521,6 @@ pub fn from_file_doublepair(
 pub fn from_file_singlepair(
     input_path: &str,
     labels: Vec<String>,
-    diastole: bool,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
@@ -567,7 +553,6 @@ pub fn from_file_singlepair(
         Some(input_path),
         None,
         None,
-        diastole,
         write_obj,
         interpolation_steps,
         rust_contour_types,
@@ -748,8 +733,6 @@ pub fn from_file_single(
 ///     Diastolic STRESS input data.
 /// input_data_d : PyInputData
 ///     Systolic STRESS input data.
-/// diastole : bool, optional
-///     Whether to process the diastolic phase.  Default is ``True``.
 /// step_rotation_deg : float, optional
 ///     Rotation step in degrees.  Default is ``0.5``.
 /// range_rotation_deg : float, optional
@@ -831,7 +814,6 @@ pub fn from_file_single(
         input_data_b,
         input_data_c,
         input_data_d,
-        diastole = true,
         step_rotation_deg = 0.5f64,
         range_rotation_deg = 90.0f64,
         image_center = (4.5f64, 4.5f64),
@@ -856,7 +838,6 @@ pub fn from_array_full(
     input_data_b: PyInputData,
     input_data_c: PyInputData,
     input_data_d: PyInputData,
-    diastole: bool,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
@@ -924,7 +905,6 @@ pub fn from_array_full(
         Some(input_data_b_rust),
         Some(input_data_c_rust),
         Some(input_data_d_rust),
-        diastole,
         write_obj,
         interpolation_steps,
         rust_contour_types,
@@ -984,8 +964,6 @@ pub fn from_array_full(
 ///     Diastolic STRESS input data.
 /// input_data_d : PyInputData
 ///     Systolic STRESS input data.
-/// diastole : bool, optional
-///     Whether to process the diastolic phase.  Default is ``True``.
 /// step_rotation_deg : float, optional
 ///     Rotation step in degrees.  Default is ``0.5``.
 /// range_rotation_deg : float, optional
@@ -1057,7 +1035,6 @@ pub fn from_array_full(
         input_data_b,
         input_data_c,
         input_data_d,
-        diastole = true,
         step_rotation_deg = 0.5f64,
         range_rotation_deg = 90.0f64,
         image_center = (4.5f64, 4.5f64),
@@ -1080,7 +1057,6 @@ pub fn from_array_doublepair(
     input_data_b: PyInputData,
     input_data_c: PyInputData,
     input_data_d: PyInputData,
-    diastole: bool,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
@@ -1135,7 +1111,6 @@ pub fn from_array_doublepair(
         Some(input_data_b_rust),
         Some(input_data_c_rust),
         Some(input_data_d_rust),
-        diastole,
         write_obj,
         interpolation_steps,
         rust_contour_types,
@@ -1181,8 +1156,6 @@ pub fn from_array_doublepair(
 ///     Diastolic input data.
 /// input_data_b : PyInputData
 ///     Systolic input data.
-/// diastole : bool, optional
-///     Whether to process the diastolic phase.  Default is ``True``.
 /// step_rotation_deg : float, optional
 ///     Rotation step in degrees.  Default is ``0.5``.
 /// range_rotation_deg : float, optional
@@ -1246,7 +1219,6 @@ pub fn from_array_doublepair(
     signature = (
         input_data_a,
         input_data_b,
-        diastole = true,
         step_rotation_deg = 0.5f64,
         range_rotation_deg = 90.0f64,
         image_center = (4.5f64, 4.5f64),
@@ -1266,7 +1238,6 @@ pub fn from_array_doublepair(
 pub fn from_array_singlepair(
     input_data_a: PyInputData,
     input_data_b: PyInputData,
-    diastole: bool,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
@@ -1308,7 +1279,6 @@ pub fn from_array_singlepair(
         None,
         Some(input_data_a_rust),
         Some(input_data_b_rust),
-        diastole,
         write_obj,
         interpolation_steps,
         rust_contour_types,
@@ -1344,9 +1314,6 @@ pub fn from_array_singlepair(
 /// ----------
 /// input_data : PyInputData
 ///     Input data for a single cardiac phase (e.g. diastolic REST).
-/// diastole : bool, optional
-///     When ``True`` process the diastolic phase; otherwise systole.
-///     Default is ``True``.
 /// step_rotation_deg : float, optional
 ///     Rotation step in degrees.  Default is ``0.5``.
 /// range_rotation_deg : float, optional
@@ -1401,7 +1368,6 @@ pub fn from_array_singlepair(
 #[pyfunction]
 #[pyo3(signature = (
     input_data,
-    diastole = true,
     step_rotation_deg = 0.5f64,
     range_rotation_deg = 90.0f64,
     image_center = (4.5f64, 4.5f64),
@@ -1417,7 +1383,6 @@ pub fn from_array_singlepair(
 ))]
 pub fn from_array_single(
     input_data: PyInputData,
-    diastole: bool,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
     image_center: (f64, f64),
@@ -1447,7 +1412,7 @@ pub fn from_array_single(
         n_points,
         None,
         Some(input_data_rust),
-        diastole,
+        true, // not used for single array
         write_obj,
         watertight,
         rust_contour_types,

@@ -39,7 +39,6 @@ def from_file_full(
     input_path_a: str,
     input_path_b: str,
     labels: list[str] | None = None,
-    diastole: bool = True,
     step_rotation_deg: float = 0.5,
     range_rotation_deg: float = 90.0,
     image_center: tuple[float, float] = (4.5, 4.5),
@@ -99,8 +98,6 @@ def from_file_full(
         stress_sys]``.  Must be exactly 4 strings; if a different number is
         supplied the last component of each input path is used instead.
         Default is ``[]``.
-    diastole : bool, optional
-        Whether to process the diastolic phase.  Default is ``True``.
     step_rotation_deg : float, optional
         Rotation step in degrees.  Default is ``0.5``.
     range_rotation_deg : float, optional
@@ -173,7 +170,6 @@ def from_file_full(
         input_path_a,
         input_path_b,
         labels or [],
-        diastole,
         step_rotation_deg,
         range_rotation_deg,
         image_center,
@@ -198,7 +194,6 @@ def from_file_doublepair(
     input_path_a: str,
     input_path_b: str,
     labels: list[str] | None = None,
-    diastole: bool = True,
     step_rotation_deg: float = 0.5,
     range_rotation_deg: float = 90.0,
     image_center: tuple[float, float] = (4.5, 4.5),
@@ -253,8 +248,6 @@ def from_file_doublepair(
         stress_sys]``.  Must be exactly 4 strings; if a different number is
         supplied the last component of each input path is used instead.
         Default is ``[]``.
-    diastole : bool, optional
-        Whether to process the diastolic phase.  Default is ``True``.
     step_rotation_deg : float, optional
         Rotation step in degrees.  Default is ``0.5``.
     range_rotation_deg : float, optional
@@ -312,7 +305,6 @@ def from_file_doublepair(
         input_path_a,
         input_path_b,
         labels or [],
-        diastole,
         step_rotation_deg,
         range_rotation_deg,
         image_center,
@@ -334,7 +326,6 @@ def from_file_doublepair(
 def from_file_singlepair(
     input_path: str,
     labels: list[str] | None = None,
-    diastole: bool = True,
     step_rotation_deg: float = 0.5,
     range_rotation_deg: float = 90.0,
     image_center: tuple[float, float] = (4.5, 4.5),
@@ -381,8 +372,6 @@ def from_file_singlepair(
         Labels for the two geometries ``[diastole, systole]``.  Must be
         exactly 2 strings; if a different number is supplied the last
         component of the input path is used instead.  Default is ``[]``.
-    diastole : bool, optional
-        Whether to process the diastolic phase.  Default is ``True``.
     step_rotation_deg : float, optional
         Rotation step in degrees.  Default is ``0.5``.
     range_rotation_deg : float, optional
@@ -433,7 +422,6 @@ def from_file_singlepair(
     return _from_file_singlepair(
         input_path,
         labels or [],
-        diastole,
         step_rotation_deg,
         range_rotation_deg,
         image_center,
@@ -560,7 +548,6 @@ def from_array_full(
     input_data_b: PyInputData,
     input_data_c: PyInputData,
     input_data_d: PyInputData,
-    diastole: bool = True,
     step_rotation_deg: float = 0.5,
     range_rotation_deg: float = 90.0,
     image_center: tuple[float, float] = (4.5, 4.5),
@@ -609,8 +596,6 @@ def from_array_full(
         Diastolic STRESS input data.
     input_data_d : PyInputData
         Systolic STRESS input data.
-    diastole : bool, optional
-        Whether to process the diastolic phase.  Default is ``True``.
     step_rotation_deg : float, optional
         Rotation step in degrees.  Default is ``0.5``.
     range_rotation_deg : float, optional
@@ -679,7 +664,6 @@ def from_array_full(
         input_data_b,
         input_data_c,
         input_data_d,
-        diastole,
         step_rotation_deg,
         range_rotation_deg,
         image_center,
@@ -705,7 +689,6 @@ def from_array_doublepair(
     input_data_b: PyInputData,
     input_data_c: PyInputData,
     input_data_d: PyInputData,
-    diastole: bool = True,
     step_rotation_deg: float = 0.5,
     range_rotation_deg: float = 90.0,
     image_center: tuple[float, float] = (4.5, 4.5),
@@ -750,8 +733,6 @@ def from_array_doublepair(
         Diastolic STRESS input data.
     input_data_d : PyInputData
         Systolic STRESS input data.
-    diastole : bool, optional
-        Whether to process the diastolic phase.  Default is ``True``.
     step_rotation_deg : float, optional
         Rotation step in degrees.  Default is ``0.5``.
     range_rotation_deg : float, optional
@@ -810,7 +791,6 @@ def from_array_doublepair(
         input_data_b,
         input_data_c,
         input_data_d,
-        diastole,
         step_rotation_deg,
         range_rotation_deg,
         image_center,
@@ -832,7 +812,6 @@ def from_array_doublepair(
 def from_array_singlepair(
     input_data_a: PyInputData,
     input_data_b: PyInputData,
-    diastole: bool = True,
     step_rotation_deg: float = 0.5,
     range_rotation_deg: float = 90.0,
     image_center: tuple[float, float] = (4.5, 4.5),
@@ -863,8 +842,6 @@ def from_array_singlepair(
         Diastolic input data.
     input_data_b : PyInputData
         Systolic input data.
-    diastole : bool, optional
-        Whether to process the diastolic phase.  Default is ``True``.
     step_rotation_deg : float, optional
         Rotation step in degrees.  Default is ``0.5``.
     range_rotation_deg : float, optional
@@ -915,7 +892,6 @@ def from_array_singlepair(
     return _from_array_singlepair(
         input_data_a,
         input_data_b,
-        diastole,
         step_rotation_deg,
         range_rotation_deg,
         image_center,
@@ -935,7 +911,6 @@ def from_array_singlepair(
 
 def from_array_single(
     input_data: PyInputData,
-    diastole: bool = True,
     step_rotation_deg: float = 0.5,
     range_rotation_deg: float = 90.0,
     image_center: tuple[float, float] = (4.5, 4.5),
@@ -958,9 +933,6 @@ def from_array_single(
     ----------
     input_data : PyInputData
         Input data for a single cardiac phase (e.g. diastolic REST).
-    diastole : bool, optional
-        When ``True`` process the diastolic phase; otherwise systole.
-        Default is ``True``.
     step_rotation_deg : float, optional
         Rotation step in degrees.  Default is ``0.5``.
     range_rotation_deg : float, optional
@@ -999,13 +971,12 @@ def from_array_single(
     Examples
     --------
     >>> import multimodars as mm
-    >>> geom, _ = mm.from_array_single(input_data, diastole=False)
+    >>> geom, _ = mm.from_array_single(input_data)
     """
     if contour_types is None:
         contour_types = _default_contour_types()
     return _from_array_single(
         input_data,
-        diastole,
         step_rotation_deg,
         range_rotation_deg,
         image_center,

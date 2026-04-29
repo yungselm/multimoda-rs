@@ -72,7 +72,7 @@ pub fn prepare_n_geometries(
                 None,
                 Some(path),
                 &label,
-                true,
+                _diastole,
                 image_center,
                 radius,
                 n_points,
@@ -509,7 +509,7 @@ mod preprocessing_tests {
         ];
 
         let result = prepare_n_geometries(
-            &[],
+            &["test".to_string()],
             (0.0, 0.0),
             10.0,
             36,
