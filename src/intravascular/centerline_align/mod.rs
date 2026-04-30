@@ -229,7 +229,7 @@ pub fn align_combined_rs(
     Ok((final_geom_pair, resampled_centerline))
 }
 
-/// Simpler combined alignment that doesn't double-rotate
+// /// Simpler combined alignment that doesn't double-rotate
 // pub fn align_combined_simple_rs(
 //     centerline: Centerline,
 //     geom_pair: GeometryPair,
@@ -250,19 +250,19 @@ pub fn align_combined_rs(
 //     // Get the initial rotation from three-point alignment
 //     let resampled_centerline = preprocess_centerline(centerline, &geom_pair.geom_a)
 //         .map_err(|e| anyhow!("Couldn't resample the centerline: {}", e))?;
-
+//
 //     let ref_idx = geom_pair
 //         .geom_a
 //         .find_ref_frame_idx()
 //         .map_err(|e| anyhow!("Couldn't find ref frame idx: {:?}", e))?;
-
+//
 //     let ref_point = geom_pair.geom_a.frames[ref_idx]
 //         .reference_point
 //         .as_ref()
 //         .ok_or_else(|| anyhow!("missing reference point"))?;
-
+//
 //     let initial_cl_ref_idx = resampled_centerline.find_reference_cl_point_idx(&aortic_ref_pt);
-
+//
 //     let initial_rotation = best_rotation_three_point(
 //         &geom_pair.geom_a.frames[ref_idx].lumen,
 //         ref_point,
@@ -272,14 +272,14 @@ pub fn align_combined_rs(
 //         angle_step,
 //         &resampled_centerline.points[initial_cl_ref_idx],
 //     );
-
+//
 //     // Apply the initial rotation
 //     let mut aligned_geom_pair = rotate_by_best_rotation(geom_pair, initial_rotation);
 //     aligned_geom_pair = apply_transformations(aligned_geom_pair, &resampled_centerline, &aortic_ref_pt);
-
+//
 //     // Refine with Hausdorff
 //     let mutated_points = transfrom_tuples_to_contourpoints(points);
-
+//
 //     let (rotation_delta, refined_cl_ref_idx) = refine_alignment_hausdorff(
 //         &aligned_geom_pair,
 //         &resampled_centerline,
@@ -290,21 +290,21 @@ pub fn align_combined_rs(
 //         angle_step / 2.0, // Use finer step for refinement
 //         refine_index_range,
 //     );
-
+//
 //     // Apply the delta rotation
 //     if rotation_delta.abs() > 1e-6 {
 //         aligned_geom_pair = rotate_by_best_rotation(aligned_geom_pair, rotation_delta);
-
+//
 //         // Re-apply transformations with refined centerline point
 //         let refined_ref_pt = (
 //             resampled_centerline.points[refined_cl_ref_idx].contour_point.x,
 //             resampled_centerline.points[refined_cl_ref_idx].contour_point.y,
 //             resampled_centerline.points[refined_cl_ref_idx].contour_point.z,
 //         );
-
+//
 //         aligned_geom_pair = apply_transformations(aligned_geom_pair, &resampled_centerline, &refined_ref_pt);
 //     }
-
+//
 //     // Write if requested
 //     let final_geom_pair = if write {
 //         process_case(
@@ -319,7 +319,7 @@ pub fn align_combined_rs(
 //     } else {
 //         aligned_geom_pair
 //     };
-
+//
 //     Ok((final_geom_pair, resampled_centerline))
 // }
 

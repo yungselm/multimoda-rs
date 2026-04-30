@@ -1,7 +1,6 @@
 use super::calculate_squared_distance;
 use crate::intravascular::io::geometry::Frame;
 use crate::intravascular::io::input::{Centerline, CenterlinePoint};
-use core::f64;
 use std::collections::HashSet;
 
 pub fn centerline_based_wall_diameter_optimization(
@@ -80,9 +79,9 @@ pub fn centerline_based_aortic_diameter_optimization(
 
     for i in 0..=steps {
         let x = start + i as f64 * step;
-        let temp_points = centerline_based_diameter_morphing(centerline, &intramural_points, x);
+        let temp_points = centerline_based_diameter_morphing(centerline, intramural_points, x);
 
-        let dist = symmetric_nn_distance(&reference_points, &temp_points);
+        let dist = symmetric_nn_distance(reference_points, &temp_points);
 
         if dist < min_dist {
             min_dist = dist;
@@ -101,8 +100,8 @@ pub fn centerline_based_diameter_optimization(
     distal_reference: &[(f64, f64, f64)],
 ) -> (f64, f64) {
     let (proximal_points, anomalous_points_new) =
-        find_region_points(&anomalous_points, &proximal_reference, n_proximal);
-    let (distal_points, _) = find_region_points(&anomalous_points_new, &distal_reference, n_distal);
+        find_region_points(anomalous_points, proximal_reference, n_proximal);
+    let (distal_points, _) = find_region_points(&anomalous_points_new, distal_reference, n_distal);
 
     let start = -2.0f64;
     let end = 2.0f64;
@@ -118,7 +117,7 @@ pub fn centerline_based_diameter_optimization(
         let x = start + i as f64 * step;
         let temp_points = centerline_based_diameter_morphing(centerline, &proximal_points, x);
 
-        let dist = symmetric_nn_distance(&proximal_reference, &temp_points);
+        let dist = symmetric_nn_distance(proximal_reference, &temp_points);
 
         if dist < min_dist_proximal {
             min_dist_proximal = dist;
@@ -129,7 +128,7 @@ pub fn centerline_based_diameter_optimization(
         let x = start + i as f64 * step;
         let temp_points = centerline_based_diameter_morphing(centerline, &distal_points, x);
 
-        let dist = symmetric_nn_distance(&distal_reference, &temp_points);
+        let dist = symmetric_nn_distance(distal_reference, &temp_points);
 
         if dist < min_dist_distal {
             min_dist_distal = dist;
@@ -317,7 +316,7 @@ pub fn find_points_by_cl_region_rs(
 
     // First pass: find all points between centerline regions
     remaining_points.retain(|point| {
-        let closest_cl_point = find_closest_centerline_point_optimized(&centerline, *point);
+        let closest_cl_point = find_closest_centerline_point_optimized(centerline, *point);
         let cl_idx = closest_cl_point.contour_point.frame_index as usize;
 
         if cl_points_indices.contains(&cl_idx) {
@@ -453,7 +452,7 @@ mod tests {
                         z: 0.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(1.0, 0.0, 0.0).into(),
+                    normal: Vector3::new(1.0, 0.0, 0.0),
                 },
                 CenterlinePoint {
                     contour_point: ContourPoint {
@@ -464,7 +463,7 @@ mod tests {
                         z: 0.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(1.0, 0.0, 0.0).into(),
+                    normal: Vector3::new(1.0, 0.0, 0.0),
                 },
             ],
         };
@@ -495,7 +494,7 @@ mod tests {
                     z: 0.0,
                     aortic: false,
                 },
-                normal: Vector3::new(1.0, 0.0, 0.0).into(),
+                normal: Vector3::new(1.0, 0.0, 0.0),
             }],
         };
 

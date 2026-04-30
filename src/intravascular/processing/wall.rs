@@ -3,22 +3,16 @@ use std::ops::RangeInclusive;
 use crate::intravascular::io::geometry::{Contour, ContourType, Frame};
 use crate::intravascular::io::input::ContourPoint;
 
-pub fn create_wall_frames(
-    frames: &Vec<Frame>,
-    anomalous: bool,
-    with_pulmonary: bool,
-) -> Vec<Frame> {
+pub fn create_wall_frames(frames: &[Frame], anomalous: bool, with_pulmonary: bool) -> Vec<Frame> {
     let mut new_frames = Vec::new();
 
     for frame in frames.iter() {
         let new_contour = if with_pulmonary {
             create_wall_contour_with_pulmonary(&frame.lumen)
+        } else if anomalous || !frame.extras.contains_key(&ContourType::Eem) {
+            create_wall_contour_aortic_only(&frame.lumen)
         } else {
-            if anomalous || frame.extras.get(&ContourType::Eem).is_none() {
-                create_wall_contour_aortic_only(&frame.lumen)
-            } else {
-                create_wall_contour_aortic_only(frame.extras.get(&ContourType::Eem).unwrap())
-            }
+            create_wall_contour_aortic_only(frame.extras.get(&ContourType::Eem).unwrap())
         };
 
         // clone extras and insert the wall contour under ContourType::Wall
@@ -30,7 +24,7 @@ pub fn create_wall_frames(
             centroid: frame.centroid,
             lumen: frame.lumen.clone(),
             extras: new_extras,
-            reference_point: frame.reference_point.clone(),
+            reference_point: frame.reference_point,
         };
         new_frames.push(new_frame)
     }
@@ -40,11 +34,9 @@ pub fn create_wall_frames(
 
 fn create_wall_contour_aortic_only(contour: &Contour) -> Contour {
     if contour.aortic_thickness.is_none() {
-        let new_contour = offset_contour(contour, 1.0, None);
-        new_contour
+        offset_contour(contour, 1.0, None)
     } else {
-        let new_contour = create_aortic_wall(contour);
-        new_contour
+        create_aortic_wall(contour)
     }
 }
 
@@ -66,11 +58,11 @@ pub fn offset_contour(
     let (cx, cy, cz) = contour.centroid.unwrap();
 
     let new_points = contour.points.iter().map(|pt| {
-        let mut p = pt.clone();
+        let mut p = *pt;
 
         let do_offset = point_range
             .as_ref()
-            .map(|r| r.contains(&(pt.point_index as u32)))
+            .map(|r| r.contains(&{ pt.point_index }))
             .unwrap_or(true);
 
         if do_offset {
@@ -80,7 +72,7 @@ pub fn offset_contour(
             let dz = pt.z - cz;
 
             let len = (dx * dx + dy * dy + dz * dz).sqrt();
-            if len > std::f64::EPSILON {
+            if len > f64::EPSILON {
                 // build a unit vector, then add `distance` along it
                 let ux = dx / len;
                 let uy = dy / len;
@@ -175,7 +167,7 @@ fn create_aortic_wall(contour: &Contour) -> Contour {
 
     // Create the contour points
     let mut left_wall = offset_contour(contour, 1.0, Some(0..=half as u32)).points;
-    if left_wall.len() % 2 != 0 {
+    if !left_wall.len().is_multiple_of(2) {
         left_wall.truncate(half + 1); // + 1 for uneven numbers of points
     } else {
         left_wall.truncate(half)

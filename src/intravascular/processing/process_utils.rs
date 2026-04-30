@@ -10,7 +10,7 @@ pub fn downsample_contour_points(points: &[ContourPoint], n: usize) -> Vec<Conto
     (0..n)
         .map(|i| {
             let index = (i as f64 * step) as usize;
-            points[index].clone()
+            points[index]
         })
         .collect()
 }
@@ -84,9 +84,7 @@ fn directed_hausdorff(contour_a: &[ContourPoint], contour_b: &[ContourPoint]) ->
     let threads = rayon::current_num_threads().max(1);
     // make several chunks per thread for load balancing
     let chunks_per_thread = 4;
-    let chunk_size = ((contour_a.len() + threads * chunks_per_thread - 1)
-        / (threads * chunks_per_thread))
-        .max(1);
+    let chunk_size = contour_a.len().div_ceil(threads * chunks_per_thread).max(1);
 
     // For each chunk, compute the local maximum of the minimum squared distances
     let max_sq = contour_a

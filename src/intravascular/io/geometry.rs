@@ -438,10 +438,6 @@ impl Contour {
 }
 
 impl Frame {
-    pub fn new() {
-        todo!()
-    }
-
     /// Sets a value for all contours and reference point in the frame.
     /// You can set `id`, `original_frame`, `points`, or `centroid` for all contours and reference point.
     pub fn set_value(
@@ -617,7 +613,6 @@ impl Frame {
         // Parameters for the catheter circle.
         let center_x = image_center.0;
         let center_y = image_center.1;
-        let radius = radius;
         let num_points = n_points;
 
         // For each unique frame, generate 20 catheter points around a circle.
@@ -706,8 +701,7 @@ impl Geometry {
             }
         }
 
-        let mut remaining_frames: Vec<Frame> =
-            frame_map.into_iter().map(|(_, frame)| frame).collect();
+        let mut remaining_frames: Vec<Frame> = frame_map.into_values().collect();
         remaining_frames.sort_by_key(|frame| frame.lumen.original_frame);
         new_frames.extend(remaining_frames);
 

@@ -13,7 +13,7 @@ use std::path::Path;
 /// - Catheter and Calcification: black texture  
 /// - Wall and Sidebranch: transparent texture
 pub fn write_mtl_geometry(
-    geometries_to_process: &Vec<Geometry>,
+    geometries_to_process: &[Geometry],
     output_dir: &str,
     case_name: &str,
     contour_types: &[ContourType],
@@ -31,7 +31,7 @@ pub fn write_mtl_geometry(
 
 /// Writes MTL and texture files for a specific contour type
 fn write_mtl_for_contour_type(
-    geometries_to_process: &Vec<Geometry>,
+    geometries_to_process: &[Geometry],
     output_dir: &str,
     case_name: &str,
     contour_type: ContourType,
@@ -54,7 +54,7 @@ fn write_mtl_for_contour_type(
 
 /// Writes displacement texture for contour types that need displacement mapping
 fn write_displacement_texture(
-    geometries_to_process: &Vec<Geometry>,
+    geometries_to_process: &[Geometry],
     output_dir: &str,
     case_name: &str,
     contour_type: ContourType,
@@ -137,7 +137,7 @@ fn write_displacement_texture(
 
 /// Writes black texture for contour types that should be solid black
 fn write_black_texture(
-    geometries_to_process: &Vec<Geometry>,
+    geometries_to_process: &[Geometry],
     output_dir: &str,
     case_name: &str,
     contour_type: ContourType,
@@ -195,7 +195,7 @@ fn write_black_texture(
 
 /// Writes transparent texture for contour types that should be semi-transparent
 fn write_transparent_texture(
-    geometries_to_process: &Vec<Geometry>,
+    geometries_to_process: &[Geometry],
     output_dir: &str,
     case_name: &str,
     contour_type: ContourType,

@@ -39,7 +39,7 @@ pub fn align_frames_in_geometry(
 
     let ref_idx = geometry
         .find_ref_frame_idx()
-        .unwrap_or(geometry.find_proximal_end_idx()) as usize;
+        .unwrap_or(geometry.find_proximal_end_idx());
     let sample_ratio = sample_size as f64 / geometry.frames[0].lumen.points.len() as f64;
     let sample_size_catheter = if geometry.frames[0]
         .extras
@@ -193,14 +193,14 @@ pub fn find_best_rotation(
     match step_deg {
         1.0..=f64::INFINITY => search_range(cost_fn, step_deg, range_deg, None, range_deg),
         0.1..1.0 => {
-            let coarse_angle = search_range(&cost_fn, 1.0, range_deg, None, range_deg);
+            let coarse_angle = search_range(cost_fn, 1.0, range_deg, None, range_deg);
             let range = if range_deg > 5.0 { 5.0 } else { range_deg };
             search_range(cost_fn, step_deg, range, Some(coarse_angle), range_deg)
         }
         0.01..0.1 => {
-            let coarse_angle = search_range(&cost_fn, 1.0, range_deg, None, range_deg);
+            let coarse_angle = search_range(cost_fn, 1.0, range_deg, None, range_deg);
             let range = if range_deg > 5.0 { 5.0 } else { range_deg };
-            let medium_angle = search_range(&cost_fn, 0.1, range, Some(coarse_angle), range_deg);
+            let medium_angle = search_range(cost_fn, 0.1, range, Some(coarse_angle), range_deg);
             let range_small = if range_deg > 10.0 * step_deg {
                 10.0 * step_deg
             } else {
@@ -215,12 +215,12 @@ pub fn find_best_rotation(
             )
         }
         _ => {
-            let coarse_angle = search_range(&cost_fn, 1.0, range_deg, None, range_deg);
+            let coarse_angle = search_range(cost_fn, 1.0, range_deg, None, range_deg);
             let range = if range_deg > 5.0 { 5.0 } else { range_deg };
-            let medium_angle = search_range(&cost_fn, 0.1, range, Some(coarse_angle), range_deg);
+            let medium_angle = search_range(cost_fn, 0.1, range, Some(coarse_angle), range_deg);
             let range_small = if range_deg > 0.1 { 0.1 } else { range_deg };
             let fine_angle =
-                search_range(&cost_fn, 0.01, range_small, Some(medium_angle), range_deg);
+                search_range(cost_fn, 0.01, range_small, Some(medium_angle), range_deg);
             let range_fine = if range_deg > 10.0 * step_deg {
                 10.0 * step_deg
             } else {
@@ -284,9 +284,7 @@ fn angle_ref_point_to_right(ref_frame: &Frame, anomalous: bool) -> anyhow::Resul
     let mut all_good = true;
     for &op in &other_pts {
         // skip comparison if op is identical to ref (possible in non-anomalous case)
-        if (op.0 - ref_pt_2d.0).abs() < std::f64::EPSILON
-            && (op.1 - ref_pt_2d.1).abs() < std::f64::EPSILON
-        {
+        if approx::abs_diff_eq!(op.0, ref_pt_2d.0) && approx::abs_diff_eq!(op.1, ref_pt_2d.1) {
             continue;
         }
         let r_op = rotate2(op, center, rotation);
@@ -347,7 +345,7 @@ fn detect_holes(geometry: &Geometry) -> (bool, f64) {
     let baseline = median(&mut sorted);
 
     // avoid divide-by-zero later; if baseline is zero treat as "no hole"
-    if baseline <= std::f64::EPSILON {
+    if baseline <= f64::EPSILON {
         return (false, baseline);
     }
 
@@ -369,7 +367,7 @@ pub fn fill_holes(geometry: &mut Geometry) -> anyhow::Result<Geometry> {
         return Ok(geometry.clone());
     }
 
-    if baseline <= std::f64::EPSILON {
+    if baseline <= f64::EPSILON {
         return Err(anyhow!("Baseline spacing is zero or too small to decide."));
     }
 
@@ -387,7 +385,7 @@ pub fn fill_holes(geometry: &mut Geometry) -> anyhow::Result<Geometry> {
             // normal spacing
             i += 1;
             continue;
-        } else if ratio >= 1.5 && ratio < 2.5 {
+        } else if (1.5..2.5).contains(&ratio) {
             // one missing frame: insert averaged frame at position i
             let mid = fix_one_frame_hole(&prev, &curr);
             geometry.insert_frame(mid, Some(i));
@@ -396,7 +394,7 @@ pub fn fill_holes(geometry: &mut Geometry) -> anyhow::Result<Geometry> {
                 "✅ Fixed one-frame hole between Frame {} and Frame {} (dz = {:.3}, ratio = {:.3})",
                 prev.id, curr.id, diff, ratio
             );
-        } else if ratio >= 2.5 && ratio < 3.5 {
+        } else if (2.5..3.5).contains(&ratio) {
             // two missing frames: insert two interpolated frames at position i
             let (f1, f2) = fix_two_frame_hole(&prev, &curr);
             geometry.insert_frame(f1, Some(i));
@@ -626,8 +624,8 @@ fn create_interpolated_frame(frame_1: &Frame, frame_2: &Frame, t: f64) -> Frame 
 
     let reference_point = match (&frame_1.reference_point, &frame_2.reference_point) {
         (Some(p1), Some(p2)) => Some(interp_point(p1, p2, t, frame_2.id, 0)),
-        (Some(p1), None) => Some(p1.clone()),
-        (None, Some(p2)) => Some(p2.clone()),
+        (Some(p1), None) => Some(*p1),
+        (None, Some(p2)) => Some(*p2),
         (None, None) => None,
     };
 
@@ -727,7 +725,7 @@ fn dump_table(logs: &[AlignLog]) {
 
     // Data rows
     for row in &rows {
-        print_row(&row.to_vec(), &widths);
+        print_row(row.as_ref(), &widths);
     }
 
     // Bottom border

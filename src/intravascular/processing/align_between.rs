@@ -103,7 +103,7 @@ pub fn align_between_geometries(
 
     geom_b.translate_geometry(final_translation);
 
-    Ok(GeometryPair::new(geom_a.clone(), geom_b.clone())?)
+    GeometryPair::new(geom_a.clone(), geom_b.clone())
 }
 
 /// Rotate entire geometry around a single reference point
@@ -224,8 +224,7 @@ fn find_best_rotation_between(
             })
             .collect();
 
-        let reference_points: Vec<ContourPoint> =
-            reference.iter().map(|pi| pi.point.clone()).collect();
+        let reference_points: Vec<ContourPoint> = reference.iter().map(|pi| pi.point).collect();
 
         hausdorff_distance(&reference_points, &rotated_target)
     };
@@ -234,14 +233,14 @@ fn find_best_rotation_between(
     match step_deg {
         1.0..=f64::INFINITY => search_range(cost_fn, step_deg, range_deg, None, range_deg),
         0.1..1.0 => {
-            let coarse_angle = search_range(&cost_fn, 1.0, range_deg, None, range_deg);
+            let coarse_angle = search_range(cost_fn, 1.0, range_deg, None, range_deg);
             let range = if range_deg > 5.0 { 5.0 } else { range_deg };
             search_range(cost_fn, step_deg, range, Some(coarse_angle), range_deg)
         }
         0.01..0.1 => {
-            let coarse_angle = search_range(&cost_fn, 1.0, range_deg, None, range_deg);
+            let coarse_angle = search_range(cost_fn, 1.0, range_deg, None, range_deg);
             let range = if range_deg > 5.0 { 5.0 } else { range_deg };
-            let medium_angle = search_range(&cost_fn, 0.1, range, Some(coarse_angle), range_deg);
+            let medium_angle = search_range(cost_fn, 0.1, range, Some(coarse_angle), range_deg);
             let range_small = if range_deg > 10.0 * step_deg {
                 10.0 * step_deg
             } else {
@@ -256,12 +255,12 @@ fn find_best_rotation_between(
             )
         }
         _ => {
-            let coarse_angle = search_range(&cost_fn, 1.0, range_deg, None, range_deg);
+            let coarse_angle = search_range(cost_fn, 1.0, range_deg, None, range_deg);
             let range = if range_deg > 5.0 { 5.0 } else { range_deg };
-            let medium_angle = search_range(&cost_fn, 0.1, range, Some(coarse_angle), range_deg);
+            let medium_angle = search_range(cost_fn, 0.1, range, Some(coarse_angle), range_deg);
             let range_small = if range_deg > 0.1 { 0.1 } else { range_deg };
             let fine_angle =
-                search_range(&cost_fn, 0.01, range_small, Some(medium_angle), range_deg);
+                search_range(cost_fn, 0.01, range_small, Some(medium_angle), range_deg);
             let range_fine = if range_deg > 10.0 * step_deg {
                 10.0 * step_deg
             } else {
