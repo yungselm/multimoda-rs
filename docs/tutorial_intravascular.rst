@@ -123,8 +123,8 @@ The full workflow comparing rest vs. stress and diastole vs. systole can be run 
 .. code-block:: python
 
     rest, stress, dia, sys, _ = mm.from_file_full(
-        input_path_a="ivus_rest",
-        input_path_b="ivus_stress",
+        input_path_ab="ivus_rest",
+        input_path_cd="ivus_stress",
         step_rotation_deg=0.1,
         range_rotation_deg=90,
         image_center=(4.5, 4.5),
@@ -132,11 +132,11 @@ The full workflow comparing rest vs. stress and diastole vs. systole can be run 
         n_points=20,
         write_obj=True,
         watertight=False,
-        contour_types=[mm.PyContourType.Lumen, mm.PyContourType.Catheter, mm.PyContourType.Wall]
-        output_path_a="output/rest",
-        output_path_b="output/stress",
-        output_path_c="output/diastole",
-        output_path_d="output/systole",
+        contour_types=[mm.PyContourType.Lumen, mm.PyContourType.Catheter, mm.PyContourType.Wall],
+        output_path_ab="output/rest",
+        output_path_cd="output/stress",
+        output_path_ac="output/diastole",
+        output_path_bd="output/systole",
         interpolation_steps=28,
     )
 
@@ -185,8 +185,7 @@ are all Numpy arrays with N(4, ) shape:
 
 4. Finetuning of alignment algorithms (in-depth parameter explanation)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-The core idea of the underlying algorithm is to translate and rotate adjacent intravascular imaging frames to minimize the Hausdorff distances between
-the contours. Efficiency is provided by a coarse angle search and multithreaded preparation of different states.
+The alignment algorithm co-registers adjacent intravascular frames by translating each frame to a common centroid and subsequently identifying the optimal rotation angle that minimises the Hausdorff distance between consecutive contours. Computational efficiency is achieved through a hierarchical coarse-to-fine angular search combined with multi-threaded processing of the different geometric states (see :numref:`fig-align`).
 
 .. figure:: ../paper/figures/Figure4.jpg
    :name: fig-align
@@ -194,20 +193,19 @@ the contours. Efficiency is provided by a coarse angle search and multithreaded 
    :align: center
    :width: 400px
 
-   Schematic of the translation and rotation alignment algorithm, illustrating the rotation range, step size, image centre, and catheter radius parameters.
+   Schematic of the translation and rotation alignment algorithm, illustrating the rotation search range, step size, image centre, and catheter radius parameters.
 
-In this section we are going to discuss the parameters of the alignment functions and how they can influence the final results. Let's take as an
-example the :func:`multimodars.from_array_full` function:
+This section provides an in-depth discussion of each parameter, using :func:`multimodars.from_array_full` as a reference. The only required inputs are the four ``PyInputData`` objects (``input_data_a`` through ``input_data_d``); all remaining parameters have sensible defaults.
 
 .. code-block:: python
 
     import multimodars as mm
 
     rest, stress, diastole, systole, (log_rest, log_stress, log_diastole, log_systole) = mm.from_array_full(
-        input_data_a=diastole_rest_input,
-        input_data_b=systole_rest_input,
-        input_data_c=diastole_stress_input,
-        input_data_d=diastole_stress_input,
+        input_data_a=diastole_rest_input,    # REST diastole
+        input_data_b=systole_rest_input,     # REST systole
+        input_data_c=diastole_stress_input,  # STRESS diastole
+        input_data_d=systole_stress_input,   # STRESS systole
         step_rotation_deg=0.5,
         range_rotation_deg=90,
         sample_size=500,
@@ -227,66 +225,48 @@ example the :func:`multimodars.from_array_full` function:
         postprocessing=True,
     )
 
-The only inputs with no defaults are ``input_data_a``, ``input_data_b``, ``input_data_c`` and ``input_data_d``.
-Here an in depth analysis of the parameters:
-- ``step_rotation_deg`` and ``range_rotation_deg``: This defines the range of the rotation and the smallest rotation step (accuracy of alignment) as also shown in  :numref:`fig-align`. In this example the range_rotation_deg would be 30° (so +/- 30° around the initial degree) and to a coarse step of 0.5°.
-- ``sample_size``: If a contour contains more points than this value it will be downsampled, if it contains less it will remain unchanged.
-- ``image_center``, ``radius`` and ``n_points``: These 3 parameters control where and with how many points the catheter is drawn as shown in :numref:`fig-align`. The image_center should be provided in mm and the radius of the catheter as well. 
+**Parameter reference:**
+
+- ``step_rotation_deg`` and ``range_rotation_deg``: define the angular search space and its resolution. The algorithm tests candidate rotations from ``−range_rotation_deg`` to ``+range_rotation_deg`` in increments of ``step_rotation_deg``. In the example above, the full range of ±90° is explored at 0.5° resolution. When the approximate orientation is already known, reducing ``range_rotation_deg`` (e.g. to 30°) substantially reduces computation time without sacrificing accuracy.
+
+- ``sample_size``: contours are downsampled to at most this many points prior to Hausdorff distance computation. Contours with fewer points are left unchanged. The default of 500 points is appropriate for most IVUS datasets; increasing this value improves accuracy at the cost of computation time.
+
+- ``image_center``, ``radius``, and ``n_points``: these three parameters define the synthetic catheter used as an additional rotational anchor (see :numref:`fig-align`). ``image_center`` specifies the catheter centre as ``(x, y)`` in mm, ``radius`` the catheter radius in mm, and ``n_points`` the number of points sampled on the catheter circle.
 
 .. note::
 
-    The number of points directly influences how much weight is give to the original image center when aligning frames. Since the Hausdorff distances are calculated between lumen contour and catheterpoints. They can also be set to 0.
+    ``n_points`` controls the relative weight of the catheter position versus the lumen contour shape during alignment. A larger value makes the catheter centroid more influential, which benefits round, featureless contours where Hausdorff distances alone are ambiguous across different rotation angles. For geometrically distinct contours (e.g. severely stenotic or anomalous segments), a small value or even ``n_points=0`` is more appropriate.
 
-- ``write_obj`` and ``watertight``: When this is set to true the faces are built between the different contour points and these faces are written into a .obj file. additionally and .mtl file and a uv map of the deformation compared to the geometry a are created. watertight just adds an additional point in the middle of the first contour and the last contour building triangles from the edge of the contours to close it.
-- ``contour_types``: Which kind of contours to write to .obj files.
-- ``output_path_ab``, ``output_path_cd``, ``output_path_ac`` and ``output_path_bd``: These paths follow the following logic dependent on input paths, where rest/stress diastole/systole can be replaced with anything.
+- ``write_obj`` and ``watertight``: when ``write_obj=True``, triangle meshes are constructed from the aligned contour points and exported as Wavefront OBJ files, together with a material file (.mtl) and a UV map encoding the per-vertex deformation relative to geometry A. Setting ``watertight=True`` closes the proximal and distal ends of each mesh by connecting the boundary contour points to a central cap vertex.
+
+- ``contour_types``: specifies which contour layers are exported. Three types are supported: ``Lumen`` (the vessel lumen boundary), ``Catheter`` (the synthetic catheter circle defined by ``image_center``, ``radius``, and ``n_points``), and ``Wall`` (the aortic wall representation). The wall is derived from ``measurement_1`` in the record file when provided; otherwise a uniform 1 mm outward offset is applied.
+
+- ``output_path_ab``, ``output_path_cd``, ``output_path_ac``, and ``output_path_bd``: output directories for the four cross-aligned geometry pairs. The mapping between input slots and output paths is:
 
 .. parsed-literal::
 
-   ``input_path_ab``      ``input_path_cd``
-   **Rest:**               **Stress:**
-   *a* diastole    ──▶     *c* diastole
-       │                       │
-       ▼                       ▼
-   *b* systole     ──▶     *d* systole
+                      ``output_path_ac`` (Diastole: a vs. c)
+            ┌──────────────────────────────────────────┐
+            ▼                                          ▼
+   **a** REST diastole                      **c** STRESS diastole
+         │  ``output_path_ab`` (Rest: a+b)        │  ``output_path_cd`` (Stress: c+d)
+         ▼                                        ▼
+   **b** REST systole                       **d** STRESS systole
+            └──────────────────────────────────────────┘
+                      ``output_path_bd`` (Systole: b vs. d)
 
-- ``interpolation_steps``: Interpolation steps are needed to create intermediate representations between states (e.g. rest and stress). This can be useful when wanting to render videos, e.g. here stress-induced systolic deformation with 28 interpolation steps (30 fps) each with their own uv map.
+- ``interpolation_steps``: number of intermediate meshes to generate between paired states (e.g. rest and stress). This is useful for producing animations that visualise dynamic deformation. For example, 28 interpolation steps at 30 fps yields approximately one second of video per transition, each frame carrying its own UV deformation map:
 
 .. image:: ./figures/animation_stress_induced_systolic_deformation.gif
-    :alt: Example figure
+    :alt: Stress-induced systolic deformation animation
     :align: center
     :width: 400px
 
-- ``bruteforce``: If ``bruteforce`` is set to ``True`` the complete range is swept with the provided step_rotation_deg (not recommended :math:`\mathcal{O}(n^3)`)
+- ``bruteforce``: when ``True``, the complete angular range is swept at the specified ``step_rotation_deg`` without hierarchical refinement. Not recommended for routine use (:math:`\mathcal{O}(n^3)` complexity).
 
-The number of catheter points (``n_points``) therefore influences how much weight is given to the original image center. For mostly round contours, where Hausdorff distances are similar in different angles,
-this image center can increase accuracy of the correct rotation. For stenotic sections or coronary artery anomalies, where the vessel has distinct shape difference, this number can be kept
-rather small (default 20 points compared to 500 for the contour).
+- ``smooth``: applies a 3-point moving average to each contour after alignment to reduce discretisation artefacts. Recommended for all datasets.
 
-``range_rotation_deg`` and ``step_rotation_deg`` define the +/- degree range where the rotation is tested (default 90° so full range) and step_rotation_deg in what step sizes (default 0.5°).
-This algorithm is optimized and where it downsamples the original contour to 200 points, and performs coarse steps (full provided range in 1° steps, then in +/- 5° degrees around the optimal angle
-in 0.1° steps and so on until the desired accuracy). If ``bruteforce`` is set to ``True`` the complete range is swept with the provided accuracy (not recommended :math:`\mathcal{O}(n^3)`).
-
-For a single geometry reconstruction (e.g. OCT) use ``from_array_single``:
-
-.. code-block:: python
-
-    oct_recon, _ = mm.from_array_single(
-        input_data=oct_input_data,
-        label="oct",
-        step_rotation_deg=0.01,
-        range_rotation_deg=6,
-        image_center=(5.0, 5.0),
-        radius=0.5,
-        n_points=40,
-        write_obj=False,
-        output_path="output/oct",
-        watertight=False,
-        smooth=False,
-    )
-
-If ``write_obj`` is set to True, geometries will be saved as .obj files. if interpolation steps are not 0, additionally interpolated geometries will be created. This is useful if the dynamic
-behaviour will be rendered later on. For example here a rendering of a non-aligned systolic stress-induced deformation in a coronary artery anomaly:
+- ``postprocessing``: equalises the axial frame spacing within and between pullbacks after alignment. Recommended whenever the two pullbacks were acquired at different heart rates, as this causes differing inter-frame distances along the vessel axis.
 
 5. Alignment with a centerline
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

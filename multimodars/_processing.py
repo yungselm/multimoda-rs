@@ -36,8 +36,8 @@ def _default_contour_types() -> list[PyContourType]:
 
 
 def from_file_full(
-    input_path_a: str,
-    input_path_b: str,
+    input_path_ab: str,
+    input_path_cd: str,
     labels: list[str] | None = None,
     step_rotation_deg: float = 0.5,
     range_rotation_deg: float = 90.0,
@@ -48,10 +48,10 @@ def from_file_full(
     write_obj: bool = True,
     watertight: bool = True,
     contour_types: list[PyContourType] | None = None,
-    output_path_a: str = "output/rest",
-    output_path_b: str = "output/stress",
-    output_path_c: str = "output/diastole",
-    output_path_d: str = "output/systole",
+    output_path_ab: str = "output/rest",
+    output_path_cd: str = "output/stress",
+    output_path_ac: str = "output/diastole",
+    output_path_bd: str = "output/systole",
     interpolation_steps: int = 0,
     bruteforce: bool = False,
     smooth: bool = True,
@@ -69,13 +69,17 @@ def from_file_full(
     within and between each cardiac phase in parallel, and writes interpolated
     OBJ meshes.
 
-    .. code-block:: text
+    .. parsed-literal::
 
-       Rest           Stress
-       diastole ──▶ diastole
-          │            │
-          ▼            ▼
-       systole ──▶ systole
+                            ``output_path_ac`` (Diastole: a vs. c)
+                    ┌──────────────────────────────────────────┐
+                    ▼                                          ▼
+        **a** REST diastole                      **c** STRESS diastole
+                │  ``output_path_ab`` (Rest: a+b)        │  ``output_path_cd`` (Stress: c+d)
+                ▼                                        ▼
+        **b** REST systole                       **d** STRESS systole
+                    └──────────────────────────────────────────┘
+                            ``output_path_bd`` (Systole: b vs. d)
 
     .. warning::
 
@@ -89,10 +93,10 @@ def from_file_full(
 
     Parameters
     ----------
-    input_path_a : str
-        Path to the REST input folder.
-    input_path_b : str
-        Path to the STRESS input folder.
+    input_path_ab : str
+        Path to the REST input folder (contains diastolic ``a`` and systolic ``b`` CSVs).
+    input_path_cd : str
+        Path to the STRESS input folder (contains diastolic ``c`` and systolic ``d`` CSVs).
     labels : list of str, optional
         Labels for the four geometries ``[rest_dia, rest_sys, stress_dia,
         stress_sys]``.  Must be exactly 4 strings; if a different number is
@@ -120,15 +124,15 @@ def from_file_full(
     contour_types : list of PyContourType, optional
         Contour types to export.  Default is
         ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
-    output_path_a : str, optional
-        Output directory for REST results.  Default is ``"output/rest"``.
-    output_path_b : str, optional
-        Output directory for STRESS results.  Default is ``"output/stress"``.
-    output_path_c : str, optional
-        Output directory for DIASTOLE results.  Default is
+    output_path_ab : str, optional
+        Output directory for REST results (pair a+b).  Default is ``"output/rest"``.
+    output_path_cd : str, optional
+        Output directory for STRESS results (pair c+d).  Default is ``"output/stress"``.
+    output_path_ac : str, optional
+        Output directory for DIASTOLE results (pair a+c).  Default is
         ``"output/diastole"``.
-    output_path_d : str, optional
-        Output directory for SYSTOLE results.  Default is
+    output_path_bd : str, optional
+        Output directory for SYSTOLE results (pair b+d).  Default is
         ``"output/systole"``.
     interpolation_steps : int, optional
         Number of interpolated meshes between phases.  Default is ``28``.
@@ -167,8 +171,8 @@ def from_file_full(
     if contour_types is None:
         contour_types = _default_contour_types()
     return _from_file_full(
-        input_path_a,
-        input_path_b,
+        input_path_ab,
+        input_path_cd,
         labels or [],
         step_rotation_deg,
         range_rotation_deg,
@@ -179,10 +183,10 @@ def from_file_full(
         write_obj,
         watertight,
         contour_types,
-        output_path_a,
-        output_path_b,
-        output_path_c,
-        output_path_d,
+        output_path_ab,
+        output_path_cd,
+        output_path_ac,
+        output_path_bd,
         interpolation_steps,
         bruteforce,
         smooth,
@@ -191,8 +195,8 @@ def from_file_full(
 
 
 def from_file_doublepair(
-    input_path_a: str,
-    input_path_b: str,
+    input_path_ab: str,
+    input_path_cd: str,
     labels: list[str] | None = None,
     step_rotation_deg: float = 0.5,
     range_rotation_deg: float = 90.0,
@@ -203,8 +207,8 @@ def from_file_doublepair(
     write_obj: bool = True,
     watertight: bool = True,
     contour_types: list[PyContourType] | None = None,
-    output_path_a: str = "output/rest",
-    output_path_b: str = "output/stress",
+    output_path_ab: str = "output/rest",
+    output_path_cd: str = "output/stress",
     interpolation_steps: int = 0,
     bruteforce: bool = False,
     smooth: bool = True,
@@ -219,13 +223,12 @@ def from_file_doublepair(
     Reads REST and STRESS acquisitions independently, aligns frames within
     each pair, and writes interpolated OBJ meshes.
 
-    .. code-block:: text
+    .. parsed-literal::
 
-       Rest:                    Stress:
-       diastole                  diastole
-           │                         │
-           ▼                         ▼
-       systole                   systole
+        **a** REST diastole                      **c** STRESS diastole
+                │  ``output_path_ab`` (Rest: a+b)        │  ``output_path_cd`` (Stress: c+d)
+                ▼                                        ▼
+        **b** REST systole                       **d** STRESS systole
 
     .. warning::
 
@@ -239,10 +242,10 @@ def from_file_doublepair(
 
     Parameters
     ----------
-    input_path_a : str
-        Path to the REST input folder.
-    input_path_b : str
-        Path to the STRESS input folder.
+    input_path_ab : str
+        Path to the REST input folder (contains diastolic ``a`` and systolic ``b`` CSVs).
+    input_path_cd : str
+        Path to the STRESS input folder (contains diastolic ``c`` and systolic ``d`` CSVs).
     labels : list of str, optional
         Labels for the four geometries ``[rest_dia, rest_sys, stress_dia,
         stress_sys]``.  Must be exactly 4 strings; if a different number is
@@ -267,10 +270,10 @@ def from_file_doublepair(
     contour_types : list of PyContourType, optional
         Contour types to export.  Default is
         ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
-    output_path_a : str, optional
-        Output directory for REST results.  Default is ``"output/rest"``.
-    output_path_b : str, optional
-        Output directory for STRESS results.  Default is ``"output/stress"``.
+    output_path_ab : str, optional
+        Output directory for REST results (pair a+b).  Default is ``"output/rest"``.
+    output_path_cd : str, optional
+        Output directory for STRESS results (pair c+d).  Default is ``"output/stress"``.
     interpolation_steps : int, optional
         Number of interpolated meshes between phases.  Default is ``28``.
     bruteforce : bool, optional
@@ -302,8 +305,8 @@ def from_file_doublepair(
     if contour_types is None:
         contour_types = _default_contour_types()
     return _from_file_doublepair(
-        input_path_a,
-        input_path_b,
+        input_path_ab,
+        input_path_cd,
         labels or [],
         step_rotation_deg,
         range_rotation_deg,
@@ -314,8 +317,8 @@ def from_file_doublepair(
         write_obj,
         watertight,
         contour_types,
-        output_path_a,
-        output_path_b,
+        output_path_ab,
+        output_path_cd,
         interpolation_steps,
         bruteforce,
         smooth,
@@ -557,10 +560,10 @@ def from_array_full(
     write_obj: bool = True,
     watertight: bool = True,
     contour_types: list[PyContourType] | None = None,
-    output_path_a: str = "output/rest",
-    output_path_b: str = "output/stress",
-    output_path_c: str = "output/diastole",
-    output_path_d: str = "output/systole",
+    output_path_ab: str = "output/rest",
+    output_path_cd: str = "output/stress",
+    output_path_ac: str = "output/diastole",
+    output_path_bd: str = "output/systole",
     interpolation_steps: int = 0,
     bruteforce: bool = False,
     smooth: bool = True,
@@ -578,13 +581,17 @@ def from_array_full(
     diastole, and STRESS systole, then aligns frames within and between
     each cardiac phase.
 
-    .. code-block:: text
+    .. parsed-literal::
 
-       Rest           Stress
-       diastole ──▶ diastole
-          │            │
-          ▼            ▼
-       systole ──▶ systole
+                            ``output_path_ac`` (Diastole: a vs. c)
+                    ┌──────────────────────────────────────────┐
+                    ▼                                          ▼
+        **a** REST diastole                      **c** STRESS diastole
+                │  ``output_path_ab`` (Rest: a+b)        │  ``output_path_cd`` (Stress: c+d)
+                ▼                                        ▼
+        **b** REST systole                       **d** STRESS systole
+                    └──────────────────────────────────────────┘
+                            ``output_path_bd`` (Systole: b vs. d)
 
     Parameters
     ----------
@@ -615,15 +622,15 @@ def from_array_full(
     contour_types : list of PyContourType, optional
         Contour types to export.  Default is
         ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
-    output_path_a : str, optional
-        Output directory for REST results.  Default is ``"output/rest"``.
-    output_path_b : str, optional
-        Output directory for STRESS results.  Default is ``"output/stress"``.
-    output_path_c : str, optional
-        Output directory for DIASTOLE results.  Default is
+    output_path_ab : str, optional
+        Output directory for REST results (pair a+b).  Default is ``"output/rest"``.
+    output_path_cd : str, optional
+        Output directory for STRESS results (pair c+d).  Default is ``"output/stress"``.
+    output_path_ac : str, optional
+        Output directory for DIASTOLE results (pair a+c).  Default is
         ``"output/diastole"``.
-    output_path_d : str, optional
-        Output directory for SYSTOLE results.  Default is
+    output_path_bd : str, optional
+        Output directory for SYSTOLE results (pair b+d).  Default is
         ``"output/systole"``.
     interpolation_steps : int, optional
         Number of interpolation steps between phases.  Default is ``28``.
@@ -673,10 +680,10 @@ def from_array_full(
         write_obj,
         watertight,
         contour_types,
-        output_path_a,
-        output_path_b,
-        output_path_c,
-        output_path_d,
+        output_path_ab,
+        output_path_cd,
+        output_path_ac,
+        output_path_bd,
         interpolation_steps,
         bruteforce,
         smooth,
@@ -698,8 +705,8 @@ def from_array_doublepair(
     write_obj: bool = True,
     watertight: bool = True,
     contour_types: list[PyContourType] | None = None,
-    output_path_a: str = "output/rest",
-    output_path_b: str = "output/stress",
+    output_path_ab: str = "output/rest",
+    output_path_cd: str = "output/stress",
     interpolation_steps: int = 0,
     bruteforce: bool = False,
     smooth: bool = True,
@@ -715,13 +722,12 @@ def from_array_doublepair(
     (diastole + systole), aligns each pair independently, and writes
     interpolated OBJ meshes.
 
-    .. code-block:: text
+    .. parsed-literal::
 
-       Rest:                    Stress:
-       diastole                  diastole
-           │                         │
-           ▼                         ▼
-       systole                   systole
+        **a** REST diastole                      **c** STRESS diastole
+                │  ``output_path_ab`` (Rest: a+b)        │  ``output_path_cd`` (Stress: c+d)
+                ▼                                        ▼
+        **b** REST systole                       **d** STRESS systole
 
     Parameters
     ----------
@@ -752,10 +758,10 @@ def from_array_doublepair(
     contour_types : list of PyContourType, optional
         Contour types to export.  Default is
         ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
-    output_path_a : str, optional
-        Output directory for REST results.  Default is ``"output/rest"``.
-    output_path_b : str, optional
-        Output directory for STRESS results.  Default is ``"output/stress"``.
+    output_path_ab : str, optional
+        Output directory for REST results (pair a+b).  Default is ``"output/rest"``.
+    output_path_cd : str, optional
+        Output directory for STRESS results (pair c+d).  Default is ``"output/stress"``.
     interpolation_steps : int, optional
         Number of interpolation steps between phases.  Default is ``28``.
     bruteforce : bool, optional
@@ -800,8 +806,8 @@ def from_array_doublepair(
         write_obj,
         watertight,
         contour_types,
-        output_path_a,
-        output_path_b,
+        output_path_ab,
+        output_path_cd,
         interpolation_steps,
         bruteforce,
         smooth,
