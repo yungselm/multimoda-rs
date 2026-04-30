@@ -339,7 +339,7 @@ mod test_interpolation {
         let interp_frame = &result[1].frames[0];
 
         // Should still have lumen
-        assert!(interp_frame.lumen.points.is_empty());
+        assert!(!interp_frame.lumen.points.is_empty());
 
         // Should NOT have catheter since it was missing in start
         assert!(!interp_frame.extras.contains_key(&ContourType::Catheter));
