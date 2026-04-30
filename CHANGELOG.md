@@ -3,6 +3,61 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-04-30
+
+### Added
+- `stitch_ccta_to_intravascular()`: fuses an aligned intravascular `PyGeometry` with a CCTA
+  trimesh by triangulating a patch between the open boundary ring of the CCTA mesh and the
+  proximal/distal contour of the intravascular geometry. Supports two boundary-ring alignment
+  modes (`"nearest_iv"` and `"highest_z"`) for proximal and distal ends independently.
+- `fix_and_remesh_stitched_mesh()`: repairs the stitched surface (non-manifold edges/vertices,
+  open holes) and applies isotropic remeshing via `pymeshlab`. Requires the optional
+  `multimodars[meshlab]` extra.
+- `manual_hole_fill()`: flat-fills remaining open holes in a trimesh after automatic repair.
+- `remove_labeled_points_from_mesh()`: deletes one or more labeled vertex regions from the mesh, remaps faces, and returns the open boundary ring as `"boundary_points"` for downstream stitching.
+- `keep_labeled_points_from_mesh()`: retains only the vertices of a specified labeled region,
+  discarding all others.
+- `sync_results_to_mesh()`: refreshes all coordinate lists in the results dictionary after
+  `scale_region_centerline_morphing()` moves vertices, keeping labels consistent with the
+  updated mesh.
+- `find_aortic_wall_scaling()`: computes the optimal radial scaling factor for the aortic wall
+  region by minimising the distance to the first intravascular frame whose lumen elliptic ratio
+  drops below 1.3 (transition from intramural to free-segment lumen).
+- `export_section_stl()`: exports the full mesh or a labeled sub-region (`"all"`, `"aorta"`,
+  `"rca"`, `"lca"`) as an STL file.
+- `plot_results_key()`: opens an interactive 3-D trimesh scene visualising selected labeled
+  regions with colour coding (yellow = aorta, blue = RCA, green = LCA, red = removed/intramural,
+  cyan = proximal, magenta = distal, orange = anomalous).
+- Tests for all new CCTA functions.
+- `mypy` added to pre-commit hooks for static type checking.
+
+### Changed
+- Rust-side CCTA STL reader (`src/ccta/io/input.rs`) removed; mesh I/O is now handled
+  entirely via Python `trimesh`, eliminating the `stl_io` dependency.
+- `pymeshlab` and `pyglet` are now optional dependencies; the core package installs without
+  them. Install extras with `pip install 'multimodars[meshlab]'`.
+- Debug-plot helpers moved to a dedicated `ccta.debug_plots` module.
+- CCTA Python module refactored into focused sub-modules (`labeling`, `manipulating`,
+  `fixing_functions`, `debug_plots`).
+- Parameter order updated in several CCTA API calls for consistency.
+- `diastole` argument removed from functions where it was not used.
+- Labeling of aorta boundary points improved to avoid incorrect assignment at mesh edges.
+- Type stubs updated and extended to cover all new public functions.
+- Clippy lints applied across the Rust codebase (non-breaking).
+
+### Fixed
+- 3-D area and elliptic ratio calculation corrected for non-planar contours.
+- Mesh face normals corrected after stitching to ensure consistent outward orientation.
+
+### Documentation
+- CCTA tutorial completely rewritten to cover the full stitching workflow:
+  `remove_labeled_points_from_mesh` → `stitch_ccta_to_intravascular` →
+  `fix_and_remesh_stitched_mesh` → Taubin smoothing → `export_section_stl` → re-labeling.
+- Intravascular tutorial reviewed and completed: section numbering corrected (1–7),
+  CSV-vs-numpy workflow note added, column descriptions with units added to data tables,
+  Sphinx cross-references added throughout, `translate()` tuple-argument bug fixed.
+
+
 ## [0.2.3] - 2026-03-06
 
 ### Added

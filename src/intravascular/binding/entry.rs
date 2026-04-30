@@ -31,7 +31,7 @@ fn maybe_postprocess(
 }
 
 pub fn full_processing_rs(
-    label: String,
+    labels: Vec<String>,
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
@@ -41,7 +41,6 @@ pub fn full_processing_rs(
     input_data_b: Option<InputData>,
     input_data_c: Option<InputData>,
     input_data_d: Option<InputData>,
-    _diastole: bool,
     write_obj: bool,
     interpolation_steps: usize,
     contour_types: Vec<ContourType>,
@@ -67,7 +66,7 @@ pub fn full_processing_rs(
     Vec<AlignLog>,
 )> {
     let mut geometries = prepare_n_geometries(
-        &label,
+        &labels,
         image_center,
         radius,
         n_points,
@@ -77,7 +76,7 @@ pub fn full_processing_rs(
                 .flatten()
                 .collect(),
         ),
-        _diastole,
+        true, // not used for full
         input_path_a.map(Path::new),
         input_path_b.map(Path::new),
         ProcessingOptions::Full,
@@ -251,9 +250,10 @@ pub fn full_processing_rs(
     let geom_bd_postprocessed =
         maybe_postprocess(&geom_pair_bd, TOLERANCE, anomalous, postprocessing)?;
 
+    let ab_label = geom_ab_postprocessed.label.clone();
     let geom_ab_final = if write_obj {
         process_case(
-            &label,
+            &ab_label,
             geom_ab_postprocessed,
             output_path_a,
             interpolation_steps,
@@ -265,9 +265,10 @@ pub fn full_processing_rs(
         geom_ab_postprocessed
     };
 
+    let cd_label = geom_cd_postprocessed.label.clone();
     let geom_cd_final = if write_obj {
         process_case(
-            &label,
+            &cd_label,
             geom_cd_postprocessed,
             output_path_b,
             interpolation_steps,
@@ -279,9 +280,10 @@ pub fn full_processing_rs(
         geom_cd_postprocessed
     };
 
+    let ac_label = geom_ac_postprocessed.label.clone();
     let geom_ac_final = if write_obj {
         process_case(
-            &label,
+            &ac_label,
             geom_ac_postprocessed,
             output_path_c,
             interpolation_steps,
@@ -293,9 +295,10 @@ pub fn full_processing_rs(
         geom_ac_postprocessed
     };
 
+    let bd_label = geom_bd_postprocessed.label.clone();
     let geom_bd_final = if write_obj {
         process_case(
-            &label,
+            &bd_label,
             geom_bd_postprocessed,
             output_path_d,
             interpolation_steps,
@@ -320,7 +323,7 @@ pub fn full_processing_rs(
 }
 
 pub fn double_pair_processing_rs(
-    label: String,
+    labels: Vec<String>,
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
@@ -330,7 +333,6 @@ pub fn double_pair_processing_rs(
     input_data_b: Option<InputData>,
     input_data_c: Option<InputData>,
     input_data_d: Option<InputData>,
-    _diastole: bool,
     write_obj: bool,
     interpolation_steps: usize,
     contour_types: Vec<ContourType>,
@@ -352,7 +354,7 @@ pub fn double_pair_processing_rs(
     Vec<AlignLog>,
 )> {
     let mut geometries = prepare_n_geometries(
-        &label,
+        &labels,
         image_center,
         radius,
         n_points,
@@ -362,7 +364,7 @@ pub fn double_pair_processing_rs(
                 .flatten()
                 .collect(),
         ),
-        _diastole,
+        true, // not used for full
         input_path_a.map(Path::new),
         input_path_b.map(Path::new),
         ProcessingOptions::Full,
@@ -506,9 +508,10 @@ pub fn double_pair_processing_rs(
     let geom_cd_postprocessed =
         maybe_postprocess(&geom_pair_cd, TOLERANCE, anomalous, postprocessing)?;
 
+    let ab_label = geom_ab_postprocessed.label.clone();
     let geom_ab_final = if write_obj {
         process_case(
-            &label,
+            &ab_label,
             geom_ab_postprocessed,
             output_path_a,
             interpolation_steps,
@@ -520,9 +523,10 @@ pub fn double_pair_processing_rs(
         geom_ab_postprocessed
     };
 
+    let cd_label = geom_cd_postprocessed.label.clone();
     let geom_cd_final = if write_obj {
         process_case(
-            &label,
+            &cd_label,
             geom_cd_postprocessed,
             output_path_b,
             interpolation_steps,
@@ -538,14 +542,13 @@ pub fn double_pair_processing_rs(
 }
 
 pub fn pair_processing_rs(
-    label: String,
+    labels: Vec<String>,
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
     input_path_a: Option<&str>,
     input_data_a: Option<InputData>,
     input_data_b: Option<InputData>,
-    diastole: bool,
     write_obj: bool,
     interpolation_steps: usize,
     contour_types: Vec<ContourType>,
@@ -559,7 +562,7 @@ pub fn pair_processing_rs(
     postprocessing: bool,
 ) -> Result<(GeometryPair, Vec<AlignLog>, Vec<AlignLog>)> {
     let mut geometries = prepare_n_geometries(
-        &label,
+        &labels,
         image_center,
         radius,
         n_points,
@@ -569,12 +572,12 @@ pub fn pair_processing_rs(
                 .flatten()
                 .collect(),
         ),
-        diastole,
+        true, // not used for pair
         input_path_a.map(Path::new),
         None,
         ProcessingOptions::Pair,
     )
-    .context("Failed to prepare geometries for full processing")?;
+    .context("Failed to prepare geometries for pair processing")?;
 
     if geometries.len() != 2 {
         return Err(anyhow!(
@@ -635,9 +638,10 @@ pub fn pair_processing_rs(
     let geom_pair_postprocessed =
         maybe_postprocess(&geom_pair, TOLERANCE, anomalous, postprocessing)?;
 
+    let pair_label = geom_pair_postprocessed.label.clone();
     let geom_pair_final = if write_obj {
         process_case(
-            &label,
+            &pair_label,
             geom_pair_postprocessed,
             output_path,
             interpolation_steps,
@@ -653,7 +657,7 @@ pub fn pair_processing_rs(
 }
 
 pub fn single_processing_rs(
-    label: String,
+    labels: Vec<String>,
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
@@ -671,7 +675,7 @@ pub fn single_processing_rs(
     sample_size: usize,
 ) -> Result<(Geometry, Vec<AlignLog>)> {
     let mut geom = prepare_n_geometries(
-        &label,
+        &labels,
         image_center,
         radius,
         n_points,
@@ -681,7 +685,7 @@ pub fn single_processing_rs(
         None,
         ProcessingOptions::Single,
     )
-    .context("Failed to prepare geometries for full processing")?;
+    .context("Failed to prepare geometry for single processing")?;
 
     if geom.len() != 1 {
         return Err(anyhow!(
@@ -719,8 +723,8 @@ pub fn single_processing_rs(
             }
 
             let type_name = get_contour_type_name(*contour_type);
-            let obj_filename = format!("{}_{}.obj", type_name, label);
-            let mtl_filename = format!("{}_{}.mtl", type_name, label);
+            let obj_filename = format!("{}_{}.obj", type_name, geom.label);
+            let mtl_filename = format!("{}_{}.mtl", type_name, geom.label);
             let obj_path = Path::new(output_path).join(&obj_filename);
             let mtl_path = Path::new(output_path).join(&mtl_filename);
 
@@ -739,7 +743,7 @@ pub fn single_processing_rs(
 
         println!(
             "Successfully wrote OBJ files for geometry {} to {}",
-            label, output_path
+            geom.label, output_path
         );
     }
 

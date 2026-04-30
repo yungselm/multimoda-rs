@@ -30,7 +30,7 @@ use pyo3::prelude::*;
 /// watertight : bool, optional
 ///     Whether to write a watertight or shell mesh to OBJ.  Default is ``True``.
 /// interpolation_steps : int, optional
-///     Number of interpolation steps between phases.  Default is ``28``.
+///     Number of interpolation steps between phases.  Default is ``0``.
 /// output_dir : str, optional
 ///     Output directory for aligned meshes.  Default is ``"output/aligned"``.
 /// case_name : str, optional
@@ -64,7 +64,7 @@ use pyo3::prelude::*;
         angle_step_deg=1.0,
         write=false,
         watertight=true,
-        interpolation_steps=28usize,
+        interpolation_steps=0usize,
         output_dir="output/aligned",
         contour_types=vec![PyContourType::Lumen, PyContourType::Catheter, PyContourType::Wall],
         case_name="None",
@@ -134,7 +134,7 @@ pub fn align_three_point(
 /// watertight : bool, optional
 ///     Whether to write a watertight or shell mesh to OBJ.  Default is ``True``.
 /// interpolation_steps : int, optional
-///     Number of interpolation steps between phases.  Default is ``28``.
+///     Number of interpolation steps between phases.  Default is ``0``.
 /// output_dir : str, optional
 ///     Output directory for aligned meshes.  Default is ``"output/aligned"``.
 /// case_name : str, optional
@@ -166,7 +166,7 @@ pub fn align_three_point(
         ref_point,
         write=false,
         watertight=true,
-        interpolation_steps=28usize,
+        interpolation_steps=0usize,
         output_dir="output/aligned",
         contour_types=vec![PyContourType::Lumen, PyContourType::Catheter, PyContourType::Wall],
         case_name="None",
@@ -243,7 +243,7 @@ pub fn align_manual(
 /// watertight : bool, optional
 ///     Whether to write a watertight or shell mesh to OBJ.  Default is ``True``.
 /// interpolation_steps : int, optional
-///     Number of interpolation steps between phases.  Default is ``28``.
+///     Number of interpolation steps between phases.  Default is ``0``.
 /// output_dir : str, optional
 ///     Output directory for aligned meshes.  Default is ``"output/aligned"``.
 /// case_name : str, optional
@@ -279,7 +279,7 @@ pub fn align_manual(
         index_range=2,
         write=false,
         watertight=true,
-        interpolation_steps=28usize,
+        interpolation_steps=0usize,
         output_dir="output/aligned",
         contour_types=vec![PyContourType::Lumen, PyContourType::Catheter, PyContourType::Wall],
         case_name="None",

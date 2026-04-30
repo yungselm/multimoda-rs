@@ -213,7 +213,8 @@ impl Contour {
             for j in i + 1..self.points.len() {
                 let dx = self.points[i].x - self.points[j].x;
                 let dy = self.points[i].y - self.points[j].y;
-                let dist = (dx * dx + dy * dy).sqrt();
+                let dz = self.points[i].z - self.points[j].z;
+                let dist = (dx * dx + dy * dy + dz * dz).sqrt();
                 if dist > max_dist {
                     max_dist = dist;
                     farthest_pair = (&self.points[i], &self.points[j]);
@@ -293,9 +294,36 @@ impl Contour {
         (best_pair, min_dist)
     }
 
+    /// Finds the minimum diameter in 3D by pairing each point with the point at
+    /// the opposite index (i + n/2) and returning the pair with the smallest 3D distance.
+    pub fn find_closest_opposite_3d(&self) -> ((&ContourPoint, &ContourPoint), f64) {
+        let n = self.points.len();
+        assert!(n > 2, "Need at least 3 points");
+
+        let half = n / 2;
+        let mut min_dist = f64::MAX;
+        let mut best_pair = (&self.points[0], &self.points[half]);
+
+        for i in 0..n {
+            let j = (i + half) % n;
+            let pi = &self.points[i];
+            let pj = &self.points[j];
+            let dx = pi.x - pj.x;
+            let dy = pi.y - pj.y;
+            let dz = pi.z - pj.z;
+            let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+            if dist < min_dist {
+                min_dist = dist;
+                best_pair = (pi, pj);
+            }
+        }
+
+        (best_pair, min_dist)
+    }
+
     pub fn elliptic_ratio(&self) -> f64 {
         let major_length = self.find_farthest_points().1;
-        let minor_length = self.find_closest_opposite().1;
+        let minor_length = self.find_closest_opposite_3d().1;
         if major_length < minor_length {
             minor_length / major_length
         } else {
@@ -309,13 +337,17 @@ impl Contour {
             return 0.0;
         }
 
-        let mut sum = 0.0_f64;
+        let mut cx = 0.0_f64;
+        let mut cy = 0.0_f64;
+        let mut cz = 0.0_f64;
         for i in 0..n {
             let p1 = &self.points[i];
             let p2 = &self.points[(i + 1) % n];
-            sum += p1.x * p2.y - p2.x * p1.y;
+            cx += p1.y * p2.z - p1.z * p2.y;
+            cy += p1.z * p2.x - p1.x * p2.z;
+            cz += p1.x * p2.y - p1.y * p2.x;
         }
-        0.5 * sum.abs()
+        0.5 * (cx * cx + cy * cy + cz * cz).sqrt()
     }
 
     /// Reorders `self.points` so that:
@@ -356,6 +388,19 @@ impl Contour {
         }
 
         // 4) Re-index in array order
+        for (i, pt) in self.points.iter_mut().enumerate() {
+            pt.point_index = i as u32;
+        }
+    }
+
+    /// Rotate the Vec so the point currently at position `shift` moves to
+    /// index 0, then reassign `point_index` sequentially.  X/Y/Z unchanged.
+    pub fn rotate_and_reindex(&mut self, shift: usize) {
+        let n = self.points.len();
+        if n == 0 || shift == 0 {
+            return;
+        }
+        self.points.rotate_left(shift % n);
         for (i, pt) in self.points.iter_mut().enumerate() {
             pt.point_index = i as u32;
         }
@@ -802,6 +847,32 @@ impl Geometry {
         for frame in self.frames.iter_mut() {
             frame.rotate_frame(angle_rad);
             frame.sort_frame_points();
+        }
+    }
+
+    /// Rotate all frame contour point Vecs so that the point with the highest
+    /// Z-value in frame 0's lumen becomes Vec index 0.  The same rotation
+    /// offset is applied to every contour in every frame, and `point_index`
+    /// fields are reassigned sequentially (0, 1, 2, …).
+    /// X/Y/Z coordinates are never modified.
+    pub fn sort_frame_points_by_z(&mut self) {
+        let shift = match self.frames.first() {
+            Some(f) => f
+                .lumen
+                .points
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.z.partial_cmp(&b.z).unwrap())
+                .map(|(i, _)| i)
+                .unwrap_or(0),
+            None => return,
+        };
+
+        for frame in self.frames.iter_mut() {
+            frame.lumen.rotate_and_reindex(shift);
+            for contour in frame.extras.values_mut() {
+                contour.rotate_and_reindex(shift);
+            }
         }
     }
 

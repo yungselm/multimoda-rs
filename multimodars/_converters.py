@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import numpy as np
+import trimesh
 from .multimodars import (
     PyContour,
     PyCenterline,
     PyGeometry,
-    PyGeometryPair,
     PyFrame,
     PyInputData,
     PyContourPoint,
     PyRecord,
+    PyContourType,
 )
 
 
@@ -240,11 +241,12 @@ def numpy_to_inputdata(
     ValueError
         If ``lumen_arr`` is empty.
     """
+
     def _to_numeric_array(arr: np.ndarray | None, name: str) -> np.ndarray:
         if arr is None:
             return np.zeros((0, 4), dtype=float)
         # Handle structured arrays with named fields
-        if arr.ndim == 1 and getattr(arr, "dtype", None).names:
+        if arr.ndim == 1 and arr.dtype.names:
             try:
                 arr = np.vstack([arr[n] for n in arr.dtype.names]).T
             except Exception:
@@ -296,7 +298,7 @@ def numpy_to_inputdata(
         if arr is None:
             return None
         # If structured with fields, try to coerce to (N,4) or (N,3)
-        if arr.ndim == 1 and getattr(arr, "dtype", None).names:
+        if arr.ndim == 1 and arr.dtype.names:
             # Try to create a 2D array with numeric fields where appropriate
             try:
                 arr = np.vstack([arr[n] for n in arr.dtype.names]).T
@@ -470,6 +472,7 @@ def numpy_to_geometry(
     ValueError
         If ``lumen_arr`` is empty.
     """
+
     def _to_numeric_array(arr: np.ndarray | None, layer_name: str) -> np.ndarray:
         if arr is None:
             return np.zeros((0, 4), dtype=float)
@@ -484,7 +487,7 @@ def numpy_to_geometry(
 
     def build_contour_from_array(
         arr: np.ndarray, frame_id: int, contour_type: str
-    ) -> PyContour:
+    ) -> PyContour | None:
         """Build a PyContour from array points for a specific frame."""
         if arr.size == 0:
             return None
@@ -554,7 +557,7 @@ def numpy_to_geometry(
         )
 
     # Get all unique frame indices from all arrays
-    all_frames = set()
+    all_frames: set[int] = set()
     for arr in [lumen_arr, eem_arr, catheter_arr, wall_arr]:
         if arr.size > 0:
             all_frames.update(arr[:, 0].astype(int))
@@ -957,7 +960,7 @@ def array_to_pyinputdata(
     return pyinput
 
 
-def geometry_to_frames_array(geometry: PyGeometry) -> dict[str, np.ndarray]:
+def geometry_to_frames_array(geometry: PyGeometry) -> dict[str, dict[str, np.ndarray]]:
     """
     Convert a ``PyGeometry`` to a nested dictionary of numpy arrays by frame.
 
@@ -1006,3 +1009,76 @@ def geometry_to_frames_array(geometry: PyGeometry) -> dict[str, np.ndarray]:
         result[str(frame.id)] = frame_data
 
     return result
+
+
+def geometry_to_trimesh(
+    geometry: PyGeometry,
+    contour_type: PyContourType | None = None,
+) -> trimesh.Trimesh:
+    """Build a trimesh surface from one contour type across all frames.
+
+    Parameters
+    ----------
+    geometry:
+        The geometry whose frames supply the contours.
+    contour_type:
+        Which contour type to use.  Defaults to ``PyContourType.Lumen``.
+
+    Returns
+    -------
+    trimesh.Trimesh
+        Closed tube mesh with one quad-strip per adjacent contour pair.
+        Each quad is split into two triangles.
+    """
+    if contour_type is None:
+        contour_type = PyContourType.Lumen
+
+    if contour_type == PyContourType.Lumen:
+        contours = geometry.get_lumen_contours()
+    else:
+        contours = geometry.get_contours_by_type(contour_type.name)
+
+    if len(contours) < 2:
+        raise ValueError("Need at least two contours to build a mesh.")
+
+    n = len(contours[0].points)  # points per contour (same for all)
+
+    # --- vertices -----------------------------------------------------------
+    vertices = np.array(
+        [pt for c in contours for pt in c.points_as_tuples()],
+        dtype=np.float64,
+    )  # shape: (n_contours * n, 3)
+
+    # --- faces --------------------------------------------------------------
+    faces = []
+    n_contours = len(contours)
+    for i in range(n_contours - 1):
+        base_i = i * n
+        base_j = (i + 1) * n
+        for j in range(n):
+            j1 = (j + 1) % n
+            # quad corners: a-b (contour i), c-d (contour i+1)
+            a = base_i + j
+            b = base_i + j1
+            c = base_j + j1
+            d = base_j + j
+            faces.append([a, b, d])
+            faces.append([b, c, d])
+
+    mesh = trimesh.Trimesh(
+        vertices=vertices,
+        faces=np.array(faces, dtype=np.int64),
+        process=False,
+    )
+
+    # Ensure normals point away from the vessel lumen (outward).
+    # Use the first ring's centroid as the "inside" reference and the first
+    # face's centre as the sample point — if the face normal points toward the
+    # centroid the whole mesh is wound inward and all faces are flipped.
+    first_centroid = np.array(contours[0].centroid, dtype=np.float64)
+    first_face_center = mesh.triangles_center[0]
+    first_normal = mesh.face_normals[0]
+    if np.dot(first_normal, first_face_center - first_centroid) < 0:
+        mesh.faces = mesh.faces[:, ::-1]
+
+    return mesh

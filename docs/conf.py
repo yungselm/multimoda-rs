@@ -3,11 +3,12 @@ import sys
 import re
 
 try:
-    import multimodars
+    import multimodars  # noqa: F401
 except ImportError:
     from unittest.mock import MagicMock
 
     sys.modules["multimodars"] = MagicMock()
+
 
 # Get the version from Cargo.toml
 def get_version():
@@ -18,6 +19,7 @@ def get_version():
     if match:
         return match.group(1)
     return "0.0.0"
+
 
 # Add project to path
 sys.path.insert(0, os.path.abspath(".."))
@@ -62,12 +64,4 @@ autodoc_default_options = {
     "special-members": "__init__",
 }
 autodoc_typehints = "description"
-
-# Workaround for PyO3 modules
-try:
-    import multimodars
-except ImportError:
-    from unittest.mock import MagicMock
-
-    sys.modules["multimodars"] = MagicMock()
-    print("Warning: multimodars module not found, using mocks for documentation")
+numfig = True

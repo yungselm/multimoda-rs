@@ -12,9 +12,20 @@ pub enum ProcessingOptions {
     Full,
 }
 
+fn path_basename(path: &Path) -> String {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown")
+        .to_string()
+}
+
 /// Prepare 1 / 2 / 4 geometries depending on `processing`.
+///
+/// `labels` is only used for path-based processing (InputData carries its own
+/// labels).  Pass 1 label for `Single`, 2 for `Pair`, 4 for `Full`.  If the
+/// count does not match, the last component of each path is used instead.
 pub fn prepare_n_geometries(
-    label: &str,
+    labels: &[String],
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
@@ -51,11 +62,17 @@ pub fn prepare_n_geometries(
                 anyhow::anyhow!("Single processing requires at least one InputData or one path (path_a or path_b)")
             })?;
 
+            let label = if labels.len() == 1 {
+                labels[0].clone()
+            } else {
+                path_basename(path)
+            };
+
             let geom = build_geometry_from_inputdata(
                 None,
                 Some(path),
-                label,
-                true, // default diastole=true
+                &label,
+                _diastole,
                 image_center,
                 radius,
                 n_points,
@@ -94,12 +111,19 @@ pub fn prepare_n_geometries(
                 anyhow::anyhow!("Pair processing requires at least two InputData or one path (path_a or path_b)")
             })?;
 
+            let use_labels = labels.len() == 2;
+            let basename = path_basename(path);
             let mut geometries = Vec::with_capacity(2);
-            for &diastole in &[true, false] {
+            for (idx, &diastole) in [true, false].iter().enumerate() {
+                let label = if use_labels {
+                    labels[idx].clone()
+                } else {
+                    basename.clone()
+                };
                 let geom = build_geometry_from_inputdata(
                     None,
                     Some(path),
-                    label,
+                    &label,
                     diastole,
                     image_center,
                     radius,
@@ -147,13 +171,21 @@ pub fn prepare_n_geometries(
                 _ => anyhow::bail!("Full processing requires either at least 4 InputData or both path_a and path_b"),
             };
 
+            let use_labels = labels.len() == 4;
             let mut geometries = Vec::with_capacity(4);
+            let mut idx = 0usize;
             for &path in &[path_a, path_b] {
+                let basename = path_basename(path);
                 for &diastole in &[true, false] {
+                    let label = if use_labels {
+                        labels[idx].clone()
+                    } else {
+                        basename.clone()
+                    };
                     let geom = build_geometry_from_inputdata(
                         None,
                         Some(path),
-                        label,
+                        &label,
                         diastole,
                         image_center,
                         radius,
@@ -166,6 +198,7 @@ pub fn prepare_n_geometries(
                         )
                     })?;
                     geometries.push(geom);
+                    idx += 1;
                 }
             }
             Ok(geometries)
@@ -212,7 +245,7 @@ mod preprocessing_tests {
     #[test]
     fn test_prepare_one_geometry_path() -> anyhow::Result<()> {
         let geometry = prepare_n_geometries(
-            "stress",
+            &["stress".to_string()],
             (4.5, 4.5),
             0.5,
             20,
@@ -233,7 +266,7 @@ mod preprocessing_tests {
     #[test]
     fn test_prepare_two_geometry_one_path() -> anyhow::Result<()> {
         let geometry = prepare_n_geometries(
-            "stress",
+            &["stress".to_string(), "stress".to_string()],
             (4.5, 4.5),
             0.5,
             20,
@@ -256,7 +289,7 @@ mod preprocessing_tests {
         let input_data = vec![create_mock_input_data("test_input", true)];
 
         let geometry = prepare_n_geometries(
-            "fallback_label",
+            &[],
             (4.5, 4.5),
             0.5,
             20,
@@ -276,7 +309,7 @@ mod preprocessing_tests {
     #[test]
     fn test_single_with_path() -> anyhow::Result<()> {
         let geometry = prepare_n_geometries(
-            "stress",
+            &["stress".to_string()],
             (4.5, 4.5),
             0.5,
             20,
@@ -299,7 +332,7 @@ mod preprocessing_tests {
         ];
 
         let geometry = prepare_n_geometries(
-            "fallback_label",
+            &[],
             (4.5, 4.5),
             0.5,
             20,
@@ -319,7 +352,7 @@ mod preprocessing_tests {
     #[test]
     fn test_pair_with_one_path() -> anyhow::Result<()> {
         let geometry = prepare_n_geometries(
-            "stress",
+            &["stress".to_string(), "stress".to_string()],
             (4.5, 4.5),
             0.5,
             20,
@@ -347,7 +380,7 @@ mod preprocessing_tests {
         ];
 
         let geometry = prepare_n_geometries(
-            "fallback_label",
+            &[],
             (4.5, 4.5),
             0.5,
             20,
@@ -368,8 +401,9 @@ mod preprocessing_tests {
 
     #[test]
     fn test_full_with_two_paths() -> anyhow::Result<()> {
+        let labels: Vec<String> = vec!["test".to_string(); 4];
         let geometry = prepare_n_geometries(
-            "test",
+            &labels,
             (4.5, 4.5),
             0.5,
             20,
@@ -381,7 +415,6 @@ mod preprocessing_tests {
         )?;
 
         assert_eq!(geometry.len(), 4);
-        // All should use the provided label since built from paths
         for geom in geometry {
             assert_eq!(geom.label, "test");
         }
@@ -392,7 +425,7 @@ mod preprocessing_tests {
     fn test_prefers_input_data_over_paths() -> anyhow::Result<()> {
         let input_data = vec![create_mock_input_data("preferred", true)];
         let geometry = prepare_n_geometries(
-            "fallback",
+            &[],
             (4.5, 4.5),
             0.5,
             20,
@@ -404,7 +437,7 @@ mod preprocessing_tests {
         )?;
 
         assert_eq!(geometry.len(), 1);
-        assert_eq!(geometry[0].label, "preferred"); // Uses InputData label, not fallback
+        assert_eq!(geometry[0].label, "preferred"); // Uses InputData label, not labels vec
         Ok(())
     }
 
@@ -414,7 +447,7 @@ mod preprocessing_tests {
         let input_data = vec![create_mock_input_data("only_one", true)];
 
         let geometry = prepare_n_geometries(
-            "from_path",
+            &["from_path".to_string(), "from_path".to_string()],
             (4.5, 4.5),
             0.5,
             20,
@@ -426,7 +459,7 @@ mod preprocessing_tests {
         )?;
 
         assert_eq!(geometry.len(), 2);
-        assert_eq!(geometry[0].label, "from_path"); // Uses path label
+        assert_eq!(geometry[0].label, "from_path");
         assert_eq!(geometry[1].label, "from_path");
         Ok(())
     }
@@ -434,7 +467,7 @@ mod preprocessing_tests {
     #[test]
     fn test_single_fails_with_no_inputs() {
         let result = prepare_n_geometries(
-            "test",
+            &[],
             (0.0, 0.0),
             10.0,
             36,
@@ -452,7 +485,7 @@ mod preprocessing_tests {
     fn test_pair_fails_with_insufficient_inputs() {
         // No InputData and no paths
         let result = prepare_n_geometries(
-            "test",
+            &[],
             (0.0, 0.0),
             10.0,
             36,
@@ -476,7 +509,7 @@ mod preprocessing_tests {
         ];
 
         let result = prepare_n_geometries(
-            "test",
+            &["test".to_string()],
             (0.0, 0.0),
             10.0,
             36,

@@ -3,6 +3,67 @@ use crate::intravascular::io::geometry::Frame;
 use crate::intravascular::io::input::{Centerline, CenterlinePoint};
 use std::collections::HashSet;
 
+pub fn centerline_based_wall_diameter_optimization(
+    centerline: &Centerline,
+    ref_point_coronary: &(f64, f64, f64),
+    aortic_points: &[(f64, f64, f64)],
+) -> f64 {
+    if centerline.points.len() == 0 || aortic_points.is_empty() {
+        return 0.0;
+    }
+
+    // find closest centerline point
+    let closest_cl = match centerline.points.iter().min_by(|a, b| {
+        let dist_a = calculate_squared_distance(*a, ref_point_coronary);
+        let dist_b = calculate_squared_distance(*b, ref_point_coronary);
+        dist_a
+            .partial_cmp(&dist_b)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    }) {
+        Some(pt) => pt,
+        None => return 0.0,
+    };
+
+    let closest_aortic: &(f64, f64, f64) = match aortic_points.iter().min_by(|a, b| {
+        let dist_a = calculate_squared_distance(*a, ref_point_coronary);
+        let dist_b = calculate_squared_distance(*b, ref_point_coronary);
+        dist_a
+            .partial_cmp(&dist_b)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    }) {
+        Some(pt) => pt,
+        None => return 0.0,
+    };
+
+    // vector centerline point to coronary point
+    let vector = (
+        ref_point_coronary.0 - closest_cl.contour_point.x,
+        ref_point_coronary.1 - closest_cl.contour_point.y,
+        ref_point_coronary.2 - closest_cl.contour_point.z,
+    );
+
+    let magnitude = (vector.0 * vector.0 + vector.1 * vector.1 + vector.2 * vector.2).sqrt();
+    if magnitude == 0.0 {
+        return 0.0;
+    }
+    let unit = (
+        vector.0 / magnitude,
+        vector.1 / magnitude,
+        vector.2 / magnitude,
+    );
+
+    // project (ref_point_coronary - closest_aortic) onto unit direction
+    // minimizes ||closest_aortic + t*unit - ref_point_coronary||², constrained t >= 0
+    let to_ref = (
+        ref_point_coronary.0 - closest_aortic.0,
+        ref_point_coronary.1 - closest_aortic.1,
+        ref_point_coronary.2 - closest_aortic.2,
+    );
+    let t = to_ref.0 * unit.0 + to_ref.1 * unit.1 + to_ref.2 * unit.2;
+
+    t.max(0.0)
+}
+
 pub fn centerline_based_aortic_diameter_optimization(
     intramural_points: &[(f64, f64, f64)],
     reference_points: &[(f64, f64, f64)],

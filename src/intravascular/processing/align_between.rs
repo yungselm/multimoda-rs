@@ -48,8 +48,14 @@ pub fn align_between_geometries(
     let ref_frame_a_centroid = ref_frame_a.centroid;
     let ref_frame_b_centroid = ref_frame_b.centroid;
 
-    println!("Reference frame A centroid: {:?}", ref_frame_a_centroid);
-    println!("Reference frame B centroid: {:?}", ref_frame_b_centroid);
+    println!(
+        "Reference frame A centroid: ({:.2}, {:.2}, {:.2})",
+        ref_frame_a_centroid.0, ref_frame_a_centroid.1, ref_frame_a_centroid.2
+    );
+    println!(
+        "Reference frame B centroid: ({:.2}, {:.2}, {:.2})",
+        ref_frame_b_centroid.0, ref_frame_b_centroid.1, ref_frame_b_centroid.2
+    );
 
     // Calculate initial translation
     let initial_translation = (
