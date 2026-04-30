@@ -928,7 +928,7 @@ mod tests {
         let (same_sample_rate, avg_diff_a, avg_diff_b) =
             check_same_sample_rate_geompair(&geom_pair, 0.1);
 
-        assert_eq!(same_sample_rate, false);
+        assert!(!same_sample_rate);
         assert_eq!(avg_diff_a, 1.0);
         assert_eq!(avg_diff_b, 0.5);
 

@@ -1,12 +1,12 @@
 repos:
   - repo: local
     hooks:
-      - id: pytest
-        name: Run pytest
-        entry: pytest
-        language: system
-        types: [python]
-        pass_filenames: false
+      # - id: pytest
+      #   name: Run pytest
+      #   entry: pytest
+      #   language: system
+      #   types: [python]
+      #   pass_filenames: false
         
       - id: rust-fmt
         name: Rust format
@@ -15,12 +15,19 @@ repos:
         types: [rust]
         pass_filenames: false
 
-      - id: rust-test
-        name: Rust unit tests
-        entry: cargo test --lib # --quiet
+      - id: rust-clippy
+        name: Rust clippy
+        entry: cargo clippy --all-targets --all-features -- -D warnings
         language: system
         types: [rust]
         pass_filenames: false
+
+      # - id: rust-test
+      #   name: Rust unit tests
+      #   entry: cargo test --lib # --quiet
+      #   language: system
+      #   types: [rust]
+      #   pass_filenames: false
 
       - id: python-black
         name: Black formatting

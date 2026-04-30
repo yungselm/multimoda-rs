@@ -9,7 +9,25 @@ use entry::*;
 use pyo3::prelude::*;
 use std::path::Path;
 
-fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<(u32, u32, f64, f64, f64, f64, f64)> {
+type AlignLogTuple = (u32, u32, f64, f64, f64, f64, f64);
+type AlignLogs4 = (
+    Vec<AlignLogTuple>,
+    Vec<AlignLogTuple>,
+    Vec<AlignLogTuple>,
+    Vec<AlignLogTuple>,
+);
+type AlignLogs2 = (Vec<AlignLogTuple>, Vec<AlignLogTuple>);
+type FullResult = (
+    PyGeometryPair,
+    PyGeometryPair,
+    PyGeometryPair,
+    PyGeometryPair,
+    AlignLogs4,
+);
+type DoublePairResult = (PyGeometryPair, PyGeometryPair, AlignLogs4);
+type PairResult = (PyGeometryPair, AlignLogs2);
+
+fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<AlignLogTuple> {
     logs.into_iter()
         .map(|l| {
             (
@@ -172,18 +190,7 @@ pub fn from_file_full(
     bruteforce: bool,
     smooth: bool,
     postprocessing: bool,
-) -> PyResult<(
-    PyGeometryPair,
-    PyGeometryPair,
-    PyGeometryPair,
-    PyGeometryPair,
-    (
-        Vec<(u32, u32, f64, f64, f64, f64, f64)>,
-        Vec<(u32, u32, f64, f64, f64, f64, f64)>,
-        Vec<(u32, u32, f64, f64, f64, f64, f64)>,
-        Vec<(u32, u32, f64, f64, f64, f64, f64)>,
-    ),
-)> {
+) -> PyResult<FullResult> {
     let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
@@ -366,16 +373,7 @@ pub fn from_file_doublepair(
     bruteforce: bool,
     smooth: bool,
     postprocessing: bool,
-) -> PyResult<(
-    PyGeometryPair,
-    PyGeometryPair,
-    (
-        Vec<(u32, u32, f64, f64, f64, f64, f64)>,
-        Vec<(u32, u32, f64, f64, f64, f64, f64)>,
-        Vec<(u32, u32, f64, f64, f64, f64, f64)>,
-        Vec<(u32, u32, f64, f64, f64, f64, f64)>,
-    ),
-)> {
+) -> PyResult<DoublePairResult> {
     let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
@@ -537,13 +535,7 @@ pub fn from_file_singlepair(
     bruteforce: bool,
     smooth: bool,
     postprocessing: bool,
-) -> PyResult<(
-    PyGeometryPair,
-    (
-        Vec<(u32, u32, f64, f64, f64, f64, f64)>,
-        Vec<(u32, u32, f64, f64, f64, f64, f64)>,
-    ),
-)> {
+) -> PyResult<PairResult> {
     let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
@@ -681,7 +673,7 @@ pub fn from_file_single(
     output_path: &str,
     bruteforce: bool,
     smooth: bool,
-) -> PyResult<(PyGeometry, Vec<(u32, u32, f64, f64, f64, f64, f64)>)> {
+) -> PyResult<(PyGeometry, Vec<AlignLogTuple>)> {
     let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
@@ -858,18 +850,7 @@ pub fn from_array_full(
     bruteforce: bool,
     smooth: bool,
     postprocessing: bool,
-) -> PyResult<(
-    PyGeometryPair,
-    PyGeometryPair,
-    PyGeometryPair,
-    PyGeometryPair,
-    (
-        Vec<(u32, u32, f64, f64, f64, f64, f64)>,
-        Vec<(u32, u32, f64, f64, f64, f64, f64)>,
-        Vec<(u32, u32, f64, f64, f64, f64, f64)>,
-        Vec<(u32, u32, f64, f64, f64, f64, f64)>,
-    ),
-)> {
+) -> PyResult<FullResult> {
     let labels: Vec<String> = vec![]; // InputData carries its own labels
 
     let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
@@ -1076,16 +1057,7 @@ pub fn from_array_doublepair(
     bruteforce: bool,
     smooth: bool,
     postprocessing: bool,
-) -> PyResult<(
-    PyGeometryPair,
-    PyGeometryPair,
-    (
-        Vec<(u32, u32, f64, f64, f64, f64, f64)>,
-        Vec<(u32, u32, f64, f64, f64, f64, f64)>,
-        Vec<(u32, u32, f64, f64, f64, f64, f64)>,
-        Vec<(u32, u32, f64, f64, f64, f64, f64)>,
-    ),
-)> {
+) -> PyResult<DoublePairResult> {
     let labels: Vec<String> = vec![]; // InputData carries its own labels
 
     let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
@@ -1256,13 +1228,7 @@ pub fn from_array_singlepair(
     bruteforce: bool,
     smooth: bool,
     postprocessing: bool,
-) -> PyResult<(
-    PyGeometryPair,
-    (
-        Vec<(u32, u32, f64, f64, f64, f64, f64)>,
-        Vec<(u32, u32, f64, f64, f64, f64, f64)>,
-    ),
-)> {
+) -> PyResult<PairResult> {
     let labels: Vec<String> = vec![]; // InputData carries its own labels
 
     let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
@@ -1399,7 +1365,7 @@ pub fn from_array_single(
     output_path: &str,
     bruteforce: bool,
     smooth: bool,
-) -> PyResult<(PyGeometry, Vec<(u32, u32, f64, f64, f64, f64, f64)>)> {
+) -> PyResult<(PyGeometry, Vec<AlignLogTuple>)> {
     let labels: Vec<String> = vec![]; // InputData carries its own labels
 
     let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =

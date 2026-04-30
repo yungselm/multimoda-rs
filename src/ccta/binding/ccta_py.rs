@@ -13,6 +13,9 @@ use crate::ccta::adjust_mesh::scale_coronary::{
 use crate::intravascular::binding::classes::{PyCenterline, PyFrame};
 use pyo3::prelude::*;
 
+type Point3D = (f64, f64, f64);
+type TriangleTuple = (Point3D, Point3D, Point3D);
+
 /// Find points bounded by spheres along a coronary vessel centerline.
 ///
 /// This version accepts and returns simple Python lists of tuples.
@@ -45,9 +48,9 @@ use pyo3::prelude::*;
 #[pyfunction]
 pub fn find_centerline_bounded_points_simple(
     centerline: PyCenterline,
-    points: Vec<(f64, f64, f64)>,
+    points: Vec<Point3D>,
     radius: f64,
-) -> PyResult<Vec<(f64, f64, f64)>> {
+) -> PyResult<Vec<Point3D>> {
     let rust_centerline = centerline.to_rust_centerline();
 
     // Call Rust function directly - no complex conversions needed
@@ -86,9 +89,9 @@ pub fn remove_occluded_points_ray_triangle(
     centerline_coronary: PyCenterline,
     centerline_aorta: PyCenterline,
     range_coronary: usize,
-    points: Vec<(f64, f64, f64)>,
-    faces: Vec<((f64, f64, f64), (f64, f64, f64), (f64, f64, f64))>,
-) -> PyResult<Vec<(f64, f64, f64)>> {
+    points: Vec<Point3D>,
+    faces: Vec<TriangleTuple>,
+) -> PyResult<Vec<Point3D>> {
     let rust_centerline_coronary = centerline_coronary.to_rust_centerline();
     let rust_centerline_aorta = centerline_aorta.to_rust_centerline();
 
@@ -127,9 +130,9 @@ pub fn remove_occluded_points_ray_triangle(
 #[pyfunction]
 pub fn adjust_diameter_centerline_morphing_simple(
     centerline: PyCenterline,
-    points: Vec<(f64, f64, f64)>,
+    points: Vec<Point3D>,
     diameter_adjustment_mm: f64,
-) -> PyResult<Vec<(f64, f64, f64)>> {
+) -> PyResult<Vec<Point3D>> {
     let rust_centerline = centerline.to_rust_centerline();
 
     let result_points =
@@ -165,12 +168,8 @@ pub fn adjust_diameter_centerline_morphing_simple(
 pub fn find_points_by_cl_region(
     centerline: PyCenterline,
     frames: Vec<PyFrame>,
-    points: Vec<(f64, f64, f64)>,
-) -> PyResult<(
-    Vec<(f64, f64, f64)>,
-    Vec<(f64, f64, f64)>,
-    Vec<(f64, f64, f64)>,
-)> {
+    points: Vec<Point3D>,
+) -> PyResult<(Vec<Point3D>, Vec<Point3D>, Vec<Point3D>)> {
     let rust_centerline = centerline.to_rust_centerline();
     let rust_frames: Vec<crate::intravascular::io::geometry::Frame> = frames
         .into_iter()
@@ -207,11 +206,11 @@ pub fn find_points_by_cl_region(
 /// >>> import multimodars as mm
 #[pyfunction]
 pub fn clean_outlier_points(
-    points_to_cleanup: Vec<(f64, f64, f64)>,
-    reference_points: Vec<(f64, f64, f64)>,
+    points_to_cleanup: Vec<Point3D>,
+    reference_points: Vec<Point3D>,
     neighborhood_radius: f64,
     min_neigbor_ratio: f64,
-) -> PyResult<(Vec<(f64, f64, f64)>, Vec<(f64, f64, f64)>)> {
+) -> PyResult<(Vec<Point3D>, Vec<Point3D>)> {
     let result_points = clean_up_non_section_points(
         points_to_cleanup,
         reference_points,
@@ -251,12 +250,12 @@ pub fn clean_outlier_points(
 /// >>> import multimodars as mm
 #[pyfunction]
 pub fn find_proximal_distal_scaling(
-    anomalous_points: Vec<(f64, f64, f64)>,
+    anomalous_points: Vec<Point3D>,
     n_proximal: usize,
     n_distal: usize,
     centerline: PyCenterline,
-    proximal_reference: Vec<(f64, f64, f64)>,
-    distal_reference: Vec<(f64, f64, f64)>,
+    proximal_reference: Vec<Point3D>,
+    distal_reference: Vec<Point3D>,
 ) -> PyResult<(f64, f64)> {
     let rust_centerline = centerline.to_rust_centerline();
     let (prox_dist, distal_dist) = centerline_based_diameter_optimization(
@@ -291,8 +290,8 @@ pub fn find_proximal_distal_scaling(
 /// >>> import multimodars as mm
 #[pyfunction]
 pub fn find_aortic_scaling(
-    intramural_points: Vec<(f64, f64, f64)>,
-    reference_points: Vec<(f64, f64, f64)>,
+    intramural_points: Vec<Point3D>,
+    reference_points: Vec<Point3D>,
     centerline: PyCenterline,
 ) -> PyResult<f64> {
     let rust_centerline = centerline.to_rust_centerline();
@@ -331,8 +330,8 @@ pub fn find_aortic_scaling(
 #[pyfunction]
 pub fn find_aortic_wall_scaling(
     cl_aorta: PyCenterline,
-    ref_pt_coronary: (f64, f64, f64),
-    aortic_pts: Vec<(f64, f64, f64)>,
+    ref_pt_coronary: Point3D,
+    aortic_pts: Vec<Point3D>,
 ) -> PyResult<f64> {
     let rust_centerline = cl_aorta.to_rust_centerline();
     let dist = centerline_based_wall_diameter_optimization(

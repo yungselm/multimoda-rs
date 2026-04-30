@@ -1505,10 +1505,10 @@ mod geometry_tests {
         frame.rotate_frame(PI / 2.0);
 
         // Expected lumen points after rotation around (1,1):
-        let expected_lumen = vec![(0.0, 0.0), (-2.0, 2.0), (0.0, 4.0), (2.0, 2.0)];
+        let expected_lumen = [(0.0, 0.0), (-2.0, 2.0), (0.0, 4.0), (2.0, 2.0)];
 
         // Expected eem points after rotation around (1,1):
-        let expected_eem = vec![(0.0, -1.0), (-3.0, 2.0), (0.0, 5.0), (3.0, 0.0)];
+        let expected_eem = [(0.0, -1.0), (-3.0, 2.0), (0.0, 5.0), (3.0, 0.0)];
 
         let eps = 1e-6;
 
@@ -1668,7 +1668,7 @@ mod geometry_tests {
         // Rotate 180 degrees (PI) around point (1, 1)
         frame.rotate_frame_around_point(PI, (1.0, 1.0, 0.0));
 
-        let expected_points = vec![
+        let expected_points = [
             ContourPoint {
                 frame_index: 1,
                 point_index: 0,
@@ -1900,7 +1900,7 @@ mod geometry_tests {
         frame.translate_frame((1.0, 2.0, 3.0));
         assert_eq!(frame.centroid, (2.0, 3.0, 3.0));
 
-        let expected_lumen = vec![
+        let expected_lumen = [
             (1.0, 2.0, 3.0),
             (3.0, 2.0, 3.0),
             (3.0, 4.0, 3.0),
@@ -1919,7 +1919,7 @@ mod geometry_tests {
             .extras
             .get(&ContourType::Eem)
             .expect("eem contour present");
-        let expected_eem = vec![
+        let expected_eem = [
             (0.0, 4.0, 3.0),
             (3.0, 7.0, 3.0),
             (6.0, 4.0, 3.0),
@@ -2344,7 +2344,7 @@ mod geometry_tests {
         ];
 
         let mut geom = Geometry {
-            frames: frames,
+            frames,
             label: "test".to_string(),
         };
         let prox_idx = geom.find_proximal_end_idx();
@@ -2426,7 +2426,7 @@ mod geometry_tests {
             },
         ];
         let mut geom = Geometry {
-            frames: frames,
+            frames,
             label: "test".to_string(),
         };
 
@@ -2999,8 +2999,8 @@ mod geometry_tests {
             ];
 
             let mut lumen = Contour {
-                id: i as u32,
-                original_frame: i as u32,
+                id: i,
+                original_frame: i,
                 points: lumen_points,
                 centroid: None,
                 aortic_thickness: None,
@@ -3010,8 +3010,8 @@ mod geometry_tests {
             lumen.compute_centroid();
 
             let mut eem = Contour {
-                id: i as u32,
-                original_frame: i as u32,
+                id: i,
+                original_frame: i,
                 points: eem_points,
                 centroid: None,
                 aortic_thickness: None,
@@ -3021,8 +3021,8 @@ mod geometry_tests {
             eem.compute_centroid();
 
             let mut wall = Contour {
-                id: i as u32,
-                original_frame: i as u32,
+                id: i,
+                original_frame: i,
                 points: wall_points,
                 centroid: None,
                 aortic_thickness: None,
@@ -3036,7 +3036,7 @@ mod geometry_tests {
             extras.insert(ContourType::Wall, wall);
 
             let frame = Frame {
-                id: i as u32,
+                id: i,
                 centroid: lumen.centroid.unwrap(),
                 lumen,
                 extras,

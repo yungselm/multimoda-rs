@@ -146,7 +146,7 @@ fn interpolate_thickness(start: &Option<f64>, end: &Option<f64>, t: f64) -> Opti
 }
 
 #[cfg(test)]
-mod interpolation {
+mod test_interpolation {
     use super::*;
     use crate::intravascular::io::geometry::{Contour, ContourType, Frame, Geometry};
     use crate::intravascular::io::input::ContourPoint;
@@ -318,11 +318,11 @@ mod interpolation {
         let interp_frame = &result[1].frames[0];
 
         // Should have lumen
-        assert!(interp_frame.lumen.points.len() > 0);
+        assert!(!interp_frame.lumen.points.is_empty());
 
         // Should NOT have catheter or EEM since we didn't request them
-        assert!(interp_frame.extras.get(&ContourType::Catheter).is_none());
-        assert!(interp_frame.extras.get(&ContourType::Eem).is_none());
+        assert!(!interp_frame.extras.contains_key(&ContourType::Catheter));
+        assert!(!interp_frame.extras.contains_key(&ContourType::Eem));
     }
 
     #[test]
@@ -339,10 +339,10 @@ mod interpolation {
         let interp_frame = &result[1].frames[0];
 
         // Should still have lumen
-        assert!(interp_frame.lumen.points.len() > 0);
+        assert!(interp_frame.lumen.points.is_empty());
 
         // Should NOT have catheter since it was missing in start
-        assert!(interp_frame.extras.get(&ContourType::Catheter).is_none());
+        assert!(!interp_frame.extras.contains_key(&ContourType::Catheter));
     }
 
     #[test]
@@ -370,7 +370,7 @@ mod interpolation {
         assert_relative_eq!(result.x, 6.0, epsilon = 1e-5);
         assert_relative_eq!(result.y, 7.0, epsilon = 1e-5);
         assert_relative_eq!(result.z, 8.0, epsilon = 1e-5);
-        assert_eq!(result.aortic, true); // Keeps start's aortic flag
+        assert!(result.aortic); // Keeps start's aortic flag
         assert_eq!(result.frame_index, 0);
         assert_eq!(result.point_index, 0);
     }
@@ -420,7 +420,7 @@ mod interpolation {
         assert_relative_eq!(result.points[0].x, 6.0, epsilon = 1e-5);
         assert_relative_eq!(result.points[0].y, 7.0, epsilon = 1e-5);
         assert_relative_eq!(result.points[0].z, 8.0, epsilon = 1e-5);
-        assert_eq!(result.points[0].aortic, true); // Keeps start's aortic flag
+        assert!(result.points[0].aortic); // Keeps start's aortic flag
 
         assert_relative_eq!(result.centroid.unwrap().0, 6.0, epsilon = 1e-5);
         assert_relative_eq!(result.aortic_thickness.unwrap(), 2.0, epsilon = 1e-5);

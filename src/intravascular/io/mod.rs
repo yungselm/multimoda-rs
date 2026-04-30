@@ -287,12 +287,9 @@ mod io_tests {
                 }
                 match frame.extras.get(wanted_type) {
                     Some(contour) => {
-                        ids_map
-                            .entry(wanted_type.clone())
-                            .or_default()
-                            .push(contour.id);
+                        ids_map.entry(*wanted_type).or_default().push(contour.id);
                         orig_map
-                            .entry(wanted_type.clone())
+                            .entry(*wanted_type)
                             .or_default()
                             .push(contour.original_frame);
                     }

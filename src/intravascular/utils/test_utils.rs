@@ -9,7 +9,7 @@ pub fn dummy_geometry_custom(z_spacing: f64, n_frames: usize) -> Geometry {
         let z_coord = i as f64 * z_spacing;
         let idx = i as u32;
         let ref_pos = n_frames / 2;
-        let has_ref_pt = if i as usize == ref_pos { true } else { false };
+        let has_ref_pt = i == ref_pos;
 
         let frame = new_frame(idx, z_coord, has_ref_pt);
         new_frames.push(frame)

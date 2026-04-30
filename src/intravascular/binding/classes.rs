@@ -8,6 +8,9 @@ use anyhow::{anyhow, Result};
 use nalgebra::Vector3;
 use pyo3::prelude::*;
 use std::collections::HashMap;
+
+type GeomSummary = (f64, f64, f64);
+type PairSummary = ((GeomSummary, GeomSummary), Vec<[f64; 6]>);
 use std::convert::TryFrom;
 
 /// Python representation of the intravascular imaging input data for one cardiac phase.
@@ -1150,7 +1153,7 @@ impl PyGeometry {
     /// stenosis_length_mm : float
     ///     Length in mm of the longest contiguous region where the contour
     ///     area falls below the threshold.
-    pub fn get_summary(&self) -> PyResult<(f64, f64, f64)> {
+    pub fn get_summary(&self) -> PyResult<GeomSummary> {
         let geometry = self.to_rust_geometry()?;
 
         if geometry.frames.is_empty() {
@@ -1473,7 +1476,7 @@ impl PyGeometryPair {
     /// table : list of list of float
     ///     Matrix of shape ``(N, 6)`` with columns
     ///     ``[id, area_dia, ellip_dia, area_sys, ellip_sys, z]``.
-    pub fn get_summary(&self) -> PyResult<(((f64, f64, f64), (f64, f64, f64)), Vec<[f64; 6]>)> {
+    pub fn get_summary(&self) -> PyResult<PairSummary> {
         let dia = self.geom_a.get_summary()?;
         let sys = self.geom_b.get_summary()?;
         let map = self.create_deformation_table();

@@ -16,6 +16,40 @@ use crate::intravascular::to_object::process_case;
 // tolerance of distance between frames [mm], that counts as 0
 const TOLERANCE: f64 = 0.03;
 
+type AlignedGeoms4 = (
+    Geometry,
+    Geometry,
+    Geometry,
+    Geometry,
+    Vec<AlignLog>,
+    Vec<AlignLog>,
+    Vec<AlignLog>,
+    Vec<AlignLog>,
+    bool,
+    bool,
+    bool,
+    bool,
+);
+type AlignedGeoms2 = (Geometry, Geometry, Vec<AlignLog>, Vec<AlignLog>, bool, bool);
+type FullProcessResult = (
+    GeometryPair,
+    GeometryPair,
+    GeometryPair,
+    GeometryPair,
+    Vec<AlignLog>,
+    Vec<AlignLog>,
+    Vec<AlignLog>,
+    Vec<AlignLog>,
+);
+type DoublePairProcessResult = (
+    GeometryPair,
+    GeometryPair,
+    Vec<AlignLog>,
+    Vec<AlignLog>,
+    Vec<AlignLog>,
+    Vec<AlignLog>,
+);
+
 fn maybe_postprocess(
     pair: &GeometryPair,
     tolerance: f64,
@@ -55,16 +89,7 @@ pub fn full_processing_rs(
     bruteforce: bool,
     sample_size: usize,
     postprocessing: bool,
-) -> Result<(
-    GeometryPair,
-    GeometryPair,
-    GeometryPair,
-    GeometryPair,
-    Vec<AlignLog>,
-    Vec<AlignLog>,
-    Vec<AlignLog>,
-    Vec<AlignLog>,
-)> {
+) -> Result<FullProcessResult> {
     let mut geometries = prepare_n_geometries(
         &labels,
         image_center,
@@ -108,84 +133,69 @@ pub fn full_processing_rs(
         bool_b,
         bool_c,
         bool_d,
-    ) = thread::scope(
-        |s| -> Result<(
-            Geometry,
-            Geometry,
-            Geometry,
-            Geometry,
-            Vec<AlignLog>,
-            Vec<AlignLog>,
-            Vec<AlignLog>,
-            Vec<AlignLog>,
-            bool,
-            bool,
-            bool,
-            bool,
-        )> {
-            let geom_a_handle = s.spawn(|_| -> anyhow::Result<_> {
-                let (geom, logs, anomalous_bool) = align_frames_in_geometry(
-                    &mut geom_a,
-                    step_deg,
-                    range_deg,
-                    smooth,
-                    bruteforce,
-                    sample_size,
-                )
-                .context("Failed to align frames within geometry A")?;
-                Ok((geom, logs, anomalous_bool))
-            });
+    ) = thread::scope(|s| -> Result<AlignedGeoms4> {
+        let geom_a_handle = s.spawn(|_| -> anyhow::Result<_> {
+            let (geom, logs, anomalous_bool) = align_frames_in_geometry(
+                &mut geom_a,
+                step_deg,
+                range_deg,
+                smooth,
+                bruteforce,
+                sample_size,
+            )
+            .context("Failed to align frames within geometry A")?;
+            Ok((geom, logs, anomalous_bool))
+        });
 
-            let geom_b_handle = s.spawn(|_| -> anyhow::Result<_> {
-                let (geom, logs, anomalous_bool) = align_frames_in_geometry(
-                    &mut geom_b,
-                    step_deg,
-                    range_deg,
-                    smooth,
-                    bruteforce,
-                    sample_size,
-                )
-                .context("Failed to align frames within geometry B")?;
-                Ok((geom, logs, anomalous_bool))
-            });
+        let geom_b_handle = s.spawn(|_| -> anyhow::Result<_> {
+            let (geom, logs, anomalous_bool) = align_frames_in_geometry(
+                &mut geom_b,
+                step_deg,
+                range_deg,
+                smooth,
+                bruteforce,
+                sample_size,
+            )
+            .context("Failed to align frames within geometry B")?;
+            Ok((geom, logs, anomalous_bool))
+        });
 
-            let geom_c_handle = s.spawn(|_| -> anyhow::Result<_> {
-                let (geom, logs, anomalous_bool) = align_frames_in_geometry(
-                    &mut geom_c,
-                    step_deg,
-                    range_deg,
-                    smooth,
-                    bruteforce,
-                    sample_size,
-                )
-                .context("Failed to align frames within geometry C")?;
-                Ok((geom, logs, anomalous_bool))
-            });
+        let geom_c_handle = s.spawn(|_| -> anyhow::Result<_> {
+            let (geom, logs, anomalous_bool) = align_frames_in_geometry(
+                &mut geom_c,
+                step_deg,
+                range_deg,
+                smooth,
+                bruteforce,
+                sample_size,
+            )
+            .context("Failed to align frames within geometry C")?;
+            Ok((geom, logs, anomalous_bool))
+        });
 
-            let geom_d_handle = s.spawn(|_| -> anyhow::Result<_> {
-                let (geom, logs, anomalous_bool) = align_frames_in_geometry(
-                    &mut geom_d,
-                    step_deg,
-                    range_deg,
-                    smooth,
-                    bruteforce,
-                    sample_size,
-                )
-                .context("Failed to align frames within geometry D")?;
-                Ok((geom, logs, anomalous_bool))
-            });
+        let geom_d_handle = s.spawn(|_| -> anyhow::Result<_> {
+            let (geom, logs, anomalous_bool) = align_frames_in_geometry(
+                &mut geom_d,
+                step_deg,
+                range_deg,
+                smooth,
+                bruteforce,
+                sample_size,
+            )
+            .context("Failed to align frames within geometry D")?;
+            Ok((geom, logs, anomalous_bool))
+        });
 
-            let (geom_a, logs_a, bool_a) = geom_a_handle.join().unwrap()?;
-            let (geom_b, logs_b, bool_b) = geom_b_handle.join().unwrap()?;
-            let (geom_c, logs_c, bool_c) = geom_c_handle.join().unwrap()?;
-            let (geom_d, logs_d, bool_d) = geom_d_handle.join().unwrap()?;
+        let (geom_a, logs_a, bool_a) = geom_a_handle.join().unwrap()?;
+        let (geom_b, logs_b, bool_b) = geom_b_handle.join().unwrap()?;
+        let (geom_c, logs_c, bool_c) = geom_c_handle.join().unwrap()?;
+        let (geom_d, logs_d, bool_d) = geom_d_handle.join().unwrap()?;
 
-            Ok((
-                geom_a, geom_b, geom_c, geom_d, logs_a, logs_b, logs_c, logs_d, bool_a, bool_b,
-                bool_c, bool_d,
-            ))
-        },
-    )
+        Ok((
+            geom_a, geom_b, geom_c, geom_d, logs_a, logs_b, logs_c, logs_d, bool_a, bool_b, bool_c,
+            bool_d,
+        ))
+    })
     .map_err(|e| anyhow!("Thread execution failed: {:?}", e))??;
 
     // First parallel batch: AB and CD (independent pairs)
@@ -345,14 +355,7 @@ pub fn double_pair_processing_rs(
     bruteforce: bool,
     sample_size: usize,
     postprocessing: bool,
-) -> Result<(
-    GeometryPair,
-    GeometryPair,
-    Vec<AlignLog>,
-    Vec<AlignLog>,
-    Vec<AlignLog>,
-    Vec<AlignLog>,
-)> {
+) -> Result<DoublePairProcessResult> {
     let mut geometries = prepare_n_geometries(
         &labels,
         image_center,
@@ -396,84 +399,69 @@ pub fn double_pair_processing_rs(
         bool_b,
         bool_c,
         bool_d,
-    ) = thread::scope(
-        |s| -> Result<(
-            Geometry,
-            Geometry,
-            Geometry,
-            Geometry,
-            Vec<AlignLog>,
-            Vec<AlignLog>,
-            Vec<AlignLog>,
-            Vec<AlignLog>,
-            bool,
-            bool,
-            bool,
-            bool,
-        )> {
-            let geom_a_handle = s.spawn(|_| -> anyhow::Result<_> {
-                let (geom, logs, anomalous_bool) = align_frames_in_geometry(
-                    &mut geom_a,
-                    step_deg,
-                    range_deg,
-                    smooth,
-                    bruteforce,
-                    sample_size,
-                )
-                .context("Failed to align frames within geometry A")?;
-                Ok((geom, logs, anomalous_bool))
-            });
+    ) = thread::scope(|s| -> Result<AlignedGeoms4> {
+        let geom_a_handle = s.spawn(|_| -> anyhow::Result<_> {
+            let (geom, logs, anomalous_bool) = align_frames_in_geometry(
+                &mut geom_a,
+                step_deg,
+                range_deg,
+                smooth,
+                bruteforce,
+                sample_size,
+            )
+            .context("Failed to align frames within geometry A")?;
+            Ok((geom, logs, anomalous_bool))
+        });
 
-            let geom_b_handle = s.spawn(|_| -> anyhow::Result<_> {
-                let (geom, logs, anomalous_bool) = align_frames_in_geometry(
-                    &mut geom_b,
-                    step_deg,
-                    range_deg,
-                    smooth,
-                    bruteforce,
-                    sample_size,
-                )
-                .context("Failed to align frames within geometry B")?;
-                Ok((geom, logs, anomalous_bool))
-            });
+        let geom_b_handle = s.spawn(|_| -> anyhow::Result<_> {
+            let (geom, logs, anomalous_bool) = align_frames_in_geometry(
+                &mut geom_b,
+                step_deg,
+                range_deg,
+                smooth,
+                bruteforce,
+                sample_size,
+            )
+            .context("Failed to align frames within geometry B")?;
+            Ok((geom, logs, anomalous_bool))
+        });
 
-            let geom_c_handle = s.spawn(|_| -> anyhow::Result<_> {
-                let (geom, logs, anomalous_bool) = align_frames_in_geometry(
-                    &mut geom_c,
-                    step_deg,
-                    range_deg,
-                    smooth,
-                    bruteforce,
-                    sample_size,
-                )
-                .context("Failed to align frames within geometry C")?;
-                Ok((geom, logs, anomalous_bool))
-            });
+        let geom_c_handle = s.spawn(|_| -> anyhow::Result<_> {
+            let (geom, logs, anomalous_bool) = align_frames_in_geometry(
+                &mut geom_c,
+                step_deg,
+                range_deg,
+                smooth,
+                bruteforce,
+                sample_size,
+            )
+            .context("Failed to align frames within geometry C")?;
+            Ok((geom, logs, anomalous_bool))
+        });
 
-            let geom_d_handle = s.spawn(|_| -> anyhow::Result<_> {
-                let (geom, logs, anomalous_bool) = align_frames_in_geometry(
-                    &mut geom_d,
-                    step_deg,
-                    range_deg,
-                    smooth,
-                    bruteforce,
-                    sample_size,
-                )
-                .context("Failed to align frames within geometry D")?;
-                Ok((geom, logs, anomalous_bool))
-            });
+        let geom_d_handle = s.spawn(|_| -> anyhow::Result<_> {
+            let (geom, logs, anomalous_bool) = align_frames_in_geometry(
+                &mut geom_d,
+                step_deg,
+                range_deg,
+                smooth,
+                bruteforce,
+                sample_size,
+            )
+            .context("Failed to align frames within geometry D")?;
+            Ok((geom, logs, anomalous_bool))
+        });
 
-            let (geom_a, logs_a, bool_a) = geom_a_handle.join().unwrap()?;
-            let (geom_b, logs_b, bool_b) = geom_b_handle.join().unwrap()?;
-            let (geom_c, logs_c, bool_c) = geom_c_handle.join().unwrap()?;
-            let (geom_d, logs_d, bool_d) = geom_d_handle.join().unwrap()?;
+        let (geom_a, logs_a, bool_a) = geom_a_handle.join().unwrap()?;
+        let (geom_b, logs_b, bool_b) = geom_b_handle.join().unwrap()?;
+        let (geom_c, logs_c, bool_c) = geom_c_handle.join().unwrap()?;
+        let (geom_d, logs_d, bool_d) = geom_d_handle.join().unwrap()?;
 
-            Ok((
-                geom_a, geom_b, geom_c, geom_d, logs_a, logs_b, logs_c, logs_d, bool_a, bool_b,
-                bool_c, bool_d,
-            ))
-        },
-    )
+        Ok((
+            geom_a, geom_b, geom_c, geom_d, logs_a, logs_b, logs_c, logs_d, bool_a, bool_b, bool_c,
+            bool_d,
+        ))
+    })
     .map_err(|e| anyhow!("Thread execution failed: {:?}", e))??;
 
     // First parallel batch: AB and CD (independent pairs)
@@ -589,8 +577,8 @@ pub fn pair_processing_rs(
     let mut geom_a = geometries.remove(0);
     let mut geom_b = geometries.remove(0);
 
-    let (mut geom_a, mut geom_b, logs_a, logs_b, bool_a, bool_b) = thread::scope(
-        |s| -> Result<(Geometry, Geometry, Vec<AlignLog>, Vec<AlignLog>, bool, bool)> {
+    let (mut geom_a, mut geom_b, logs_a, logs_b, bool_a, bool_b) =
+        thread::scope(|s| -> Result<AlignedGeoms2> {
             let geom_a_handle = s.spawn(|_| -> anyhow::Result<_> {
                 let (geom, logs, anomalous_bool) = align_frames_in_geometry(
                     &mut geom_a,
@@ -621,9 +609,8 @@ pub fn pair_processing_rs(
             let (geom_b, logs_b, bool_b) = geom_b_handle.join().unwrap()?;
 
             Ok((geom_a, geom_b, logs_a, logs_b, bool_a, bool_b))
-        },
-    )
-    .map_err(|e| anyhow!("Thread execution failed: {:?}", e))??;
+        })
+        .map_err(|e| anyhow!("Thread execution failed: {:?}", e))??;
 
     let geom_pair =
         align_between_geometries(&mut geom_a, &mut geom_b, range_deg, step_deg, sample_size)

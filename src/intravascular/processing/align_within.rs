@@ -288,7 +288,7 @@ fn angle_ref_point_to_right(ref_frame: &Frame, anomalous: bool) -> anyhow::Resul
             continue;
         }
         let r_op = rotate2(op, center, rotation);
-        if !(rotated_ref.0 > r_op.0) {
+        if rotated_ref.0 <= r_op.0 {
             all_good = false;
             break;
         }
@@ -829,7 +829,7 @@ mod align_within_tests {
             align_frames_in_geometry(&mut geometry, 0.01, 20.0, true, false, 200)?;
 
         assert!(!geom.frames.is_empty());
-        assert_eq!(anomalous, true);
+        assert!(anomalous);
 
         for log in &logs {
             assert_relative_eq!(log.rot_deg.abs(), 15.0, epsilon = 1.0)
@@ -851,7 +851,7 @@ mod align_within_tests {
 
         let (bool_hole, avg_dist) = detect_holes(&geometry);
 
-        assert_eq!(bool_hole, true);
+        assert!(bool_hole);
         assert_relative_eq!(avg_dist, 1.0, epsilon = 1e-6);
 
         let new_frame = fix_one_frame_hole(&geometry.frames[1], &geometry.frames[2]);
