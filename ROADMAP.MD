@@ -30,11 +30,14 @@
   (https://joss.readthedocs.io/en/latest/policies.html#joss-policies).
 
 ## Dependencies / packaging
-- [] Add `scipy` as an explicit runtime dependency in `pyproject.toml` (required by `mm.label_geometry()`).
-- [] Convert `optional-dependencies` groups that are not user-facing extras (docs, test, dev)
+- [x] Add `scipy` as an explicit runtime dependency in `pyproject.toml` (required by `mm.label_geometry()`).
+- [x] Convert `optional-dependencies` groups that are not user-facing extras (docs, test, dev)
   to PEP 735 `dependency-groups` so they are not shipped with the package on PyPI.
-  Move notebook runtime deps (`trimesh`, `plotly`, `scipy`, `nbformat`, `ipykernel`) into a
-  `[dependency-groups.dev]` group so `uv` installs them automatically during development.
+  Note: `trimesh` was **not** moved to dev — it is imported throughout the core package
+  (`_converters.py`, `ccta/` modules) and must remain a runtime dependency.
+  Moved `plotly`, `nbformat`, `ipykernel` into `[dependency-groups.dev]`; `[dependency-groups.test]`
+  and `[dependency-groups.docs]` replace the former optional-dependency groups.
+  `viz` and `meshlab` remain as `[project.optional-dependencies]` (user-facing extras).
 
 ## Examples / notebooks
 - [] Include the `examples/` folder (with data) directly in the repository so users can clone

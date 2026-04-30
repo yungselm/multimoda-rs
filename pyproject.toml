@@ -32,6 +32,10 @@ Homepage = "https://github.com/yungselm/multimoda-rs"
 Issues = "https://github.com/yungselm/multimoda-rs/issues"
 
 [project.optional-dependencies]
+viz = ["pyglet<2"]
+meshlab = ["pymeshlab>=2023.12"]
+
+[dependency-groups]
 docs = [
     "sphinx>=8.0,<9.0",
     "sphinx-rtd-theme",
@@ -47,8 +51,12 @@ test = [
     "black",
     "mypy",
 ]
-viz = ["pyglet<2"]
-meshlab = ["pymeshlab>=2023.12"]
+dev = [
+    {include-group = "test"},
+    "plotly",
+    "nbformat",
+    "ipykernel",
+]
 
 [tool.mypy]
 ignore_missing_imports = true
