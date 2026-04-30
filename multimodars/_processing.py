@@ -41,19 +41,19 @@ def from_file_full(
     labels: list[str] | None = None,
     step_rotation_deg: float = 0.5,
     range_rotation_deg: float = 90.0,
+    sample_size: int = 500,
     image_center: tuple[float, float] = (4.5, 4.5),
     radius: float = 0.5,
     n_points: int = 20,
     write_obj: bool = True,
     watertight: bool = True,
+    contour_types: list[PyContourType] | None = None,
     output_path_a: str = "output/rest",
     output_path_b: str = "output/stress",
     output_path_c: str = "output/diastole",
     output_path_d: str = "output/systole",
-    interpolation_steps: int = 28,
+    interpolation_steps: int = 0,
     bruteforce: bool = False,
-    sample_size: int = 500,
-    contour_types: list[PyContourType] | None = None,
     smooth: bool = True,
     postprocessing: bool = True,
 ) -> tuple[
@@ -103,6 +103,9 @@ def from_file_full(
     range_rotation_deg : float, optional
         Rotation search range (±) in degrees; a range of 90° gives 180°
         total.  Default is ``90.0``.
+    sample_size : int, optional
+        Number of points to downsample to during alignment.  Default is
+        ``500``.
     image_center : tuple of float, optional
         Image center ``(x, y)`` in mm.  Default is ``(4.5, 4.5)``.
     radius : float, optional
@@ -114,6 +117,9 @@ def from_file_full(
         Whether to write OBJ files to disk.  Default is ``True``.
     watertight : bool, optional
         Whether to write a watertight or shell mesh.  Default is ``True``.
+    contour_types : list of PyContourType, optional
+        Contour types to export.  Default is
+        ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
     output_path_a : str, optional
         Output directory for REST results.  Default is ``"output/rest"``.
     output_path_b : str, optional
@@ -129,12 +135,6 @@ def from_file_full(
     bruteforce : bool, optional
         Whether to use brute-force alignment (one comparison per step).
         Default is ``False``.
-    sample_size : int, optional
-        Number of points to downsample to during alignment.  Default is
-        ``500``.
-    contour_types : list of PyContourType, optional
-        Contour types to export.  Default is
-        ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
     smooth : bool, optional
         Whether to smooth frames after alignment using a 3-point moving
         average.  Default is ``True``.
@@ -172,19 +172,19 @@ def from_file_full(
         labels or [],
         step_rotation_deg,
         range_rotation_deg,
+        sample_size,
         image_center,
         radius,
         n_points,
         write_obj,
         watertight,
+        contour_types,
         output_path_a,
         output_path_b,
         output_path_c,
         output_path_d,
         interpolation_steps,
         bruteforce,
-        sample_size,
-        contour_types,
         smooth,
         postprocessing,
     )
@@ -196,17 +196,17 @@ def from_file_doublepair(
     labels: list[str] | None = None,
     step_rotation_deg: float = 0.5,
     range_rotation_deg: float = 90.0,
+    sample_size: int = 500,
     image_center: tuple[float, float] = (4.5, 4.5),
     radius: float = 0.5,
     n_points: int = 20,
     write_obj: bool = True,
     watertight: bool = True,
+    contour_types: list[PyContourType] | None = None,
     output_path_a: str = "output/rest",
     output_path_b: str = "output/stress",
-    interpolation_steps: int = 28,
+    interpolation_steps: int = 0,
     bruteforce: bool = False,
-    sample_size: int = 500,
-    contour_types: list[PyContourType] | None = None,
     smooth: bool = True,
     postprocessing: bool = True,
 ) -> tuple[
@@ -252,6 +252,8 @@ def from_file_doublepair(
         Rotation step in degrees.  Default is ``0.5``.
     range_rotation_deg : float, optional
         Rotation search range (±) in degrees.  Default is ``90.0``.
+    sample_size : int, optional
+        Number of points to downsample to.  Default is ``500``.
     image_center : tuple of float, optional
         Image center ``(x, y)`` in mm.  Default is ``(4.5, 4.5)``.
     radius : float, optional
@@ -262,6 +264,9 @@ def from_file_doublepair(
         Whether to write OBJ files.  Default is ``True``.
     watertight : bool, optional
         Whether to write a watertight or shell mesh.  Default is ``True``.
+    contour_types : list of PyContourType, optional
+        Contour types to export.  Default is
+        ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
     output_path_a : str, optional
         Output directory for REST results.  Default is ``"output/rest"``.
     output_path_b : str, optional
@@ -270,11 +275,6 @@ def from_file_doublepair(
         Number of interpolated meshes between phases.  Default is ``28``.
     bruteforce : bool, optional
         Whether to use brute-force alignment.  Default is ``False``.
-    sample_size : int, optional
-        Number of points to downsample to.  Default is ``500``.
-    contour_types : list of PyContourType, optional
-        Contour types to export.  Default is
-        ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
     smooth : bool, optional
         Whether to smooth frames after alignment.  Default is ``True``.
     postprocessing : bool, optional
@@ -307,17 +307,17 @@ def from_file_doublepair(
         labels or [],
         step_rotation_deg,
         range_rotation_deg,
+        sample_size,
         image_center,
         radius,
         n_points,
         write_obj,
         watertight,
+        contour_types,
         output_path_a,
         output_path_b,
         interpolation_steps,
         bruteforce,
-        sample_size,
-        contour_types,
         smooth,
         postprocessing,
     )
@@ -328,16 +328,16 @@ def from_file_singlepair(
     labels: list[str] | None = None,
     step_rotation_deg: float = 0.5,
     range_rotation_deg: float = 90.0,
+    sample_size: int = 500,
     image_center: tuple[float, float] = (4.5, 4.5),
     radius: float = 0.5,
     n_points: int = 20,
     write_obj: bool = True,
     watertight: bool = True,
-    output_path: str = "output/singlepair",
-    interpolation_steps: int = 28,
-    bruteforce: bool = False,
-    sample_size: int = 500,
     contour_types: list[PyContourType] | None = None,
+    output_path: str = "output/singlepair",
+    interpolation_steps: int = 0,
+    bruteforce: bool = False,
     smooth: bool = True,
     postprocessing: bool = True,
 ) -> tuple[PyGeometryPair, tuple[_AlignLog, _AlignLog]]:
@@ -376,6 +376,8 @@ def from_file_singlepair(
         Rotation step in degrees.  Default is ``0.5``.
     range_rotation_deg : float, optional
         Rotation search range (±) in degrees.  Default is ``90.0``.
+    sample_size : int, optional
+        Number of points to downsample to.  Default is ``500``.
     image_center : tuple of float, optional
         Image center ``(x, y)`` in mm.  Default is ``(4.5, 4.5)``.
     radius : float, optional
@@ -386,6 +388,9 @@ def from_file_singlepair(
         Whether to write OBJ files.  Default is ``True``.
     watertight : bool, optional
         Whether to write a watertight or shell mesh.  Default is ``True``.
+    contour_types : list of PyContourType, optional
+        Contour types to export.  Default is
+        ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
     output_path : str, optional
         Directory path to write the processed geometry.  Default is
         ``"output/singlepair"``.
@@ -393,11 +398,6 @@ def from_file_singlepair(
         Number of interpolated meshes.  Default is ``28``.
     bruteforce : bool, optional
         Whether to use brute-force alignment.  Default is ``False``.
-    sample_size : int, optional
-        Number of points to downsample to.  Default is ``500``.
-    contour_types : list of PyContourType, optional
-        Contour types to export.  Default is
-        ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
     smooth : bool, optional
         Whether to smooth frames after alignment.  Default is ``True``.
     postprocessing : bool, optional
@@ -424,16 +424,16 @@ def from_file_singlepair(
         labels or [],
         step_rotation_deg,
         range_rotation_deg,
+        sample_size,
         image_center,
         radius,
         n_points,
         write_obj,
         watertight,
+        contour_types,
         output_path,
         interpolation_steps,
         bruteforce,
-        sample_size,
-        contour_types,
         smooth,
         postprocessing,
     )
@@ -445,15 +445,15 @@ def from_file_single(
     diastole: bool = True,
     step_rotation_deg: float = 0.5,
     range_rotation_deg: float = 90.0,
+    sample_size: int = 500,
     image_center: tuple[float, float] = (4.5, 4.5),
     radius: float = 0.5,
     n_points: int = 20,
     write_obj: bool = True,
     watertight: bool = True,
+    contour_types: list[PyContourType] | None = None,
     output_path: str = "output/single",
     bruteforce: bool = False,
-    sample_size: int = 500,
-    contour_types: list[PyContourType] | None = None,
     smooth: bool = True,
 ) -> tuple[PyGeometry, _AlignLog]:
     """Process a single intravascular imaging geometry from a CSV file.
@@ -481,6 +481,8 @@ def from_file_single(
         Rotation step in degrees.  Default is ``0.5``.
     range_rotation_deg : float, optional
         Rotation search range (±) in degrees.  Default is ``90.0``.
+    sample_size : int, optional
+        Number of points to downsample to.  Default is ``500``.
     image_center : tuple of float, optional
         Image center ``(x, y)`` in mm.  Default is ``(4.5, 4.5)``.
     radius : float, optional
@@ -491,16 +493,14 @@ def from_file_single(
         Whether to write OBJ files.  Default is ``True``.
     watertight : bool, optional
         Whether to write a watertight or shell mesh.  Default is ``True``.
+    contour_types : list of PyContourType, optional
+        Contour types to export.  Default is
+        ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
     output_path : str, optional
         Directory path to write the processed geometry.  Default is
         ``"output/single"``.
     bruteforce : bool, optional
         Whether to use brute-force alignment.  Default is ``False``.
-    sample_size : int, optional
-        Number of points to downsample to.  Default is ``500``.
-    contour_types : list of PyContourType, optional
-        Contour types to export.  Default is
-        ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
     smooth : bool, optional
         Whether to smooth frames after alignment.  Default is ``True``.
 
@@ -525,15 +525,15 @@ def from_file_single(
         diastole,
         step_rotation_deg,
         range_rotation_deg,
+        sample_size,
         image_center,
         radius,
         n_points,
         write_obj,
         watertight,
+        contour_types,
         output_path,
         bruteforce,
-        sample_size,
-        contour_types,
         smooth,
     )
 
@@ -550,19 +550,19 @@ def from_array_full(
     input_data_d: PyInputData,
     step_rotation_deg: float = 0.5,
     range_rotation_deg: float = 90.0,
+    sample_size: int = 500,
     image_center: tuple[float, float] = (4.5, 4.5),
     radius: float = 0.5,
     n_points: int = 20,
     write_obj: bool = True,
     watertight: bool = True,
+    contour_types: list[PyContourType] | None = None,
     output_path_a: str = "output/rest",
     output_path_b: str = "output/stress",
     output_path_c: str = "output/diastole",
     output_path_d: str = "output/systole",
-    interpolation_steps: int = 28,
+    interpolation_steps: int = 0,
     bruteforce: bool = False,
-    sample_size: int = 500,
-    contour_types: list[PyContourType] | None = None,
     smooth: bool = True,
     postprocessing: bool = True,
 ) -> tuple[
@@ -600,6 +600,8 @@ def from_array_full(
         Rotation step in degrees.  Default is ``0.5``.
     range_rotation_deg : float, optional
         Rotation search range (±) in degrees.  Default is ``90.0``.
+    sample_size : int, optional
+        Number of points to downsample to.  Default is ``500``.
     image_center : tuple of float, optional
         Image center ``(x, y)`` in mm.  Default is ``(4.5, 4.5)``.
     radius : float, optional
@@ -610,6 +612,9 @@ def from_array_full(
         Whether to write OBJ files.  Default is ``True``.
     watertight : bool, optional
         Whether to write a watertight or shell mesh.  Default is ``True``.
+    contour_types : list of PyContourType, optional
+        Contour types to export.  Default is
+        ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
     output_path_a : str, optional
         Output directory for REST results.  Default is ``"output/rest"``.
     output_path_b : str, optional
@@ -624,11 +629,6 @@ def from_array_full(
         Number of interpolation steps between phases.  Default is ``28``.
     bruteforce : bool, optional
         Whether to use brute-force alignment.  Default is ``False``.
-    sample_size : int, optional
-        Number of points to downsample to.  Default is ``500``.
-    contour_types : list of PyContourType, optional
-        Contour types to export.  Default is
-        ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
     smooth : bool, optional
         Whether to smooth frames after alignment.  Default is ``True``.
     postprocessing : bool, optional
@@ -666,19 +666,19 @@ def from_array_full(
         input_data_d,
         step_rotation_deg,
         range_rotation_deg,
+        sample_size,
         image_center,
         radius,
         n_points,
         write_obj,
         watertight,
+        contour_types,
         output_path_a,
         output_path_b,
         output_path_c,
         output_path_d,
         interpolation_steps,
         bruteforce,
-        sample_size,
-        contour_types,
         smooth,
         postprocessing,
     )
@@ -691,17 +691,17 @@ def from_array_doublepair(
     input_data_d: PyInputData,
     step_rotation_deg: float = 0.5,
     range_rotation_deg: float = 90.0,
+    sample_size: int = 500,
     image_center: tuple[float, float] = (4.5, 4.5),
     radius: float = 0.5,
     n_points: int = 20,
     write_obj: bool = True,
     watertight: bool = True,
+    contour_types: list[PyContourType] | None = None,
     output_path_a: str = "output/rest",
     output_path_b: str = "output/stress",
-    interpolation_steps: int = 28,
+    interpolation_steps: int = 0,
     bruteforce: bool = False,
-    sample_size: int = 500,
-    contour_types: list[PyContourType] | None = None,
     smooth: bool = True,
     postprocessing: bool = True,
 ) -> tuple[
@@ -737,6 +737,8 @@ def from_array_doublepair(
         Rotation step in degrees.  Default is ``0.5``.
     range_rotation_deg : float, optional
         Rotation search range (±) in degrees.  Default is ``90.0``.
+    sample_size : int, optional
+        Number of points to downsample to.  Default is ``500``.
     image_center : tuple of float, optional
         Image center ``(x, y)`` in mm.  Default is ``(4.5, 4.5)``.
     radius : float, optional
@@ -747,6 +749,9 @@ def from_array_doublepair(
         Whether to write OBJ files.  Default is ``True``.
     watertight : bool, optional
         Whether to write a watertight or shell mesh.  Default is ``True``.
+    contour_types : list of PyContourType, optional
+        Contour types to export.  Default is
+        ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
     output_path_a : str, optional
         Output directory for REST results.  Default is ``"output/rest"``.
     output_path_b : str, optional
@@ -755,11 +760,6 @@ def from_array_doublepair(
         Number of interpolation steps between phases.  Default is ``28``.
     bruteforce : bool, optional
         Whether to use brute-force alignment.  Default is ``False``.
-    sample_size : int, optional
-        Number of points to downsample to.  Default is ``500``.
-    contour_types : list of PyContourType, optional
-        Contour types to export.  Default is
-        ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
     smooth : bool, optional
         Whether to smooth frames after alignment.  Default is ``True``.
     postprocessing : bool, optional
@@ -793,17 +793,17 @@ def from_array_doublepair(
         input_data_d,
         step_rotation_deg,
         range_rotation_deg,
+        sample_size,
         image_center,
         radius,
         n_points,
         write_obj,
         watertight,
+        contour_types,
         output_path_a,
         output_path_b,
         interpolation_steps,
         bruteforce,
-        sample_size,
-        contour_types,
         smooth,
         postprocessing,
     )
@@ -814,16 +814,16 @@ def from_array_singlepair(
     input_data_b: PyInputData,
     step_rotation_deg: float = 0.5,
     range_rotation_deg: float = 90.0,
+    sample_size: int = 500,
     image_center: tuple[float, float] = (4.5, 4.5),
     radius: float = 0.5,
     n_points: int = 20,
     write_obj: bool = True,
     watertight: bool = True,
-    output_path: str = "output/singlepair",
-    interpolation_steps: int = 28,
-    bruteforce: bool = False,
-    sample_size: int = 500,
     contour_types: list[PyContourType] | None = None,
+    output_path: str = "output/singlepair",
+    interpolation_steps: int = 0,
+    bruteforce: bool = False,
     smooth: bool = True,
     postprocessing: bool = True,
 ) -> tuple[PyGeometryPair, tuple[_AlignLog, _AlignLog]]:
@@ -846,6 +846,8 @@ def from_array_singlepair(
         Rotation step in degrees.  Default is ``0.5``.
     range_rotation_deg : float, optional
         Rotation search range (±) in degrees.  Default is ``90.0``.
+    sample_size : int, optional
+        Number of points to downsample to.  Default is ``500``.
     image_center : tuple of float, optional
         Image center ``(x, y)`` in mm.  Default is ``(4.5, 4.5)``.
     radius : float, optional
@@ -856,6 +858,9 @@ def from_array_singlepair(
         Whether to write OBJ files.  Default is ``True``.
     watertight : bool, optional
         Whether to write a watertight or shell mesh.  Default is ``True``.
+    contour_types : list of PyContourType, optional
+        Contour types to export.  Default is
+        ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
     output_path : str, optional
         Directory path to write interpolated output files.  Default is
         ``"output/singlepair"``.
@@ -863,11 +868,6 @@ def from_array_singlepair(
         Number of interpolation steps between phases.  Default is ``28``.
     bruteforce : bool, optional
         Whether to use brute-force alignment.  Default is ``False``.
-    sample_size : int, optional
-        Number of points to downsample to.  Default is ``500``.
-    contour_types : list of PyContourType, optional
-        Contour types to export.  Default is
-        ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
     smooth : bool, optional
         Whether to smooth frames after alignment.  Default is ``True``.
     postprocessing : bool, optional
@@ -894,16 +894,16 @@ def from_array_singlepair(
         input_data_b,
         step_rotation_deg,
         range_rotation_deg,
+        sample_size,
         image_center,
         radius,
         n_points,
         write_obj,
         watertight,
+        contour_types,
         output_path,
         interpolation_steps,
         bruteforce,
-        sample_size,
-        contour_types,
         smooth,
         postprocessing,
     )
@@ -913,15 +913,15 @@ def from_array_single(
     input_data: PyInputData,
     step_rotation_deg: float = 0.5,
     range_rotation_deg: float = 90.0,
+    sample_size: int = 500,
     image_center: tuple[float, float] = (4.5, 4.5),
     radius: float = 0.5,
     n_points: int = 20,
     write_obj: bool = False,
     watertight: bool = True,
+    contour_types: list[PyContourType] | None = None,
     output_path: str = "output/single",
     bruteforce: bool = False,
-    sample_size: int = 500,
-    contour_types: list[PyContourType] | None = None,
     smooth: bool = True,
 ) -> tuple[PyGeometry, _AlignLog]:
     """Process a single geometry phase from a ``PyInputData`` object.
@@ -937,6 +937,8 @@ def from_array_single(
         Rotation step in degrees.  Default is ``0.5``.
     range_rotation_deg : float, optional
         Rotation search range (±) in degrees.  Default is ``90.0``.
+    sample_size : int, optional
+        Number of points to downsample to.  Default is ``500``.
     image_center : tuple of float, optional
         Image center ``(x, y)`` in mm.  Default is ``(4.5, 4.5)``.
     radius : float, optional
@@ -947,16 +949,14 @@ def from_array_single(
         Whether to write OBJ files.  Default is ``False``.
     watertight : bool, optional
         Whether to write a watertight or shell mesh.  Default is ``True``.
+    contour_types : list of PyContourType, optional
+        Contour types to export.  Default is
+        ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
     output_path : str, optional
         Directory path to write the processed geometry.  Default is
         ``"output/single"``.
     bruteforce : bool, optional
         Whether to use brute-force alignment.  Default is ``False``.
-    sample_size : int, optional
-        Number of points to downsample to.  Default is ``500``.
-    contour_types : list of PyContourType, optional
-        Contour types to export.  Default is
-        ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
     smooth : bool, optional
         Whether to smooth frames after alignment.  Default is ``True``.
 
@@ -979,15 +979,15 @@ def from_array_single(
         input_data,
         step_rotation_deg,
         range_rotation_deg,
+        sample_size,
         image_center,
         radius,
         n_points,
         write_obj,
         watertight,
+        contour_types,
         output_path,
         bruteforce,
-        sample_size,
-        contour_types,
         smooth,
     )
 
@@ -1006,7 +1006,7 @@ def align_three_point(
     angle_step_deg: float = 1.0,
     write: bool = False,
     watertight: bool = True,
-    interpolation_steps: int = 28,
+    interpolation_steps: int = 0,
     output_dir: str = "output/aligned",
     contour_types: list[PyContourType] | None = None,
     case_name: str = "None",
@@ -1089,7 +1089,7 @@ def align_manual(
     ref_point: tuple[float, float, float],
     write: bool = False,
     watertight: bool = True,
-    interpolation_steps: int = 28,
+    interpolation_steps: int = 0,
     output_dir: str = "output/aligned",
     contour_types: list[PyContourType] | None = None,
     case_name: str = "None",
@@ -1167,7 +1167,7 @@ def align_combined(
     index_range: int = 2,
     write: bool = False,
     watertight: bool = True,
-    interpolation_steps: int = 28,
+    interpolation_steps: int = 0,
     output_dir: str = "output/aligned",
     contour_types: list[PyContourType] | None = None,
     case_name: str = "None",

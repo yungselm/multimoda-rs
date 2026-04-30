@@ -31,13 +31,14 @@ fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<(u32, u32, f64, f64, f64, f64, f64
 /// within and between each cardiac phase in parallel, and writes interpolated
 /// OBJ meshes.
 ///
-/// .. code-block:: text
+/// .. parsed-literal::
 ///
-///    Rest           Stress
-///    diastole ──▶ diastole
-///       │            │
-///       ▼            ▼
-///    systole ──▶ systole
+///    ``input_path_ab`     ``input_path_cd``
+///    **Rest:**              **Stress:**
+///    a) diastole    ──▶    c) diastole
+///        │                      │
+///        ▼                      ▼
+///    b) systole     ──▶    d) systole
 ///
 /// .. warning::
 ///
@@ -51,10 +52,10 @@ fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<(u32, u32, f64, f64, f64, f64, f64
 ///
 /// Parameters
 /// ----------
-/// input_path_a : str
-///     Path to the REST input folder.
-/// input_path_b : str
-///     Path to the STRESS input folder.
+/// input_path_ab : str
+///     Path to the e.g. REST input folder (``a`` rest diastole and ``b`` rest systole).
+/// input_path_cd : str
+///     Path to the e.g. STRESS input folder (``c`` stress diastole and ``d`` stress systole).
 /// labels : list of str, optional
 ///     Labels for the four geometries ``[rest_dia, rest_sys, stress_dia,
 ///     stress_sys]``.  Must be exactly 4 strings; if a different number is
@@ -65,6 +66,9 @@ fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<(u32, u32, f64, f64, f64, f64, f64
 /// range_rotation_deg : float, optional
 ///     Rotation search range (±) in degrees; a range of 90° gives 180°
 ///     total.  Default is ``90.0``.
+/// sample_size : int, optional
+///     Number of points to downsample to during alignment.  Default is
+///     ``500``.
 /// image_center : tuple of float, optional
 ///     Image center ``(x, y)`` in mm.  Default is ``(4.5, 4.5)``.
 /// radius : float, optional
@@ -76,27 +80,24 @@ fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<(u32, u32, f64, f64, f64, f64, f64
 ///     Whether to write OBJ files to disk.  Default is ``True``.
 /// watertight : bool, optional
 ///     Whether to write a watertight or shell mesh.  Default is ``True``.
-/// output_path_a : str, optional
-///     Output directory for REST results.  Default is ``"output/rest"``.
-/// output_path_b : str, optional
-///     Output directory for STRESS results.  Default is ``"output/stress"``.
-/// output_path_c : str, optional
-///     Output directory for DIASTOLE results.  Default is
-///     ``"output/diastole"``.
-/// output_path_d : str, optional
-///     Output directory for SYSTOLE results.  Default is
-///     ``"output/systole"``.
-/// interpolation_steps : int, optional
-///     Number of interpolated meshes between phases.  Default is ``28``.
-/// bruteforce : bool, optional
-///     Whether to use brute-force alignment (one comparison per step).
-///     Default is ``False``.
-/// sample_size : int, optional
-///     Number of points to downsample to during alignment.  Default is
-///     ``500``.
 /// contour_types : list of PyContourType, optional
 ///     Contour types to export.  Default is
 ///     ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
+/// output_path_ab : str, optional
+///     Output directory for REST results.  Default is ``"output/rest"`` (with diastole versus systole).
+/// output_path_cd : str, optional
+///     Output directory for STRESS results.  Default is ``"output/stress"`` (with diastole versus systole).
+/// output_path_ac : str, optional
+///     Output directory for DIASTOLE results.  Default is
+///     ``"output/diastole"`` (with diastole rest versus stress).
+/// output_path_bd : str, optional
+///     Output directory for SYSTOLE results.  Default is
+///     ``"output/systole"`` (with systole rest versus stress).
+/// interpolation_steps : int, optional
+///     Number of interpolated meshes between phases.  Default is ``0``.
+/// bruteforce : bool, optional
+///     Whether to use brute-force alignment (one comparison per step).
+///     Default is ``False``.
 /// smooth : bool, optional
 ///     Whether to smooth frames after alignment using a 3-point moving
 ///     average.  Default is ``True``.
@@ -128,47 +129,47 @@ fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<(u32, u32, f64, f64, f64, f64, f64
 #[pyfunction]
 #[pyo3(
     signature = (
-        input_path_a,
-        input_path_b,
+        input_path_ab,
+        input_path_cd,
         labels = vec![],
         step_rotation_deg = 0.5f64,
         range_rotation_deg = 90.0f64,
+        sample_size = 500,
         image_center = (4.5f64, 4.5f64),
         radius = 0.5f64,
         n_points = 20u32,
         write_obj = true,
         watertight = true,
-        output_path_a = "output/rest",
-        output_path_b = "output/stress",
-        output_path_c = "output/diastole",
-        output_path_d = "output/systole",
-        interpolation_steps = 28usize,
-        bruteforce = false,
-        sample_size = 500,
         contour_types = vec![PyContourType::Lumen, PyContourType::Catheter, PyContourType::Wall],
+        output_path_ab = "output/rest",
+        output_path_cd = "output/stress",
+        output_path_ac = "output/diastole",
+        output_path_bd = "output/systole",
+        interpolation_steps = 0usize,
+        bruteforce = false,
         smooth = true,
         postprocessing = true,
     )
 )]
 pub fn from_file_full(
-    input_path_a: &str,
-    input_path_b: &str,
+    input_path_ab: &str,
+    input_path_cd: &str,
     labels: Vec<String>,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
+    sample_size: usize,
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
     write_obj: bool,
     watertight: bool,
-    output_path_a: &str,
-    output_path_b: &str,
-    output_path_c: &str,
-    output_path_d: &str,
+    contour_types: Vec<PyContourType>,
+    output_path_ab: &str,
+    output_path_cd: &str,
+    output_path_ac: &str,
+    output_path_bd: &str,
     interpolation_steps: usize,
     bruteforce: bool,
-    sample_size: usize,
-    contour_types: Vec<PyContourType>,
     smooth: bool,
     postprocessing: bool,
 ) -> PyResult<(
@@ -200,8 +201,8 @@ pub fn from_file_full(
         image_center,
         radius,
         n_points,
-        Some(input_path_a),
-        Some(input_path_b),
+        Some(input_path_ab),
+        Some(input_path_cd),
         None,
         None,
         None,
@@ -210,10 +211,10 @@ pub fn from_file_full(
         interpolation_steps,
         rust_contour_types,
         watertight,
-        output_path_a,
-        output_path_b,
-        output_path_c,
-        output_path_d,
+        output_path_ab,
+        output_path_cd,
+        output_path_ac,
+        output_path_bd,
         step_rotation_deg,
         range_rotation_deg,
         smooth,
@@ -245,13 +246,14 @@ pub fn from_file_full(
 /// Reads REST and STRESS acquisitions and aligns frames within each pair
 /// independently (diastole → systole), then writes interpolated OBJ meshes.
 ///
-/// .. code-block:: text
+/// .. parsed-literal::
 ///
-///    Rest:                    Stress:
-///    diastole                  diastole
+///    ``input_path_ab``        ``input_path_cd``
+///    **Rest:**                 **Stress:**
+///    a) diastole               c) diastole
 ///        │                         │
 ///        ▼                         ▼
-///    systole                   systole
+///    b) systole                d) systole
 ///
 /// .. warning::
 ///
@@ -265,9 +267,9 @@ pub fn from_file_full(
 ///
 /// Parameters
 /// ----------
-/// input_path_a : str
+/// input_path_ab : str
 ///     Path to the REST input folder.
-/// input_path_b : str
+/// input_path_cd : str
 ///     Path to the STRESS input folder.
 /// labels : list of str, optional
 ///     Labels for the four geometries ``[rest_dia, rest_sys, stress_dia,
@@ -278,6 +280,8 @@ pub fn from_file_full(
 ///     Rotation step in degrees.  Default is ``0.5``.
 /// range_rotation_deg : float, optional
 ///     Rotation search range (±) in degrees.  Default is ``90.0``.
+/// sample_size : int, optional
+///     Number of points to downsample to.  Default is ``500``.
 /// image_center : tuple of float, optional
 ///     Image center ``(x, y)`` in mm.  Default is ``(4.5, 4.5)``.
 /// radius : float, optional
@@ -288,19 +292,17 @@ pub fn from_file_full(
 ///     Whether to write OBJ files.  Default is ``True``.
 /// watertight : bool, optional
 ///     Whether to write a watertight or shell mesh.  Default is ``True``.
-/// output_path_a : str, optional
-///     Output directory for REST results.  Default is ``"output/rest"``.
-/// output_path_b : str, optional
-///     Output directory for STRESS results.  Default is ``"output/stress"``.
-/// interpolation_steps : int, optional
-///     Number of interpolated meshes.  Default is ``28``.
-/// bruteforce : bool, optional
-///     Whether to use brute-force alignment.  Default is ``False``.
-/// sample_size : int, optional
-///     Number of points to downsample to.  Default is ``500``.
 /// contour_types : list of PyContourType, optional
 ///     Contour types to export.  Default is
 ///     ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
+/// output_path_ab : str, optional
+///     Output directory for REST results.  Default is ``"output/rest"`` (with diastole versus systole).
+/// output_path_cd : str, optional
+///     Output directory for STRESS results.  Default is ``"output/stress"`` (with diastole versus systole).
+/// interpolation_steps : int, optional
+///     Number of interpolated meshes.  Default is ``0``.
+/// bruteforce : bool, optional
+///     Whether to use brute-force alignment.  Default is ``False``.
 /// smooth : bool, optional
 ///     Whether to smooth frames after alignment.  Default is ``True``.
 /// postprocessing : bool, optional
@@ -326,42 +328,42 @@ pub fn from_file_full(
 /// ... )
 #[pyfunction]
 #[pyo3(signature = (
-    input_path_a,
-    input_path_b,
+    input_path_ab,
+    input_path_cd,
     labels = vec![],
     step_rotation_deg = 0.5f64,
     range_rotation_deg = 90.0f64,
+    sample_size = 500,
     image_center = (4.5f64, 4.5f64),
     radius = 0.5f64,
     n_points = 20u32,
     write_obj = true,
     watertight = true,
-    output_path_a = "output/rest",
-    output_path_b = "output/stress",
-    interpolation_steps = 28usize,
-    bruteforce = false,
-    sample_size = 500,
     contour_types = vec![PyContourType::Lumen, PyContourType::Catheter, PyContourType::Wall],
+    output_path_ab = "output/rest",
+    output_path_cd = "output/stress",
+    interpolation_steps = 0usize,
+    bruteforce = false,
     smooth = true,
     postprocessing = true,
 ))]
 pub fn from_file_doublepair(
-    input_path_a: &str,
-    input_path_b: &str,
+    input_path_ab: &str,
+    input_path_cd: &str,
     labels: Vec<String>,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
+    sample_size: usize,
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
     write_obj: bool,
     watertight: bool,
-    output_path_a: &str,
-    output_path_b: &str,
+    contour_types: Vec<PyContourType>,
+    output_path_ab: &str,
+    output_path_cd: &str,
     interpolation_steps: usize,
     bruteforce: bool,
-    sample_size: usize,
-    contour_types: Vec<PyContourType>,
     smooth: bool,
     postprocessing: bool,
 ) -> PyResult<(
@@ -382,8 +384,8 @@ pub fn from_file_doublepair(
         image_center,
         radius,
         n_points,
-        Some(input_path_a),
-        Some(input_path_b),
+        Some(input_path_ab),
+        Some(input_path_cd),
         None,
         None,
         None,
@@ -392,8 +394,8 @@ pub fn from_file_doublepair(
         interpolation_steps,
         rust_contour_types,
         watertight,
-        output_path_a,
-        output_path_b,
+        output_path_ab,
+        output_path_cd,
         step_rotation_deg,
         range_rotation_deg,
         smooth,
@@ -421,7 +423,7 @@ pub fn from_file_doublepair(
 /// Reads one acquisition folder, aligns the diastolic and systolic frames,
 /// and returns a single ``PyGeometryPair``.
 ///
-/// .. code-block:: text
+/// .. parsed-literal::
 ///
 ///    Rest/Stress pipeline:
 ///       diastole
@@ -451,6 +453,8 @@ pub fn from_file_doublepair(
 ///     Rotation step in degrees.  Default is ``0.5``.
 /// range_rotation_deg : float, optional
 ///     Rotation search range (±) in degrees.  Default is ``90.0``.
+/// sample_size : int, optional
+///     Number of points to downsample to.  Default is ``500``.
 /// image_center : tuple of float, optional
 ///     Image center ``(x, y)`` in mm.  Default is ``(4.5, 4.5)``.
 /// radius : float, optional
@@ -461,18 +465,16 @@ pub fn from_file_doublepair(
 ///     Whether to write OBJ files.  Default is ``True``.
 /// watertight : bool, optional
 ///     Whether to write a watertight or shell mesh.  Default is ``True``.
+/// contour_types : list of PyContourType, optional
+///     Contour types to export.  Default is
+///     ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
 /// output_path : str, optional
 ///     Directory path to write the processed geometry.  Default is
 ///     ``"output/singlepair"``.
 /// interpolation_steps : int, optional
-///     Number of interpolated meshes.  Default is ``28``.
+///     Number of interpolated meshes.  Default is ``0``.
 /// bruteforce : bool, optional
 ///     Whether to use brute-force alignment.  Default is ``False``.
-/// sample_size : int, optional
-///     Number of points to downsample to.  Default is ``500``.
-/// contour_types : list of PyContourType, optional
-///     Contour types to export.  Default is
-///     ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
 /// smooth : bool, optional
 ///     Whether to smooth frames after alignment.  Default is ``True``.
 /// postprocessing : bool, optional
@@ -505,16 +507,16 @@ pub fn from_file_doublepair(
     labels = vec![],
     step_rotation_deg = 0.5f64,
     range_rotation_deg = 90.0f64,
+    sample_size = 500,
     image_center = (4.5f64, 4.5f64),
     radius = 0.5f64,
     n_points = 20u32,
     write_obj = true,
     watertight = true,
-    output_path = "output/singlepair",
-    interpolation_steps = 28usize,
-    bruteforce = false,
-    sample_size = 500,
     contour_types = vec![PyContourType::Lumen, PyContourType::Catheter, PyContourType::Wall],
+    output_path = "output/singlepair",
+    interpolation_steps = 0usize,
+    bruteforce = false,
     smooth = true,
     postprocessing = true,
 ))]
@@ -523,16 +525,16 @@ pub fn from_file_singlepair(
     labels: Vec<String>,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
+    sample_size: usize,
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
     write_obj: bool,
     watertight: bool,
+    contour_types: Vec<PyContourType>,
     output_path: &str,
     interpolation_steps: usize,
     bruteforce: bool,
-    sample_size: usize,
-    contour_types: Vec<PyContourType>,
     smooth: bool,
     postprocessing: bool,
 ) -> PyResult<(
@@ -578,7 +580,7 @@ pub fn from_file_singlepair(
 /// Reads one phase (diastole or systole) from an IVUS CSV file, aligns frames
 /// within the geometry, and optionally writes OBJ output.
 ///
-/// .. code-block:: text
+/// .. parsed-literal::
 ///
 ///    Rest/Stress pipeline (choose phase via `diastole` flag):
 ///      e.g. diastole
@@ -598,6 +600,8 @@ pub fn from_file_singlepair(
 ///     Rotation step in degrees.  Default is ``0.5``.
 /// range_rotation_deg : float, optional
 ///     Rotation search range (±) in degrees.  Default is ``90.0``.
+/// sample_size : int, optional
+///     Number of points to downsample to.  Default is ``200``.
 /// image_center : tuple of float, optional
 ///     Image center ``(x, y)`` in mm.  Default is ``(4.5, 4.5)``.
 /// radius : float, optional
@@ -608,16 +612,14 @@ pub fn from_file_singlepair(
 ///     Whether to write OBJ files.  Default is ``True``.
 /// watertight : bool, optional
 ///     Whether to write a watertight or shell mesh.  Default is ``True``.
+/// contour_types : list of PyContourType, optional
+///     Contour types to export.  Default is
+///     ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
 /// output_path : str, optional
 ///     Directory path to write the processed geometry.  Default is
 ///     ``"output/single"``.
 /// bruteforce : bool, optional
 ///     Whether to use brute-force alignment.  Default is ``False``.
-/// sample_size : int, optional
-///     Number of points to downsample to.  Default is ``200``.
-/// contour_types : list of PyContourType, optional
-///     Contour types to export.  Default is
-///     ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
 /// smooth : bool, optional
 ///     Whether to smooth frames after alignment.  Default is ``True``.
 ///
@@ -652,15 +654,15 @@ pub fn from_file_singlepair(
     diastole = true,
     step_rotation_deg = 0.5f64,
     range_rotation_deg = 90.0f64,
+    sample_size = 200,
     image_center = (4.5f64, 4.5f64),
     radius = 0.5f64,
     n_points = 20u32,
     write_obj = true,
     watertight = true,
+    contour_types = vec![PyContourType::Lumen, PyContourType::Catheter, PyContourType::Wall],
     output_path = "output/single",
     bruteforce = false,
-    sample_size = 200,
-    contour_types = vec![PyContourType::Lumen, PyContourType::Catheter, PyContourType::Wall],
     smooth = true,
 ))]
 pub fn from_file_single(
@@ -669,15 +671,15 @@ pub fn from_file_single(
     diastole: bool,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
+    sample_size: usize,
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
     write_obj: bool,
     watertight: bool,
+    contour_types: Vec<PyContourType>,
     output_path: &str,
     bruteforce: bool,
-    sample_size: usize,
-    contour_types: Vec<PyContourType>,
     smooth: bool,
 ) -> PyResult<(PyGeometry, Vec<(u32, u32, f64, f64, f64, f64, f64)>)> {
     let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
@@ -715,13 +717,14 @@ pub fn from_file_single(
 /// diastole, and STRESS systole, then aligns frames within and between
 /// each cardiac phase.
 ///
-/// .. code-block:: text
+/// .. parsed-literal::
 ///
-///    Rest           Stress
-///    diastole ──▶ diastole
-///       │            │
-///       ▼            ▼
-///    systole ──▶ systole
+///    ``input_path_ab`     ``input_path_cd``
+///    **Rest:**              **Stress:**
+///    a) diastole    ──▶    c) diastole
+///        │                      │
+///        ▼                      ▼
+///    b) systole     ──▶    d) systole
 ///
 /// Parameters
 /// ----------
@@ -737,6 +740,8 @@ pub fn from_file_single(
 ///     Rotation step in degrees.  Default is ``0.5``.
 /// range_rotation_deg : float, optional
 ///     Rotation search range (±) in degrees.  Default is ``90.0``.
+/// sample_size : int, optional
+///     Number of points to downsample to.  Default is ``200``.
 /// image_center : tuple of float, optional
 ///     Image center ``(x, y)`` in mm.  Default is ``(4.5, 4.5)``.
 /// radius : float, optional
@@ -747,25 +752,23 @@ pub fn from_file_single(
 ///     Whether to write OBJ files.  Default is ``True``.
 /// watertight : bool, optional
 ///     Whether to write a watertight or shell mesh.  Default is ``True``.
-/// output_path_a : str, optional
-///     Output directory for REST results.  Default is ``"output/rest"``.
-/// output_path_b : str, optional
-///     Output directory for STRESS results.  Default is ``"output/stress"``.
-/// output_path_c : str, optional
-///     Output directory for DIASTOLE results.  Default is
-///     ``"output/diastole"``.
-/// output_path_d : str, optional
-///     Output directory for SYSTOLE results.  Default is
-///     ``"output/systole"``.
-/// interpolation_steps : int, optional
-///     Number of interpolation steps between phases.  Default is ``28``.
-/// bruteforce : bool, optional
-///     Whether to use brute-force alignment.  Default is ``False``.
-/// sample_size : int, optional
-///     Number of points to downsample to.  Default is ``200``.
 /// contour_types : list of PyContourType, optional
 ///     Contour types to export.  Default is
 ///     ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
+/// output_path_ab : str, optional
+///     Output directory for REST results.  Default is ``"output/rest"``.
+/// output_path_cd : str, optional
+///     Output directory for STRESS results.  Default is ``"output/stress"``.
+/// output_path_ac : str, optional
+///     Output directory for DIASTOLE results.  Default is
+///     ``"output/diastole"``.
+/// output_path_bd : str, optional
+///     Output directory for SYSTOLE results.  Default is
+///     ``"output/systole"``.
+/// interpolation_steps : int, optional
+///     Number of interpolation steps between phases.  Default is ``0``.
+/// bruteforce : bool, optional
+///     Whether to use brute-force alignment.  Default is ``False``.
 /// smooth : bool, optional
 ///     Whether to smooth frames after alignment.  Default is ``True``.
 /// postprocessing : bool, optional
@@ -816,19 +819,19 @@ pub fn from_file_single(
         input_data_d,
         step_rotation_deg = 0.5f64,
         range_rotation_deg = 90.0f64,
+        sample_size= 200,
         image_center = (4.5f64, 4.5f64),
         radius = 0.5f64,
         n_points = 20u32,
         write_obj = true,
         watertight = true,
-        output_path_a = "output/rest",
-        output_path_b = "output/stress",
-        output_path_c = "output/diastole",
-        output_path_d = "output/systole",
-        interpolation_steps = 28usize,
-        bruteforce = false,
-        sample_size= 200,
         contour_types = vec![PyContourType::Lumen, PyContourType::Catheter, PyContourType::Wall],
+        output_path_ab = "output/rest",
+        output_path_cd = "output/stress",
+        output_path_ac = "output/diastole",
+        output_path_bd = "output/systole",
+        interpolation_steps = 0usize,
+        bruteforce = false,
         smooth = true,
         postprocessing = true,
     )
@@ -840,19 +843,19 @@ pub fn from_array_full(
     input_data_d: PyInputData,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
+    sample_size: usize,
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
     write_obj: bool,
     watertight: bool,
-    output_path_a: &str,
-    output_path_b: &str,
-    output_path_c: &str,
-    output_path_d: &str,
+    contour_types: Vec<PyContourType>,
+    output_path_ab: &str,
+    output_path_cd: &str,
+    output_path_ac: &str,
+    output_path_bd: &str,
     interpolation_steps: usize,
     bruteforce: bool,
-    sample_size: usize,
-    contour_types: Vec<PyContourType>,
     smooth: bool,
     postprocessing: bool,
 ) -> PyResult<(
@@ -909,10 +912,10 @@ pub fn from_array_full(
         interpolation_steps,
         rust_contour_types,
         watertight,
-        output_path_a,
-        output_path_b,
-        output_path_c,
-        output_path_d,
+        output_path_ab,
+        output_path_cd,
+        output_path_ac,
+        output_path_bd,
         step_rotation_deg,
         range_rotation_deg,
         smooth,
@@ -946,13 +949,14 @@ pub fn from_array_full(
 /// (diastole + systole), aligns each pair independently, and writes
 /// interpolated OBJ meshes.
 ///
-/// .. code-block:: text
+/// .. parsed-literal::
 ///
-///    Rest:                    Stress:
-///    diastole                  diastole
+///    ``input_path_ab``        ``input_path_cd``
+///    **Rest:**                 **Stress:**
+///    a) diastole               c) diastole
 ///        │                         │
 ///        ▼                         ▼
-///    systole                   systole
+///    b) systole                d) systole
 ///
 /// Parameters
 /// ----------
@@ -968,6 +972,8 @@ pub fn from_array_full(
 ///     Rotation step in degrees.  Default is ``0.5``.
 /// range_rotation_deg : float, optional
 ///     Rotation search range (±) in degrees.  Default is ``90.0``.
+/// sample_size : int, optional
+///     Number of points to downsample to.  Default is ``200``.
 /// image_center : tuple of float, optional
 ///     Image center ``(x, y)`` in mm.  Default is ``(4.5, 4.5)``.
 /// radius : float, optional
@@ -978,19 +984,17 @@ pub fn from_array_full(
 ///     Whether to write OBJ files.  Default is ``True``.
 /// watertight : bool, optional
 ///     Whether to write a watertight or shell mesh.  Default is ``True``.
-/// output_path_a : str, optional
-///     Output directory for REST results.  Default is ``"output/rest"``.
-/// output_path_b : str, optional
-///     Output directory for STRESS results.  Default is ``"output/stress"``.
-/// interpolation_steps : int, optional
-///     Number of interpolation steps between phases.  Default is ``28``.
-/// bruteforce : bool, optional
-///     Whether to use brute-force alignment.  Default is ``False``.
-/// sample_size : int, optional
-///     Number of points to downsample to.  Default is ``200``.
 /// contour_types : list of PyContourType, optional
 ///     Contour types to export.  Default is
 ///     ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
+/// output_path_ab : str, optional
+///     Output directory for REST results.  Default is ``"output/rest"``.
+/// output_path_cd : str, optional
+///     Output directory for STRESS results.  Default is ``"output/stress"``.
+/// interpolation_steps : int, optional
+///     Number of interpolation steps between phases.  Default is ``0``.
+/// bruteforce : bool, optional
+///     Whether to use brute-force alignment.  Default is ``False``.
 /// smooth : bool, optional
 ///     Whether to smooth frames after alignment.  Default is ``True``.
 /// postprocessing : bool, optional
@@ -1037,17 +1041,17 @@ pub fn from_array_full(
         input_data_d,
         step_rotation_deg = 0.5f64,
         range_rotation_deg = 90.0f64,
+        sample_size= 200,
         image_center = (4.5f64, 4.5f64),
         radius = 0.5f64,
         n_points = 20u32,
         write_obj = true,
         watertight = true,
-        output_path_a = "output/rest",
-        output_path_b = "output/stress",
-        interpolation_steps = 28usize,
-        bruteforce = false,
-        sample_size= 200,
         contour_types = vec![PyContourType::Lumen, PyContourType::Catheter, PyContourType::Wall],
+        output_path_ab = "output/rest",
+        output_path_cd = "output/stress",
+        interpolation_steps = 0usize,
+        bruteforce = false,
         smooth = true,
         postprocessing = true,
     )
@@ -1059,17 +1063,17 @@ pub fn from_array_doublepair(
     input_data_d: PyInputData,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
+    sample_size: usize,
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
     write_obj: bool,
     watertight: bool,
-    output_path_a: &str,
-    output_path_b: &str,
+    contour_types: Vec<PyContourType>,
+    output_path_ab: &str,
+    output_path_cd: &str,
     interpolation_steps: usize,
     bruteforce: bool,
-    sample_size: usize,
-    contour_types: Vec<PyContourType>,
     smooth: bool,
     postprocessing: bool,
 ) -> PyResult<(
@@ -1115,8 +1119,8 @@ pub fn from_array_doublepair(
         interpolation_steps,
         rust_contour_types,
         watertight,
-        output_path_a,
-        output_path_b,
+        output_path_ab,
+        output_path_cd,
         step_rotation_deg,
         range_rotation_deg,
         smooth,
@@ -1145,7 +1149,7 @@ pub fn from_array_doublepair(
 /// Accepts pre-loaded diastolic and systolic input data, aligns frames
 /// between the two phases, and returns a single ``PyGeometryPair``.
 ///
-/// .. code-block:: text
+/// .. parsed-literal::
 ///
 ///    Geometry pipeline:
 ///      diastole ──▶ systole
@@ -1160,6 +1164,8 @@ pub fn from_array_doublepair(
 ///     Rotation step in degrees.  Default is ``0.5``.
 /// range_rotation_deg : float, optional
 ///     Rotation search range (±) in degrees.  Default is ``90.0``.
+/// sample_size : int, optional
+///     Number of points to downsample to.  Default is ``200``.
 /// image_center : tuple of float, optional
 ///     Image center ``(x, y)`` in mm.  Default is ``(4.5, 4.5)``.
 /// radius : float, optional
@@ -1170,18 +1176,16 @@ pub fn from_array_doublepair(
 ///     Whether to write OBJ files.  Default is ``True``.
 /// watertight : bool, optional
 ///     Whether to write a watertight or shell mesh.  Default is ``True``.
+/// contour_types : list of PyContourType, optional
+///     Contour types to export.  Default is
+///     ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
 /// output_path : str, optional
 ///     Directory path to write interpolated output files.  Default is
 ///     ``"output/singlepair"``.
 /// interpolation_steps : int, optional
-///     Number of interpolation steps between phases.  Default is ``28``.
+///     Number of interpolation steps between phases.  Default is ``0``.
 /// bruteforce : bool, optional
 ///     Whether to use brute-force alignment.  Default is ``False``.
-/// sample_size : int, optional
-///     Number of points to downsample to.  Default is ``200``.
-/// contour_types : list of PyContourType, optional
-///     Contour types to export.  Default is
-///     ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
 /// smooth : bool, optional
 ///     Whether to smooth frames after alignment.  Default is ``True``.
 /// postprocessing : bool, optional
@@ -1221,16 +1225,16 @@ pub fn from_array_doublepair(
         input_data_b,
         step_rotation_deg = 0.5f64,
         range_rotation_deg = 90.0f64,
+        sample_size= 200,
         image_center = (4.5f64, 4.5f64),
         radius = 0.5f64,
         n_points = 20u32,
         write_obj = true,
         watertight = true,
-        output_path = "output/singlepair",
-        interpolation_steps = 28usize,
-        bruteforce = false,
-        sample_size= 200,
         contour_types = vec![PyContourType::Lumen, PyContourType::Catheter, PyContourType::Wall],
+        output_path = "output/singlepair",
+        interpolation_steps = 0usize,
+        bruteforce = false,
         smooth = true,
         postprocessing = true,
     )
@@ -1240,16 +1244,16 @@ pub fn from_array_singlepair(
     input_data_b: PyInputData,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
+    sample_size: usize,
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
     write_obj: bool,
     watertight: bool,
+    contour_types: Vec<PyContourType>,
     output_path: &str,
     interpolation_steps: usize,
     bruteforce: bool,
-    sample_size: usize,
-    contour_types: Vec<PyContourType>,
     smooth: bool,
     postprocessing: bool,
 ) -> PyResult<(
@@ -1305,7 +1309,7 @@ pub fn from_array_singlepair(
 /// Accepts pre-loaded input data for one cardiac phase, aligns frames
 /// within the geometry, and optionally writes OBJ output.
 ///
-/// .. code-block:: text
+/// .. parsed-literal::
 ///
 ///    Rest/Stress pipeline (choose phase via `diastole` flag):
 ///      e.g. diastole
@@ -1318,6 +1322,8 @@ pub fn from_array_singlepair(
 ///     Rotation step in degrees.  Default is ``0.5``.
 /// range_rotation_deg : float, optional
 ///     Rotation search range (±) in degrees.  Default is ``90.0``.
+/// sample_size : int, optional
+///     Number of points to downsample to.  Default is ``200``.
 /// image_center : tuple of float, optional
 ///     Image center ``(x, y)`` in mm.  Default is ``(4.5, 4.5)``.
 /// radius : float, optional
@@ -1328,16 +1334,14 @@ pub fn from_array_singlepair(
 ///     Whether to write OBJ files.  Default is ``False``.
 /// watertight : bool, optional
 ///     Whether to write a watertight or shell mesh.  Default is ``True``.
+/// contour_types : list of PyContourType, optional
+///     Contour types to export.  Default is
+///     ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
 /// output_path : str, optional
 ///     Directory path to write the processed geometry.  Default is
 ///     ``"output/single"``.
 /// bruteforce : bool, optional
 ///     Whether to use brute-force alignment.  Default is ``False``.
-/// sample_size : int, optional
-///     Number of points to downsample to.  Default is ``200``.
-/// contour_types : list of PyContourType, optional
-///     Contour types to export.  Default is
-///     ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
 /// smooth : bool, optional
 ///     Whether to smooth frames after alignment.  Default is ``True``.
 ///
@@ -1370,30 +1374,30 @@ pub fn from_array_singlepair(
     input_data,
     step_rotation_deg = 0.5f64,
     range_rotation_deg = 90.0f64,
+    sample_size = 200,
     image_center = (4.5f64, 4.5f64),
     radius = 0.5f64,
     n_points = 20u32,
     write_obj=false,
     watertight = true,
+    contour_types = vec![PyContourType::Lumen, PyContourType::Catheter, PyContourType::Wall],
     output_path="output/single",
     bruteforce = false,
-    sample_size = 200,
-    contour_types = vec![PyContourType::Lumen, PyContourType::Catheter, PyContourType::Wall],
     smooth = true,
 ))]
 pub fn from_array_single(
     input_data: PyInputData,
     step_rotation_deg: f64,
     range_rotation_deg: f64,
+    sample_size: usize,
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
     write_obj: bool,
     watertight: bool,
+    contour_types: Vec<PyContourType>,
     output_path: &str,
     bruteforce: bool,
-    sample_size: usize,
-    contour_types: Vec<PyContourType>,
     smooth: bool,
 ) -> PyResult<(PyGeometry, Vec<(u32, u32, f64, f64, f64, f64, f64)>)> {
     let labels: Vec<String> = vec![]; // InputData carries its own labels
