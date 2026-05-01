@@ -276,7 +276,7 @@ pub fn best_rotation_three_point(
         }
         angle += angle_step;
     }
-    println!("✅ Best angle found: {}°", best_angle.to_degrees());
+    println!("✅ Best angle found: {:.2}°", best_angle.to_degrees());
     best_angle
 }
 
@@ -299,7 +299,7 @@ pub fn refine_alignment_hausdorff(
 
     println!("---------------------Refining alignment with Hausdorff---------------------");
     println!(
-        "Initial rotation: {:.4}°, Initial CL index: {}",
+        "Initial rotation: {:.2}°, Initial CL index: {}",
         initial_rotation.to_degrees(),
         initial_cl_ref_idx
     );
@@ -383,7 +383,7 @@ pub fn refine_alignment_hausdorff(
     }
 
     println!(
-        "Refined rotation: {:.4}°, Refined CL index: {}, Hausdorff: {:.4}",
+        "Refined rotation: {:.2}°, Refined CL index: {}, Hausdorff: {:.2}",
         best_angle.to_degrees(),
         best_cl_ref_idx,
         min_hausdorff

@@ -17,7 +17,7 @@
 - [] function to combine anomalous section only with the distal part
 
 # Miscellaneous
-- [] Improve print statements in the whole package
+- [x] Improve print statements in the whole package
 
 # Prepublish checklist (JOSS review feedback — open until resolved):
 
