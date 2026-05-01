@@ -29,7 +29,7 @@ pub fn build_geometry_from_inputdata(
         names.insert(ContourType::Sidebranch, "branch");
         names.insert(ContourType::Catheter, "catheter");
 
-        InputData::process_directory(path, names, diastole)?
+        InputData::process_directory(path, names, diastole, label)?
     } else {
         return Err(anyhow::anyhow!(
             "Either input_data or path must be provided"

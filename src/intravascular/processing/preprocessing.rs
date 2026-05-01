@@ -352,7 +352,7 @@ mod preprocessing_tests {
     #[test]
     fn test_pair_with_one_path() -> anyhow::Result<()> {
         let geometry = prepare_n_geometries(
-            &["stress".to_string(), "stress".to_string()],
+            &["stress_0".to_string(), "stress_1".to_string()],
             (4.5, 4.5),
             0.5,
             20,
@@ -365,8 +365,8 @@ mod preprocessing_tests {
 
         assert_eq!(geometry.len(), 2);
         // Both should use the provided label since built from path
-        assert_eq!(geometry[0].label, "stress");
-        assert_eq!(geometry[1].label, "stress");
+        assert_eq!(geometry[0].label, "stress_0");
+        assert_eq!(geometry[1].label, "stress_1");
         Ok(())
     }
 
@@ -401,7 +401,12 @@ mod preprocessing_tests {
 
     #[test]
     fn test_full_with_two_paths() -> anyhow::Result<()> {
-        let labels: Vec<String> = vec!["test".to_string(); 4];
+        let labels = [
+            "test_0".to_string(),
+            "test_1".to_string(),
+            "test_2".to_string(),
+            "test_3".to_string(),
+        ];
         let geometry = prepare_n_geometries(
             &labels,
             (4.5, 4.5),
@@ -415,8 +420,8 @@ mod preprocessing_tests {
         )?;
 
         assert_eq!(geometry.len(), 4);
-        for geom in geometry {
-            assert_eq!(geom.label, "test");
+        for (i, geom) in geometry.iter().enumerate() {
+            assert_eq!(geom.label, format!("test_{}", i));
         }
         Ok(())
     }
@@ -447,7 +452,7 @@ mod preprocessing_tests {
         let input_data = vec![create_mock_input_data("only_one", true)];
 
         let geometry = prepare_n_geometries(
-            &["from_path".to_string(), "from_path".to_string()],
+            &["from_path_0".to_string(), "from_path_1".to_string()],
             (4.5, 4.5),
             0.5,
             20,
@@ -459,8 +464,8 @@ mod preprocessing_tests {
         )?;
 
         assert_eq!(geometry.len(), 2);
-        assert_eq!(geometry[0].label, "from_path");
-        assert_eq!(geometry[1].label, "from_path");
+        assert_eq!(geometry[0].label, "from_path_0");
+        assert_eq!(geometry[1].label, "from_path_1");
         Ok(())
     }
 

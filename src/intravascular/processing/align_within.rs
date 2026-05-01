@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 use std::sync::{Arc, Mutex};
 
@@ -58,16 +59,21 @@ pub fn align_frames_in_geometry(
 
     let logger = Arc::new(Mutex::new(Vec::<AlignLog>::new()));
 
+    let pb = ProgressBar::new((geometry.frames.len() - 1) as u64);
+    pb.set_style(
+        ProgressStyle::with_template("{bar:40} {pos}/{len} {msg}")
+            .unwrap()
+            .progress_chars("=>-"),
+    );
+
     let mut cumulative_rotation: f64 = 0.0;
 
     for i in 1..geometry.frames.len() {
         let prev_frame = geometry.frames[i - 1].clone();
         let current = &mut geometry.frames[i];
 
-        println!(
-            "Aligning Frame {} to previous Frame {}",
-            current.id, prev_frame.id
-        );
+        pb.set_message(format!("Frame {} → {}", prev_frame.id, current.id));
+        pb.inc(1);
 
         if cumulative_rotation != 0.0 {
             current.rotate_frame(cumulative_rotation);
@@ -151,7 +157,11 @@ pub fn align_frames_in_geometry(
         .expect("No other Arc references to logger exist")
         .into_inner()
         .expect("Logger mutex was poisoned");
-    dump_table(&logs);
+    let title = format!(
+        "✅ Finished aligning '{}' (anomalous: {})",
+        final_geometry.label, anomalous_bool
+    );
+    dump_table(&title, &logs);
 
     Ok((final_geometry, logs, anomalous_bool))
 }
@@ -650,7 +660,29 @@ fn fix_spacing(geometry: &Geometry) -> Geometry {
     geometry.clone()
 }
 
-fn dump_table(logs: &[AlignLog]) {
+fn display_width(s: &str) -> usize {
+    s.chars().fold(0, |acc, c| {
+        let cp = c as u32;
+        // Wide characters: CJK, fullwidth, emoji blocks
+        if (0x1100..=0x115F).contains(&cp)
+            || (0x2E80..=0x303E).contains(&cp)
+            || (0x3041..=0xA4CF).contains(&cp)
+            || (0xAC00..=0xD7A3).contains(&cp)
+            || (0xF900..=0xFAFF).contains(&cp)
+            || (0xFE10..=0xFE1F).contains(&cp)
+            || (0xFE30..=0xFE4F).contains(&cp)
+            || (0xFF00..=0xFF60).contains(&cp)
+            || (0xFFE0..=0xFFE6).contains(&cp)
+            || cp >= 0x1F300
+        {
+            acc + 2
+        } else {
+            acc + 1
+        }
+    })
+}
+
+fn dump_table(title: &str, logs: &[AlignLog]) {
     let headers = [
         "Contour",
         "Matched To",
@@ -705,7 +737,21 @@ fn dump_table(logs: &[AlignLog]) {
         println!();
     }
 
-    // Top border
+    // Title row spanning all columns
+    let total_inner: usize = widths.iter().sum::<usize>() + 3 * widths.len() - 1;
+    let title_w = display_width(title);
+    let pad = total_inner.saturating_sub(title_w);
+    let left_pad = pad / 2;
+    let right_pad = pad - left_pad;
+    println!("\n+{}+", "-".repeat(total_inner));
+    println!(
+        "|{}{}{}|",
+        " ".repeat(left_pad),
+        title,
+        " ".repeat(right_pad)
+    );
+
+    // Column header border (doubles as separator between title and headers)
     print!("+");
     for w in &widths {
         print!("{}+", "-".repeat(w + 2));
