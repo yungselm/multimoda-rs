@@ -26,214 +26,77 @@
 > A high‑performance, Rust‑accelerated toolkit for multi‑modality cardiac image fusion and registration ﮩ٨ـﮩﮩ٨ـ♡ﮩ٨ـﮩﮩ٨ـ.
 
 ---
-# Overview
-`multimoda-rs` is a high-performance toolkit developed to enable the study of dynamic vessel deformation in coronary artery anomalies (CAAs), where quantifying lumen changes under stress and rest is critical. It addresses the general challenge of aligning and fusing diverse cardiac imaging modalities, such as CCTA, IVUS, OCT, and MRI—into a unified, high‑resolution 3D model. While CCTA provides comprehensive volumetric context, intravascular modalities (IVUS and OCT) offer sub‑millimeter resolution along the vessel lumen, and MRI (LGE) reveals tissue characteristics like scar and edema. This library leverages Rust for computationally intensive registration steps, delivering faster performance than pure Python implementations.
+
+## Overview
+
+`multimoda-rs` aligns and fuses diverse cardiac imaging modalities — IVUS, OCT and CCTA — into unified high-resolution 3D models. Originally developed to quantify dynamic lumen deformation in coronary artery anomalies (CAAs), it is equally applicable to longitudinal studies (e.g., pre/post-stenting) and general coronary artery disease workflows. The Rust backend parallelizes computationally intensive registration steps for speeds well beyond pure Python.
 
 ## Key Features
-- IVUS/OCT Contours Registration
-  - Aligns pullback sequences (rest vs. stress, diastole vs. systole) using Hausdorff distance on vessel contours and catheter centroids.
-  - Supports four alignment modes:
-    - *Full*: register all four phases (rest‑dia, rest‑sys, stress‑dia, stress‑sys)
-    - *Double-pair*: two pairs (rest vs. stress).
-    - *Single-pair*: diastole vs. systole.
-    - *Single*: one phase only.
-- Centerline Alignment
-  - Align registered geometries onto a vessel centerline using three‑point or manual rotation methods.
-- Geometry Utilities
-  - Smooth contours, compute areas and elliptic ratios, find farthest/closest point pairs, and more.
+
+- **Intravascular Registration**: align pullback sequences (rest/stress, diastole/systole) using Hausdorff distance on vessel contours and catheter centroids; four modes: *full*, *double-pair*, *single-pair*, *single*.
+- **Centerline Alignment**: register intravascular geometries onto a CCTA-derived centerline via three-point landmark or manual rotation.
+- **CCTA Fusion**: automatically label CCTA geometries by vessel region and morph them to match intravascular measurements.
+- **Flexible Input**: accepts CSV files ([AIVUS](https://github.com/AI-in-Cardiovascular-Medicine/AIVUS-CAA) format) or raw NumPy arrays.
 
 ## Installation
 
-Either directly from PyPI (recommended):
 ```bash
 pip install multimodars
 ```
 
-or by cloning the repo and building the project yourself:
+Optional extras:
+
 ```bash
-# Install rust in case you don't have it on your system
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-git clone https://github.com/yungselm/multimoda-rs.git
-python -m venv .venv
-source .venv/bin/activate
-pip install maturin
-. "$HOME/.cargo/env" # Set rust env
-maturin develop
+pip install "multimodars[viz]"      # mesh visualisation (pyglet)
+pip install "multimodars[meshlab]"  # MeshLab integration
 ```
 
-**Note:** In case you get the following error:
-```
-💥 maturin failed
-  Caused by: rustc, the rust compiler, is not installed or not in PATH. This package requires Rust and Cargo to compile extensions. Install it through the system's package manager or via https://rustup.rs/.
-```
-execute the following commands:
-```commandline
-unset -v VIRTUAL_ENV
-maturin develop
-```
+For building from source or the full developer setup (tests, linting, docs), see the [Installation guide](https://multimoda-rs.readthedocs.io/en/latest/installation.html).
 
+## Quick Example
 
-## Quickstart Example
-Download [examples.zip](https://github.com/yungselm/multimoda-rs/releases/latest/download/examples.zip) (SHA256: `d11ebc7607f43ab4571fb51c9ac9178caac57774cf5d97f4f068ace4eb070fee`) from the latest release and place it in your working directory. A Jupyter Notebook with step-by-step examples is available at `examples/ivus_to_centerline.ipynb`.
-Provided you extraced examples to the project root you can just copy paste the below example to ensure proper setup:
+Download [examples.zip](https://github.com/yungselm/multimoda-rs/releases/latest/download/examples.zip) (SHA256: `d11ebc7607f43ab4571fb51c9ac9178caac57774cf5d97f4f068ace4eb070fee`) from the latest release and extract it to your working directory.
 
 ```python
 import multimodars as mm
 import numpy as np
 
-# IVUS pullbacks: full alignment of rest/stress & diastole/systole
+# Align four intravascular phases (rest-dia, rest-sys, stress-dia, stress-sys)
 rest, stress, dia, sys, _ = mm.from_file_full(
-    input_path_a="examples/data/ivus_rest",
-    input_path_b="examples/data/ivus_stress",
-    label="full",
-    step_rotation_deg=0.1,
-    range_rotation_deg=90,
-    image_center=(4.5, 4.5),
-    radius=0.5,
-    n_points=20,
+    "examples/data/ivus_rest",    # input_path_ab
+    "examples/data/ivus_stress",  # input_path_cd
     write_obj=True,
-    watertight=False,
-    output_path_a="output/rest",
-    output_path_b="output/stress",
-    output_path_c="output/diastole",
-    output_path_d="output/systole",
-    interpolation_steps=0,
-    contour_types=[mm.PyContourType.Lumen, mm.PyContourType.Catheter, mm.PyContourType.Wall]
+    output_path_ab="output/rest",
+    output_path_cd="output/stress",
+    output_path_ac="output/diastole",
+    output_path_bd="output/systole",
 )
 
-# Load raw centerline and align geometry onto it
+# Align geometry onto a CCTA-derived centerline
 cl_raw = np.genfromtxt("examples/data/centerline_raw.csv", delimiter=",")
 centerline = mm.numpy_to_centerline(cl_raw)
-
 aligned_pair, cl_resampled = mm.align_three_point(
-    centerline=centerline,
-    geometry_pair=rest,
+    centerline, rest,
     aortic_ref_pt=(12.2605, -201.3643, 1751.0554),
     upper_ref_pt=(11.7567, -202.1920, 1754.7975),
     lower_ref_pt=(15.6605, -202.1920, 1749.9655),
     write=True,
-    watertight=False,
-    interpolation_steps=0,
-)
-
-# Optionally save any geometry directly as .obj
-mm.to_obj(
-    aligned_pair.geom_a,
-    "output/aligned",
-    watertight=False,
-    contour_types=[mm.PyContourType.Lumen],
-    filename_prefix="aligned",
+    output_dir="output/aligned",
 )
 ```
-
-## API Reference
-For detailed signatures and usage examples, see the [online documentation](https://multimoda-rs.readthedocs.io).
-The intended usage of the package with examples for every case are provided under `examples/` with Jupyter Notebooks to follow along.
-
-## License
-Distributed under the MIT License. See [LICENSE](LICENSE) for details.
-
-## Detailed Background
-### Primary Motivation: Coronary Artery Anomalies (CAAs)
-
-This package was initially built to study anomalous aortic origin of a coronary artery (AAOCA). In these patients, a dynamic stenosis is present where the intramural section (inside the aortic wall) undergoes complex lumen deformation:
-
-1. Pulsatile deformation during rest and stress with every heartbeat (diastole vs. systole).
-
-2. Stress-induced deformation from rest to stress for both diastole and systole.
-
-The `from_file_full`, `from_file_singlepair`, `from_array_singlepair`, and `from_array_single` functions were specifically designed to quantify these four distinct geometric states, which are crucial for diagnosis and treatment planning.
-
-![Dynamic lumen changes](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/media/dynamic_lumen_changes.png)
-
-### General-Purpose Application
-While inspired by CAAs, multimoda-rs is a general-purpose toolkit for multi-modality cardiac image fusion.
-
-* **Intravascular Imaging (IVUS/OCT) + CCTA**: While coronary computed tomography angiography (CCTA) is the gold standard for 3D anatomic information, intravascular imaging (intravascular ultrasound (IVUS) and optical coherence tomography (OCT)) offers a much higher resolution. This package enables the replacement of sections of the CCTA-derived coronary artery model with these high-resolution intravascular images. Since intravascular images are acquired during a catheter pullback and the vessel undergoes motion (heartbeat, breathing), the images within a pullback are not perfectly aligned. This package first registers these images to each other using Hausdorff distances of the vessel contours and the catheter centroid position. The Rust backend leverages parallelization to achieve significantly faster results than pure Python.
-
-* **Longitudinal Studies (Pre-/Post-Stenting)**: The same registration functionality is directly applicable to longitudinal comparisons in coronary artery disease, such as assessing the results of percutaneous coronary intervention (comparing pre-stent vs. post-stent pullbacks).
-
-The options to display are therefore:
-
-*full*
-```text
-`Rest`:                             `Stress`:
-diastole  ---------------------->   diastole
-   |                                   |
-   |                                   |
-   v                                   v
-systole   ---------------------->   systole
-```
-
-*double pair*
-```text
-`Rest`:                             `Stress`:
-diastole                            diastole
-   |                                   |
-   |                                   |
-   v                                   v
-systole                             systole
-```
-
-*single pair*
-```text
-                 `Rest`/`Stress`:
-                    diastole
-                       |
-                       |
-                       v
-                    systole
-```
-
-*single*
-```text
-diastole rest / systole rest / diastole stress / systole stress
-```
-
-The expected input data for contours is the following for a csv file:
-```text
- Expected format .csv file, e.g.:
---------------------------------------------------------------------
-|      185     |       5.32     |      2.37       |        0.0     |
-|      ...     |       ...      |      ...        |        ...     |
-No headers -> frame index, x-coord [mm], y-coord [mm], z-coord [mm]
-```
-The contours can also be in pixels, but results of the `.get_area()` function will be wrong.
-
-The output allows for the creation of several interpolated meshes. These can then be used to render videos displaying the dynamics.
 
 ![Stress-induced diastolic lumen deformation](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/docs/figures/animation_stress_induced_systolic_deformation.gif)
 
-### Centerline Alignment
-Reconstructed geometries can be aligned to a CCTA-derived centerline using three landmark points (aortic reference, proximal, and distal):
+## Documentation
 
-![Three-point alignment](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/docs/figures/Alignment3p.png)
+Full documentation — installation, step-by-step tutorials, interactive Jupyter notebooks, and API reference — is available at **[multimoda-rs.readthedocs.io](https://multimoda-rs.readthedocs.io)**.
 
-### CCTA Geometry Labeling
-CCTA meshes can be automatically labeled by vessel region (aorta, RCA, LCA, intramural) for selective morphing and fusion:
+## License
 
-![Initial labeling](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/docs/figures/initial_labeling.jpg)
+Distributed under the MIT License. See [LICENSE](LICENSE) for details.
 
-After alignment the anomalous region can be further subdivided into proximal, anomalous and distal parts and the CCTA can be morphed to better match the intravascular geometry:
+## Citation
 
-![Anomalous region labeling](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/docs/figures/anomalous_labeling.jpg)
-
-![Scaling](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/docs/figures/scaling.jpg)
-
-### IVUS registration - pre- and post-stenting
-The package works in the same way for other clinical applications such as pre- and post-stent alignment (An example is provided in `data/ivus_prestent` and `data/ivus_poststent`) or for coronary artery disease. Here it is also possible to read in contour information for e.g. lumen, external elastic membrane and create a coronary wall (See figure).
-
-![Coronary artery disease example](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/media/coronary_artery_disease.jpg)
-
-The data for this example is provided under `data/ivus_full`.
-
-### OCT registration
-OCT registration works exactly the same as IVUS registration, just the parameters for image resolution have to be set differently.
-
-
-
-# Citation
 Please kindly cite the following paper if you use this repository.
 
 ```
@@ -243,7 +106,6 @@ Please kindly cite the following paper if you use this repository.
   journal   = {arXiv preprint arXiv:2510.06241},
   year      = {2025}
 }
-
 ```
 
 Stark, Anselm W., Marc Ilic, Ali Mokhtari, Pooya Mohammadi Kazaj, Christoph Graeni, and Isaac Shiri. "multimodars: A Rust-powered toolkit for multi-modality cardiac image fusion and registration." arXiv preprint arXiv:2510.06241 (2025).
