@@ -549,9 +549,9 @@ def label_anomalous_region(
     ]
 
     print("\nApplying anomalous labeling based on aligned intravascular frames...")
-    print(f"proximal_points:{len(results['proximal_points'])}")
-    print(f"distal_points:{len(results['distal_points'])}")
-    print(f"anomalous_points:{len(results['anomalous_points'])}")
+    print(f"proximal_points: {len(results['proximal_points'])}")
+    print(f"distal_points: {len(results['distal_points'])}")
+    print(f"anomalous_points: {len(results['anomalous_points'])}")
 
     if debug_plot:
         plot_results_key(
