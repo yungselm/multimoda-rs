@@ -85,7 +85,23 @@ aligned_pair, cl_resampled = mm.align_three_point(
 )
 ```
 
+## Pipeline
+
+**1. Intrapullback alignment** — frames within each pullback are co-registered to remove cardiac-motion artefacts, yielding clean diastolic and systolic geometries:
+
+![Dynamic lumen changes](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/media/dynamic_lumen_changes.png)
+
+**2. Inter-pullback alignment** — registered pullbacks (rest vs. stress, diastole vs. systole) are aligned against each other to reveal stress-induced and pulsatile deformation:
+
 ![Stress-induced diastolic lumen deformation](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/docs/figures/animation_stress_induced_systolic_deformation.gif)
+
+**3. CCTA labeling** — the CCTA-derived geometry is automatically segmented by vessel region (aorta, RCA, LCA, intramural) to prepare it for fusion:
+
+![Initial CCTA labeling](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/docs/figures/initial_labeling.jpg)
+
+**4. CCTA–intravascular fusion** — the labeled CCTA geometry is morphed along the centerline to match the high-resolution intravascular measurements:
+
+![CCTA scaling and fusion](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/docs/figures/scaling.jpg)
 
 ## Documentation
 
