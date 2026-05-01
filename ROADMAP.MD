@@ -40,7 +40,7 @@
   `viz` and `meshlab` remain as `[project.optional-dependencies]` (user-facing extras).
 
 ## Examples / notebooks
-- [] Include the `examples/` folder (with data) directly in the repository so users can clone
+- [x] Include the `examples/` folder (with data) directly in the repository so users can clone
   and run without a separate download, and so CI can execute the notebooks as tests.
 - [] Fix `ivus_to_centerline.ipynb`: create `output/` and `output/unprocessed/` directories
   on-the-fly with `os.makedirs(..., exist_ok=True)` so the notebook does not error on a fresh clone.
@@ -80,7 +80,7 @@
     with `aligned` (returned from align_combined in section 4).
 
 ## Documentation — general
-- [] Consider converting tutorials to Jupyter notebooks rendered via `nbsphinx` or `myst-nb`
+- [x] Consider converting tutorials to Jupyter notebooks rendered via `nbsphinx` or `myst-nb`
   so outputs are visible, results are verifiable, and documentation build failures reveal
   broken code early. (Non-blocking suggestion from reviewer crnh / richardkoehler.)
 - [] Cite the case-report paper in the Research impact statement (it is cited elsewhere but

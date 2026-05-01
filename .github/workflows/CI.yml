@@ -32,7 +32,8 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -e .
+          pip install --group dev
       - name: Run notebook tests
         run: pytest --nbmake docs/notebooks/
 
@@ -53,7 +54,8 @@ jobs:
       - name: Install Python deps
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[test]
+          pip install -e .
+          pip install --group test
       - name: Run Python tests
         run: pytest
 
@@ -76,7 +78,8 @@ jobs:
       - name: Install Python deps
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[test,docs,maturin]
+          pip install -e .
+          pip install --group test
 
       - name: run Python tests
         run: pytest
@@ -126,7 +129,8 @@ jobs:
       - name: Install Python deps
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[test,docs,maturin]
+          pip install -e .
+          pip install --group test
       - name: run Python tests
         run: pytest
       - name: Format Python code
@@ -164,7 +168,8 @@ jobs:
       - name: Install Python deps
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[test,docs,maturin]
+          pip install -e .
+          pip install --group test
       - name: run Python tests
         run: pytest
       - name: Format Python code
@@ -203,7 +208,8 @@ jobs:
       - name: Install Python deps
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[test,docs,maturin]
+          pip install -e .
+          pip install --group test
       - name: run Python tests
         run: pytest
       - name: Format Python code
