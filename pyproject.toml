@@ -26,6 +26,7 @@ build-backend = "maturin"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
+exclude = ["examples/**", "docs/**"]
 
 [project.urls]
 Homepage = "https://github.com/yungselm/multimoda-rs"
@@ -40,7 +41,7 @@ docs = [
     "sphinx>=8.0,<9.0",
     "sphinx-rtd-theme",
     "sphinx-autodoc-typehints",
-    "myst-parser",
+    "myst-nb",
     "maturin>=1.7,<2.0",
     "furo",
 ]
@@ -56,6 +57,7 @@ dev = [
     "plotly",
     "nbformat",
     "ipykernel",
+    "nbmake",
 ]
 
 [tool.mypy]

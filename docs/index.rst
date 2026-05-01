@@ -45,6 +45,8 @@ Table of Contents
    installation
    Intravascular Alignment Tutorial <tutorial_intravascular>
    CCTA Intravascular Fusion Tutorial <tutorial_ccta>
+   Intravascular Notebook <notebooks/intravascular_notebook>
+   CCTA Notebook <notebooks/ccta_notebook>
    api/index
    changelog
 

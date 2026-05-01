@@ -5,7 +5,19 @@
 /paper/old
 .VSCodeCounter
 /test
-/examples
+examples/__pycache__/
+examples/logs/
+examples/data/output/
+examples/data/test/
+examples/data/logs/
+# generated/intermediate STL outputs in data root
+examples/data/all.stl
+examples/data/all_wall.stl
+examples/data/fixed_mesh.stl
+examples/data/prefixed_mesh.stl
+examples/data/lca.stl
+examples/data/rca.stl
+examples/data/aorta.stl
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
