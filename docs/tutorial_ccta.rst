@@ -51,6 +51,39 @@ steps.
         control_plot=False,
     )
 
+**Core algorithm labeling:**
+
+In the first step, a rolling sphere is propagated along the coronary centerlines. For anatomically normal coronary arteries, this approach reliably assigns all mesh vertices within the predefined radius to either the RCA or LCA label. In anomalous coronary arteries with an intramural course, however, the rolling sphere systematically mislabels a subset of aortic-wall vertices as coronary, owing to the compressed elliptic cross-section of the vessel and its proximity to the aortic wall (see :numref:`fig-rolling`).
+
+.. figure:: ./figures/rolling_sphere.jpg
+   :name: fig-rolling
+   :alt: Rolling sphere labeling
+   :align: center
+   :width: 800px
+
+   Rolling sphere applied for the case of an R-AAOCA, demonstrating incorrect labeling caused by the elliptic vessel cross-section. Left: 3-D view; right: schematic illustration.
+
+To address this limitation, a ray-casting algorithm is employed. A ray is cast from each aortic centerline point toward each of the ``n_points_intramural`` proximal coronary centerline points. When a ray intersects three mesh faces, the first intersected face is added to an occlusion set. All RCA vertices that are topologically connected to any face in this set are subsequently reclassified as ``aortic_points`` and recorded in ``rca_removed_points``, removing them from the ``rca_points`` label. The identical procedure is applied symmetrically when ``anomalous_lca=True``.
+
+.. list-table::
+   :widths: 50 50
+   :align: center
+
+   * - .. image:: ./figures/ray_casting.gif
+          :width: 100%
+          :alt: Ray casting animation
+     - .. image:: ./figures/ray_casting.jpg
+          :width: 100%
+          :alt: Ray casting diagram
+
+*Left:* 3D visualization of all cast rays. *Right:* schematic diagram of the occlusion-detection step.
+
+As a final clean-up, any RCA or LCA vertex whose immediate mesh neighbours carry no
+same-label assignment — an island vertex disconnected from all other coronary-labeled
+vertices — is reclassified as aortic. This adjacency-based elimination ensures that
+the returned ``rca_points`` and ``lca_points`` sets form topologically connected regions
+on the mesh surface.
+
 **Parameter reference:**
 
 - ``bounding_sphere_radius_mm``: radius of the rolling sphere used for the initial vessel

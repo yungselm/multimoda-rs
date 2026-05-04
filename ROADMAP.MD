@@ -21,14 +21,6 @@
 
 # Prepublish checklist (JOSS review feedback — open until resolved):
 
-## Data & archival
-- [] Upload example data (`examples.zip`) to a persistent archive (Zenodo or similar) with a DOI.
-  Upload the source code snapshot there as well, either in the same record or a separate one linked from the paper.
-  Leave open until the DOI is minted and cited in the paper/README.
-- [] Clarify whether the sample data (repo + examples.zip) is real human data or synthetic data.
-  If real, add a statement on ethical approval / data-use conformity per JOSS policy
-  (https://joss.readthedocs.io/en/latest/policies.html#joss-policies).
-
 ## Dependencies / packaging
 - [x] Add `scipy` as an explicit runtime dependency in `pyproject.toml` (required by `mm.label_geometry()`).
 - [x] Convert `optional-dependencies` groups that are not user-facing extras (docs, test, dev)
@@ -42,9 +34,9 @@
 ## Examples / notebooks
 - [x] Include the `examples/` folder (with data) directly in the repository so users can clone
   and run without a separate download, and so CI can execute the notebooks as tests.
-- [] Fix `ivus_to_centerline.ipynb`: create `output/` and `output/unprocessed/` directories
+- [x] Fix `ivus_to_centerline.ipynb`: create `output/` and `output/unprocessed/` directories
   on-the-fly with `os.makedirs(..., exist_ok=True)` so the notebook does not error on a fresh clone.
-- [] Add a unit test that runs the example notebook end-to-end (e.g. using `nbmake` or `pytest-notebook`)
+- [x] Add a unit test that runs the example notebook end-to-end (e.g. using `nbmake` or `pytest-notebook`)
   so regressions are caught automatically.
 
 ## Performance claim
@@ -85,6 +77,14 @@
   broken code early. (Non-blocking suggestion from reviewer crnh / richardkoehler.)
 - [] Cite the case-report paper in the Research impact statement (it is cited elsewhere but
   not in that section).
+
+## Data & archival
+- [] Upload example data (`examples.zip`) to a persistent archive (Zenodo or similar) with a DOI.
+  Upload the source code snapshot there as well, either in the same record or a separate one linked from the paper.
+  Leave open until the DOI is minted and cited in the paper/README.
+- [] Clarify whether the sample data (repo + examples.zip) is real human data or synthetic data.
+  If real, add a statement on ethical approval / data-use conformity per JOSS policy
+  (https://joss.readthedocs.io/en/latest/policies.html#joss-policies).
 
 ## CI / quality
 - [] Integrate coverage measurement (`pytest-cov`) and upload reports to Coveralls or Codecov.

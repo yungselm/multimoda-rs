@@ -1,6 +1,7 @@
 use super::calculate_squared_distance;
 use crate::intravascular::io::geometry::Frame;
 use crate::intravascular::io::input::{Centerline, CenterlinePoint};
+use rayon::prelude::*;
 use std::collections::HashSet;
 
 type Point3D = (f64, f64, f64);
@@ -82,9 +83,7 @@ pub fn centerline_based_aortic_diameter_optimization(
     for i in 0..=steps {
         let x = start + i as f64 * step;
         let temp_points = centerline_based_diameter_morphing(centerline, intramural_points, x);
-
         let dist = symmetric_nn_distance(reference_points, &temp_points);
-
         if dist < min_dist {
             min_dist = dist;
             scaling_best = x;
@@ -118,9 +117,7 @@ pub fn centerline_based_diameter_optimization(
     for i in 0..=steps {
         let x = start + i as f64 * step;
         let temp_points = centerline_based_diameter_morphing(centerline, &proximal_points, x);
-
         let dist = symmetric_nn_distance(proximal_reference, &temp_points);
-
         if dist < min_dist_proximal {
             min_dist_proximal = dist;
             prox_scaling_best = x;
@@ -129,9 +126,7 @@ pub fn centerline_based_diameter_optimization(
     for i in 0..=steps {
         let x = start + i as f64 * step;
         let temp_points = centerline_based_diameter_morphing(centerline, &distal_points, x);
-
         let dist = symmetric_nn_distance(distal_reference, &temp_points);
-
         if dist < min_dist_distal {
             min_dist_distal = dist;
             dist_scaling_best = x;
@@ -201,7 +196,7 @@ fn symmetric_nn_distance(a: &[Point3D], b: &[Point3D]) -> f64 {
     }
 
     let sum_a_to_b: f64 = a
-        .iter()
+        .par_iter()
         .map(|pa| {
             b.iter()
                 .map(|pb| calculate_squared_distance(pa, pb))
@@ -212,7 +207,7 @@ fn symmetric_nn_distance(a: &[Point3D], b: &[Point3D]) -> f64 {
     let avg_a_to_b = sum_a_to_b / (a.len() as f64);
 
     let sum_b_to_a: f64 = b
-        .iter()
+        .par_iter()
         .map(|pb| {
             a.iter()
                 .map(|pa| calculate_squared_distance(pb, pa))
@@ -230,41 +225,36 @@ pub fn centerline_based_diameter_morphing(
     points: &[Point3D],
     diameter_adjustment_mm: f64,
 ) -> Vec<Point3D> {
-    let mut result_points = Vec::with_capacity(points.len());
+    points
+        .par_iter()
+        .map(|point| {
+            let closest_cl_point = find_closest_centerline_point_optimized(centerline, *point);
 
-    for point in points.iter() {
-        let closest_cl_point = find_closest_centerline_point_optimized(centerline, *point);
-
-        let vector = (
-            point.0 - closest_cl_point.contour_point.x,
-            point.1 - closest_cl_point.contour_point.y,
-            point.2 - closest_cl_point.contour_point.z,
-        );
-
-        let magnitude = (vector.0 * vector.0 + vector.1 * vector.1 + vector.2 * vector.2).sqrt();
-
-        if magnitude > 0.0 {
-            let normalized_vector = (
-                vector.0 / magnitude,
-                vector.1 / magnitude,
-                vector.2 / magnitude,
+            let vector = (
+                point.0 - closest_cl_point.contour_point.x,
+                point.1 - closest_cl_point.contour_point.y,
+                point.2 - closest_cl_point.contour_point.z,
             );
 
-            let new_point = (
-                point.0 + normalized_vector.0 * diameter_adjustment_mm,
-                point.1 + normalized_vector.1 * diameter_adjustment_mm,
-                point.2 + normalized_vector.2 * diameter_adjustment_mm,
-            );
+            let magnitude =
+                (vector.0 * vector.0 + vector.1 * vector.1 + vector.2 * vector.2).sqrt();
 
-            result_points.push(new_point);
-        } else {
-            // If point is exactly on centerline, we can't determine direction
-            // Just keep the original point
-            result_points.push(*point);
-        }
-    }
-
-    result_points
+            if magnitude > 0.0 {
+                let normalized_vector = (
+                    vector.0 / magnitude,
+                    vector.1 / magnitude,
+                    vector.2 / magnitude,
+                );
+                (
+                    point.0 + normalized_vector.0 * diameter_adjustment_mm,
+                    point.1 + normalized_vector.1 * diameter_adjustment_mm,
+                    point.2 + normalized_vector.2 * diameter_adjustment_mm,
+                )
+            } else {
+                *point
+            }
+        })
+        .collect()
 }
 
 fn find_closest_centerline_point_optimized(
