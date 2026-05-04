@@ -3,6 +3,30 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.1] - 2026-05-04
+
+### Added
+- Example data and Jupyter notebooks are now included directly in the repository under
+  `examples/` — no longer distributed as a release attachment. Both tutorials link to
+  the `examples/` directory and cross-reference the rendered notebook pages.
+- CCTA and intravascular Jupyter notebooks (`docs/notebooks/`) are now rendered and served
+  in the documentation via `myst-nb`, accessible as `:doc:` references from the tutorials.
+- Detailed explanation of the rolling-sphere and ray-casting labeling algorithms added to
+  the CCTA tutorial, including annotated figures.
+
+### Changed
+- README condensed: developer-setup section added, key workflow images included, installation
+  and quickstart sections tightened.
+- `plotly` added as a documentation dependency for interactive notebook figures.
+
+### Fixed
+- CI pipeline now correctly installs optional dependency groups required for the full test
+  suite.
+
+### Performance
+- Rust labeling step migrated to `par_iter()` for parallel vertex classification, reducing
+  wall time on large meshes.
+
 ## [0.3.0] - 2026-04-30
 
 ### Added
