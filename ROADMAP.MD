@@ -59,7 +59,7 @@
   descriptions and typed bullet list per return type; `:func:` cross-reference present.
 - [x] Fix `translate((0.0, 1.0, 2.0))` tuple bug — done: all three call-sites use positional
   args `translate(0.0, 1.0, 2.0)`.
-- [] Fix remaining undefined variables in tutorial snippets (reviewer: "cannot be run due to
+- [x] Fix remaining undefined variables in tutorial snippets (reviewer: "cannot be run due to
   undefined variables"):
   - `stress` (section 6, to_array snippet, line ~392) — only defined if the user followed the
     `from_file_full` path; breaks on the `singlepair` path.  Change to `rest` or add a note.
@@ -87,7 +87,6 @@
   (https://joss.readthedocs.io/en/latest/policies.html#joss-policies).
 
 ## CI / quality
+- [x] Add `mypy` to pre-commit hooks.
 - [] Integrate coverage measurement (`pytest-cov`) and upload reports to Coveralls or Codecov.
 - [] Add a coverage status badge to the README.
-- [] Add `mypy` to pre-commit hooks.
-- [] Add `scipy` to pre-commit / lint hooks.

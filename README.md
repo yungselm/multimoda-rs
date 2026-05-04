@@ -99,9 +99,13 @@ aligned_pair, cl_resampled = mm.align_three_point(
 
 ![Initial CCTA labeling](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/docs/figures/initial_labeling.jpg)
 
-**4. CCTA–intravascular fusion** — the labeled CCTA geometry is morphed along the centerline to match the high-resolution intravascular measurements:
+**4. CCTA–morphing** — the labeled CCTA geometry is morphed along the centerline to match the high-resolution intravascular geometry:
 
-![CCTA scaling and fusion](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/docs/figures/scaling.jpg)
+![CCTA scaling](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/docs/figures/scaling.jpg)
+
+**5. CCTA/intravascular fusio** — the morphed CCTA geometry is stitched to the intravascular geometry, replacing a section with a high resolution verison:
+
+![CCTA fusion](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/docs/figures/concept.jpg)
 
 ## Documentation
 

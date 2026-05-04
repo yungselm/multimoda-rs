@@ -1,13 +1,8 @@
 
 .. note::
 
-    Also download the example data and jupyter notebooks to follow this tutorial step-by-step.
-    Use the direct download link:
-    `examples.zip <https://github.com/yungselm/multimoda-rs/releases/latest/download/examples.zip>`_
-    (SHA256: ``d11ebc7607f43ab4571fb51c9ac9178caac57774cf5d97f4f068ace4eb070fee``)
-
-    Alternatively, browse all releases on the
-    `Github Releases page <https://github.com/yungselm/multimoda-rs/releases>`_.
+    Example data and Jupyter notebooks are included in the repository under the ``examples/`` directory.
+    You can also follow along in the :doc:`Intravascular Notebook <notebooks/intravascular_notebook>`.
 
 Tutorial - Intravascular Module
 ================================

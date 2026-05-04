@@ -1,15 +1,9 @@
 
 .. note::
 
-    Also download the example data and jupyter notebooks to follow this tutorial step-by-step.
-    Use the direct download link:
-    `examples.zip <https://github.com/yungselm/multimoda-rs/releases/latest/download/examples.zip>`_
-    (SHA256: ``d11ebc7607f43ab4571fb51c9ac9178caac57774cf5d97f4f068ace4eb070fee``)
-
-    Alternatively, browse all releases on the
-    `Github Releases page <https://github.com/yungselm/multimoda-rs/releases>`_.
-    The ``stitching.py`` example script and ``test_adjust_ccta.py`` test file allow you to
-    also display the trimesh debug plots.
+    Example data and Jupyter notebooks are included in the repository under the ``examples/`` directory.
+    You can also follow along in the :doc:`CCTA Notebook <notebooks/ccta_notebook>`.
+    The ``stitching.py`` example script allows you to also display the trimesh debug plots.
 
 Tutorial - CCTA Module
 =======================
@@ -25,6 +19,13 @@ This step-by-step tutorial demonstrates how to:
 7. Remesh and smooth the stitched geometry
 8. Visualise labeled regions and export section STL files
 9. Re-label the final stitched geometry
+
+The goal of this module is to replace a section on the CCTA geometry with an intravascular geometry.
+
+.. image:: ./figures/concept.jpg
+   :alt: Concept
+   :align: center
+   :width: 600px
 
 1. Read in and prepare CCTA geometries and centerlines
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -266,6 +267,17 @@ to round free-segment lumen:
     ``find_aortic_wall_scaling`` raises ``ValueError`` if no frame with elliptic ratio < 1.3
     is found.  This can happen when the intramural segment is very short or the geometry is
     nearly circular throughout.  In that case, omit this scaling step.
+
+Here the created wall in the alignment module (based of measurement_1 in record data from :class:`PyInputData`)
+is used to minimize distance between the intravascular wall and the ``removed_rca_points`` on the ccta mesh (see :numref:`fig-wall`).
+
+.. figure:: ./figures/aortic_wall_adj.jpg
+   :name: fig-wall
+   :alt: Aortic wall scaling
+   :align: center
+   :width: 400px
+
+   R-AAOCA with aligned intravascular mesh, scaled distal coronary and scaled aorta to match the ``Wall`` in ``PyGeometry``. Left: 3-D view; right: schematic illustration.
 
 5. Morph CCTA to intravascular geometry
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
