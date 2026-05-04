@@ -5,10 +5,6 @@ build:
   tools:
     python: "3.12"
     rust: "latest"
-  apt_packages:
-    - libssl-dev
-    - pkg-config
-
   jobs:
     post_create_environment:
       - "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.87.0"
