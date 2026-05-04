@@ -19,6 +19,7 @@ build:
       - "echo \"Activated venv: $VIRTUAL_ENV\""
       - "ln -s \"$READTHEDOCS_VIRTUALENV_PATH\" .venv"
       - "echo \"Symlinked .venv → $READTHEDOCS_VIRTUALENV_PATH\""
+      - "pip install 'maturin>=1.7,<2.0' 'sphinx>=8.0,<9.0' sphinx-rtd-theme sphinx-autodoc-typehints myst-nb plotly furo"
 
     pre_build:
       - "maturin develop --release"
@@ -32,5 +33,4 @@ python:
   install:
     - method: pip
       path: .
-      extra_requirements: [docs, maturin]
 
