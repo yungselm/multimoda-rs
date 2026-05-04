@@ -23,6 +23,10 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 - CI pipeline now correctly installs optional dependency groups required for the full test
   suite.
+- Notebook tests no longer fail with `AttributeError: MeshSet has no attribute
+  'meshing_close_holes'` on bare Linux runners. pymeshlab silently skips plugin loading when
+  `libopengl0` is absent, leaving `MeshSet` with no filter methods; the CI now installs
+  `libopengl0` before the notebook test job runs.
 
 ### Performance
 - Rust labeling step migrated to `par_iter()` for parallel vertex classification, reducing

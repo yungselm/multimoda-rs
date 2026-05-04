@@ -23,13 +23,18 @@ jobs:
     name: Notebook tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: 3.12.x
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Install system dependencies
+        # pymeshlab loads MeshLab filter plugins as shared libraries at import time via
+        # load_default_plugins(). On bare Linux runners this requires libopengl0 to be
+        # present; without it the call silently fails (PyMeshLabException is caught in
+        # pymeshlab's __init__.py) and MeshSet is left with no filter methods, causing
+        # AttributeError on any filter call such as meshing_close_holes().
         run: sudo apt-get install -y libopengl0
       - name: Install dependencies
         run: |
@@ -47,8 +52,8 @@ jobs:
       matrix:
         python-version: ['3.10', '3.11', '3.12', '3.13']
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install Rust
@@ -71,9 +76,9 @@ jobs:
           - runner: ubuntu-latest
             target: aarch64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: 3.12.x
 
@@ -124,8 +129,8 @@ jobs:
           - runner: ubuntu-latest
             target: armv7
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: 3.12.x
       - name: Install Python deps
@@ -162,8 +167,8 @@ jobs:
           - runner: windows-latest
             target: x64
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: 3.12.x
           architecture: ${{ matrix.platform.target }}
@@ -203,8 +208,8 @@ jobs:
             target: aarch64
             arch: arm64
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: 3.12.x
       - name: Install Python deps
@@ -235,7 +240,7 @@ jobs:
   sdist:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
