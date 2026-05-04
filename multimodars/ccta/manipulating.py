@@ -66,10 +66,8 @@ def scale_region_centerline_morphing(
         print("Warning: No vertices found for scaling region")
         return scaled_mesh
 
-    print(
-        f"Scaling {len(region_vertex_indices)} vertices using centerline-based morphing"
-    )
-    print(f"Diameter adjustment: {diameter_adjustment_mm} mm")
+    print(f"\nScaling {len(region_vertex_indices)} vertices around {centerline}")
+    print(f"Diameter adjustment: {np.round(diameter_adjustment_mm, 2)} mm")
 
     region_vertices_list = [
         tuple(vertex) for vertex in scaled_mesh.vertices[region_vertex_indices]
@@ -135,7 +133,7 @@ def find_distal_and_proximal_scaling(
     n_anomalous_points = len(results["anomalous_points"])
     n_section: int = int(np.ceil(0.25 * n_anomalous_points))
 
-    print("\n=== Finding best scaling factors ===")
+    print("\nFinding best proximal/distal radial scaling factors...")
     prox_scaling, dist_scaling = find_proximal_distal_scaling(
         results["anomalous_points"],
         n_section,
@@ -144,9 +142,8 @@ def find_distal_and_proximal_scaling(
         frame_points_prox,
         frame_points_dist,
     )
-    print(f"Best proximal scaling: {np.round(prox_scaling, 2)} mm")
-    print(f"Best distal scaling: {np.round(dist_scaling, 2)} mm")
-    print("====================================\n")
+    print(f"Proximal scaling: {np.round(prox_scaling, 2)} mm")
+    print(f"Distal scaling: {np.round(dist_scaling, 2)} mm")
 
     return prox_scaling, dist_scaling
 
@@ -184,14 +181,13 @@ def find_aorta_scaling(
     if reference_points is None:
         raise ValueError("No aortic wall points found in frames for scaling reference")
 
-    print("\n=== Finding best scaling factor ===")
+    print("\nFinding best aortic radial scaling factor...")
     scaling = find_aortic_scaling(
         results["rca_removed_points"],  # For now work with removed points
         reference_points,
         cl_aorta,
     )
-    print(f"Best aortic scaling: {np.round(scaling, 2)} mm")
-    print("====================================\n")
+    print(f"Aortic scaling: {np.round(scaling, 2)} mm")
 
     return scaling
 
@@ -224,7 +220,7 @@ def find_aortic_wall_scaling(
     """
     ref_point = None
 
-    print("\n=== Finding best aortic wall scaling factor ===")
+    print("\nFinding best aortic wall radial scaling factor...")
     for frame in frames:
         elliptic_ratio = frame.lumen.get_elliptic_ratio()
         if elliptic_ratio < 1.3:
@@ -239,8 +235,7 @@ def find_aortic_wall_scaling(
     if ref_point is None:
         raise ValueError("No coronary reference point found")
     scaling = _find_aortic_wall_scaling(cl_aorta, ref_point, results["aorta_points"])
-    print(f"Best aortic wall scaling: {np.round(scaling, 2)} mm")
-    print("====================================\n")
+    print(f"Aortic wall scaling: {np.round(scaling, 2)} mm")
 
     return scaling
 
@@ -395,6 +390,10 @@ def remove_labeled_points_from_mesh(
     updated = dict(results)
     updated["mesh"] = new_mesh
     updated["boundary_points"] = boundary_points
+
+    print(f"Applying removal of '{region_keys}'")
+    print(f"Removed {len(points_to_remove)}")
+    print(f"Created {len(updated['boundary_points'])} boundary points")
 
     for key in region_keys:
         updated[key] = []
@@ -697,7 +696,6 @@ def _prepare_prox_dist_boundary_pts(
 ) -> tuple[list, list]:
     proximal_boundary_pts = []
     distal_boundary_pts = []
-    print(f"Number of boundary points: {len(results['boundary_points'])}")
     for pt in results["boundary_points"]:
         distance_prox = np.linalg.norm(np.array(prox_centroid) - np.array(pt))
         distance_dist = np.linalg.norm(np.array(dist_centroid) - np.array(pt))

@@ -229,7 +229,7 @@ pub fn from_file_full(
         sample_size,
         postprocessing,
     )
-    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{:#}", e)))?;
 
     let py_geom_ab = geom_ab_final.into();
     let py_geom_cd = geom_cd_final.into();
@@ -401,7 +401,7 @@ pub fn from_file_doublepair(
         sample_size,
         postprocessing,
     )
-    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{:#}", e)))?;
 
     let py_geom_ab = geom_ab_final.into();
     let py_geom_cd = geom_cd_final.into();
@@ -559,7 +559,7 @@ pub fn from_file_singlepair(
         sample_size,
         postprocessing,
     )
-    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{:#}", e)))?;
 
     let py_geom_ab = geom_pair_final.into();
     let py_logs_a = logs_to_tuples(logs_a);
@@ -695,7 +695,7 @@ pub fn from_file_single(
         bruteforce,
         sample_size,
     )
-    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{:#}", e)))?;
 
     let py_geom = geom.into();
     let py_logs = logs_to_tuples(logs);
@@ -904,7 +904,7 @@ pub fn from_array_full(
         sample_size,
         postprocessing,
     )
-    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{:#}", e)))?;
 
     let py_geom_ab = geom_ab_final.into();
     let py_geom_cd = geom_cd_final.into();
@@ -1100,7 +1100,7 @@ pub fn from_array_doublepair(
         sample_size,
         postprocessing,
     )
-    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{:#}", e)))?;
 
     let py_geom_ab = geom_ab_final.into();
     let py_geom_cd = geom_cd_final.into();
@@ -1261,7 +1261,7 @@ pub fn from_array_singlepair(
         sample_size,
         postprocessing,
     )
-    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{:#}", e)))?;
 
     let py_geom_ab = geom_ab_final.into();
     let py_logs_a = logs_to_tuples(logs_a);
@@ -1393,7 +1393,7 @@ pub fn from_array_single(
         bruteforce,
         sample_size,
     )
-    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{:#}", e)))?;
 
     let py_geom = PyGeometry::from(geom_rs);
     let py_logs = logs_to_tuples(logs);

@@ -38,7 +38,15 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
     "sphinx_autodoc_typehints",
-    "myst_parser",
+    "myst_nb",
+]
+
+# myst-nb: render pre-executed notebooks without re-running them
+nb_execution_mode = "off"
+
+# tell myst-nb to render Plotly's MIME type as interactive HTML (requires plotly in build env)
+nb_mime_priority_overrides = [
+    ("html", "application/vnd.plotly.v1+json", 10),
 ]
 
 # Templates and static files

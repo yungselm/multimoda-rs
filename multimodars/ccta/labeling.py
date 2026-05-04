@@ -162,7 +162,7 @@ def label_geometry(
         cl_lca, points_list, bounding_sphere_radius_mm
     )
 
-    print(f"RCA points found: {len(rca_points_found)}")
+    print(f"\nRCA points found: {len(rca_points_found)}")
     print(f"LCA points found: {len(lca_points_found)}")
 
     rca_removed_points = []
@@ -185,7 +185,7 @@ def label_geometry(
         rca_removed_points = [
             p for p in rca_points_found if p not in final_rca_points_found
         ]
-        print(f"RCA: removed {len(rca_removed_points)} occluded points")
+        print(f"RCA: relabeled {len(rca_removed_points)} points in intramual course")
     else:
         final_rca_points_found = rca_points_found.copy()
 
@@ -204,11 +204,11 @@ def label_geometry(
         lca_removed_points = [
             p for p in lca_points_found if p not in final_lca_points_found
         ]
-        print(f"LCA: removed {len(lca_removed_points)} occluded points")
+        print(f"LCA: relabeled {len(lca_removed_points)} points in intramual course")
     else:
         final_lca_points_found = lca_points_found.copy()
 
-    print("Removing LCA and RCA island points...")
+    print("\nRemoving LCA and RCA island points...")
     aortic_points = _find_aortic_points(
         mesh.vertices, final_rca_points_found, final_lca_points_found
     )
@@ -238,8 +238,13 @@ def label_geometry(
     }
 
     # final reclassification based on adjacency map
-    print("Applying final reclassification based on adjacency map...")
+    print("\nApplying final reclassification based on adjacency map...")
     new_results = _final_reclassification(results)
+    print(f"aorta_points:{len(new_results['aorta_points'])}")
+    print(f"rca_points:{len(new_results['rca_points'])}")
+    print(f"lca_points:{len(new_results['lca_points'])}")
+    print(f"rca_removed_points:{len(new_results['rca_removed_points'])}")
+    print(f"lca_removed_points:{len(new_results['lca_removed_points'])}")
 
     if control_plot:
         plot_results_key(
@@ -542,6 +547,11 @@ def label_anomalous_region(
     results["aorta_points"] = [
         tuple(v) for v in results["mesh"].vertices if tuple(v) not in all_coronary
     ]
+
+    print("\nApplying anomalous labeling based on aligned intravascular frames...")
+    print(f"proximal_points: {len(results['proximal_points'])}")
+    print(f"distal_points: {len(results['distal_points'])}")
+    print(f"anomalous_points: {len(results['anomalous_points'])}")
 
     if debug_plot:
         plot_results_key(

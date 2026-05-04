@@ -61,8 +61,10 @@ impl InputData {
         path: P,
         names: HashMap<ContourType, &str>,
         diastole: bool,
+        label: &str,
     ) -> anyhow::Result<InputData> {
         let path = path.as_ref();
+        let label_string = label.to_string();
 
         let mut eem: Option<Vec<ContourPoint>> = None;
         let mut calcification: Option<Vec<ContourPoint>> = None;
@@ -181,7 +183,7 @@ impl InputData {
             record,
             ref_point,
             diastole,
-            label: phase.to_string(),
+            label: label_string,
         };
 
         Ok(input)
@@ -427,7 +429,7 @@ mod input_tests {
         names.insert(ContourType::Sidebranch, "sidebranch");
 
         let data_path = Path::new("./data/fixtures/idealized_geometry");
-        let input = InputData::process_directory(data_path, names, true)?;
+        let input = InputData::process_directory(data_path, names, true, "")?;
 
         assert!(
             !input.lumen.is_empty(),

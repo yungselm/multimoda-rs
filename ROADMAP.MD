@@ -17,31 +17,26 @@
 - [] function to combine anomalous section only with the distal part
 
 # Miscellaneous
-- [] Improve print statements in the whole package
+- [x] Improve print statements in the whole package
 
 # Prepublish checklist (JOSS review feedback — open until resolved):
 
-## Data & archival
-- [] Upload example data (`examples.zip`) to a persistent archive (Zenodo or similar) with a DOI.
-  Upload the source code snapshot there as well, either in the same record or a separate one linked from the paper.
-  Leave open until the DOI is minted and cited in the paper/README.
-- [] Clarify whether the sample data (repo + examples.zip) is real human data or synthetic data.
-  If real, add a statement on ethical approval / data-use conformity per JOSS policy
-  (https://joss.readthedocs.io/en/latest/policies.html#joss-policies).
-
 ## Dependencies / packaging
-- [] Add `scipy` as an explicit runtime dependency in `pyproject.toml` (required by `mm.label_geometry()`).
-- [] Convert `optional-dependencies` groups that are not user-facing extras (docs, test, dev)
+- [x] Add `scipy` as an explicit runtime dependency in `pyproject.toml` (required by `mm.label_geometry()`).
+- [x] Convert `optional-dependencies` groups that are not user-facing extras (docs, test, dev)
   to PEP 735 `dependency-groups` so they are not shipped with the package on PyPI.
-  Move notebook runtime deps (`trimesh`, `plotly`, `scipy`, `nbformat`, `ipykernel`) into a
-  `[dependency-groups.dev]` group so `uv` installs them automatically during development.
+  Note: `trimesh` was **not** moved to dev — it is imported throughout the core package
+  (`_converters.py`, `ccta/` modules) and must remain a runtime dependency.
+  Moved `plotly`, `nbformat`, `ipykernel` into `[dependency-groups.dev]`; `[dependency-groups.test]`
+  and `[dependency-groups.docs]` replace the former optional-dependency groups.
+  `viz` and `meshlab` remain as `[project.optional-dependencies]` (user-facing extras).
 
 ## Examples / notebooks
-- [] Include the `examples/` folder (with data) directly in the repository so users can clone
+- [x] Include the `examples/` folder (with data) directly in the repository so users can clone
   and run without a separate download, and so CI can execute the notebooks as tests.
-- [] Fix `ivus_to_centerline.ipynb`: create `output/` and `output/unprocessed/` directories
+- [x] Fix `ivus_to_centerline.ipynb`: create `output/` and `output/unprocessed/` directories
   on-the-fly with `os.makedirs(..., exist_ok=True)` so the notebook does not error on a fresh clone.
-- [] Add a unit test that runs the example notebook end-to-end (e.g. using `nbmake` or `pytest-notebook`)
+- [x] Add a unit test that runs the example notebook end-to-end (e.g. using `nbmake` or `pytest-notebook`)
   so regressions are caught automatically.
 
 ## Performance claim
@@ -64,7 +59,7 @@
   descriptions and typed bullet list per return type; `:func:` cross-reference present.
 - [x] Fix `translate((0.0, 1.0, 2.0))` tuple bug — done: all three call-sites use positional
   args `translate(0.0, 1.0, 2.0)`.
-- [] Fix remaining undefined variables in tutorial snippets (reviewer: "cannot be run due to
+- [x] Fix remaining undefined variables in tutorial snippets (reviewer: "cannot be run due to
   undefined variables"):
   - `stress` (section 6, to_array snippet, line ~392) — only defined if the user followed the
     `from_file_full` path; breaks on the `singlepair` path.  Change to `rest` or add a note.
@@ -77,14 +72,21 @@
     with `aligned` (returned from align_combined in section 4).
 
 ## Documentation — general
-- [] Consider converting tutorials to Jupyter notebooks rendered via `nbsphinx` or `myst-nb`
+- [x] Consider converting tutorials to Jupyter notebooks rendered via `nbsphinx` or `myst-nb`
   so outputs are visible, results are verifiable, and documentation build failures reveal
   broken code early. (Non-blocking suggestion from reviewer crnh / richardkoehler.)
 - [] Cite the case-report paper in the Research impact statement (it is cited elsewhere but
   not in that section).
 
+## Data & archival
+- [] Upload example data (`examples.zip`) to a persistent archive (Zenodo or similar) with a DOI.
+  Upload the source code snapshot there as well, either in the same record or a separate one linked from the paper.
+  Leave open until the DOI is minted and cited in the paper/README.
+- [] Clarify whether the sample data (repo + examples.zip) is real human data or synthetic data.
+  If real, add a statement on ethical approval / data-use conformity per JOSS policy
+  (https://joss.readthedocs.io/en/latest/policies.html#joss-policies).
+
 ## CI / quality
+- [x] Add `mypy` to pre-commit hooks.
 - [] Integrate coverage measurement (`pytest-cov`) and upload reports to Coveralls or Codecov.
 - [] Add a coverage status badge to the README.
-- [] Add `mypy` to pre-commit hooks.
-- [] Add `scipy` to pre-commit / lint hooks.

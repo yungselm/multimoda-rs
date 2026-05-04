@@ -1,15 +1,9 @@
 
 .. note::
 
-    Also download the example data and jupyter notebooks to follow this tutorial step-by-step.
-    Use the direct download link:
-    `examples.zip <https://github.com/yungselm/multimoda-rs/releases/latest/download/examples.zip>`_
-    (SHA256: ``d11ebc7607f43ab4571fb51c9ac9178caac57774cf5d97f4f068ace4eb070fee``)
-
-    Alternatively, browse all releases on the
-    `Github Releases page <https://github.com/yungselm/multimoda-rs/releases>`_.
-    The ``stitching.py`` example script and ``test_adjust_ccta.py`` test file allow you to
-    also display the trimesh debug plots.
+    Example data and Jupyter notebooks are included in the repository under the ``examples/`` directory.
+    You can also follow along in the :doc:`CCTA Notebook <notebooks/ccta_notebook>`.
+    The ``stitching.py`` example script allows you to also display the trimesh debug plots.
 
 Tutorial - CCTA Module
 =======================
@@ -25,6 +19,13 @@ This step-by-step tutorial demonstrates how to:
 7. Remesh and smooth the stitched geometry
 8. Visualise labeled regions and export section STL files
 9. Re-label the final stitched geometry
+
+The goal of this module is to replace a section on the CCTA geometry with an intravascular geometry.
+
+.. image:: ./figures/concept.jpg
+   :alt: Concept
+   :align: center
+   :width: 600px
 
 1. Read in and prepare CCTA geometries and centerlines
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -50,6 +51,39 @@ steps.
         anomalous_lca=False,
         control_plot=False,
     )
+
+**Core algorithm labeling:**
+
+In the first step, a rolling sphere is propagated along the coronary centerlines. For anatomically normal coronary arteries, this approach reliably assigns all mesh vertices within the predefined radius to either the RCA or LCA label. In anomalous coronary arteries with an intramural course, however, the rolling sphere systematically mislabels a subset of aortic-wall vertices as coronary, owing to the compressed elliptic cross-section of the vessel and its proximity to the aortic wall (see :numref:`fig-rolling`).
+
+.. figure:: ./figures/rolling_sphere.jpg
+   :name: fig-rolling
+   :alt: Rolling sphere labeling
+   :align: center
+   :width: 800px
+
+   Rolling sphere applied for the case of an R-AAOCA, demonstrating incorrect labeling caused by the elliptic vessel cross-section. Left: 3-D view; right: schematic illustration.
+
+To address this limitation, a ray-casting algorithm is employed. A ray is cast from each aortic centerline point toward each of the ``n_points_intramural`` proximal coronary centerline points. When a ray intersects three mesh faces, the first intersected face is added to an occlusion set. All RCA vertices that are topologically connected to any face in this set are subsequently reclassified as ``aortic_points`` and recorded in ``rca_removed_points``, removing them from the ``rca_points`` label. The identical procedure is applied symmetrically when ``anomalous_lca=True``.
+
+.. list-table::
+   :widths: 50 50
+   :align: center
+
+   * - .. image:: ./figures/ray_casting.gif
+          :width: 100%
+          :alt: Ray casting animation
+     - .. image:: ./figures/ray_casting.jpg
+          :width: 100%
+          :alt: Ray casting diagram
+
+*Left:* 3D visualization of all cast rays. *Right:* schematic diagram of the occlusion-detection step.
+
+As a final clean-up, any RCA or LCA vertex whose immediate mesh neighbours carry no
+same-label assignment — an island vertex disconnected from all other coronary-labeled
+vertices — is reclassified as aortic. This adjacency-based elimination ensures that
+the returned ``rca_points`` and ``lca_points`` sets form topologically connected regions
+on the mesh surface.
 
 **Parameter reference:**
 
@@ -233,6 +267,17 @@ to round free-segment lumen:
     ``find_aortic_wall_scaling`` raises ``ValueError`` if no frame with elliptic ratio < 1.3
     is found.  This can happen when the intramural segment is very short or the geometry is
     nearly circular throughout.  In that case, omit this scaling step.
+
+Here the created wall in the alignment module (based of measurement_1 in record data from :class:`PyInputData`)
+is used to minimize distance between the intravascular wall and the ``removed_rca_points`` on the ccta mesh (see :numref:`fig-wall`).
+
+.. figure:: ./figures/aortic_wall_adj.jpg
+   :name: fig-wall
+   :alt: Aortic wall scaling
+   :align: center
+   :width: 400px
+
+   R-AAOCA with aligned intravascular mesh, scaled distal coronary and scaled aorta to match the ``Wall`` in ``PyGeometry``. Left: 3-D view; right: schematic illustration.
 
 5. Morph CCTA to intravascular geometry
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

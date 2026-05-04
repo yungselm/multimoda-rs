@@ -128,7 +128,7 @@ pub fn align_combined_rs(
     let original_geom_pair = geom_pair.clone();
 
     // Step 1: Get the initial rotation from three-point alignment
-    println!("Step 1: Finding initial rotation via three-point method");
+    println!("\nStep 1: Finding initial rotation via three-point method");
 
     let resampled_centerline =
         preprocess_centerline(centerline.clone(), &original_geom_pair.geom_a)
@@ -156,13 +156,7 @@ pub fn align_combined_rs(
         &resampled_centerline.points[initial_cl_ref_idx],
     );
 
-    println!(
-        "Initial rotation from three-point: {:.4} rad",
-        initial_rotation
-    );
-
     // Step 2: Apply the three-point rotation
-    println!("Step 2: Applying three-point rotation");
     let mut aligned_geom_pair = rotate_by_best_rotation(original_geom_pair, initial_rotation);
     aligned_geom_pair =
         apply_transformations(aligned_geom_pair, &resampled_centerline, &aortic_ref_pt);
@@ -171,7 +165,7 @@ pub fn align_combined_rs(
     let mutated_points = transfrom_tuples_to_contourpoints(points);
 
     // Step 4: Refine alignment using Hausdorff distance in limited search space
-    println!("Step 3: Refining with Hausdorff distance");
+    println!("Step 2: Refining with Hausdorff distance");
     let (refined_rotation_delta, refined_cl_ref_idx) = refine_alignment_hausdorff(
         &aligned_geom_pair,
         &resampled_centerline,
@@ -184,13 +178,13 @@ pub fn align_combined_rs(
     );
 
     let total_rotation = initial_rotation + refined_rotation_delta;
+    println!("---------------------Applying final transformation---------------------");
     println!(
-        "Total rotation (initial + delta): {:.4} rad",
-        total_rotation
+        "Total rotation (initial + delta): {:.2}°",
+        total_rotation.to_degrees()
     );
-
-    // Step 5: Create final geometry with combined rotation
-    println!("Step 4: Applying refined transformation");
+    let diff = initial_cl_ref_idx as i32 - refined_cl_ref_idx as i32;
+    println!("Moving ostium by {} centerline points", diff);
 
     // Create new geometry pair with the total rotation
     let mut final_geom_pair = rotate_by_best_rotation(geom_pair.clone(), total_rotation);

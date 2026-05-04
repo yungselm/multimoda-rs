@@ -32,8 +32,6 @@ pub fn align_between_geometries(
     step_rot_deg: f64,
     sample_size: usize,
 ) -> Result<GeometryPair> {
-    println!("Aligning geometry '{}' to '{}'", geom_b.label, geom_a.label);
-
     // Find reference frames
     let ref_frame_a_idx = geom_a
         .find_ref_frame_idx()
@@ -48,15 +46,6 @@ pub fn align_between_geometries(
     let ref_frame_a_centroid = ref_frame_a.centroid;
     let ref_frame_b_centroid = ref_frame_b.centroid;
 
-    println!(
-        "Reference frame A centroid: ({:.2}, {:.2}, {:.2})",
-        ref_frame_a_centroid.0, ref_frame_a_centroid.1, ref_frame_a_centroid.2
-    );
-    println!(
-        "Reference frame B centroid: ({:.2}, {:.2}, {:.2})",
-        ref_frame_b_centroid.0, ref_frame_b_centroid.1, ref_frame_b_centroid.2
-    );
-
     // Calculate initial translation
     let initial_translation = (
         ref_frame_a_centroid.0 - ref_frame_b_centroid.0,
@@ -66,7 +55,6 @@ pub fn align_between_geometries(
 
     // Apply initial translation
     geom_b.translate_geometry(initial_translation);
-    println!("Applied initial translation: {:?}", initial_translation);
 
     // Extract points for alignment (after initial translation)
     let test_geom_a = extract_geometry_points_with_frame_info(geom_a, sample_size.max(500));
@@ -74,13 +62,6 @@ pub fn align_between_geometries(
 
     let best_rotation =
         find_best_rotation_between(&test_geom_a, &test_geom_b, step_rot_deg, rot_deg);
-
-    println!(
-        "Applying rotation of {:.2}° to align '{}' to '{}'",
-        best_rotation.to_degrees(),
-        geom_b.label,
-        geom_a.label
-    );
 
     // Apply the rotation to the ENTIRE geometry around the reference frame A centroid
     rotate_geometry_around_point(geom_b, best_rotation, ref_frame_a_centroid);
@@ -102,6 +83,27 @@ pub fn align_between_geometries(
     );
 
     geom_b.translate_geometry(final_translation);
+
+    println!(
+        "\n✅ Aligned geometry '{}' to '{}'",
+        geom_b.label, geom_a.label
+    );
+    println!("-----------------------------------------");
+    println!(
+        "Applied initial translation: ({:.2}, {:.2}, {:.2}) mm",
+        initial_translation.0, initial_translation.1, initial_translation.2
+    );
+    println!(
+        "Found best rotation of {:.2}° with parameters: \nrange: {:.2}° \nstep size: {:2.}°",
+        best_rotation.to_degrees(),
+        &rot_deg,
+        &step_rot_deg,
+    );
+    println!(
+        "Applied final translation: ({:2.}, {:.2}, {:.2}) mm",
+        final_translation.0, final_translation.1, final_translation.2
+    );
+    println!("-----------------------------------------");
 
     GeometryPair::new(geom_a.clone(), geom_b.clone())
 }
