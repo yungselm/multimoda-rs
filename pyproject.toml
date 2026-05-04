@@ -10,7 +10,8 @@ requires-python = ">=3.10"
 dependencies = [
     "numpy>=2.0.0,<3.0.0",
     "trimesh>=4.8.0",
-    "scipy>=1.15.0"
+    "scipy>=1.15.0",
+    "networkx>=3.0"
 ]
 classifiers = [
     "Programming Language :: Rust",
