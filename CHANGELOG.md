@@ -18,6 +18,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - README condensed: developer-setup section added, key workflow images included, installation
   and quickstart sections tightened.
 - `plotly` added as a documentation dependency for interactive notebook figures.
+- Improved all print statements in the whole package.
 
 ### Fixed
 - CI pipeline now correctly installs optional dependency groups required for the full test
