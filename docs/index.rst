@@ -47,6 +47,7 @@ Table of Contents
    CCTA Intravascular Fusion Tutorial <tutorial_ccta>
    Intravascular Notebook <notebooks/intravascular_notebook>
    CCTA Notebook <notebooks/ccta_notebook>
+   Benchmarks <benchmark>
    api/index
    changelog
 

@@ -55,7 +55,7 @@ For building from source or the full developer setup (tests, linting, docs), see
 
 ## Quick Example
 
-Download [examples.zip](https://github.com/yungselm/multimoda-rs/releases/latest/download/examples.zip) (SHA256: `d11ebc7607f43ab4571fb51c9ac9178caac57774cf5d97f4f068ace4eb070fee`) from the latest release and extract it to your working directory.
+Checkout our **[Documentation](https://multimod-rs.readthedocs.io/en/latest)** for in-depth explanations of the functionality and preloaded notebooks including 3D plots. Otherwise clone the repo to follow along the different examples:
 
 ```python
 import multimodars as mm
@@ -109,7 +109,7 @@ aligned_pair, cl_resampled = mm.align_three_point(
 
 ## Documentation
 
-Full documentation — installation, step-by-step tutorials, interactive Jupyter notebooks, and API reference — is available at **[multimoda-rs.readthedocs.io](https://multimoda-rs.readthedocs.io)**.
+Full documentation — installation, step-by-step tutorials, interactive (preloaded) Jupyter notebooks, and API reference — is available at **[multimoda-rs.readthedocs.io](https://multimoda-rs.readthedocs.io)**.
 
 ## License
 
