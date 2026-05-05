@@ -1,5 +1,9 @@
 # Python package that has one purpose: Combining any intravascular image modality with CCTA meshes.
 
+# Optimizations
+- [] Optimize the ray intersection algorithm
+- [] Better parallelization strategy for frames alignment by processing in batches (frames only have to be aligned relative to each other not sequentially)
+
 # Centerline alignment module
 (- [] Create Centerline directly from mesh) (v1.0.0)
 
@@ -15,9 +19,6 @@
 - [] function to automatically assign wall thickness to ccta and combined ivus/ccta mesh
 - [] helper function to automatically export only certain points on mesh (e.g. RCA or LCA)
 - [] function to combine anomalous section only with the distal part
-
-# Miscellaneous
-- [x] Improve print statements in the whole package
 
 # Prepublish checklist (JOSS review feedback — open until resolved):
 
@@ -40,7 +41,7 @@
   so regressions are caught automatically.
 
 ## Performance claim
-- [] Provide reproducible code + sample data for the performance claim in the paper (lines 102-104):
+- [x] Provide reproducible code + sample data for the performance claim in the paper (lines 102-104):
   "Empirical performance on a 16-core CPU: an OCT pullback with 280 frames and a rotation search range
   of ±3° (final accuracy 0.01°) saw alignment time reduced from 150 s to 18 s with the optimized
   multiscale search."
