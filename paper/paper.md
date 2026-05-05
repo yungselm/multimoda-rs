@@ -98,9 +98,12 @@ Alignment is a two-stage pipeline producing spatially and rotationally consisten
 
 ## Performance and parallelisation
 
-Rust (Rayon) provides hierarchical data parallelism and SIMD-enabled coordinate transforms. Point rotations and nearest-neighbour searches parallelize across cores; independent pullbacks and frames are processed concurrently when dependencies allow. Typical production workflows downsample contours to 200–500 points/frame to balance sub-pixel accuracy and compute.
+Rust (Rayon) provides hierarchical data parallelism: candidate rotation angles within each frame comparison are evaluated concurrently across all available cores, with independent pullbacks additionally processed in parallel via scoped threads (Crossbeam). Typical production workflows downsample contours to 200–500 points/frame to balance sub-pixel accuracy and compute time.
 
-Empirical performance on a 16-core CPU: an OCT pullback with 280 frames and a rotation search range of $\pm3°$ (final accuracy 0.01°) saw alignment time reduced from **$~150 s$** to **$~18 s$** with the optimized multiscale search. 
+A reproducible benchmark suite is included in the repository (`benchmarks/`) and documented in the package reference ([ReadTheDocs](https://multimoda-rs.readthedocs.io/en/latest/benchmark.html)). Key results on an Intel Xeon Gold 6234 (8 physical cores, 16 logical processors):
+
+- **Algorithm vs. brute-force:** the multiscale search outperforms exhaustive brute-force evaluation by **5.5×** at a 0.1° step size and **10.3×** at 0.05°, with the gap widening rapidly at finer resolutions as brute-force must evaluate every candidate angle.
+- **Parallelisation:** increasing from 2 to 16 cores yields a further **1.4×** reduction in wall time for both modes. The algorithmic gain (up to 10.3×) therefore dominates over hardware scaling, making algorithm choice the primary performance lever.
 
 ![Figure 4: Multiscale intra-pullback alignment workflow (coarse-to-fine angular search and centroid propagation). \label{fig:algo}](figures/Figure4.jpg){width=80%}
 
