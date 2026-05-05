@@ -17,7 +17,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   corrected parallelization description.
 
 ### Performance
-- Intra-pullback alignment (`search_range`) now parallelises over candidate rotation
+- Intra-pullback alignment (`search_range`) now parallelizes over candidate rotation
   angles via `par_iter` instead of the point-rotation loop. The inner cost-function
   loop is now sequential. This provides enough rayon tasks per frame step to saturate
   all cores: bruteforce scales 6.5× and optimized 4.2× from 2 to 16 cores (previously
