@@ -3,6 +3,27 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.2] - 2026-05-05
+
+### Added
+- Benchmark suite (`benchmarks/`) with two scripts: `benchmark_bruteforce_stepsize.py`
+  (step-size scaling, `from_file_full`) and `benchmark_cpu_scaling.py` (core-count
+  scaling, `from_array_single`). Results saved to `benchmarks/results/`.
+- Benchmark documentation page (`docs/benchmark.rst`) with result figures and table,
+  linked in the ReadTheDocs table of contents.
+
+### Changed
+- `paper/paper.md` Performance section updated with quantified benchmark results and
+  corrected parallelisation description.
+
+### Performance
+- Intra-pullback alignment (`search_range`) now parallelises over candidate rotation
+  angles via `par_iter` instead of the point-rotation loop. The inner cost-function
+  loop is now sequential. This provides enough rayon tasks per frame step to saturate
+  all cores: bruteforce scales 6.5× and optimised 4.2× from 2 to 16 cores (previously
+  ~1.4× for both). Combined algorithmic + parallelisation gain reaches **38.5×** vs.
+  brute-force at 2 cores.
+
 ## [0.3.1] - 2026-05-04
 
 ### Added
