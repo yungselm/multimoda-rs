@@ -52,50 +52,61 @@ pool re-initialises from ``RAYON_NUM_THREADS``.
 
 .. list-table:: Median wall time (s) across CPU core counts
    :header-rows: 1
-   :widths: 12 20 20 18
+   :widths: 12 20 20 18 18
 
    * - Cores
      - Bruteforce (s)
      - Optimised (s)
-     - Speedup (alg.)
+     - Alg. speedup
+     - Core scaling (opt.)
    * - 2
-     - 131.47
-     - 14.10
-     - 9.3x
+     - 92.36
+     - 10.08
+     - 9.2x
+     - 1.00x (baseline)
    * - 4
-     - 102.79
-     - 10.92
-     - 9.4x
+     - 46.78
+     - 5.56
+     - 8.4x
+     - 1.81x
    * - 8
-     - 184.06
-     - 18.58
-     - 9.9x
+     - 24.27
+     - 3.49
+     - 7.0x
+     - 2.89x
    * - 12
-     - 109.17
-     - 11.44
-     - 9.5x
+     - 16.74
+     - 2.64
+     - 6.3x
+     - 3.82x
    * - 16
-     - 97.44
-     - 10.30
-     - 9.5x
+     - 14.15
+     - 2.40
+     - 5.9x
+     - 4.20x
 
 **Key observations**
 
-* The optimised algorithm is consistently **~9.5x faster** than bruteforce
-  regardless of core count.  This algorithmic advantage is stable and
-  independent of hardware configuration.
+* Parallelising the angle search inside ``search_range`` (rather than the
+  point-rotation loop) provides enough rayon tasks per frame to utilise cores
+  effectively: bruteforce scales **6.5x** from 2 to 16 cores, optimised
+  scales **4.2x** — both close to practical expectations under Amdahl's law
+  given the sequential frame-dependency chain.
 
-* Going from 2 to 16 cores reduces the optimised wall time from 14.1 s to
-  10.3 s — a **1.4x improvement** from eight times the hardware.
-  The bruteforce shows similar diminishing returns (1.35x).
+* The previous 8-core anomaly (WSL2 HyperThreading interference) has
+  disappeared.  With hundreds of angle-evaluation tasks per frame, rayon
+  keeps all workers busy and the idle HT sibling effect is negligible.
 
-* The anomalous result at 8 cores is a WSL2 / HyperThreading artefact: with
-  8 logical threads, every physical core has exactly one idle HT sibling that
-  the Windows scheduler colonises, causing cache interference.  This is not
-  present when running natively on Linux.
+* The optimised algorithm remains **5.9–9.2x faster** than bruteforce at
+  every core count, with the gap slightly narrowing at higher core counts
+  because bruteforce has more angles to parallelise and therefore scales
+  more aggressively.
 
-**Conclusion** — choosing the optimised algorithm over bruteforce delivers a
-9.5x speedup that no amount of additional hardware can replicate.  Adding cores
-yields at most a further 1.4x gain and requires careful tuning of
-``RAYON_NUM_THREADS`` to avoid the HyperThreading boundary.  **Algorithm choice
-is the dominant factor; parallelisation is secondary.**
+* The two gains **compound**: relative to bruteforce at 2 cores (92.4 s),
+  the optimised algorithm at 16 cores (2.40 s) achieves a combined
+  **38.5x speedup** — roughly 9x from the algorithm and 4x from parallelisation.
+
+**Conclusion** — algorithm choice and hardware scaling are now both meaningful
+levers.  For the best achievable throughput, use the optimised algorithm on as
+many cores as available; for rapid prototyping where accuracy matters less,
+coarser step sizes reduce runtime regardless of core count.

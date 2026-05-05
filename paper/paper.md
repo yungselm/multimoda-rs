@@ -103,7 +103,8 @@ Rust (Rayon) provides hierarchical data parallelism: candidate rotation angles w
 A reproducible benchmark suite is included in the repository (`benchmarks/`) and documented in the package reference ([ReadTheDocs](https://multimoda-rs.readthedocs.io/en/latest/benchmark.html)). Key results on an Intel Xeon Gold 6234 (8 physical cores, 16 logical processors):
 
 - **Algorithm vs. brute-force:** the multiscale search outperforms exhaustive brute-force evaluation by **5.5×** at a 0.1° step size and **10.3×** at 0.05°, with the gap widening rapidly at finer resolutions as brute-force must evaluate every candidate angle.
-- **Parallelisation:** increasing from 2 to 16 cores yields a further **1.4×** reduction in wall time for both modes. The algorithmic gain (up to 10.3×) therefore dominates over hardware scaling, making algorithm choice the primary performance lever.
+- **Parallelisation:** parallelising at the angle-evaluation level (rather than the point-rotation level) provides sufficient rayon tasks to utilise cores effectively. Brute-force scales **6.5×** and the optimised search **4.2×** from 2 to 16 cores.
+- **Combined gain:** relative to brute-force at 2 cores, the optimised algorithm at 16 cores is **38.5×** faster, with algorithm choice and core count contributing multiplicatively.
 
 ![Figure 4: Multiscale intra-pullback alignment workflow (coarse-to-fine angular search and centroid propagation). \label{fig:algo}](figures/Figure4.jpg){width=80%}
 
