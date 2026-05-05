@@ -96,15 +96,15 @@ Alignment is a two-stage pipeline producing spatially and rotationally consisten
 
 ![Figure 3: Top left shows the initial labeling of the coronary arteries and aorta based on centerlines. In a second step the regions to be replaced are identified based on the aligned 3D intravascular model. In a last step the CCT proximal and distal borders can be adjusted to best match intravascular borders. \label{fig:labeling}](figures/Figure3.png){width=80%}
 
-## Performance and parallelisation
+## Alignment algorithm performance and parallelization
 
 Rust (Rayon) provides hierarchical data parallelism: candidate rotation angles within each frame comparison are evaluated concurrently across all available cores, with independent pullbacks additionally processed in parallel via scoped threads (Crossbeam). Typical production workflows downsample contours to 200–500 points/frame to balance sub-pixel accuracy and compute time.
 
 A reproducible benchmark suite is included in the repository (`benchmarks/`) and documented in the package reference ([ReadTheDocs](https://multimoda-rs.readthedocs.io/en/latest/benchmark.html)). Key results on an Intel Xeon Gold 6234 (8 physical cores, 16 logical processors):
 
 - **Algorithm vs. brute-force:** the multiscale search outperforms exhaustive brute-force evaluation by **5.5×** at a 0.1° step size and **10.3×** at 0.05°, with the gap widening rapidly at finer resolutions as brute-force must evaluate every candidate angle.
-- **Parallelisation:** parallelising at the angle-evaluation level (rather than the point-rotation level) provides sufficient rayon tasks to utilise cores effectively. Brute-force scales **6.5×** and the optimised search **4.2×** from 2 to 16 cores.
-- **Combined gain:** relative to brute-force at 2 cores, the optimised algorithm at 16 cores is **38.5×** faster, with algorithm choice and core count contributing multiplicatively.
+- **parallelization:** parallelizing at the angle-evaluation level (rather than the point-rotation level) provides sufficient rayon tasks to utilise cores effectively. Brute-force scales **6.5×** and the optimized search **4.2×** from 2 to 16 cores.
+- **Combined gain:** relative to brute-force at 2 cores, the optimized algorithm at 16 cores is **38.5×** faster, with algorithm choice and core count contributing multiplicatively.
 
 ![Figure 4: Multiscale intra-pullback alignment workflow (coarse-to-fine angular search and centroid propagation). \label{fig:algo}](figures/Figure4.jpg){width=80%}
 
@@ -114,7 +114,7 @@ The core is implemented in Rust and exposed to Python via PyO3; packaging uses `
 
 # Research impact statement
 
-`Multimodars` was motivated by the need to quantify dynamic lumen deformation in CAAs, where rest/stress and pulsatile comparisons are diagnostically critical. Deterministic, high-resolution fusion enables quantitative assessment of stress-induced deformation and supports patient-specific haemodynamic modeling. These methods also support longitudinal CAD analyses (e.g., pre-/post-stent). In a case report accepted in JACC: Case Reports, we successfully implemented this fusion approach to unveil a distinct compression pattern not visible in IVUS or CCTA alone. We hope to foster a research community that leverages `multimodars` to standardize multimodal coronary fusion and accelerate the development of personalized interventional or computational strategies.
+`Multimodars` was motivated by the need to quantify dynamic lumen deformation in CAAs, where rest/stress and pulsatile comparisons are diagnostically critical. Deterministic, high-resolution fusion enables quantitative assessment of stress-induced deformation and supports patient-specific haemodynamic modeling. These methods also support longitudinal CAD analyses (e.g., pre-/post-stent). We successfully implemented this fusion approach to unveil a distinct compression pattern not visible in IVUS or CCTA alone, in a case of an 11 year old athlete with an right anomalous aortic origin of a coronary artery[@stark202611]. We hope to foster a research community that leverages `multimodars` to standardize multimodal coronary fusion and accelerate the development of personalized interventional or computational strategies.
 
 # AI usage disclosure
 

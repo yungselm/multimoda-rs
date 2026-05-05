@@ -55,7 +55,7 @@ For building from source or the full developer setup (tests, linting, docs), see
 
 ## Quick Example
 
-Checkout our **[Documentation](https://multimod-rs.readthedocs.io/en/latest)** for in-depth explanations of the functionality and preloaded notebooks including 3D plots. Otherwise clone the repo to follow along the different examples:
+Checkout our **[Documentation](https://multimoda-rs.readthedocs.io/en/latest)** for in-depth explanations of the functionality and preloaded notebooks including 3D plots. Otherwise clone the repo to follow along the different examples:
 
 ```python
 import multimodars as mm

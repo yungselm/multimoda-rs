@@ -6,18 +6,18 @@ Two benchmarks to characterise the alignment performance of `multimodars`.
 
 | # | What | Function | Dataset |
 |---|------|----------|---------|
-| 1 | Bruteforce vs. optimised at varying step sizes | `from_file_full` | IVUS rest/stress |
+| 1 | Bruteforce vs. optimized at varying step sizes | `from_file_full` | IVUS rest/stress |
 | 2 | CPU-core scaling (parallelism) | `from_array_single` | OCT (280 frames) |
 
 Results land in `benchmarks/results/`.
 
 ---
 
-## Benchmark 1 — Bruteforce vs. Optimised: Step-Size Scaling
+## Benchmark 1 — Bruteforce vs. optimized: Step-Size Scaling
 
 ### Goal
 
-Quantify how bruteforce and optimised alignment scale as `step_rotation_deg` decreases
+Quantify how bruteforce and optimized alignment scale as `step_rotation_deg` decreases
 (i.e. as the rotation-search grid becomes finer).
 
 ### Setup
@@ -51,7 +51,7 @@ Corresponding number of rotation steps n = 180 / step (using the full ±90° ran
 
 - **Bruteforce**: exhaustively scores every rotation angle for every frame pair →
   wall time grows linearly with n\_steps (O(n)).
-- **Optimised**: coarse-to-fine hierarchical search → sub-linear in n\_steps,
+- **optimized**: coarse-to-fine hierarchical search → sub-linear in n\_steps,
   asymptotically O(log n).
 
 The plot axes are logarithmic so the two complexity classes appear as straight lines
@@ -64,8 +64,8 @@ with clearly different slopes.
 - x-axis (bottom): number of rotation steps; (top): step size in degrees
 - y-axis: median wall time (seconds)
 - Line 1: bruteforce (red ○–) + O(n) reference dashed line
-- Line 2: optimised (blue ■ --)
-- Right y-axis: speedup factor (bruteforce / optimised)
+- Line 2: optimized (blue ■ --)
+- Right y-axis: speedup factor (bruteforce / optimized)
 
 ---
 
@@ -110,7 +110,7 @@ a **separate subprocess** with the variable set before any import of `multimodar
 
 ### Expected behaviour
 
-- **Optimised**: near-linear speedup up to ~8 cores, then diminishing returns
+- **optimized**: near-linear speedup up to ~8 cores, then diminishing returns
   (Amdahl's law — serial fraction of the pipeline limits gains beyond that).
 - **Bruteforce**: also benefits from rayon frame-level parallelism, but expected
   to saturate earlier because the per-step work is less cache-friendly.
@@ -119,7 +119,7 @@ a **separate subprocess** with the variable set before any import of `multimodar
 
 `benchmarks/results/cpu_scaling.png` — two-panel figure:
 
-- Left panel: wall time (s) vs. CPU cores, two lines (bruteforce, optimised)
+- Left panel: wall time (s) vs. CPU cores, two lines (bruteforce, optimized)
 - Right panel: speedup relative to 1 core vs. CPU cores +
   ideal linear-speedup reference; same two lines
 

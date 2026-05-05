@@ -234,7 +234,7 @@ negative means it is contracted, relative to the intravascular contour.
 Aortic scaling
 """""""""""""""
 
-:func:`multimodars.find_aorta_scaling` optimises the radial scale of the aortic region by
+:func:`multimodars.find_aorta_scaling` optimizes the radial scale of the aortic region by
 minimising the distance between the aortic CCTA vertices and the outer wall of the anomalous
 intravascular geometry:
 

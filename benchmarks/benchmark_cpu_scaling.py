@@ -1,4 +1,4 @@
-"""Benchmark 2: CPU-core scaling for optimised vs. bruteforce alignment.
+"""Benchmark 2: CPU-core scaling for optimized vs. bruteforce alignment.
 
 Tests from_array_single on the bundled OCT example dataset (280 frames) at
 varying RAYON_NUM_THREADS values (1 → 16 cores).
@@ -122,7 +122,7 @@ def _run_worker(n_cores: int, bruteforce: bool) -> list[float]:
 
 
 def run_benchmark() -> dict[str, list[float]]:
-    results: dict[str, list[float]] = {"bruteforce": [], "optimised": []}
+    results: dict[str, list[float]] = {"bruteforce": [], "optimized": []}
 
     for n_cores in CORE_COUNTS:
         label_width = len(str(max(CORE_COUNTS)))
@@ -144,7 +144,7 @@ def run_benchmark() -> dict[str, list[float]]:
         )
         times_opt = _run_worker(n_cores, bruteforce=False)
         med_opt = statistics.median(times_opt)
-        results["optimised"].append(med_opt)
+        results["optimized"].append(med_opt)
         print(f"{med_opt:.2f} s")
 
     return results
@@ -159,7 +159,7 @@ def plot_results(results: dict[str, list[float]]) -> None:
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
     bf_times = results["bruteforce"]
-    opt_times = results["optimised"]
+    opt_times = results["optimized"]
 
     bf_speedup = [bf_times[0] / t for t in bf_times]
     opt_speedup = [opt_times[0] / t for t in opt_times]
@@ -186,7 +186,7 @@ def plot_results(results: dict[str, list[float]]) -> None:
         color="tab:blue",
         linewidth=2,
         markersize=7,
-        label="Optimised",
+        label="optimized",
     )
     ax_time.set_xlabel("CPU cores  (RAYON_NUM_THREADS)", fontsize=12)
     ax_time.set_ylabel("Median wall time  (s)", fontsize=12)
@@ -224,7 +224,7 @@ def plot_results(results: dict[str, list[float]]) -> None:
         color="tab:blue",
         linewidth=2,
         markersize=7,
-        label="Optimised",
+        label="optimized",
     )
     ax_speedup.set_xlabel("CPU cores  (RAYON_NUM_THREADS)", fontsize=12)
     ax_speedup.set_ylabel("Speedup  (relative to 1 core)", fontsize=12)

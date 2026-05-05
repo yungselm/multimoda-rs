@@ -1,4 +1,4 @@
-"""Benchmark 1: bruteforce vs. optimised alignment at varying step sizes.
+"""Benchmark 1: bruteforce vs. optimized alignment at varying step sizes.
 
 Tests from_file_full on the bundled IVUS rest/stress example data with
 step_rotation_deg in {5.0, 2.5, 1.0, 0.5, 0.1} degrees.
@@ -63,7 +63,7 @@ def _run_once(step: float, bruteforce: bool) -> float:
 
 
 def run_benchmark() -> dict[str, list[float]]:
-    results: dict[str, list[float]] = {"bruteforce": [], "optimised": []}
+    results: dict[str, list[float]] = {"bruteforce": [], "optimized": []}
 
     for step in STEP_SIZES:
         print(f"step={step:4.1f}°  bruteforce=True  ", end="", flush=True)
@@ -75,7 +75,7 @@ def run_benchmark() -> dict[str, list[float]]:
         print(f"step={step:4.1f}°  bruteforce=False ", end="", flush=True)
         times_opt = [_run_once(step, bruteforce=False) for _ in range(REPEATS)]
         med_opt = statistics.median(times_opt)
-        results["optimised"].append(med_opt)
+        results["optimized"].append(med_opt)
         speedup = med_bf / med_opt if med_opt > 0 else float("inf")
         print(f"{med_opt:.2f} s  (speedup {speedup:.1f}x)")
 
@@ -92,7 +92,7 @@ def plot_results(results: dict[str, list[float]]) -> None:
 
     n_steps_list = [_n_steps(s) for s in STEP_SIZES]
     bf_times = results["bruteforce"]
-    opt_times = results["optimised"]
+    opt_times = results["optimized"]
     speedups = [bf / opt for bf, opt in zip(bf_times, opt_times)]
 
     fig, (ax_main, ax_speedup) = plt.subplots(
@@ -116,7 +116,7 @@ def plot_results(results: dict[str, list[float]]) -> None:
         color="tab:blue",
         linewidth=2,
         markersize=7,
-        label="Optimised",
+        label="optimized",
     )
 
     # O(n) reference anchored at the first bruteforce point
@@ -137,7 +137,7 @@ def plot_results(results: dict[str, list[float]]) -> None:
     ax_main.set_xlabel("Number of rotation steps  (2 × range / step)", fontsize=12)
     ax_main.set_ylabel("Median wall time  (s)", fontsize=12)
     ax_main.set_title(
-        "Bruteforce vs. Optimised — Step-Size Scaling\n"
+        "Bruteforce vs. optimized — Step-Size Scaling\n"
         "from_file_full · IVUS rest/stress · range = 90°",
         fontsize=11,
     )
@@ -164,9 +164,9 @@ def plot_results(results: dict[str, list[float]]) -> None:
     ax_speedup.axhline(1.0, color="gray", linewidth=1, linestyle=":")
     ax_speedup.set_xscale("log")
     ax_speedup.set_xlabel("Number of rotation steps  (2 × range / step)", fontsize=12)
-    ax_speedup.set_ylabel("Speedup  (bruteforce / optimised)", fontsize=12)
+    ax_speedup.set_ylabel("Speedup  (bruteforce / optimized)", fontsize=12)
     ax_speedup.set_title(
-        "Speedup of Optimised over Bruteforce\n"
+        "Speedup of optimized over Bruteforce\n"
         "from_file_full · IVUS rest/stress · range = 90°",
         fontsize=11,
     )
@@ -190,7 +190,7 @@ def plot_results(results: dict[str, list[float]]) -> None:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    print("=== Benchmark 1: Bruteforce vs. Optimised — Step-Size Scaling ===\n")
+    print("=== Benchmark 1: Bruteforce vs. optimized — Step-Size Scaling ===\n")
     results = run_benchmark()
     print("\nPlotting results …")
     plot_results(results)
