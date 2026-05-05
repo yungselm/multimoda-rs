@@ -85,6 +85,12 @@ pool re-initialises from ``RAYON_NUM_THREADS``.
      - 5.9x
      - 4.20x
 
+.. figure:: ../benchmarks/results/cpu_scaling.png
+   :name: fig-benchmark-cpuscaling
+   :alt: Bruteforce vs. optimized alignment speedup across differnet cpu cores
+   :align: center
+   :width: 900px
+
 **Key observations**
 
 * Parallelizing the angle search inside ``search_range`` (rather than the

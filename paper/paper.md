@@ -46,53 +46,47 @@ bibliography: bibliography.bib
 
 Coronary artery anomalies (CAAs) and coronary artery disease (CAD) require precise morphological and functional assessment for diagnosis and treatment planning. Cardiac computed tomography angiography (CCTA) provides a comprehensive 3D coronary anatomy but lacks the sub-millimeter resolution and dynamic tissue detail available from intravascular imaging, such as intravascular ultrasound (IVUS) and optical coherence tomography (OCT). 
 
-The `multimodars` package is a general-purpose toolkit that registers high-resolution intravascular pullbacks to CCTA-derived centerlines, producing locally enhanced fusion 3D vessel representations. Developed initially to quantify dynamic lumen changes in CAAs, the toolkit produces high-fidelity models suitable for visualization, geometric analysis, and patient-specific modelling. It implements four alignment paradigms (full, double-pair, single-pair, single) to compare pullbacks acquired under different haemodynamic states (e.g., rest vs. pharmacologic stress) or at different clinical timepoints (e.g., pre- vs. post-stenting). `Multimodars` targets deterministic, reproducible multimodal fusion for both specialized CAA research and general CAD applications [@stark2025true].
+The `multimodars` package is a general-purpose toolkit that registers high-resolution intravascular pullbacks to CCTA-derived centerlines, producing locally enhanced fusion 3D vessel representations. Developed initially to quantify dynamic lumen changes in CAAs, the toolkit produces high-fidelity models suitable for visualization, geometric analysis, and patient-specific modeling. It implements four alignment paradigms (full, double-pair, single-pair, single) to compare pullbacks acquired under different hemodynamic states (e.g., rest vs. pharmacologic stress) or at different clinical timepoints (e.g., pre- vs. post-stenting). `Multimodars` targets reproducible multimodal fusion for both specialized CAA research and general CAD applications, producing quantitative lumen metrics (minimum lumen area, stenosis fraction, elliptic ratio, per-frame deformation) and optional interpolated deformation animations alongside the 3D models.
 
 # Statement of Need
 
 Building reliable 3D coronary models requires combining complementary imaging modalities. Intravascular imaging offers exceptional local resolution but lacks whole-vessel context and 3D orientation. CCTA provides the global 3D geometry but suffers from limited spatial resolution and artifacts like blooming. `Multimodars` fills a critical gap for researchers in **cardiac imaging**, **interventional cardiology**, and **biomedical engineering** who require high-fidelity lumen models for:
 
 * Automated quantification of vessel deformation under stress.
-* Computational Fluid Dynamics (CFD) and Fluid-Structure Interaction (FSI) simulations.
-* Digital twin solutions.
+* Patient-specific Computational Fluid Dynamics (CFD) and Fluid-Structure Interaction (FSI) simulations, which require high-fidelity lumen geometry unavailable from either modality alone [@tang2014; @kilic2020evolution].
+* Longitudinal and interventional comparisons (e.g., pre- vs. post-stenting) within a consistent registration framework.
+* Digital twin and 3D-printing workflows for biomechanical device testing.
 
-The package accepts CSV and NumPy inputs, including data formats produced by the [AIVUS-CAA](https://github.com/AI-in-Cardiovascular-Medicine/AIVUS-CAA) software [@stark2025automated], providing a standardized pipeline from raw image segmentation to final 3D fusion.
+The package accepts CSV and NumPy inputs, including data formats produced by the [AIVUS-CAA](https://github.com/AI-in-Cardiovascular-Medicine/AIVUS-CAA) software [@stark2025automated], providing a standardized pipeline from raw image segmentation to final 3D fusion. The bidirectional NumPy API additionally allows integration with any external segmentation tool.
 
-![Figure 1: Illustration of `multimodars` processing modes and their clinical use. The 'full' mode returns four geometry pairs to analyze rest and stress haemodynamics (rest pulsatile deformation; stress pulsatile deformation; stress-induced diastolic deformation; stress-induced systolic deformation). The 'double-pair' mode returns pulsatile deformation in rest and stress. 'Single-pair' compares any two states (e.g., pre-/post-stent). 'Single' aligns frames within one pullback. \label{fig:aim}](figures/Figure1.jpg){width=80%}
+![Figure 1: Illustration of `multimodars` processing modes and their clinical use. The 'full' mode returns four geometry pairs to analyze rest and stress hemodynamics (rest pulsatile deformation; stress pulsatile deformation; stress-induced diastolic deformation; stress-induced systolic deformation). The 'double-pair' mode returns pulsatile deformation in rest and stress. 'Single-pair' compares any two states (e.g., pre-/post-stent). 'Single' aligns frames within one pullback. A worked example of all four modes is available in the [intravascular notebook](https://github.com/yungselm/multimoda-rs/blob/main/docs/notebooks/intravascular_notebook.ipynb) included in the repository. \label{fig:aim}](figures/Figure1.jpg){width=80%}
 
 # State of the Field
 
-Prior research has established the clinical value of CCTA/intravascular fusion [@van20103d; @wu20203d; @ilic2025comprehensive; @bourantas2013new; @boogers2012automated], but several barriers remain:
-1. **Proprietary Constraints**: Most existing fusion solutions are tied to proprietary vendor hardware or closed-source commercial workstations, limiting academic transparency.
-2. **Multi-state Gap**: No existing open-source toolkit is specifically tailored for **multi-state** analysis (comparing rest vs. stress or pre- vs. post-intervention states) while maintaining a deterministic alignment across pullbacks.
-
-## Build vs. Contribute Justification
-While packages like `trimesh` or `SimpleITK` provide general mesh and registration utilities, they do not offer the domain-specific coronary alignment logic (e.g., cumulative rotation propagation to preserve vessel torsion) required for intravascular imaging. `Multimodars` was built as a standalone toolkit because existing registration libraries lack the specific coordinate mapping and multiscale search algorithms optimized for curvilinear cardiac centerlines.
+Prior research has established the clinical value of CCTA/intravascular fusion [@van20103d; @wu20203d; @bourantas2013new; @boogers2012automated; @kilic2020evolution], but two barriers persist. First, most existing fusion solutions are tied to proprietary vendor hardware or closed-source commercial workstations, limiting academic transparency; the closest open-source precedent, IVUSAngio [@doulaverakis2013], relies on biplane X-ray angiography rather than CCTA and provides no multi-state support. Second, no existing toolkit is specifically tailored for **multi-state** analysis—comparing rest versus pharmacologic stress or pre- versus post-intervention—while maintaining a consistent alignment across pullbacks. Published IVUS analyses of anomalous aortic origin of coronary arteries (AAOCA) quantify pulsatile deformation only under resting conditions [@formato2023]; extending such analyses to stress conditions requires the cross-state registration logic implemented in `multimodars`. While packages like `trimesh` or `SimpleITK` provide general mesh and registration utilities, they do not offer the domain-specific coronary alignment logic (e.g., cumulative rotation propagation to preserve vessel torsion, ellipticity-weighted inter-pullback harmonization, CCTA centerline morphing) required here.
 
 # Software Design
 
-`Multimodars` is built as a `maturin` project, wrapping a high-performance Rust core with a Python interface. 
-
-## Architectural Choices and Trade-offs
+## Architectural choices and trade-offs
 We chose **Rust** for the core backend to leverage its memory safety and hierarchical data parallelism (via the `Rayon` crate). This allows the toolkit to handle the significant computational load of multiscale angular searches across hundreds of image frames without the performance limitations found in pure Python implementations. 
 
-The data model uses a compact typed structure (PyContourPoint, PyContour, PyGeometry) that maps losslessly to (N,4) NumPy arrays (frame_id, x, y, z). This choice balances the performance of low-level data structures with the usability of the Python data science ecosystem.
+The data model uses a compact typed structure (PyContourPoint, PyContour, PyFrame, PyGeometry) that maps losslessly to (N,4) NumPy arrays (e.g., frame_id, x, y, z). This choice balances the performance of low-level data structures with the usability of the Python data science ecosystem.
 
-![Figure 2: Internal data model and (N,4) NumPy mapping used by `multimodars` (frame_id, x, y, z). \label{fig:data}](figures/Figure2.jpg){width=80%}
+![Figure 2: Overview of the intravascular module. Top: Input data in (N,4) format (frame\_id, x, y, z) is accepted from CSV files or arbitrary NumPy arrays. Middle: Data are organized into a four-level hierarchy — PyGeometryPair → PyGeometry → PyFrame → PyContour → PyContourPoint. Bottom: Frames are aligned intra-pullback within each PyGeometry and inter-pullback within a PyGeometryPair; the resulting geometry can be registered to a CCTA centerline and exported as Wavefront OBJ files or converted back to NumPy arrays. \label{fig:data}](figures/Figure2.jpg){width=80%}
 
-## Algorithms
+## Alignment and fusion algorithms
 
-Alignment is a two-stage pipeline producing spatially and rotationally consistent mappings both within pullbacks (intra-pullback) and between pullbacks (inter-pullback). It further aligns 3D models with a CCTA derived centerline and adjusts the CCTA mesh to match the dimensions of the intravascular 3D model.
+Alignment is a two-stage pipeline producing spatially and rotationally consistent mappings both within pullbacks (intra-pullback) and between pullbacks (inter-pullback). It further registers 3D models with a CCTA-derived centerline, morphs the CCTA mesh to match intravascular dimensions, and stitches the two surfaces together.
 
-- **Intra-pullback:** The proximal frame is the rotational reference. Sequentially, each proximal→distal neighbour is aligned by centroid translation and a rotation search minimizing a point-set distance derived from directed Hausdorff distances. Rotation employs a multiscale angular search (coarse → fine, e.g., 1° → 0.1° → 0.01°) with cumulative rotation propagation to preserve vessel torsion (See \autoref{fig:algo}). Naive brute-force complexity scales as $O(n \times \frac{R}{S} \times m^2)$ (n = frames, m = points per contour, R = angular range, S = step size). By fixing contour size (downsampling) and reducing the angular search via multiscale refinement, the pipeline attains effective complexity $O(n \times (R + c) \times m^2)$ for small S, making runtime less sensitive to step granularity while preserving alignment accuracy.
+- **Intra-pullback:** The proximal frame is the rotational reference. Sequentially, each proximal→distal neighbor is aligned by centroid translation and a rotation search minimizing a point-set distance derived from directed Hausdorff distances. Rotation employs a multiscale angular search (coarse → fine, e.g., 1° → 0.1° → 0.01°) with cumulative rotation propagation to preserve vessel torsion (See \autoref{fig:algo}). Naive brute-force complexity scales as $O(n \times \frac{R}{S} \times m^2)$ (n = frames, m = points per contour, R = angular range, S = step size); the multiscale refinement reduces this to an effective $O(n \times (R + c) \times m^2)$ for small step sizes, making runtime far less sensitive to angular resolution while preserving alignment accuracy.
 
-- **Inter-pullback and CCTA fusion:** Inter-pullback alignment harmonizes distal centroids, averages slice spacing to align z-coordinates, and applies a rigid rotation to minimize mean directed distances across corresponding frames; ellipticity-weighted similarity prioritizes non-round stenotic slices. 
+- **Inter-pullback:** Inter-pullback alignment harmonizes distal centroids, averages slice spacing to align z-coordinates, and applies a rigid rotation to minimize mean directed distances across corresponding frames; ellipticity-weighted similarity prioritizes non-round stenotic slices.
 
 - **CCTA-Centerline alignment:** The `multimodars` package implements a three-point (aortic-, cranial- and caudal direction) anatomical registration and a manual alignment mode. It additionally utilizes Hausdorff distances to CCTA mesh points for ambiguous anatomies: centerlines are resampled to contour spacing, centroids are translated to matched points, normals are aligned by cross-product computations, and an optional interpolated UV-mapped mesh is produced for visualization and downstream modeling.
 
-- **CCTA-labeling:** For normal coronary anatomy, CCTA mesh points are labeled using a rolling-sphere sweep along the coronary centerline. For CAAs, where the vessel may run very close to or within the aortic wall, this is followed by an occlusion-based cleanup: rays are cast from the aortic centerline toward the coronary centerline; ray–triangle intersections identify occluding aortic wall regions, and mesh points close to these surfaces are removed. This yields a deterministic and anatomically consistent coronary lumen representation.
+- **CCTA mesh fusion:** A CCTA STL surface mesh is labeled by propagating a rolling sphere along coronary centerlines to assign vertices to aorta, RCA, or LCA regions. For CAAs, where the intramural vessel runs within the aortic wall, a ray-casting occlusion step corrects systematic mislabeling: rays cast from the aortic centerline detect intersecting wall faces, and topologically connected coronary vertices are reclassified as aortic. The labeled mesh is then subdivided into proximal, anomalous, and distal sub-regions; each region is morphed radially along the local centerline normal to match the aligned intravascular lumen dimensions; and the replaced CCTA segment is excised to expose a boundary ring. The intravascular mesh is stitched to this ring with a triangulated patch, and the resulting surface is repaired and isotropically remeshed (via optional PyMeshLab).
 
-- **CCTA-border adjustments:** Given the higher resolution of intravascular imaging, the aligned intravascular anatomy is treated as the anatomical ground truth. CCTA dimensions are adjusted to fit the proximal and distal ends of the vessel. For CAAs, the aorta is additionally adjusted to match the measured intramural wall.
+Aligned pairs expose a `get_summary()` method returning minimum lumen area, maximum stenosis percent, stenosis length, and a per-frame table of lumen area and elliptic ratio for downstream analysis.
 
 ![Figure 3: Top left shows the initial labeling of the coronary arteries and aorta based on centerlines. In a second step the regions to be replaced are identified based on the aligned 3D intravascular model. In a last step the CCT proximal and distal borders can be adjusted to best match intravascular borders. \label{fig:labeling}](figures/Figure3.png){width=80%}
 
@@ -103,25 +97,29 @@ Rust (Rayon) provides hierarchical data parallelism: candidate rotation angles w
 A reproducible benchmark suite is included in the repository (`benchmarks/`) and documented in the package reference ([ReadTheDocs](https://multimoda-rs.readthedocs.io/en/latest/benchmark.html)). Key results on an Intel Xeon Gold 6234 (8 physical cores, 16 logical processors):
 
 - **Algorithm vs. brute-force:** the multiscale search outperforms exhaustive brute-force evaluation by **5.5×** at a 0.1° step size and **10.3×** at 0.05°, with the gap widening rapidly at finer resolutions as brute-force must evaluate every candidate angle.
-- **parallelization:** parallelizing at the angle-evaluation level (rather than the point-rotation level) provides sufficient rayon tasks to utilise cores effectively. Brute-force scales **6.5×** and the optimized search **4.2×** from 2 to 16 cores.
+- **Parallelization:** parallelizing at the angle-evaluation level (rather than the point-rotation level) provides sufficient rayon tasks to utilize cores effectively. Brute-force scales **6.5×** and the optimized search **4.2×** from 2 to 16 cores.
 - **Combined gain:** relative to brute-force at 2 cores, the optimized algorithm at 16 cores is **38.5×** faster, with algorithm choice and core count contributing multiplicatively.
 
 ![Figure 4: Multiscale intra-pullback alignment workflow (coarse-to-fine angular search and centroid propagation). \label{fig:algo}](figures/Figure4.jpg){width=80%}
 
 ## Implementation, reproducibility and usage
 
-The core is implemented in Rust and exposed to Python via PyO3; packaging uses `maturin` and the package is available on PyPI. The NumPy-centric API maps directly to (N,4) arrays; the project includes example notebooks, sample data (including [AIVUS-CAA](https://github.com/AI-in-Cardiovascular-Medicine/AIVUS-CAA) [@stark2025automated]) and CI tests. Documentation and tutorials are hosted on ReadTheDocs ([ReadTheDocs](https://multimoda-rs.readthedocs.io/en/latest/)).
+The package is built with `maturin` and available on PyPI. Output includes Wavefront OBJ files for intravascular meshes, STL section exports for downstream biomechanical simulation, and optional interpolated intermediate meshes for deformation animations. The project includes example notebooks, sample data, and CI tests; documentation and tutorials are hosted on ReadTheDocs ([ReadTheDocs](https://multimoda-rs.readthedocs.io/en/latest/)).
 
-# Research impact statement
+# Research Impact Statement
 
-`Multimodars` was motivated by the need to quantify dynamic lumen deformation in CAAs, where rest/stress and pulsatile comparisons are diagnostically critical. Deterministic, high-resolution fusion enables quantitative assessment of stress-induced deformation and supports patient-specific haemodynamic modeling. These methods also support longitudinal CAD analyses (e.g., pre-/post-stent). We successfully implemented this fusion approach to unveil a distinct compression pattern not visible in IVUS or CCTA alone, in a case of an 11 year old athlete with an right anomalous aortic origin of a coronary artery[@stark202611]. We hope to foster a research community that leverages `multimodars` to standardize multimodal coronary fusion and accelerate the development of personalized interventional or computational strategies.
+`Multimodars` was motivated by the need to quantify dynamic lumen deformation in CAAs, where rest/stress and pulsatile comparisons are diagnostically critical. High-resolution fusion enables quantitative assessment of stress-induced deformation and supports patient-specific hemodynamic modeling. We successfully implemented this fusion approach to unveil a distinct compression pattern not visible in IVUS or CCTA alone in a case of an 11-year-old athlete with an anomalous aortic origin of a coronary artery [@stark202611]. Beyond CAA, the `single-pair` mode supports general CAD workflows such as pre- vs. post-stenting lumen comparison, and the `single` mode enables standalone geometry reconstruction for any clinical pullback. We hope to foster a research community that leverages `multimodars` to standardize multimodal coronary fusion and accelerate the development of personalized interventional or computational strategies.
 
-# AI usage disclosure
+# Human Participants Research Policy
 
-No generative AI was used for architectural design or core algorithms. Generative AI was used for creating documentation and docstrings, bug fixing, and minor inline code changes.
-For this manuscript generative AI was only used for grammatical changes.
+The example data included in this repository originates from the NARCO study, a prospective clinical study investigating coronary artery anomalies. All data have been fully anonymized prior to inclusion. The study was conducted in accordance with the Declaration of Helsinki and received approval from the local ethics committee (Kantonale Ethikkommission Bern, KEK 2020-00841). All participants provided written informed consent. The study is registered with ClinicalTrials.gov (NCT04475289).
 
-# Acknowledgements
+# AI Usage Disclosure
+
+No generative AI was used for architectural design or core algorithms. Claude (Anthropic) and ChatGPT 4.1 (OpenAI) were used for creating documentation and docstrings, bug fixing, and minor inline code changes.
+For this manuscript these tools were only used for grammatical changes.
+
+# Acknowledgments
 
 None
 

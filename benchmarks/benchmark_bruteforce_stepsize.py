@@ -27,7 +27,7 @@ INPUT_AB = str(DATA_ROOT / "ivus_rest")
 INPUT_CD = str(DATA_ROOT / "ivus_stress")
 RESULTS_DIR = Path(__file__).parent / "results"
 
-STEP_SIZES: list[float] = [5.0, 2.5, 1.0, 0.5, 0.1, 0.05]
+STEP_SIZES: list[float] = [5.0, 2.5, 1.0, 0.5, 0.25, 0.1, 0.05]
 RANGE_DEG: float = 90.0
 REPEATS: int = 3
 
