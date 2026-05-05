@@ -45,26 +45,18 @@ where
 
     let steps = (((stop_angle - start_angle) / step_rad).ceil() as usize).max(1);
 
-    let mut best_angle = center;
-    let mut best_cost = f64::INFINITY;
+    let angles: Vec<f64> = (0..=steps)
+        .map(|i| start_angle + (i as f64) * step_rad)
+        .take_while(|&a| a <= stop_angle)
+        .map(|a| ((a + PI).rem_euclid(2.0 * PI)) - PI)
+        .collect();
 
-    for i in 0..=steps {
-        let angle = start_angle + (i as f64) * step_rad;
-        if angle > stop_angle {
-            break;
-        }
-
-        // Map angle to [-π, π] range
-        let mapped_angle = ((angle + PI).rem_euclid(2.0 * PI)) - PI;
-        let cost = cost_fn(mapped_angle);
-
-        if cost < best_cost {
-            best_cost = cost;
-            best_angle = mapped_angle;
-        }
-    }
-
-    best_angle
+    angles
+        .par_iter()
+        .map(|&angle| (angle, cost_fn(angle)))
+        .reduce_with(|a, b| if b.1 < a.1 { b } else { a })
+        .map(|(angle, _)| angle)
+        .unwrap_or(center)
 }
 
 /// Computes the Hausdorff distance between two point sets.

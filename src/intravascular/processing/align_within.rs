@@ -1,6 +1,5 @@
 use anyhow::anyhow;
 use indicatif::{ProgressBar, ProgressStyle};
-use rayon::prelude::*;
 use std::sync::{Arc, Mutex};
 
 use super::wall::create_wall_frames;
@@ -95,7 +94,7 @@ pub fn align_frames_in_geometry(
             search_range(
                 |angle: f64| {
                     let rotated: Vec<ContourPoint> = testing_points
-                        .par_iter()
+                        .iter()
                         .map(|p| p.rotate_point(angle, (current.centroid.0, current.centroid.1)))
                         .collect();
                     hausdorff_distance(&reference_points, &rotated)
@@ -194,7 +193,7 @@ pub fn find_best_rotation(
 ) -> f64 {
     let cost_fn = |angle: f64| -> f64 {
         let rotated: Vec<ContourPoint> = target
-            .par_iter()
+            .iter()
             .map(|p| p.rotate_point(angle, (centroid.0, centroid.1)))
             .collect();
         hausdorff_distance(reference, &rotated)
