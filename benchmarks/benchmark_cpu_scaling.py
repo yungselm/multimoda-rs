@@ -103,6 +103,7 @@ def _run_worker(n_cores: int, bruteforce: bool) -> list[float]:
         [sys.executable, "-c", script],
         capture_output=True,
         text=True,
+        encoding="utf-8",
     )
     if proc.returncode != 0 or not proc.stdout.strip():
         print(f"\n  [stdout] {proc.stdout.strip()[:600]}", file=sys.stderr)
