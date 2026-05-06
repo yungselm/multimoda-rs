@@ -57,6 +57,7 @@ test = [
 dev = [
     {include-group = "test"},
     "plotly",
+    "matplotlib",
     "nbformat",
     "ipykernel",
     "nbmake",
