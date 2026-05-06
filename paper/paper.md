@@ -116,7 +116,7 @@ The example data included in this repository originates from the NARCO study, a 
 
 # AI Usage Disclosure
 
-No generative AI was used for architectural design or core algorithms. Claude (Anthropic) and ChatGPT 4.1 (OpenAI) were used for creating documentation and docstrings, bug fixing, and minor inline code changes.
+No generative AI was used for architectural design or core algorithms. Claude (Anthropic) and ChatGPT (OpenAI) were used for creating documentation and docstrings, bug fixing, and minor inline code changes.
 For this manuscript these tools were only used for grammatical changes.
 
 # Acknowledgments
