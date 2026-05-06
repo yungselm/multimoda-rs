@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.3] - 2026-05-06
+
+### Added
+- `CITATION.cff` with full author list, ORCIDs, and preferred citation for JOSS/Zenodo archival.
+- Zenodo DOI badge added to README.
+
 ## [0.3.2] - 2026-05-05
 
 ### Added

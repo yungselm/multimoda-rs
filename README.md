@@ -12,7 +12,7 @@
 [![Docs](https://img.shields.io/readthedocs/multimoda-rs)](https://multimoda-rs.readthedocs.io)
 [![Tests and Build](https://github.com/yungselm/multimoda-rs/actions/workflows/CI.yml/badge.svg)](https://github.com/yungselm/multimoda-rs/actions/workflows/CI.yml)
 [![status](https://joss.theoj.org/papers/24992cb138d85b0bf08f01bc2b384a80/status.svg)](https://joss.theoj.org/papers/24992cb138d85b0bf08f01bc2b384a80)
-
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20051997.svg)](https://doi.org/10.5281/zenodo.20051997)
 
 <figure class="epigraph" style="text-align: center; font-style: italic;">
   <blockquote>
