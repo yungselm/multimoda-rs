@@ -1,0 +1,82 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+title: "multimodars: A Rust-powered toolkit for multi-modality cardiac image fusion and registration"
+version: 0.3.2
+date-released: 2026-05-05
+license: MIT
+repository-code: "https://github.com/yungselm/multimoda-rs"
+url: "https://multimoda-rs.readthedocs.io"
+
+authors:
+  - family-names: Stark
+    given-names: Anselm W.
+    orcid: "https://orcid.org/0000-0002-5861-3753"
+    affiliation: "Department of Cardiology, Inselspital, Bern University Hospital, University of Bern, Switzerland"
+  - family-names: Ilic
+    given-names: Marc
+    orcid: "https://orcid.org/0009-0000-6443-8739"
+    affiliation: "Department of Cardiology, Inselspital, Bern University Hospital, University of Bern, Switzerland"
+  - family-names: Mokhtari
+    given-names: Ali
+    orcid: "https://orcid.org/0009-0004-8864-6988"
+    affiliation: "Department of Cardiology, Inselspital, Bern University Hospital, University of Bern, Switzerland"
+  - family-names: Mohammadi Kazaj
+    given-names: Pooya
+    orcid: "https://orcid.org/0000-0003-2747-1489"
+    affiliation: "Department of Cardiology, Inselspital, Bern University Hospital, University of Bern, Switzerland"
+  - family-names: Gräni
+    given-names: Christoph
+    orcid: "https://orcid.org/0000-0001-6029-0597"
+    affiliation: "Department of Cardiology, Inselspital, Bern University Hospital, University of Bern, Switzerland"
+  - family-names: Shiri
+    given-names: Isaac
+    orcid: "https://orcid.org/0000-0002-5735-0736"
+    affiliation: "Department of Cardiology, Inselspital, Bern University Hospital, University of Bern, Switzerland"
+
+abstract: >
+  multimodars is a high-performance Python/Rust toolkit that registers and fuses
+  intravascular imaging (IVUS, OCT) with coronary CT angiography (CCTA) into unified
+  high-resolution 3D vessel models. It implements four alignment modes (full,
+  double-pair, single-pair, single) to support multi-state comparisons such as rest
+  vs. pharmacologic stress and pre- vs. post-intervention. The Rust backend (via
+  PyO3/maturin) parallelizes the multiscale angular search across all available cores,
+  achieving a combined 38.5x speedup over a Python brute-force baseline. Output
+  includes Wavefront OBJ/STL meshes, per-frame lumen metrics (minimum lumen area,
+  stenosis fraction, elliptic ratio), and optional interpolated deformation animations.
+
+keywords:
+  - Rust
+  - Python
+  - Cardiology
+  - Intravascular imaging
+  - CCTA
+  - Image Fusion
+  - Image registration
+  - IVUS
+  - OCT
+  - Coronary artery anomalies
+
+preferred-citation:
+  type: article
+  title: "multimodars: A Rust-powered toolkit for multi-modality cardiac image fusion and registration"
+  authors:
+    - family-names: Stark
+      given-names: Anselm W.
+      orcid: "https://orcid.org/0000-0002-5861-3753"
+    - family-names: Ilic
+      given-names: Marc
+      orcid: "https://orcid.org/0009-0000-6443-8739"
+    - family-names: Mokhtari
+      given-names: Ali
+      orcid: "https://orcid.org/0009-0004-8864-6988"
+    - family-names: Mohammadi Kazaj
+      given-names: Pooya
+      orcid: "https://orcid.org/0000-0003-2747-1489"
+    - family-names: Gräni
+      given-names: Christoph
+      orcid: "https://orcid.org/0000-0001-6029-0597"
+    - family-names: Shiri
+      given-names: Isaac
+      orcid: "https://orcid.org/0000-0002-5735-0736"
+  journal: "Journal of Open Source Software"
+  year: 2026
