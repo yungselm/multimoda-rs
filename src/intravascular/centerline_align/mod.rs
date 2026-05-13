@@ -2,20 +2,71 @@ pub mod align_algorithms;
 pub mod preprocessing;
 
 use crate::intravascular::io::input::ContourPoint;
-use crate::intravascular::io::{geometry::ContourType, input::Centerline};
+use crate::intravascular::io::{
+    geometry::{ContourType, Geometry},
+    input::Centerline,
+};
 use crate::intravascular::processing::align_between::GeometryPair;
 use anyhow::anyhow;
 
-use crate::intravascular::to_object::process_case;
+use crate::intravascular::to_object::{process_case, write_single_geometry};
 use align_algorithms::{
     apply_transformations, best_rotation_three_point, refine_alignment_hausdorff,
-    rotate_by_best_rotation,
+    rotate_by_best_rotation, AlignTarget,
 };
 use preprocessing::preprocess_centerline;
 
-pub fn align_three_point_rs(
+/// Extends [`AlignTarget`] with the ability to write the processed case to disk.
+///
+/// `Geometry` is a no-op (writing requires a pair for mesh comparison);
+/// `GeometryPair` delegates to [`process_case`].
+pub trait Processable: AlignTarget {
+    fn process_and_write(
+        self,
+        case_name: &str,
+        output_dir: &str,
+        interpolation_steps: usize,
+        watertight: bool,
+        contour_types: &[ContourType],
+    ) -> anyhow::Result<Self>;
+}
+
+impl Processable for GeometryPair {
+    fn process_and_write(
+        self,
+        case_name: &str,
+        output_dir: &str,
+        interpolation_steps: usize,
+        watertight: bool,
+        contour_types: &[ContourType],
+    ) -> anyhow::Result<Self> {
+        process_case(
+            case_name,
+            self,
+            output_dir,
+            interpolation_steps,
+            watertight,
+            contour_types,
+        )
+    }
+}
+
+impl Processable for Geometry {
+    fn process_and_write(
+        self,
+        case_name: &str,
+        output_dir: &str,
+        _interpolation_steps: usize,
+        watertight: bool,
+        contour_types: &[ContourType],
+    ) -> anyhow::Result<Self> {
+        write_single_geometry(case_name, self, output_dir, watertight, contour_types)
+    }
+}
+
+pub fn align_three_point_rs<T: Processable>(
     centerline: Centerline,
-    mut geom_pair: GeometryPair,
+    mut target: T,
     aortic_ref_pt: (f64, f64, f64),
     upper_ref_pt: (f64, f64, f64),
     lower_ref_pt: (f64, f64, f64),
@@ -26,22 +77,22 @@ pub fn align_three_point_rs(
     output_dir: &str,
     contour_types: Vec<ContourType>,
     case_name: &str,
-) -> anyhow::Result<(GeometryPair, Centerline)> {
-    let resampled_centerline = preprocess_centerline(centerline, &geom_pair.geom_a)
+) -> anyhow::Result<(T, Centerline)> {
+    let resampled_centerline = preprocess_centerline(centerline, target.primary_geometry())
         .map_err(|e| anyhow!("Couldn't resample the centerline: {}", e))?;
 
-    let ref_idx = geom_pair
-        .geom_a
+    let ref_idx = target
+        .primary_geometry()
         .find_ref_frame_idx()
         .map_err(|e| anyhow!("Couldn't find ref frame idx: {:?}", e))?;
-    let ref_point = geom_pair.geom_a.frames[ref_idx]
+    let ref_point = target.primary_geometry().frames[ref_idx]
         .reference_point
         .as_ref()
         .ok_or_else(|| anyhow!("missing reference point"))?;
     let cl_ref_idx = resampled_centerline.find_reference_cl_point_idx(&aortic_ref_pt);
 
     let best_rot = best_rotation_three_point(
-        &geom_pair.geom_a.frames[ref_idx].lumen,
+        &target.primary_geometry().frames[ref_idx].lumen,
         ref_point,
         aortic_ref_pt,
         upper_ref_pt,
@@ -50,29 +101,29 @@ pub fn align_three_point_rs(
         &resampled_centerline.points[cl_ref_idx],
     );
 
-    geom_pair = rotate_by_best_rotation(geom_pair, best_rot);
-    geom_pair = apply_transformations(geom_pair, &resampled_centerline, &aortic_ref_pt);
+    target = rotate_by_best_rotation(target, best_rot);
+    target = apply_transformations(target, &resampled_centerline, &aortic_ref_pt);
 
-    geom_pair = if write {
-        process_case(
-            case_name,
-            geom_pair,
-            output_dir,
-            interpolation_steps,
-            watertight,
-            &contour_types,
-        )
-        .map_err(|e| anyhow!("Failed to write obj: {}", e))?
+    target = if write {
+        target
+            .process_and_write(
+                case_name,
+                output_dir,
+                interpolation_steps,
+                watertight,
+                &contour_types,
+            )
+            .map_err(|e| anyhow!("Failed to write obj: {}", e))?
     } else {
-        geom_pair
+        target
     };
 
-    Ok((geom_pair, resampled_centerline))
+    Ok((target, resampled_centerline))
 }
 
-pub fn align_manual_rs(
+pub fn align_manual_rs<T: Processable>(
     centerline: Centerline,
-    mut geom_pair: GeometryPair,
+    mut target: T,
     rotation_angle_deg: f64,
     ref_pt: (f64, f64, f64),
     write: bool,
@@ -81,65 +132,62 @@ pub fn align_manual_rs(
     output_dir: &str,
     contour_types: Vec<ContourType>,
     case_name: &str,
-) -> anyhow::Result<(GeometryPair, Centerline)> {
-    let resampled_centerline = preprocess_centerline(centerline, &geom_pair.geom_a)
+) -> anyhow::Result<(T, Centerline)> {
+    let resampled_centerline = preprocess_centerline(centerline, target.primary_geometry())
         .map_err(|e| anyhow!("Couldn't resample the centerline: {}", e))?;
 
-    geom_pair = rotate_by_best_rotation(geom_pair, rotation_angle_deg.to_radians());
+    target = rotate_by_best_rotation(target, rotation_angle_deg.to_radians());
+    target = apply_transformations(target, &resampled_centerline, &ref_pt);
 
-    geom_pair = apply_transformations(geom_pair, &resampled_centerline, &ref_pt);
-
-    geom_pair = if write {
-        process_case(
-            case_name,
-            geom_pair,
-            output_dir,
-            interpolation_steps,
-            watertight,
-            &contour_types,
-        )
-        .map_err(|e| anyhow!("Failed to write obj: {}", e))?
+    target = if write {
+        target
+            .process_and_write(
+                case_name,
+                output_dir,
+                interpolation_steps,
+                watertight,
+                &contour_types,
+            )
+            .map_err(|e| anyhow!("Failed to write obj: {}", e))?
     } else {
-        geom_pair
+        target
     };
 
-    Ok((geom_pair, resampled_centerline))
+    Ok((target, resampled_centerline))
 }
 
 /// Combined alignment with three-point initialization and Hausdorff refinement
-pub fn align_combined_rs(
+pub fn align_combined_rs<T: Processable>(
     centerline: Centerline,
-    geom_pair: GeometryPair,
+    target: T,
     aortic_ref_pt: (f64, f64, f64),
     upper_ref_pt: (f64, f64, f64),
     lower_ref_pt: (f64, f64, f64),
     points: &[(f64, f64, f64)],
     angle_step: f64,
-    refine_angle_range: f64,   // e.g., 15° in radians
-    refine_index_range: usize, // e.g., 2
+    refine_angle_range: f64,
+    refine_index_range: usize,
     write: bool,
     watertight: bool,
     interpolation_steps: usize,
     output_dir: &str,
     contour_types: Vec<ContourType>,
     case_name: &str,
-) -> anyhow::Result<(GeometryPair, Centerline)> {
-    // Clone the original geometry pair for the three-point alignment
-    let original_geom_pair = geom_pair.clone();
+) -> anyhow::Result<(T, Centerline)> {
+    let original = target.clone();
 
-    // Step 1: Get the initial rotation from three-point alignment
     println!("\nStep 1: Finding initial rotation via three-point method");
 
     let resampled_centerline =
-        preprocess_centerline(centerline.clone(), &original_geom_pair.geom_a)
+        preprocess_centerline(centerline.clone(), original.primary_geometry())
             .map_err(|e| anyhow!("Couldn't resample the centerline: {}", e))?;
 
-    let ref_idx = original_geom_pair
-        .geom_a
+    let ref_idx = original
+        .primary_geometry()
         .find_ref_frame_idx()
         .map_err(|e| anyhow!("Couldn't find ref frame idx: {:?}", e))?;
 
-    let ref_point = original_geom_pair.geom_a.frames[ref_idx]
+    let ref_point = original.primary_geometry().frames[ref_idx]
         .reference_point
         .as_ref()
         .ok_or_else(|| anyhow!("missing reference point"))?;
@@ -147,7 +195,7 @@ pub fn align_combined_rs(
     let initial_cl_ref_idx = resampled_centerline.find_reference_cl_point_idx(&aortic_ref_pt);
 
     let initial_rotation = best_rotation_three_point(
-        &original_geom_pair.geom_a.frames[ref_idx].lumen,
+        &original.primary_geometry().frames[ref_idx].lumen,
         ref_point,
         aortic_ref_pt,
         upper_ref_pt,
@@ -156,23 +204,22 @@ pub fn align_combined_rs(
         &resampled_centerline.points[initial_cl_ref_idx],
     );
 
-    // Step 2: Apply the three-point rotation
-    let mut aligned_geom_pair = rotate_by_best_rotation(original_geom_pair, initial_rotation);
-    aligned_geom_pair =
-        apply_transformations(aligned_geom_pair, &resampled_centerline, &aortic_ref_pt);
+    let aligned = apply_transformations(
+        rotate_by_best_rotation(original, initial_rotation),
+        &resampled_centerline,
+        &aortic_ref_pt,
+    );
 
-    // Step 3: Convert points to contour points for Hausdorff comparison
     let mutated_points = transfrom_tuples_to_contourpoints(points);
 
-    // Step 4: Refine alignment using Hausdorff distance in limited search space
     println!("Step 2: Refining with Hausdorff distance");
     let (refined_rotation_delta, refined_cl_ref_idx) = refine_alignment_hausdorff(
-        &aligned_geom_pair,
+        &aligned,
         &resampled_centerline,
         initial_cl_ref_idx,
-        0.0, // Start from 0 because we're already at the initial_rotation
+        0.0,
         &mutated_points,
-        refine_angle_range, // Search ± this range
+        refine_angle_range,
         angle_step,
         refine_index_range,
     );
@@ -186,10 +233,6 @@ pub fn align_combined_rs(
     let diff = initial_cl_ref_idx as i32 - refined_cl_ref_idx as i32;
     println!("Moving ostium by {} centerline points", diff);
 
-    // Create new geometry pair with the total rotation
-    let mut final_geom_pair = rotate_by_best_rotation(geom_pair.clone(), total_rotation);
-
-    // Apply transformations using refined centerline reference index
     let refined_ref_pt = (
         resampled_centerline.points[refined_cl_ref_idx]
             .contour_point
@@ -202,25 +245,27 @@ pub fn align_combined_rs(
             .z,
     );
 
-    final_geom_pair =
-        apply_transformations(final_geom_pair, &resampled_centerline, &refined_ref_pt);
+    let mut final_target = apply_transformations(
+        rotate_by_best_rotation(target.clone(), total_rotation),
+        &resampled_centerline,
+        &refined_ref_pt,
+    );
 
-    // Step 6: Write output if requested
-    let final_geom_pair = if write {
-        process_case(
-            case_name,
-            final_geom_pair,
-            output_dir,
-            interpolation_steps,
-            watertight,
-            &contour_types,
-        )
-        .map_err(|e| anyhow!("Failed to write obj: {}", e))?
+    final_target = if write {
+        final_target
+            .process_and_write(
+                case_name,
+                output_dir,
+                interpolation_steps,
+                watertight,
+                &contour_types,
+            )
+            .map_err(|e| anyhow!("Failed to write obj: {}", e))?
     } else {
-        final_geom_pair
+        final_target
     };
 
-    Ok((final_geom_pair, resampled_centerline))
+    Ok((final_target, resampled_centerline))
 }
 
 // /// Simpler combined alignment that doesn't double-rotate

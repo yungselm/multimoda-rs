@@ -1005,7 +1005,7 @@ def from_array_single(
 
 def align_three_point(
     centerline: PyCenterline,
-    geometry_pair: PyGeometryPair,
+    geometry: PyGeometryPair | PyGeometry,
     aortic_ref_pt: tuple[float, float, float],
     upper_ref_pt: tuple[float, float, float],
     lower_ref_pt: tuple[float, float, float],
@@ -1016,20 +1016,19 @@ def align_three_point(
     output_dir: str = "output/aligned",
     contour_types: list[PyContourType] | None = None,
     case_name: str = "None",
-) -> tuple[PyGeometryPair, PyCenterline]:
-    """Align diastolic and systolic meshes to the centerline using three reference points.
+) -> tuple[PyGeometryPair | PyGeometry, PyCenterline]:
+    """Align a geometry (or geometry pair) to the centerline using three reference points.
 
-    Creates centerline-aligned meshes for a diastolic/systolic geometry pair
-    based on three anatomical reference points (aorta, upper section, lower
-    section).  Only works for elliptic vessels such as coronary artery
-    anomalies.
+    Creates centerline-aligned meshes based on three anatomical reference points
+    (aorta, upper section, lower section).  Only works for elliptic vessels such
+    as coronary artery anomalies.
 
     Parameters
     ----------
     centerline : PyCenterline
         Centerline of the vessel.
-    geometry_pair : PyGeometryPair
-        Diastolic/systolic geometry pair to align.
+    geometry : PyGeometryPair or PyGeometry
+        Single geometry or diastolic/systolic geometry pair to align.
     aortic_ref_pt : tuple of float
         ``(x, y, z)`` reference point at the aortic ostium.
     upper_ref_pt : tuple of float
@@ -1043,7 +1042,8 @@ def align_three_point(
     watertight : bool, optional
         Whether to write a watertight or shell mesh.  Default is ``True``.
     interpolation_steps : int, optional
-        Number of interpolation steps between phases.  Default is ``28``.
+        Number of interpolation steps between phases.  Only used when *geometry*
+        is a ``PyGeometryPair``.  Default is ``0``.
     output_dir : str, optional
         Output directory for aligned meshes.  Default is ``"output/aligned"``.
     contour_types : list of PyContourType, optional
@@ -1054,15 +1054,15 @@ def align_three_point(
 
     Returns
     -------
-    geom_pair : PyGeometryPair
-        Aligned geometry pair.
+    geometry : PyGeometryPair or PyGeometry
+        Aligned geometry, matching the type of the input.
     centerline : PyCenterline
         Resampled centerline.
 
     Examples
     --------
     >>> import multimodars as mm
-    >>> pair, cl = mm.align_three_point(
+    >>> result, cl = mm.align_three_point(
     ...     centerline,
     ...     geometry_pair,
     ...     (12.2605, -201.3643, 1751.0554),
@@ -1074,7 +1074,7 @@ def align_three_point(
         contour_types = _default_contour_types()
     return _align_three_point(
         centerline,
-        geometry_pair,
+        geometry,
         aortic_ref_pt,
         upper_ref_pt,
         lower_ref_pt,
@@ -1090,7 +1090,7 @@ def align_three_point(
 
 def align_manual(
     centerline: PyCenterline,
-    geometry_pair: PyGeometryPair,
+    geometry: PyGeometryPair | PyGeometry,
     rotation_angle: float,
     ref_point: tuple[float, float, float],
     write: bool = False,
@@ -1099,20 +1099,19 @@ def align_manual(
     output_dir: str = "output/aligned",
     contour_types: list[PyContourType] | None = None,
     case_name: str = "None",
-) -> tuple[PyGeometryPair, PyCenterline]:
-    """Align diastolic and systolic meshes to the centerline using a manual rotation angle.
+) -> tuple[PyGeometryPair | PyGeometry, PyCenterline]:
+    """Align a geometry (or geometry pair) to the centerline using a manual rotation angle.
 
-    Creates centerline-aligned meshes for a diastolic/systolic geometry pair
-    using an explicit rotation angle and a single reference point on the
-    centerline.  Only works for elliptic vessels such as coronary artery
-    anomalies.
+    Creates centerline-aligned meshes using an explicit rotation angle and a
+    single reference point on the centerline.  Only works for elliptic vessels
+    such as coronary artery anomalies.
 
     Parameters
     ----------
     centerline : PyCenterline
         Centerline of the vessel.
-    geometry_pair : PyGeometryPair
-        Diastolic/systolic geometry pair to align.
+    geometry : PyGeometryPair or PyGeometry
+        Single geometry or diastolic/systolic geometry pair to align.
     rotation_angle : float
         Rotation angle in radians to apply.
     ref_point : tuple of float
@@ -1122,7 +1121,8 @@ def align_manual(
     watertight : bool, optional
         Whether to write a watertight or shell mesh.  Default is ``True``.
     interpolation_steps : int, optional
-        Number of interpolation steps between phases.  Default is ``28``.
+        Number of interpolation steps between phases.  Only used when *geometry*
+        is a ``PyGeometryPair``.  Default is ``0``.
     output_dir : str, optional
         Output directory for aligned meshes.  Default is ``"output/aligned"``.
     contour_types : list of PyContourType, optional
@@ -1133,15 +1133,15 @@ def align_manual(
 
     Returns
     -------
-    geom_pair : PyGeometryPair
-        Aligned geometry pair.
+    geometry : PyGeometryPair or PyGeometry
+        Aligned geometry, matching the type of the input.
     centerline : PyCenterline
         Resampled centerline.
 
     Examples
     --------
     >>> import multimodars as mm
-    >>> pair, cl = mm.align_manual(
+    >>> result, cl = mm.align_manual(
     ...     centerline, geometry_pair, rotation_angle=1.57, ref_point=(1.0, 2.0, 3.0)
     ... )
     """
@@ -1149,7 +1149,7 @@ def align_manual(
         contour_types = _default_contour_types()
     return _align_manual(
         centerline,
-        geometry_pair,
+        geometry,
         rotation_angle,
         ref_point,
         write,
@@ -1163,7 +1163,7 @@ def align_manual(
 
 def align_combined(
     centerline: PyCenterline,
-    geom_pair: PyGeometryPair,
+    geometry: PyGeometryPair | PyGeometry,
     aortic_ref_pt: tuple[float, float, float],
     upper_ref_pt: tuple[float, float, float],
     lower_ref_pt: tuple[float, float, float],
@@ -1177,20 +1177,19 @@ def align_combined(
     output_dir: str = "output/aligned",
     contour_types: list[PyContourType] | None = None,
     case_name: str = "None",
-) -> tuple[PyGeometryPair, PyCenterline]:
-    """Align meshes using three reference points combined with Hausdorff distance refinement.
+) -> tuple[PyGeometryPair | PyGeometry, PyCenterline]:
+    """Align a geometry (or geometry pair) using three reference points and Hausdorff refinement.
 
-    Creates centerline-aligned meshes for a diastolic/systolic geometry pair
-    using three anatomical reference points for an initial orientation and a
-    set of additional points for Hausdorff distance-based fine-tuning of the
-    rotation.
+    Creates centerline-aligned meshes using three anatomical reference points
+    for an initial orientation and a set of additional points for
+    Hausdorff distance-based fine-tuning of the rotation.
 
     Parameters
     ----------
     centerline : PyCenterline
         Centerline of the vessel.
-    geom_pair : PyGeometryPair
-        Diastolic/systolic geometry pair to align.
+    geometry : PyGeometryPair or PyGeometry
+        Single geometry or diastolic/systolic geometry pair to align.
     aortic_ref_pt : tuple of float
         ``(x, y, z)`` reference point at the aortic ostium.
     upper_ref_pt : tuple of float
@@ -1212,7 +1211,8 @@ def align_combined(
     watertight : bool, optional
         Whether to write a watertight or shell mesh.  Default is ``True``.
     interpolation_steps : int, optional
-        Number of interpolation steps between phases.  Default is ``28``.
+        Number of interpolation steps between phases.  Only used when *geometry*
+        is a ``PyGeometryPair``.  Default is ``0``.
     output_dir : str, optional
         Output directory for aligned meshes.  Default is ``"output/aligned"``.
     contour_types : list of PyContourType, optional
@@ -1223,15 +1223,15 @@ def align_combined(
 
     Returns
     -------
-    geom_pair : PyGeometryPair
-        Aligned geometry pair.
+    geometry : PyGeometryPair or PyGeometry
+        Aligned geometry, matching the type of the input.
     centerline : PyCenterline
         Resampled centerline.
 
     Examples
     --------
     >>> import multimodars as mm
-    >>> pair, cl = mm.align_combined(
+    >>> result, cl = mm.align_combined(
     ...     centerline,
     ...     geometry_pair,
     ...     (12.2605, -201.3643, 1751.0554),
@@ -1244,7 +1244,7 @@ def align_combined(
         contour_types = _default_contour_types()
     return _align_combined(
         centerline,
-        geom_pair,
+        geometry,
         aortic_ref_pt,
         upper_ref_pt,
         lower_ref_pt,

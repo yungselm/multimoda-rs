@@ -1,22 +1,21 @@
 use crate::intravascular::{
-    binding::classes::{PyCenterline, PyContourType, PyGeometryPair},
+    binding::classes::{PyCenterline, PyContourType, PyGeometry, PyGeometryPair},
     centerline_align::{align_combined_rs, align_manual_rs, align_three_point_rs},
 };
 use pyo3::prelude::*;
 
-/// Align diastolic and systolic meshes to the centerline using three reference points.
+/// Align a geometry (or geometry pair) to the centerline using three reference points.
 ///
-/// Creates centerline-aligned meshes for a diastolic/systolic geometry pair
-/// based on three anatomical reference points (aorta, upper section, lower
-/// section).  Only works for elliptic vessels such as coronary artery
-/// anomalies.
+/// Creates centerline-aligned meshes based on three anatomical reference points
+/// (aorta, upper section, lower section).  Only works for elliptic vessels such
+/// as coronary artery anomalies.
 ///
 /// Parameters
 /// ----------
 /// centerline : PyCenterline
 ///     Centerline of the vessel.
-/// geometry_pair : PyGeometryPair
-///     Diastolic/systolic geometry pair to align.
+/// geometry : PyGeometry or PyGeometryPair
+///     Single geometry or diastolic/systolic geometry pair to align.
 /// aortic_ref_pt : tuple of float
 ///     ``(x, y, z)`` reference point at the aortic ostium.
 /// upper_ref_pt : tuple of float
@@ -30,7 +29,8 @@ use pyo3::prelude::*;
 /// watertight : bool, optional
 ///     Whether to write a watertight or shell mesh to OBJ.  Default is ``True``.
 /// interpolation_steps : int, optional
-///     Number of interpolation steps between phases.  Default is ``0``.
+///     Number of interpolation steps between phases.  Only used when *geometry*
+///     is a ``PyGeometryPair``.  Default is ``0``.
 /// output_dir : str, optional
 ///     Output directory for aligned meshes.  Default is ``"output/aligned"``.
 /// case_name : str, optional
@@ -38,15 +38,15 @@ use pyo3::prelude::*;
 ///
 /// Returns
 /// -------
-/// geom_pair : PyGeometryPair
-///     Aligned geometry pair.
+/// geometry : PyGeometry or PyGeometryPair
+///     Aligned geometry, matching the type of the input.
 /// centerline : PyCenterline
 ///     Resampled centerline.
 ///
 /// Examples
 /// --------
 /// >>> import multimodars as mm
-/// >>> dia, sys = mm.align_three_point(
+/// >>> result, cl = mm.align_three_point(
 /// ...     centerline,
 /// ...     geometry_pair,
 /// ...     (12.2605, -201.3643, 1751.0554),
@@ -57,7 +57,7 @@ use pyo3::prelude::*;
 #[pyo3(
     signature = (
         centerline,
-        geometry_pair,
+        geometry,
         aortic_ref_pt,
         upper_ref_pt,
         lower_ref_pt,
@@ -71,8 +71,9 @@ use pyo3::prelude::*;
     )
 )]
 pub fn align_three_point(
+    py: Python<'_>,
     centerline: PyCenterline,
-    geometry_pair: PyGeometryPair,
+    geometry: Bound<'_, PyAny>,
     aortic_ref_pt: (f64, f64, f64),
     upper_ref_pt: (f64, f64, f64),
     lower_ref_pt: (f64, f64, f64),
@@ -83,48 +84,67 @@ pub fn align_three_point(
     output_dir: &str,
     contour_types: Vec<PyContourType>,
     case_name: &str,
-) -> PyResult<(PyGeometryPair, PyCenterline)> {
+) -> PyResult<(Py<PyAny>, PyCenterline)> {
     let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
     let cl_rs = centerline.to_rust_centerline();
-    let geom_pair_rs = geometry_pair.to_rust_geometry_pair();
     let angle_step = angle_step_deg.to_radians();
 
-    let (geom_pair, cl) = align_three_point_rs(
-        cl_rs,
-        geom_pair_rs,
-        aortic_ref_pt,
-        upper_ref_pt,
-        lower_ref_pt,
-        angle_step,
-        write,
-        watertight,
-        interpolation_steps,
-        output_dir,
-        rust_contour_types,
-        case_name,
-    )
-    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-
-    let aligned_py: PyGeometryPair = geom_pair.into();
-    let resampled_cl: PyCenterline = cl.into();
-
-    Ok((aligned_py, resampled_cl))
+    if let Ok(geom_pair) = geometry.extract::<PyGeometryPair>() {
+        let (result_rs, cl) = align_three_point_rs(
+            cl_rs,
+            geom_pair.to_rust_geometry_pair(),
+            aortic_ref_pt,
+            upper_ref_pt,
+            lower_ref_pt,
+            angle_step,
+            write,
+            watertight,
+            interpolation_steps,
+            output_dir,
+            rust_contour_types,
+            case_name,
+        )
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        let py_result: PyGeometryPair = result_rs.into();
+        Ok((Py::new(py, py_result)?.into_any(), cl.into()))
+    } else if let Ok(geom) = geometry.extract::<PyGeometry>() {
+        let (result_rs, cl) = align_three_point_rs(
+            cl_rs,
+            geom.to_rust_geometry()?,
+            aortic_ref_pt,
+            upper_ref_pt,
+            lower_ref_pt,
+            angle_step,
+            write,
+            watertight,
+            interpolation_steps,
+            output_dir,
+            rust_contour_types,
+            case_name,
+        )
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        let py_result: PyGeometry = result_rs.into();
+        Ok((Py::new(py, py_result)?.into_any(), cl.into()))
+    } else {
+        Err(pyo3::exceptions::PyTypeError::new_err(
+            "geometry must be a PyGeometry or PyGeometryPair",
+        ))
+    }
 }
 
-/// Align diastolic and systolic meshes to the centerline using a manual rotation angle.
+/// Align a geometry (or geometry pair) to the centerline using a manual rotation angle.
 ///
-/// Creates centerline-aligned meshes for a diastolic/systolic geometry pair
-/// using an explicit rotation angle and a single reference point on the
-/// centerline.  Only works for elliptic vessels such as coronary artery
-/// anomalies.
+/// Creates centerline-aligned meshes using an explicit rotation angle and a
+/// single reference point on the centerline.  Only works for elliptic vessels
+/// such as coronary artery anomalies.
 ///
 /// Parameters
 /// ----------
 /// centerline : PyCenterline
 ///     Centerline of the vessel.
-/// geometry_pair : PyGeometryPair
-///     Diastolic/systolic geometry pair to align.
+/// geometry : PyGeometry or PyGeometryPair
+///     Single geometry or diastolic/systolic geometry pair to align.
 /// rotation_angle : float
 ///     Rotation angle in radians to apply.
 /// ref_point : tuple of float
@@ -134,7 +154,8 @@ pub fn align_three_point(
 /// watertight : bool, optional
 ///     Whether to write a watertight or shell mesh to OBJ.  Default is ``True``.
 /// interpolation_steps : int, optional
-///     Number of interpolation steps between phases.  Default is ``0``.
+///     Number of interpolation steps between phases.  Only used when *geometry*
+///     is a ``PyGeometryPair``.  Default is ``0``.
 /// output_dir : str, optional
 ///     Output directory for aligned meshes.  Default is ``"output/aligned"``.
 /// case_name : str, optional
@@ -142,26 +163,22 @@ pub fn align_three_point(
 ///
 /// Returns
 /// -------
-/// geom_pair : PyGeometryPair
-///     Aligned geometry pair.
+/// geometry : PyGeometry or PyGeometryPair
+///     Aligned geometry, matching the type of the input.
 /// centerline : PyCenterline
 ///     Resampled centerline.
 ///
 /// Examples
 /// --------
 /// >>> import multimodars as mm
-/// >>> dia, sys = mm.centerline_align(
-/// ...     "path/to/centerline.csv",
-/// ...     (1.0, 2.0, 3.0),
-/// ...     (4.0, 5.0, 6.0),
-/// ...     (7.0, 8.0, 9.0),
-/// ...     "rest"
+/// >>> result, cl = mm.align_manual(
+/// ...     centerline, geometry_pair, rotation_angle=1.57, ref_point=(1.0, 2.0, 3.0)
 /// ... )
 #[pyfunction]
 #[pyo3(
     signature = (
         centerline,
-        geometry_pair,
+        geometry,
         rotation_angle,
         ref_point,
         write=false,
@@ -173,8 +190,9 @@ pub fn align_three_point(
     )
 )]
 pub fn align_manual(
+    py: Python<'_>,
     centerline: PyCenterline,
-    geometry_pair: PyGeometryPair,
+    geometry: Bound<'_, PyAny>,
     rotation_angle: f64,
     ref_point: (f64, f64, f64),
     write: bool,
@@ -183,45 +201,62 @@ pub fn align_manual(
     output_dir: &str,
     contour_types: Vec<PyContourType>,
     case_name: &str,
-) -> PyResult<(PyGeometryPair, PyCenterline)> {
+) -> PyResult<(Py<PyAny>, PyCenterline)> {
     let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
     let cl_rs = centerline.to_rust_centerline();
-    let geom_pair_rs = geometry_pair.to_rust_geometry_pair();
 
-    let (geom_pair, cl) = align_manual_rs(
-        cl_rs,
-        geom_pair_rs,
-        rotation_angle,
-        ref_point,
-        write,
-        watertight,
-        interpolation_steps,
-        output_dir,
-        rust_contour_types,
-        case_name,
-    )
-    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-
-    let aligned_py: PyGeometryPair = geom_pair.into();
-    let resampled_cl: PyCenterline = cl.into();
-
-    Ok((aligned_py, resampled_cl))
+    if let Ok(geom_pair) = geometry.extract::<PyGeometryPair>() {
+        let (result_rs, cl) = align_manual_rs(
+            cl_rs,
+            geom_pair.to_rust_geometry_pair(),
+            rotation_angle,
+            ref_point,
+            write,
+            watertight,
+            interpolation_steps,
+            output_dir,
+            rust_contour_types,
+            case_name,
+        )
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        let py_result: PyGeometryPair = result_rs.into();
+        Ok((Py::new(py, py_result)?.into_any(), cl.into()))
+    } else if let Ok(geom) = geometry.extract::<PyGeometry>() {
+        let (result_rs, cl) = align_manual_rs(
+            cl_rs,
+            geom.to_rust_geometry()?,
+            rotation_angle,
+            ref_point,
+            write,
+            watertight,
+            interpolation_steps,
+            output_dir,
+            rust_contour_types,
+            case_name,
+        )
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        let py_result: PyGeometry = result_rs.into();
+        Ok((Py::new(py, py_result)?.into_any(), cl.into()))
+    } else {
+        Err(pyo3::exceptions::PyTypeError::new_err(
+            "geometry must be a PyGeometry or PyGeometryPair",
+        ))
+    }
 }
 
-/// Align meshes using three reference points combined with Hausdorff distance refinement.
+/// Align a geometry (or geometry pair) using three reference points and Hausdorff refinement.
 ///
-/// Creates centerline-aligned meshes for a diastolic/systolic geometry pair
-/// using three anatomical reference points for an initial orientation and a
-/// set of additional points for Hausdorff distance-based fine-tuning of the
-/// rotation.
+/// Creates centerline-aligned meshes using three anatomical reference points
+/// for an initial orientation and a set of additional points for
+/// Hausdorff distance-based fine-tuning of the rotation.
 ///
 /// Parameters
 /// ----------
 /// centerline : PyCenterline
 ///     Centerline of the vessel.
-/// geom_pair : PyGeometryPair
-///     Diastolic/systolic geometry pair to align.
+/// geometry : PyGeometry or PyGeometryPair
+///     Single geometry or diastolic/systolic geometry pair to align.
 /// aortic_ref_pt : tuple of float
 ///     ``(x, y, z)`` reference point at the aortic ostium.
 /// upper_ref_pt : tuple of float
@@ -243,7 +278,8 @@ pub fn align_manual(
 /// watertight : bool, optional
 ///     Whether to write a watertight or shell mesh to OBJ.  Default is ``True``.
 /// interpolation_steps : int, optional
-///     Number of interpolation steps between phases.  Default is ``0``.
+///     Number of interpolation steps between phases.  Only used when *geometry*
+///     is a ``PyGeometryPair``.  Default is ``0``.
 /// output_dir : str, optional
 ///     Output directory for aligned meshes.  Default is ``"output/aligned"``.
 /// case_name : str, optional
@@ -251,25 +287,27 @@ pub fn align_manual(
 ///
 /// Returns
 /// -------
-/// geom_pair : PyGeometryPair
-///     Aligned geometry pair.
+/// geometry : PyGeometry or PyGeometryPair
+///     Aligned geometry, matching the type of the input.
 /// centerline : PyCenterline
 ///     Resampled centerline.
 ///
 /// Examples
 /// --------
 /// >>> import multimodars as mm
-/// >>> dia, sys = mm.align_three_point(
+/// >>> result, cl = mm.align_combined(
 /// ...     centerline,
 /// ...     geometry_pair,
 /// ...     (12.2605, -201.3643, 1751.0554),
-/// ...     [(11.7567, -202.1920, 1754.7975), ... ],
+/// ...     (11.7567, -202.1920, 1754.7975),
+/// ...     (15.6605, -202.1920, 1749.9655),
+/// ...     point_cloud,
 /// ... )
 #[pyfunction]
 #[pyo3(
     signature = (
         centerline,
-        geom_pair,
+        geometry,
         aortic_ref_pt,
         upper_ref_pt,
         lower_ref_pt,
@@ -286,50 +324,74 @@ pub fn align_manual(
     )
 )]
 pub fn align_combined(
+    py: Python<'_>,
     centerline: PyCenterline,
-    geom_pair: PyGeometryPair,
+    geometry: Bound<'_, PyAny>,
     aortic_ref_pt: (f64, f64, f64),
     upper_ref_pt: (f64, f64, f64),
     lower_ref_pt: (f64, f64, f64),
     points: Vec<(f64, f64, f64)>,
     angle_step_deg: f64,
-    angle_range_deg: f64, // e.g., 15° in radians
-    index_range: usize,   // e.g., 2
+    angle_range_deg: f64,
+    index_range: usize,
     write: bool,
     watertight: bool,
     interpolation_steps: usize,
     output_dir: &str,
     contour_types: Vec<PyContourType>,
     case_name: &str,
-) -> PyResult<(PyGeometryPair, PyCenterline)> {
+) -> PyResult<(Py<PyAny>, PyCenterline)> {
     let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
     let cl_rs = centerline.to_rust_centerline();
-    let geom_pair_rs = geom_pair.to_rust_geometry_pair();
     let angle_step = angle_step_deg.to_radians();
     let angle_range = angle_range_deg.to_radians();
 
-    let (geom_pair, cl) = align_combined_rs(
-        cl_rs,
-        geom_pair_rs,
-        aortic_ref_pt,
-        upper_ref_pt,
-        lower_ref_pt,
-        points.as_ref(),
-        angle_step,
-        angle_range,
-        index_range,
-        write,
-        watertight,
-        interpolation_steps,
-        output_dir,
-        rust_contour_types,
-        case_name,
-    )
-    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-
-    let aligned_py: PyGeometryPair = geom_pair.into();
-    let resampled_cl: PyCenterline = cl.into();
-
-    Ok((aligned_py, resampled_cl))
+    if let Ok(geom_pair) = geometry.extract::<PyGeometryPair>() {
+        let (result_rs, cl) = align_combined_rs(
+            cl_rs,
+            geom_pair.to_rust_geometry_pair(),
+            aortic_ref_pt,
+            upper_ref_pt,
+            lower_ref_pt,
+            points.as_ref(),
+            angle_step,
+            angle_range,
+            index_range,
+            write,
+            watertight,
+            interpolation_steps,
+            output_dir,
+            rust_contour_types,
+            case_name,
+        )
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        let py_result: PyGeometryPair = result_rs.into();
+        Ok((Py::new(py, py_result)?.into_any(), cl.into()))
+    } else if let Ok(geom) = geometry.extract::<PyGeometry>() {
+        let (result_rs, cl) = align_combined_rs(
+            cl_rs,
+            geom.to_rust_geometry()?,
+            aortic_ref_pt,
+            upper_ref_pt,
+            lower_ref_pt,
+            points.as_ref(),
+            angle_step,
+            angle_range,
+            index_range,
+            write,
+            watertight,
+            interpolation_steps,
+            output_dir,
+            rust_contour_types,
+            case_name,
+        )
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        let py_result: PyGeometry = result_rs.into();
+        Ok((Py::new(py, py_result)?.into_any(), cl.into()))
+    } else {
+        Err(pyo3::exceptions::PyTypeError::new_err(
+            "geometry must be a PyGeometry or PyGeometryPair",
+        ))
+    }
 }
