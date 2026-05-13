@@ -37,6 +37,34 @@ def _project_to_best_fit_plane(
     return [tuple(p) for p in projected]
 
 
+def _smooth_ring_laplacian(
+    points: list[tuple[float, float, float]],
+    iterations: int = 5,
+    alpha: float = 0.5,
+) -> list[tuple[float, float, float]]:
+    """Laplacian smoothing of a closed boundary ring.
+
+    Each vertex is blended toward the midpoint of its two ring neighbors.
+    Since the input is already coplanar, the result stays on the same plane
+    (a linear combination of coplanar points is coplanar).
+
+    Parameters
+    ----------
+    iterations : int
+        Number of smoothing passes.
+    alpha : float
+        Weight kept on the original position (0 = full Laplacian, 1 = no-op).
+    """
+    if len(points) < 3:
+        return points
+    pts = np.array(points, dtype=np.float64)
+    for _ in range(iterations):
+        prev = pts.copy()
+        neighbor_avg = (np.roll(prev, 1, axis=0) + np.roll(prev, -1, axis=0)) / 2.0
+        pts = alpha * prev + (1.0 - alpha) * neighbor_avg
+    return [tuple(p) for p in pts]
+
+
 def _order_boundary_components(
     boundary_indices: set[int],
     adj_map: Mapping[int, list[int] | set[int]],
@@ -435,17 +463,10 @@ def remove_labeled_points_from_mesh(
         for i in range(n_vertices)
         if keep_mask[i] and any(j in remove_indices for j in adj_map.get(i, []))
     }
-    # Project each ring component onto its own best-fit plane so that a
-    # proximal and distal ring (produced by two separate removals) are each
-    # flattened independently rather than onto a single averaged plane.
     components = _order_boundary_components(boundary_indices, adj_map)
-    ordered_boundary: list[tuple[int, tuple]] = []
-    boundary_points: list[tuple] = []
-    for component in components:
-        raw = [tuple(mesh.vertices[i]) for i in component]
-        projected = _project_to_best_fit_plane(raw)
-        ordered_boundary.extend(zip(component, projected))
-        boundary_points.extend(projected)
+    boundary_points: list[tuple] = [
+        tuple(mesh.vertices[i]) for component in components for i in component
+    ]
 
     # 4. Drop faces that reference any removed vertex
     face_keep_mask = np.all(keep_mask[mesh.faces], axis=1)
@@ -456,13 +477,7 @@ def remove_labeled_points_from_mesh(
     new_index[keep_mask] = np.arange(keep_mask.sum(), dtype=np.int64)
     new_faces = new_index[new_faces]
 
-    # Update boundary vertices in the mesh to their projected positions so that
-    # new_coord_set and all downstream coordinate lookups stay consistent.
-    new_vertices = mesh.vertices[keep_mask].copy()
-    for orig_idx, proj_pt in ordered_boundary:
-        remapped = new_index[orig_idx]
-        if remapped >= 0:
-            new_vertices[remapped] = proj_pt
+    new_vertices = mesh.vertices[keep_mask]
     new_mesh = trimesh.Trimesh(vertices=new_vertices, faces=new_faces, process=False)
 
     # 6. Rebuild the results dict with updated coordinate lists
@@ -557,13 +572,9 @@ def keep_labeled_points_from_mesh(
         i for i in keep_indices if any(j in remove_indices for j in adj_map.get(i, []))
     }
     components = _order_boundary_components(boundary_indices, adj_map)
-    ordered_boundary: list[tuple[int, tuple]] = []
-    boundary_points: list[tuple] = []
-    for component in components:
-        raw = [tuple(mesh.vertices[i]) for i in component]
-        projected = _project_to_best_fit_plane(raw)
-        ordered_boundary.extend(zip(component, projected))
-        boundary_points.extend(projected)
+    boundary_points: list[tuple] = [
+        tuple(mesh.vertices[i]) for component in components for i in component
+    ]
 
     # Drop faces that reference any removed vertex
     face_keep_mask = np.all(keep_mask[mesh.faces], axis=1)
@@ -574,13 +585,7 @@ def keep_labeled_points_from_mesh(
     new_index[keep_mask] = np.arange(keep_mask.sum(), dtype=np.int64)
     new_faces = new_index[new_faces]
 
-    # Update boundary vertices in the mesh to their projected positions so that
-    # new_coord_set and all downstream coordinate lookups stay consistent.
-    new_vertices = mesh.vertices[keep_mask].copy()
-    for orig_idx, proj_pt in ordered_boundary:
-        remapped = new_index[orig_idx]
-        if remapped >= 0:
-            new_vertices[remapped] = proj_pt
+    new_vertices = mesh.vertices[keep_mask]
     new_mesh = trimesh.Trimesh(vertices=new_vertices, faces=new_faces, process=False)
 
     new_coord_set = {tuple(v) for v in new_vertices}
@@ -677,6 +682,7 @@ def stitch_ccta_to_intravascular(
     n_points_iv_cont: int = 100,
     prox_start_mode: str = "nearest_iv",
     dist_start_mode: str = "nearest_iv",
+    proximal_is_ostium: bool = True,
 ) -> dict:
     """
     ``prox_start_mode`` / ``dist_start_mode`` control how index 0 of each
@@ -697,11 +703,12 @@ def stitch_ccta_to_intravascular(
     proximal_points = iv_mesh.frames[0].lumen.points
     distal_points = iv_mesh.frames[-1].lumen.points
 
-    prox_boundary_pts, dist_boundary_pts = _prepare_prox_dist_boundary_pts(
+    prox_boundary_pts, dist_boundary_pts, mesh = _prepare_prox_dist_boundary_pts(
         mesh,
         results,
         proximal_centroid,
         distal_centroid,
+        proximal_is_ostium=proximal_is_ostium,
     )
     prox_point_step = len(proximal_points) // len(prox_boundary_pts)
     dist_point_step = len(distal_points) // len(dist_boundary_pts)
@@ -787,7 +794,8 @@ def _prepare_prox_dist_boundary_pts(
     results: dict,
     prox_centroid: tuple[float, float, float],
     dist_centroid: tuple[float, float, float],
-) -> tuple[list, list]:
+    proximal_is_ostium: bool = True,
+) -> tuple[list, list, trimesh.Trimesh]:
     proximal_boundary_pts = []
     distal_boundary_pts = []
     for pt in results["boundary_points"]:
@@ -798,10 +806,24 @@ def _prepare_prox_dist_boundary_pts(
         else:
             distal_boundary_pts.append(pt)
 
-    prox_boundary_pts_ord = order_points_list(mesh, proximal_boundary_pts)
+    if proximal_is_ostium:
+        # Ostial fixing: project onto best-fit plane + Laplacian smooth, then
+        # update the corresponding mesh vertices so there is no gap at the seam.
+        prox_projected = _project_to_best_fit_plane(proximal_boundary_pts)
+        prox_boundary_pts_ord = _smooth_ring_laplacian(prox_projected)
+        coord_to_idx = {tuple(v): i for i, v in enumerate(mesh.vertices)}
+        new_vertices = mesh.vertices.copy()
+        for old_pt, new_pt in zip(proximal_boundary_pts, prox_boundary_pts_ord):
+            idx = coord_to_idx.get(tuple(old_pt))
+            if idx is not None:
+                new_vertices[idx] = new_pt
+        mesh = trimesh.Trimesh(vertices=new_vertices, faces=mesh.faces, process=False)
+    else:
+        prox_boundary_pts_ord = order_points_list(mesh, proximal_boundary_pts)
+
     dist_boundary_pts_ord = order_points_list(mesh, distal_boundary_pts)
 
-    return prox_boundary_pts_ord, dist_boundary_pts_ord
+    return prox_boundary_pts_ord, dist_boundary_pts_ord, mesh
 
 
 def order_points_list(mesh: trimesh.Trimesh, points: list) -> list:
