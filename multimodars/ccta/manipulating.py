@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 import numpy as np
 import trimesh
 
@@ -14,6 +15,70 @@ from ..multimodars import (
     find_aortic_wall_scaling as _find_aortic_wall_scaling,
 )
 from .._converters import geometry_to_trimesh
+
+
+def _project_to_best_fit_plane(
+    points: list[tuple[float, float, float]],
+) -> list[tuple[float, float, float]]:
+    """Project a ring of boundary points onto their best-fit plane.
+
+    Fits a plane via SVD (the plane normal is the direction of minimum variance)
+    and orthogonally projects every point onto it, flattening noise perpendicular
+    to the ring.
+    """
+    if len(points) < 3:
+        return points
+    pts = np.array(points, dtype=np.float64)
+    centroid = pts.mean(axis=0)
+    _, _, Vt = np.linalg.svd(pts - centroid, full_matrices=False)
+    normal = Vt[-1]
+    distances = (pts - centroid) @ normal
+    projected = pts - np.outer(distances, normal)
+    return [tuple(p) for p in projected]
+
+
+def _order_boundary_components(
+    boundary_indices: set[int],
+    adj_map: Mapping[int, list[int] | set[int]],
+) -> list[list[int]]:
+    """Walk every connected component of the boundary in edge order.
+
+    Returns one ordered list per component so callers can project each ring
+    onto its own best-fit plane rather than a combined plane fitted to all rings.
+    """
+    if not boundary_indices:
+        return []
+    if len(boundary_indices) == 1:
+        return [list(boundary_indices)]
+
+    ring_adj = {
+        i: [j for j in adj_map.get(i, []) if j in boundary_indices]
+        for i in boundary_indices
+    }
+
+    remaining = set(boundary_indices)
+    components: list[list[int]] = []
+
+    while remaining:
+        start = next(iter(remaining))
+        component = [start]
+        remaining.discard(start)
+        prev, current = -1, start
+
+        while True:
+            nxt = next(
+                (n for n in ring_adj.get(current, []) if n != prev and n in remaining),
+                None,
+            )
+            if nxt is None:
+                break
+            component.append(nxt)
+            remaining.discard(nxt)
+            prev, current = current, nxt
+
+        components.append(component)
+
+    return components
 
 
 def scale_region_centerline_morphing(
@@ -370,7 +435,17 @@ def remove_labeled_points_from_mesh(
         for i in range(n_vertices)
         if keep_mask[i] and any(j in remove_indices for j in adj_map.get(i, []))
     }
-    boundary_points = [tuple(mesh.vertices[i]) for i in boundary_indices]
+    # Project each ring component onto its own best-fit plane so that a
+    # proximal and distal ring (produced by two separate removals) are each
+    # flattened independently rather than onto a single averaged plane.
+    components = _order_boundary_components(boundary_indices, adj_map)
+    ordered_boundary: list[tuple[int, tuple]] = []
+    boundary_points: list[tuple] = []
+    for component in components:
+        raw = [tuple(mesh.vertices[i]) for i in component]
+        projected = _project_to_best_fit_plane(raw)
+        ordered_boundary.extend(zip(component, projected))
+        boundary_points.extend(projected)
 
     # 4. Drop faces that reference any removed vertex
     face_keep_mask = np.all(keep_mask[mesh.faces], axis=1)
@@ -381,7 +456,13 @@ def remove_labeled_points_from_mesh(
     new_index[keep_mask] = np.arange(keep_mask.sum(), dtype=np.int64)
     new_faces = new_index[new_faces]
 
-    new_vertices = mesh.vertices[keep_mask]
+    # Update boundary vertices in the mesh to their projected positions so that
+    # new_coord_set and all downstream coordinate lookups stay consistent.
+    new_vertices = mesh.vertices[keep_mask].copy()
+    for orig_idx, proj_pt in ordered_boundary:
+        remapped = new_index[orig_idx]
+        if remapped >= 0:
+            new_vertices[remapped] = proj_pt
     new_mesh = trimesh.Trimesh(vertices=new_vertices, faces=new_faces, process=False)
 
     # 6. Rebuild the results dict with updated coordinate lists
@@ -475,7 +556,14 @@ def keep_labeled_points_from_mesh(
     boundary_indices = {
         i for i in keep_indices if any(j in remove_indices for j in adj_map.get(i, []))
     }
-    boundary_points = [tuple(mesh.vertices[i]) for i in boundary_indices]
+    components = _order_boundary_components(boundary_indices, adj_map)
+    ordered_boundary: list[tuple[int, tuple]] = []
+    boundary_points: list[tuple] = []
+    for component in components:
+        raw = [tuple(mesh.vertices[i]) for i in component]
+        projected = _project_to_best_fit_plane(raw)
+        ordered_boundary.extend(zip(component, projected))
+        boundary_points.extend(projected)
 
     # Drop faces that reference any removed vertex
     face_keep_mask = np.all(keep_mask[mesh.faces], axis=1)
@@ -486,7 +574,13 @@ def keep_labeled_points_from_mesh(
     new_index[keep_mask] = np.arange(keep_mask.sum(), dtype=np.int64)
     new_faces = new_index[new_faces]
 
-    new_vertices = mesh.vertices[keep_mask]
+    # Update boundary vertices in the mesh to their projected positions so that
+    # new_coord_set and all downstream coordinate lookups stay consistent.
+    new_vertices = mesh.vertices[keep_mask].copy()
+    for orig_idx, proj_pt in ordered_boundary:
+        remapped = new_index[orig_idx]
+        if remapped >= 0:
+            new_vertices[remapped] = proj_pt
     new_mesh = trimesh.Trimesh(vertices=new_vertices, faces=new_faces, process=False)
 
     new_coord_set = {tuple(v) for v in new_vertices}
