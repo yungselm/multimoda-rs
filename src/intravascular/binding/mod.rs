@@ -1510,3 +1510,120 @@ pub fn to_obj(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::entry::full_processing_rs;
+    use crate::intravascular::io::geometry::ContourType;
+    use crate::intravascular::io::input::InputData;
+    use std::collections::HashMap;
+
+    const REST: &str = "data/fixtures/ivus_rest";
+    const STRESS: &str = "data/fixtures/ivus_stress";
+
+    const LABELS: [&str; 4] = ["rest_dia", "rest_sys", "stress_dia", "stress_sys"];
+
+    fn lumen_only() -> Vec<ContourType> {
+        vec![ContourType::Lumen]
+    }
+
+    fn fast_full(
+        labels: Vec<String>,
+        input_path_a: Option<&str>,
+        input_path_b: Option<&str>,
+        input_data: [Option<InputData>; 4],
+    ) -> anyhow::Result<(String, String, String, String)> {
+        let [a, b, c, d] = input_data;
+        let (ab, cd, ac, bd, ..) = full_processing_rs(
+            labels,
+            (4.5, 4.5),
+            0.5,
+            20,
+            input_path_a,
+            input_path_b,
+            a,
+            b,
+            c,
+            d,
+            false,
+            0,
+            lumen_only(),
+            true,
+            "output/rest",
+            "output/stress",
+            "output/diastole",
+            "output/systole",
+            90.0,
+            90.0,
+            false,
+            false,
+            20,
+            false,
+        )?;
+        Ok((ab.label, cd.label, ac.label, bd.label))
+    }
+
+    fn build_input(dir: &str, diastole: bool, label: &str) -> InputData {
+        let mut names: HashMap<ContourType, &str> = HashMap::new();
+        names.insert(ContourType::Lumen, "lumen");
+        InputData::process_directory(dir, names, diastole, label).unwrap()
+    }
+
+    #[test]
+    fn test_file_full_labels() {
+        let labels = LABELS.iter().map(|s| s.to_string()).collect();
+        let (ab, cd, ac, bd) =
+            fast_full(labels, Some(REST), Some(STRESS), [None, None, None, None]).unwrap();
+
+        assert_eq!(ab, "rest_dia - rest_sys");
+        assert_eq!(cd, "stress_dia - stress_sys");
+        assert_eq!(ac, "rest_dia - stress_dia");
+        assert_eq!(bd, "rest_sys - stress_sys");
+    }
+
+    #[test]
+    fn test_array_full_labels() {
+        let input_a = build_input(REST, true, "rest_dia");
+        let input_b = build_input(REST, false, "rest_sys");
+        let input_c = build_input(STRESS, true, "stress_dia");
+        let input_d = build_input(STRESS, false, "stress_sys");
+
+        let (ab, cd, ac, bd) = fast_full(
+            vec![],
+            None,
+            None,
+            [Some(input_a), Some(input_b), Some(input_c), Some(input_d)],
+        )
+        .unwrap();
+
+        assert_eq!(ab, "rest_dia - rest_sys");
+        assert_eq!(cd, "stress_dia - stress_sys");
+        assert_eq!(ac, "rest_dia - stress_dia");
+        assert_eq!(bd, "rest_sys - stress_sys");
+    }
+
+    #[test]
+    fn test_file_and_array_full_same_labels() {
+        let labels = LABELS.iter().map(|s| s.to_string()).collect();
+        let (file_ab, file_cd, file_ac, file_bd) =
+            fast_full(labels, Some(REST), Some(STRESS), [None, None, None, None]).unwrap();
+
+        let input_a = build_input(REST, true, "rest_dia");
+        let input_b = build_input(REST, false, "rest_sys");
+        let input_c = build_input(STRESS, true, "stress_dia");
+        let input_d = build_input(STRESS, false, "stress_sys");
+
+        let (arr_ab, arr_cd, arr_ac, arr_bd) = fast_full(
+            vec![],
+            None,
+            None,
+            [Some(input_a), Some(input_b), Some(input_c), Some(input_d)],
+        )
+        .unwrap();
+
+        assert_eq!(file_ab, arr_ab);
+        assert_eq!(file_cd, arr_cd);
+        assert_eq!(file_ac, arr_ac);
+        assert_eq!(file_bd, arr_bd);
+    }
+}

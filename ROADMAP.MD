@@ -1,8 +1,5 @@
 # Python package that has one purpose: Combining any intravascular image modality with CCTA meshes.
 
-# Hot fixes
-- [] Labeling doesn't work as expected especially for `from_file` variants
-
 # Optimizations
 - [] Optimize the ray intersection algorithm
 - [] Better parallelization strategy for frames alignment by processing in batches (frames only have to be aligned relative to each other not sequentially)
@@ -18,7 +15,6 @@
 
 ## Fixes/Improvements
 - [] Write a more stable function to find intramural points on aorta (for now works with excluded RCA points)
-- [] Align algorithms only work with geometry pair not only geometry
 - [] fix centerline resampling
 
 ## Investigate/check logic
