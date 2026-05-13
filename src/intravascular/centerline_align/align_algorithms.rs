@@ -7,6 +7,50 @@ use crate::intravascular::processing::process_utils::{
 };
 use nalgebra::{Point3, Rotation3, Unit, Vector3};
 
+/// Allows alignment algorithms to operate on either a single [`Geometry`] or a [`GeometryPair`].
+pub trait AlignTarget: Sized + Clone {
+    /// Returns the primary geometry used as the reference for computing transformations.
+    fn primary_geometry(&self) -> &Geometry;
+    /// Applies frame transformations to all contained geometries.
+    fn apply_frame_transforms(self, transformations: &[FrameTransformation]) -> Self;
+    /// Rotates all contained geometries by `angle` radians around each frame's normal.
+    fn rotate_all(self, angle: f64) -> Self;
+}
+
+impl AlignTarget for Geometry {
+    fn primary_geometry(&self) -> &Geometry {
+        self
+    }
+
+    fn apply_frame_transforms(mut self, transformations: &[FrameTransformation]) -> Self {
+        apply_transforms_to_geometry(&mut self, transformations);
+        self
+    }
+
+    fn rotate_all(mut self, angle: f64) -> Self {
+        self.rotate_geometry(angle);
+        self
+    }
+}
+
+impl AlignTarget for GeometryPair {
+    fn primary_geometry(&self) -> &Geometry {
+        &self.geom_a
+    }
+
+    fn apply_frame_transforms(mut self, transformations: &[FrameTransformation]) -> Self {
+        apply_transforms_to_geometry(&mut self.geom_a, transformations);
+        apply_transforms_to_geometry(&mut self.geom_b, transformations);
+        self
+    }
+
+    fn rotate_all(mut self, angle: f64) -> Self {
+        self.geom_a.rotate_geometry(angle);
+        self.geom_b.rotate_geometry(angle);
+        self
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct FrameTransformation {
     pub frame_index: u32,
@@ -281,17 +325,17 @@ pub fn best_rotation_three_point(
 }
 
 /// Refines alignment using Hausdorff distance within a limited search space
-pub fn refine_alignment_hausdorff(
-    geom_pair: &GeometryPair,
+pub fn refine_alignment_hausdorff<T: AlignTarget>(
+    target: &T,
     centerline: &Centerline,
     initial_cl_ref_idx: usize,
     initial_rotation: f64,
     mutated_points: &[ContourPoint],
-    angle_search_range: f64, // e.g., 15° in radians
+    angle_search_range: f64,
     angle_step: f64,
-    index_search_range: usize, // e.g., 2 points
+    index_search_range: usize,
 ) -> (f64, usize) {
-    let len_frames = geom_pair.geom_a.frames.len();
+    let len_frames = target.primary_geometry().frames.len();
 
     let mut best_angle = initial_rotation;
     let mut best_cl_ref_idx = initial_cl_ref_idx;
@@ -304,38 +348,32 @@ pub fn refine_alignment_hausdorff(
         initial_cl_ref_idx
     );
 
-    // Search over centerline indices
     for delta_idx in -(index_search_range as isize)..=(index_search_range as isize) {
         let current_cl_ref_idx = (initial_cl_ref_idx as isize + delta_idx) as usize;
 
-        // Ensure we have enough centerline points for all frames
         if current_cl_ref_idx + len_frames >= centerline.points.len() {
             continue;
         }
 
-        // Create centerline segment for this index
         let cl_end_idx = current_cl_ref_idx + len_frames;
         let cl_segment = Centerline {
             points: centerline.points[current_cl_ref_idx..cl_end_idx].to_vec(),
         };
 
-        // Search over rotation angles
         let mut angle = initial_rotation - angle_search_range;
         while angle <= initial_rotation + angle_search_range {
-            // Apply rotation and transformation
-            let mut transformed_geompair = rotate_by_best_rotation(geom_pair.clone(), angle);
-
-            // Use the current centerline point as reference
             let ref_pt = (
                 centerline.points[current_cl_ref_idx].contour_point.x,
                 centerline.points[current_cl_ref_idx].contour_point.y,
                 centerline.points[current_cl_ref_idx].contour_point.z,
             );
 
-            transformed_geompair =
-                apply_transformations(transformed_geompair, &cl_segment, &ref_pt);
+            let transformed = apply_transformations(
+                rotate_by_best_rotation(target.clone(), angle),
+                &cl_segment,
+                &ref_pt,
+            );
 
-            // Filter mutated points to the current region
             let filtered_points = filter_points_in_region(
                 mutated_points,
                 &centerline.points[current_cl_ref_idx],
@@ -347,12 +385,10 @@ pub fn refine_alignment_hausdorff(
                 continue;
             }
 
-            // Downsample and flatten geometry points
-            let frames = &transformed_geompair.geom_a.frames;
+            let frames = &transformed.primary_geometry().frames;
             let n_points_per_frame = frames[0].lumen.points.len();
             let mut nested: Vec<Vec<ContourPoint>> = Vec::with_capacity(len_frames);
 
-            // Calculate downsample ratio
             let ratio =
                 filtered_points.len() as f64 / (n_points_per_frame as f64 * len_frames as f64);
             let mut n_downsample = (ratio * n_points_per_frame as f64).ceil() as usize;
@@ -368,8 +404,6 @@ pub fn refine_alignment_hausdorff(
             }
 
             let flat_geometry_points: Vec<ContourPoint> = nested.into_iter().flatten().collect();
-
-            // Calculate Hausdorff distance
             let hausdorff_dist = hausdorff_distance(&filtered_points, &flat_geometry_points);
 
             if hausdorff_dist < min_hausdorff {
@@ -446,55 +480,34 @@ fn filter_points_in_region(
         .collect()
 }
 
-pub fn rotate_by_best_rotation(mut geom_pair: GeometryPair, angle: f64) -> GeometryPair {
-    geom_pair.geom_a.rotate_geometry(angle);
-    geom_pair.geom_b.rotate_geometry(angle);
-
-    geom_pair
+pub fn rotate_by_best_rotation<T: AlignTarget>(target: T, angle: f64) -> T {
+    target.rotate_all(angle)
 }
 
-pub fn apply_transformations(
-    mut geom_pair: GeometryPair,
+pub fn apply_transformations<T: AlignTarget>(
+    target: T,
     centerline: &Centerline,
     ref_pt: &(f64, f64, f64),
-) -> GeometryPair {
-    // Create transformations using geom_a as reference
-    let transformations = get_transformations(geom_pair.geom_a.clone(), centerline, ref_pt);
+) -> T {
+    let transformations =
+        get_transformations(target.primary_geometry().clone(), centerline, ref_pt);
+    target.apply_frame_transforms(&transformations)
+}
 
-    // Helper function to apply transformations to a geometry
-    fn transform_geometry(
-        mut geometry: Geometry,
-        transformations: &[FrameTransformation],
-    ) -> Geometry {
-        // We assume transformations are in the same order as geometry frames
-        for (i, frame) in geometry.frames.iter_mut().enumerate() {
-            if i < transformations.len() {
-                let tr = &transformations[i];
-
-                // Transform lumen contour
-                apply_transformation_to_contour(&mut frame.lumen, tr);
-
-                // Transform extra contours
-                for contour in frame.extras.values_mut() {
-                    apply_transformation_to_contour(contour, tr);
-                }
-
-                // Transform reference point if it exists
-                if let Some(ref mut reference_pt) = frame.reference_point {
-                    *reference_pt = tr.apply_to_point(reference_pt);
-                }
-
-                // Update frame centroid
-                frame.centroid = frame.lumen.centroid.unwrap_or((0.0, 0.0, 0.0));
+fn apply_transforms_to_geometry(geometry: &mut Geometry, transformations: &[FrameTransformation]) {
+    for (i, frame) in geometry.frames.iter_mut().enumerate() {
+        if i < transformations.len() {
+            let tr = &transformations[i];
+            apply_transformation_to_contour(&mut frame.lumen, tr);
+            for contour in frame.extras.values_mut() {
+                apply_transformation_to_contour(contour, tr);
             }
+            if let Some(ref mut reference_pt) = frame.reference_point {
+                *reference_pt = tr.apply_to_point(reference_pt);
+            }
+            frame.centroid = frame.lumen.centroid.unwrap_or((0.0, 0.0, 0.0));
         }
-        geometry
     }
-
-    geom_pair.geom_a = transform_geometry(geom_pair.geom_a, &transformations);
-    geom_pair.geom_b = transform_geometry(geom_pair.geom_b, &transformations);
-
-    geom_pair
 }
 
 #[cfg(test)]

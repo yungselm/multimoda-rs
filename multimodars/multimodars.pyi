@@ -565,7 +565,7 @@ def from_array_single(
 
 def align_three_point(
     centerline: PyCenterline,
-    geometry_pair: PyGeometryPair,
+    geometry: PyGeometryPair | PyGeometry,
     aortic_ref_pt: tuple[float, float, float],
     upper_ref_pt: tuple[float, float, float],
     lower_ref_pt: tuple[float, float, float],
@@ -576,12 +576,12 @@ def align_three_point(
     output_dir: str = ...,
     contour_types: list[PyContourType] | None = ...,
     case_name: str = ...,
-) -> tuple[PyGeometryPair, PyCenterline]: ...
+) -> tuple[PyGeometryPair | PyGeometry, PyCenterline]: ...
 
 
 def align_manual(
     centerline: PyCenterline,
-    geometry_pair: PyGeometryPair,
+    geometry: PyGeometryPair | PyGeometry,
     rotation_angle: float,
     ref_point: tuple[float, float, float],
     write: bool = ...,
@@ -590,12 +590,12 @@ def align_manual(
     output_dir: str = ...,
     contour_types: list[PyContourType] | None = ...,
     case_name: str = ...,
-) -> tuple[PyGeometryPair, PyCenterline]: ...
+) -> tuple[PyGeometryPair | PyGeometry, PyCenterline]: ...
 
 
 def align_combined(
     centerline: PyCenterline,
-    geom_pair: PyGeometryPair,
+    geometry: PyGeometryPair | PyGeometry,
     aortic_ref_pt: tuple[float, float, float],
     upper_ref_pt: tuple[float, float, float],
     lower_ref_pt: tuple[float, float, float],
@@ -609,7 +609,7 @@ def align_combined(
     output_dir: str = ...,
     contour_types: list[PyContourType] | None = ...,
     case_name: str = ...,
-) -> tuple[PyGeometryPair, PyCenterline]: ...
+) -> tuple[PyGeometryPair | PyGeometry, PyCenterline]: ...
 
 
 # ---------------------------------------------------------------------------

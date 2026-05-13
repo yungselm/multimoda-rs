@@ -253,9 +253,9 @@ pub fn find_centerline_bounded_points(
     all_points_inside
 }
 
+/// Check that the centerline is sorted by z-value (distal to proximal)
+/// and ensure the last point has the lowest z-value
 fn check_centerline(centerline: Centerline) -> Centerline {
-    // Check that the centerline is sorted by z-value (distal to proximal)
-    // and ensure the last point has the lowest z-value
     let mut points = centerline.points.clone();
 
     points.sort_by(|a, b| b.contour_point.z.partial_cmp(&a.contour_point.z).unwrap());
