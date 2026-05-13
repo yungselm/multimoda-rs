@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.4] - 2026-05-13
+
+### Changed
+- `align_three_point`, `align_manual` and `align_combined` are now all generic, taking either `PyGeometryPair` or `PyGeometry` as input
+- Test file added `test_intravascular.py` to demonstrate that same results with both
+
 ## [0.3.3] - 2026-05-06
 
 ### Added
