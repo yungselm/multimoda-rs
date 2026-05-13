@@ -37,6 +37,37 @@ def _project_to_best_fit_plane(
     return [tuple(p) for p in projected]
 
 
+def _plane_normal_svd(pts: np.ndarray) -> np.ndarray:
+    """Best-fit plane normal for a point cloud via SVD (minimum-variance axis)."""
+    centroid = pts.mean(axis=0)
+    _, _, Vt = np.linalg.svd(pts - centroid, full_matrices=False)
+    return Vt[-1]
+
+
+def _angle_between_planes_deg(n1: np.ndarray, n2: np.ndarray) -> float:
+    """Acute angle in degrees between two planes given their normals."""
+    cos = np.clip(np.abs(np.dot(n1, n2)), 0.0, 1.0)
+    return float(np.degrees(np.arccos(cos)))
+
+
+def _clamp_to_plane(
+    points: list[tuple[float, float, float]],
+    plane_origin: np.ndarray,
+    plane_normal: np.ndarray,
+) -> list[tuple[float, float, float]]:
+    """Project any point on the wrong side of a plane back onto it.
+
+    The 'correct' side is determined by the majority of points.  Only
+    outliers that have crossed the plane are moved; all others are untouched.
+    """
+    pts = np.array(points, dtype=np.float64)
+    dists = (pts - plane_origin) @ plane_normal
+    correct_sign = np.sign(np.median(dists))
+    wrong = (np.sign(dists) != correct_sign) & (dists != 0.0)
+    pts[wrong] -= np.outer(dists[wrong], plane_normal)
+    return [tuple(p) for p in pts]
+
+
 def _smooth_ring_laplacian(
     points: list[tuple[float, float, float]],
     iterations: int = 5,
@@ -709,6 +740,7 @@ def stitch_ccta_to_intravascular(
         proximal_centroid,
         distal_centroid,
         proximal_is_ostium=proximal_is_ostium,
+        proximal_iv_frame_pts=iv_mesh.frames[0].lumen.points,
     )
     prox_point_step = len(proximal_points) // len(prox_boundary_pts)
     dist_point_step = len(distal_points) // len(dist_boundary_pts)
@@ -795,6 +827,8 @@ def _prepare_prox_dist_boundary_pts(
     prox_centroid: tuple[float, float, float],
     dist_centroid: tuple[float, float, float],
     proximal_is_ostium: bool = True,
+    proximal_iv_frame_pts=None,
+    ostium_angle_threshold_deg: float = 45.0,
 ) -> tuple[list, list, trimesh.Trimesh]:
     proximal_boundary_pts = []
     distal_boundary_pts = []
@@ -807,10 +841,28 @@ def _prepare_prox_dist_boundary_pts(
             distal_boundary_pts.append(pt)
 
     if proximal_is_ostium:
-        # Ostial fixing: project onto best-fit plane + Laplacian smooth, then
-        # update the corresponding mesh vertices so there is no gap at the seam.
+        # Project onto best-fit plane + Laplacian smooth.
         prox_projected = _project_to_best_fit_plane(proximal_boundary_pts)
         prox_boundary_pts_ord = _smooth_ring_laplacian(prox_projected)
+
+        # Final check for anomalous vessels: the aortic ostium is nearly
+        # perpendicular to the coronary ostial plane, which can leave some
+        # boundary points on the wrong side after smoothing.  Compare the two
+        # plane normals and, if the angle exceeds the threshold, project any
+        # outlier that crossed the IV-frame plane back onto it.
+        if proximal_iv_frame_pts is not None and len(prox_boundary_pts_ord) >= 3:
+            boundary_arr = np.array(prox_boundary_pts_ord, dtype=np.float64)
+            iv_arr = np.array(
+                [[p.x, p.y, p.z] for p in proximal_iv_frame_pts], dtype=np.float64
+            )
+            boundary_normal = _plane_normal_svd(boundary_arr)
+            iv_normal = _plane_normal_svd(iv_arr)
+            angle = _angle_between_planes_deg(boundary_normal, iv_normal)
+            if angle >= ostium_angle_threshold_deg:
+                iv_origin = np.array(prox_centroid, dtype=np.float64)
+                prox_boundary_pts_ord = _clamp_to_plane(
+                    prox_boundary_pts_ord, iv_origin, iv_normal
+                )
         coord_to_idx = {tuple(v): i for i, v in enumerate(mesh.vertices)}
         new_vertices = mesh.vertices.copy()
         for old_pt, new_pt in zip(proximal_boundary_pts, prox_boundary_pts_ord):
