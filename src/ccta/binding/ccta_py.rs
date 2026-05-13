@@ -95,7 +95,6 @@ pub fn remove_occluded_points_ray_triangle(
     let rust_centerline_coronary = centerline_coronary.to_rust_centerline();
     let rust_centerline_aorta = centerline_aorta.to_rust_centerline();
 
-    // Convert faces to Triangle format
     let triangles: Vec<Triangle> = faces
         .into_iter()
         .map(|(v0, v1, v2)| Triangle::new(v0, v1, v2))

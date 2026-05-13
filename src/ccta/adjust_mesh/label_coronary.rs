@@ -1,5 +1,6 @@
 use super::calculate_squared_distance;
 use crate::intravascular::io::input::{Centerline, CenterlinePoint};
+use rayon::prelude::*;
 use std::collections::HashSet;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -92,46 +93,54 @@ pub fn remove_occluded_points_ray_triangle_rust(
     let checked_cl_coronary = check_centerline(centerline_coronary.clone());
     let checked_cl_aorta = check_centerline(centerline_aorta.clone());
 
-    let mut faces_to_exclude: HashSet<usize> = HashSet::new();
-
-    for aorta_point in &checked_cl_aorta.points {
-        let aorta_coord = (
-            aorta_point.contour_point.x,
-            aorta_point.contour_point.y,
-            aorta_point.contour_point.z,
-        );
-
-        for coronary_point in checked_cl_coronary.points.iter().take(range_coronary) {
-            let coronary_coord = (
-                coronary_point.contour_point.x,
-                coronary_point.contour_point.y,
-                coronary_point.contour_point.z,
+    // Parallelize over aorta points (75 items): each thread owns 100 sequential coronary
+    // iterations against faces — coarse enough to avoid scheduler overhead from nested parallelism.
+    let faces_to_exclude: HashSet<usize> = checked_cl_aorta
+        .points
+        .par_iter()
+        .flat_map_iter(|aorta_point| {
+            let aorta_coord = (
+                aorta_point.contour_point.x,
+                aorta_point.contour_point.y,
+                aorta_point.contour_point.z,
             );
 
-            let ray_direction = (
-                coronary_coord.0 - aorta_coord.0,
-                coronary_coord.1 - aorta_coord.1,
-                coronary_coord.2 - aorta_coord.2,
-            );
+            let mut local_excluded: Vec<usize> = Vec::new();
 
-            let mut intersecting_faces: Vec<(usize, f64)> = Vec::new();
+            for coronary_point in checked_cl_coronary.points.iter().take(range_coronary) {
+                let coronary_coord = (
+                    coronary_point.contour_point.x,
+                    coronary_point.contour_point.y,
+                    coronary_point.contour_point.z,
+                );
 
-            for (face_idx, face) in faces.iter().enumerate() {
-                if let Some(t) = ray_triangle_intersection(&aorta_coord, &ray_direction, face) {
-                    intersecting_faces.push((face_idx, t));
+                let ray_direction = (
+                    coronary_coord.0 - aorta_coord.0,
+                    coronary_coord.1 - aorta_coord.1,
+                    coronary_coord.2 - aorta_coord.2,
+                );
+
+                let mut intersecting_faces: Vec<(usize, f64)> = faces
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(face_idx, face)| {
+                        ray_triangle_intersection(&aorta_coord, &ray_direction, face)
+                            .map(|t| (face_idx, t))
+                    })
+                    .collect();
+
+                intersecting_faces.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+
+                if intersecting_faces.len() >= 3 {
+                    if let Some((closest_face_idx, _)) = intersecting_faces.first() {
+                        local_excluded.push(*closest_face_idx);
+                    }
                 }
             }
 
-            intersecting_faces.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-
-            // Only exclude if we have at least 2 intersections (aorta wall structure, see docs)
-            if intersecting_faces.len() >= 3 {
-                if let Some((closest_face_idx, _t)) = intersecting_faces.first() {
-                    faces_to_exclude.insert(*closest_face_idx);
-                }
-            }
-        }
-    }
+            local_excluded
+        })
+        .collect();
 
     println!("Total faces to exclude: {}", faces_to_exclude.len());
 
