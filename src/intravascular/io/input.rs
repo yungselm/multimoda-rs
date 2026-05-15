@@ -346,12 +346,16 @@ pub fn read_records<P: AsRef<Path>>(path: P) -> anyhow::Result<Vec<Record>> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Centerline {
     pub points: Vec<CenterlinePoint>,
+    /// First index in `points` for each branch (branch 0 = main vessel).
+    pub branch_start_indices: Vec<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CenterlinePoint {
     pub contour_point: ContourPoint,
     pub normal: Vector3<f64>,
+    /// 0 = main vessel, 1+ = side branches ordered by descending length.
+    pub branch_id: u32,
 }
 
 impl Centerline {
@@ -373,10 +377,15 @@ impl Centerline {
             points.push(CenterlinePoint {
                 contour_point: *current,
                 normal,
+                branch_id: 0,
             });
         }
 
-        Centerline { points }
+        let branch_start_indices = if points.is_empty() { vec![] } else { vec![0] };
+        Centerline {
+            points,
+            branch_start_indices,
+        }
     }
 
     /// Retrieves a centerline point by matching frame index.
@@ -406,6 +415,275 @@ impl Centerline {
             })
             .map(|(idx, _)| idx)
             .unwrap()
+    }
+
+    /// Partition the centerline into anatomical branches using the tree-diameter algorithm.
+    ///
+    /// Raw centerline data concatenates vessel segments end-to-end with large
+    /// positional jumps (26–86 mm for coronary data) at segment boundaries, while
+    /// branches share a bifurcation point with the main vessel at ≈ 0 mm distance.
+    ///
+    /// A SPARSE TREE adjacency is built to avoid the cycles that arise from a
+    /// dense O(n²) graph near bifurcation clusters:
+    ///   • within each segment: consecutive edges only
+    ///   • between each pair of segments: exactly one edge at the closest point pair
+    ///
+    /// The tree diameter (double BFS) then gives the longest vessel path = main
+    /// branch.  Remaining connected components are side branches.  Tiny components
+    /// (< MIN_BRANCH_SIZE pts) are artefacts and are merged into branch 0.
+    pub fn calculate_branches(&mut self, spacing_tolerance: f64) {
+        const MIN_BRANCH_SIZE: usize = 5;
+
+        let n = self.points.len();
+        if n == 0 {
+            self.branch_start_indices = vec![];
+            return;
+        }
+
+        let threshold = self.p95_consecutive_spacing() * spacing_tolerance;
+
+        // Identify segment boundaries (large consecutive gaps).
+        let mut seg_starts: Vec<usize> = vec![0];
+        for i in 1..n {
+            if self.points[i - 1]
+                .contour_point
+                .distance_to(&self.points[i].contour_point)
+                > threshold
+            {
+                seg_starts.push(i);
+            }
+        }
+        seg_starts.push(n); // sentinel
+        let num_segs = seg_starts.len() - 1;
+
+        // Build sparse tree adjacency.
+        let mut adj: Vec<Vec<usize>> = vec![vec![]; n];
+
+        // Within-segment: consecutive edges.
+        for i in 1..n {
+            if self.points[i - 1]
+                .contour_point
+                .distance_to(&self.points[i].contour_point)
+                <= threshold
+            {
+                adj[i - 1].push(i);
+                adj[i].push(i - 1);
+            }
+        }
+
+        // Between segments: single edge at the closest point pair.
+        for si in 0..num_segs {
+            let (s0, s1) = (seg_starts[si], seg_starts[si + 1]);
+            for sj in (si + 1)..num_segs {
+                let (t0, t1) = (seg_starts[sj], seg_starts[sj + 1]);
+                let mut best_d = f64::INFINITY;
+                let mut best_pi = s0;
+                let mut best_pj = t0;
+                for pi in s0..s1 {
+                    for pj in t0..t1 {
+                        let d = self.points[pi]
+                            .contour_point
+                            .distance_to(&self.points[pj].contour_point);
+                        if d < best_d {
+                            best_d = d;
+                            best_pi = pi;
+                            best_pj = pj;
+                        }
+                    }
+                }
+                if best_d <= threshold {
+                    adj[best_pi].push(best_pj);
+                    adj[best_pj].push(best_pi);
+                }
+            }
+        }
+
+        // Double BFS on the tree to find the diameter (longest path = main branch).
+        let (a, _) = Self::bfs_farthest(&adj, n, 0);
+        let (b, prev) = Self::bfs_farthest(&adj, n, a);
+        let main_path = Self::trace_path(b, a, &prev);
+
+        let mut in_main = vec![false; n];
+        for &idx in &main_path {
+            in_main[idx] = true;
+        }
+
+        // BFS connected components of nodes not on the main path.
+        let mut visited = in_main.clone();
+        let mut side_components: Vec<Vec<usize>> = Vec::new();
+        for start in 0..n {
+            if visited[start] {
+                continue;
+            }
+            let mut comp = Vec::new();
+            let mut q = std::collections::VecDeque::new();
+            q.push_back(start);
+            visited[start] = true;
+            while let Some(node) = q.pop_front() {
+                comp.push(node);
+                for &nb in &adj[node] {
+                    if !visited[nb] {
+                        visited[nb] = true;
+                        q.push_back(nb);
+                    }
+                }
+            }
+            side_components.push(comp);
+        }
+
+        // Tiny components are artefacts; merge into branch 0 instead of own branch.
+        let mut artefacts: Vec<Vec<usize>> = Vec::new();
+        let mut real_branches: Vec<Vec<usize>> = Vec::new();
+        for comp in side_components {
+            if comp.len() < MIN_BRANCH_SIZE {
+                artefacts.push(comp);
+            } else {
+                real_branches.push(comp);
+            }
+        }
+        real_branches.sort_by_key(|b| std::cmp::Reverse(b.len()));
+
+        let mut new_points: Vec<CenterlinePoint> = Vec::with_capacity(n);
+        let mut branch_start_indices: Vec<usize> = Vec::new();
+
+        branch_start_indices.push(0);
+        for &idx in &main_path {
+            let mut pt = self.points[idx].clone();
+            pt.branch_id = 0;
+            new_points.push(pt);
+        }
+        for comp in &artefacts {
+            for idx in Self::order_chain(comp, &adj) {
+                let mut pt = self.points[idx].clone();
+                pt.branch_id = 0;
+                new_points.push(pt);
+            }
+        }
+
+        for (i, comp) in real_branches.iter().enumerate() {
+            branch_start_indices.push(new_points.len());
+            for idx in Self::order_chain(comp, &adj) {
+                let mut pt = self.points[idx].clone();
+                pt.branch_id = (i + 1) as u32;
+                new_points.push(pt);
+            }
+        }
+
+        self.points = new_points;
+        self.branch_start_indices = branch_start_indices;
+        self.recompute_normals();
+    }
+
+    /// BFS from `start`; returns the farthest reachable node and a predecessor array.
+    fn bfs_farthest(adj: &[Vec<usize>], n: usize, start: usize) -> (usize, Vec<Option<usize>>) {
+        let mut dist = vec![usize::MAX; n];
+        let mut prev: Vec<Option<usize>> = vec![None; n];
+        let mut q = std::collections::VecDeque::new();
+        dist[start] = 0;
+        q.push_back(start);
+        let mut farthest = start;
+        while let Some(u) = q.pop_front() {
+            for &v in &adj[u] {
+                if dist[v] == usize::MAX {
+                    dist[v] = dist[u] + 1;
+                    prev[v] = Some(u);
+                    q.push_back(v);
+                    if dist[v] > dist[farthest] {
+                        farthest = v;
+                    }
+                }
+            }
+        }
+        (farthest, prev)
+    }
+
+    /// Trace the path from `from` back to `to` using the predecessor array.
+    fn trace_path(from: usize, to: usize, prev: &[Option<usize>]) -> Vec<usize> {
+        let mut path = Vec::new();
+        let mut cur = from;
+        loop {
+            path.push(cur);
+            if cur == to {
+                break;
+            }
+            match prev[cur] {
+                Some(p) => cur = p,
+                None => break,
+            }
+        }
+        path
+    }
+
+    /// 95th-percentile of consecutive-point spacings — O(n).
+    ///
+    /// Operates only on adjacent pairs in the original ordering so large
+    /// inter-segment jumps in the CSV do not inflate the estimate.
+    fn p95_consecutive_spacing(&self) -> f64 {
+        let n = self.points.len();
+        if n < 2 {
+            return 1.0;
+        }
+        let mut spacings: Vec<f64> = (1..n)
+            .map(|i| {
+                self.points[i - 1]
+                    .contour_point
+                    .distance_to(&self.points[i].contour_point)
+            })
+            .collect();
+        spacings.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        spacings[(spacings.len() * 95) / 100]
+    }
+
+    /// Walk a connected component as a linear chain from a degree-1 endpoint.
+    fn order_chain(component: &[usize], adj: &[Vec<usize>]) -> Vec<usize> {
+        if component.is_empty() {
+            return vec![];
+        }
+        let in_comp: std::collections::HashSet<usize> = component.iter().copied().collect();
+        let &start = component
+            .iter()
+            .find(|&&idx| adj[idx].iter().filter(|&&nb| in_comp.contains(&nb)).count() <= 1)
+            .unwrap_or(&component[0]);
+        let mut ordered = Vec::with_capacity(component.len());
+        let mut seen = std::collections::HashSet::new();
+        let mut current = start;
+        loop {
+            ordered.push(current);
+            seen.insert(current);
+            match adj[current]
+                .iter()
+                .find(|&&nb| in_comp.contains(&nb) && !seen.contains(&nb))
+            {
+                Some(&next) => current = next,
+                None => break,
+            }
+        }
+        for &idx in component {
+            if !seen.contains(&idx) {
+                ordered.push(idx);
+            }
+        }
+        ordered
+    }
+
+    /// Recompute normals after points have been reordered.
+    ///
+    /// Normals are not computed across branch boundaries so each branch's
+    /// last point inherits the direction of its penultimate point.
+    fn recompute_normals(&mut self) {
+        let n = self.points.len();
+        for i in 0..n {
+            let normal = if i + 1 < n && self.points[i].branch_id == self.points[i + 1].branch_id {
+                let a = &self.points[i].contour_point;
+                let b = &self.points[i + 1].contour_point;
+                Vector3::new(b.x - a.x, b.y - a.y, b.z - a.z).normalize()
+            } else if i > 0 && self.points[i - 1].branch_id == self.points[i].branch_id {
+                self.points[i - 1].normal
+            } else {
+                Vector3::zeros()
+            };
+            self.points[i].normal = normal;
+        }
     }
 }
 

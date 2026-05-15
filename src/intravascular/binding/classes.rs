@@ -1647,25 +1647,30 @@ pub struct PyCenterlinePoint {
     pub contour_point: PyContourPoint,
     #[pyo3(get, set)]
     pub normal: (f64, f64, f64),
+    #[pyo3(get, set)]
+    pub branch_id: u32,
 }
 
 #[pymethods]
 impl PyCenterlinePoint {
     #[new]
-    fn new(contour_point: PyContourPoint, normal: (f64, f64, f64)) -> Self {
+    #[pyo3(signature = (contour_point, normal, branch_id = 0))]
+    fn new(contour_point: PyContourPoint, normal: (f64, f64, f64), branch_id: u32) -> Self {
         Self {
             contour_point,
             normal,
+            branch_id,
         }
     }
 
     fn __repr__(&self) -> String {
         format!(
-            "CenterlinePoint(point={}, normal=({:.3}, {:.3}, {:.3}))",
+            "CenterlinePoint(point={}, normal=({:.3}, {:.3}, {:.3}), branch={})",
             self.contour_point.__repr__(),
             self.normal.0,
             self.normal.1,
-            self.normal.2
+            self.normal.2,
+            self.branch_id,
         )
     }
 
@@ -1679,6 +1684,7 @@ impl From<&CenterlinePoint> for PyCenterlinePoint {
         PyCenterlinePoint {
             contour_point: PyContourPoint::from(&p.contour_point),
             normal: (p.normal[0], p.normal[1], p.normal[2]),
+            branch_id: p.branch_id,
         }
     }
 }
@@ -1688,6 +1694,7 @@ impl From<&PyCenterlinePoint> for CenterlinePoint {
         CenterlinePoint {
             contour_point: ContourPoint::from(&p.contour_point),
             normal: Vector3::new(p.normal.0, p.normal.1, p.normal.2),
+            branch_id: p.branch_id,
         }
     }
 }
@@ -1707,13 +1714,19 @@ impl From<&PyCenterlinePoint> for CenterlinePoint {
 pub struct PyCenterline {
     #[pyo3(get, set)]
     pub points: Vec<PyCenterlinePoint>,
+    #[pyo3(get)]
+    pub branch_start_indices: Vec<usize>,
 }
 
 #[pymethods]
 impl PyCenterline {
     #[new]
     fn new(points: Vec<PyCenterlinePoint>) -> Self {
-        Self { points }
+        let branch_start_indices = if points.is_empty() { vec![] } else { vec![0] };
+        Self {
+            points,
+            branch_start_indices,
+        }
     }
 
     /// Build a centerline from a flat list of ``PyContourPoint`` objects.
@@ -1789,6 +1802,39 @@ impl PyCenterline {
             .map(|p| (p.contour_point.x, p.contour_point.y, p.contour_point.z))
             .collect()
     }
+
+    /// Detect branches by spatial proximity and return a new centerline with
+    /// ``branch_id`` assigned on every point.
+    ///
+    /// Points whose mutual distance is ≤ ``spacing_tolerance × median_nn_spacing``
+    /// are considered spatially consecutive regardless of their original array
+    /// order.  The largest connected group becomes branch 0 (main vessel);
+    /// further groups are numbered by descending size.
+    ///
+    /// Parameters
+    /// ----------
+    /// spacing_tolerance : float
+    ///     Multiplier on the median nearest-neighbour spacing used as the
+    ///     adjacency threshold.  ``1.5`` is a reasonable starting value;
+    ///     increase it if branches are incorrectly split, decrease it if
+    ///     distinct branches are incorrectly merged.
+    ///
+    /// Returns
+    /// -------
+    /// PyCenterline
+    ///     New centerline with ``branch_id`` set on every point and
+    ///     ``branch_start_indices`` populated.
+    ///
+    /// Examples
+    /// --------
+    /// >>> cl = centerline.calculate_branches(1.5)
+    /// >>> main = [p for p in cl.points if p.branch_id == 0]
+    #[pyo3(signature = (spacing_tolerance = 1.0))]
+    pub fn calculate_branches(&self, spacing_tolerance: f64) -> PyResult<PyCenterline> {
+        let mut cl = self.to_rust_centerline();
+        cl.calculate_branches(spacing_tolerance);
+        Ok(PyCenterline::from(&cl))
+    }
 }
 
 // Moved out of pymethods since it's for internal use
@@ -1796,21 +1842,23 @@ impl PyCenterline {
     pub fn to_rust_centerline(&self) -> Centerline {
         Centerline {
             points: self.points.iter().map(|p| p.into()).collect(),
+            branch_start_indices: self.branch_start_indices.clone(),
         }
     }
 }
 
 impl From<&Centerline> for PyCenterline {
     fn from(cl: &Centerline) -> Self {
-        let points = cl.points.iter().map(|p| p.into()).collect();
-        PyCenterline { points }
+        PyCenterline {
+            points: cl.points.iter().map(|p| p.into()).collect(),
+            branch_start_indices: cl.branch_start_indices.clone(),
+        }
     }
 }
 
 impl From<Centerline> for PyCenterline {
     fn from(cl: Centerline) -> Self {
-        let points = cl.points.iter().map(|p| p.into()).collect();
-        PyCenterline { points }
+        PyCenterline::from(&cl)
     }
 }
 

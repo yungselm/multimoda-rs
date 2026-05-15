@@ -77,7 +77,15 @@ fn resample_centerline_by_contours(
         new_points.len()
     );
 
-    Ok(Centerline { points: new_points })
+    let branch_start_indices = if new_points.is_empty() {
+        vec![]
+    } else {
+        vec![0]
+    };
+    Ok(Centerline {
+        points: new_points,
+        branch_start_indices,
+    })
 }
 
 fn cumulative_arc_length(centerline: &Centerline) -> Vec<f64> {
@@ -159,6 +167,7 @@ fn interpolate_centerline_at_s(
                 aortic: false,
             },
             normal,
+            branch_id: 0,
         };
     }
 
@@ -202,6 +211,7 @@ fn interpolate_centerline_at_s(
             aortic: false,
         },
         normal,
+        branch_id: 0,
     }
 }
 
@@ -263,6 +273,7 @@ mod cl_preprocessing_tests {
                         aortic: false,
                     },
                     normal: Vector3::new(0.0, 0.0, -1.0),
+                    branch_id: 0,
                 },
                 CenterlinePoint {
                     contour_point: ContourPoint {
@@ -274,8 +285,10 @@ mod cl_preprocessing_tests {
                         aortic: false,
                     },
                     normal: Vector3::new(0.0, 0.0, -1.0),
+                    branch_id: 0,
                 },
             ],
+            branch_start_indices: vec![0],
         };
         ensure_descending_z(&mut cl);
         assert_eq!(cl.points[0].contour_point.z, 1.0);
@@ -293,6 +306,7 @@ mod cl_preprocessing_tests {
                         aortic: false,
                     },
                     normal: Vector3::new(0.0, 0.0, -1.0),
+                    branch_id: 0,
                 },
                 CenterlinePoint {
                     contour_point: ContourPoint {
@@ -304,8 +318,10 @@ mod cl_preprocessing_tests {
                         aortic: false,
                     },
                     normal: Vector3::new(0.0, 0.0, -1.0),
+                    branch_id: 0,
                 },
             ],
+            branch_start_indices: vec![0],
         };
         ensure_descending_z(&mut cl);
         assert_eq!(cl.points[0].contour_point.z, 1.0);
@@ -426,6 +442,7 @@ mod cl_preprocessing_tests {
                         aortic: false,
                     },
                     normal: Vector3::new(0.0, 0.0, 1.0),
+                    branch_id: 0,
                 },
                 CenterlinePoint {
                     contour_point: ContourPoint {
@@ -437,6 +454,7 @@ mod cl_preprocessing_tests {
                         aortic: false,
                     },
                     normal: Vector3::new(0.0, 0.0, 1.0),
+                    branch_id: 0,
                 },
                 CenterlinePoint {
                     contour_point: ContourPoint {
@@ -448,6 +466,7 @@ mod cl_preprocessing_tests {
                         aortic: false,
                     },
                     normal: Vector3::new(0.0, 0.0, 1.0),
+                    branch_id: 0,
                 },
                 CenterlinePoint {
                     contour_point: ContourPoint {
@@ -459,8 +478,10 @@ mod cl_preprocessing_tests {
                         aortic: false,
                     },
                     normal: Vector3::new(0.0, 0.0, 1.0),
+                    branch_id: 0,
                 },
             ],
+            branch_start_indices: vec![0],
         };
 
         let cum = cumulative_arc_length(&cl);
@@ -487,6 +508,7 @@ mod cl_preprocessing_tests {
                         aortic: false,
                     },
                     normal: Vector3::new(0.0, 0.0, 1.0),
+                    branch_id: 0,
                 },
                 CenterlinePoint {
                     contour_point: ContourPoint {
@@ -498,6 +520,7 @@ mod cl_preprocessing_tests {
                         aortic: false,
                     },
                     normal: Vector3::new(0.0, 0.0, 1.0),
+                    branch_id: 0,
                 },
                 CenterlinePoint {
                     contour_point: ContourPoint {
@@ -509,6 +532,7 @@ mod cl_preprocessing_tests {
                         aortic: false,
                     },
                     normal: Vector3::new(0.0, 0.0, 1.0),
+                    branch_id: 0,
                 },
                 CenterlinePoint {
                     contour_point: ContourPoint {
@@ -520,8 +544,10 @@ mod cl_preprocessing_tests {
                         aortic: false,
                     },
                     normal: Vector3::new(0.0, 0.0, 1.0),
+                    branch_id: 0,
                 },
             ],
+            branch_start_indices: vec![0],
         };
 
         let cum = cumulative_arc_length(&cl);

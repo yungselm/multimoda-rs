@@ -358,6 +358,7 @@ pub fn refine_alignment_hausdorff<T: AlignTarget>(
         let cl_end_idx = current_cl_ref_idx + len_frames;
         let cl_segment = Centerline {
             points: centerline.points[current_cl_ref_idx..cl_end_idx].to_vec(),
+            branch_start_indices: vec![0],
         };
 
         let mut angle = initial_rotation - angle_search_range;
@@ -539,6 +540,7 @@ mod align_algorithms_tests {
                 aortic: false,
             },
             normal: Vector3::new(0.0, 0.0, 1.0), // Default normal pointing up
+            branch_id: 0,
         }
     }
 
@@ -842,6 +844,7 @@ mod align_algorithms_tests {
 
         let centerline = Centerline {
             points: centerline_points,
+            branch_start_indices: vec![0],
         };
         let ref_pt = (10.0, 10.0, 10.0);
 
