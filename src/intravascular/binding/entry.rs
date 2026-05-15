@@ -196,7 +196,7 @@ pub fn full_processing_rs(
             bool_d,
         ))
     })
-    .map_err(|e| anyhow!("Thread execution failed: {:?}", e))??;
+    .map_err(|e| anyhow!("Thread execution failed: {e:?}"))??;
 
     // First parallel batch: AB and CD (independent pairs)
     let (geom_pair_ab, geom_pair_cd) = thread::scope(|s| -> Result<(GeometryPair, GeometryPair)> {
@@ -221,7 +221,7 @@ pub fn full_processing_rs(
 
         Ok((geom_pair_ab, geom_pair_cd))
     })
-    .map_err(|e| anyhow!("Thread execution failed: {:?}", e))??;
+    .map_err(|e| anyhow!("Thread execution failed: {e:?}"))??;
 
     // Second parallel batch: AC and BD (independent pairs)
     let (geom_pair_ac, geom_pair_bd) = thread::scope(|s| -> Result<(GeometryPair, GeometryPair)> {
@@ -246,7 +246,7 @@ pub fn full_processing_rs(
 
         Ok((geom_pair_ac, geom_pair_bd))
     })
-    .map_err(|e| anyhow!("Thread execution failed: {:?}", e))??;
+    .map_err(|e| anyhow!("Thread execution failed: {e:?}"))??;
 
     // safety, if any pair is anomalous try to build wall with aortic thickness, fallback anyways just wall 1mm offset.
     let anomalous = bool_a || bool_b || bool_c || bool_d;
@@ -462,7 +462,7 @@ pub fn double_pair_processing_rs(
             bool_d,
         ))
     })
-    .map_err(|e| anyhow!("Thread execution failed: {:?}", e))??;
+    .map_err(|e| anyhow!("Thread execution failed: {e:?}"))??;
 
     // First parallel batch: AB and CD (independent pairs)
     let (geom_pair_ab, geom_pair_cd) = thread::scope(|s| -> Result<(GeometryPair, GeometryPair)> {
@@ -487,7 +487,7 @@ pub fn double_pair_processing_rs(
 
         Ok((geom_pair_ab, geom_pair_cd))
     })
-    .map_err(|e| anyhow!("Thread execution failed: {:?}", e))??;
+    .map_err(|e| anyhow!("Thread execution failed: {e:?}"))??;
 
     let anomalous = bool_a || bool_b || bool_c || bool_d;
 
@@ -610,7 +610,7 @@ pub fn pair_processing_rs(
 
             Ok((geom_a, geom_b, logs_a, logs_b, bool_a, bool_b))
         })
-        .map_err(|e| anyhow!("Thread execution failed: {:?}", e))??;
+        .map_err(|e| anyhow!("Thread execution failed: {e:?}"))??;
 
     let geom_pair =
         align_between_geometries(&mut geom_a, &mut geom_b, range_deg, step_deg, sample_size)
@@ -702,10 +702,7 @@ pub fn single_processing_rs(
             let contours = extract_contours_by_type(&geom, *contour_type);
 
             if contours.is_empty() {
-                eprintln!(
-                    "Warning: No contours found for type {:?}, skipping",
-                    contour_type
-                );
+                eprintln!("Warning: No contours found for type {contour_type:?}, skipping");
                 continue;
             }
 
@@ -725,7 +722,7 @@ pub fn single_processing_rs(
                 mtl_path.to_str().unwrap(),
                 watertight,
             )
-            .context(format!("Failed to write OBJ for {}", type_name))?;
+            .context(format!("Failed to write OBJ for {type_name}"))?;
         }
 
         println!(

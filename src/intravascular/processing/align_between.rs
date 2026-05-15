@@ -378,13 +378,11 @@ mod align_between_tests {
         // Verify alignment precision
         assert!(
             max_error < 0.01,
-            "Maximum alignment error {} exceeds threshold",
-            max_error
+            "Maximum alignment error {max_error} exceeds threshold"
         );
         assert!(
             avg_error < 0.001,
-            "Average alignment error {} exceeds threshold",
-            avg_error
+            "Average alignment error {avg_error} exceeds threshold"
         );
 
         Ok(())

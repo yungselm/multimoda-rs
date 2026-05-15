@@ -174,7 +174,7 @@ impl TryFrom<&PyInputData> for InputData {
             py_in.diastole,
             py_in.label.clone(),
         )
-        .map_err(|e| anyhow!("InputData::new failed: {:?}", e))
+        .map_err(|e| anyhow!("InputData::new failed: {e:?}"))
     }
 }
 
@@ -724,8 +724,7 @@ impl PyContourType {
             "catheter" => Ok(PyContourType::Catheter),
             "wall" => Ok(PyContourType::Wall),
             _ => Err(pyo3::exceptions::PyValueError::new_err(format!(
-                "Unknown contour type: '{}'. Valid types are: lumen, eem, calcification, sidebranch, catheter, wall",
-                name
+                "Unknown contour type: '{name}'. Valid types are: lumen, eem, calcification, sidebranch, catheter, wall"
             ))),
         }
     }

@@ -101,7 +101,7 @@ fn write_displacement_texture(
 
         // Save displacement texture
         let type_name = get_contour_type_name(contour_type);
-        let tex_filename = format!("{}_{:03}_{}.png", type_name, i, case_name);
+        let tex_filename = format!("{type_name}_{i:03}_{case_name}.png");
         let texture_path = Path::new(output_dir).join(&tex_filename);
 
         if let Err(e) = create_displacement_texture(
@@ -111,24 +111,20 @@ fn write_displacement_texture(
             max_disp,
             texture_path.to_str().unwrap(),
         ) {
-            eprintln!(
-                "Failed to create displacement texture for {}: {}",
-                type_name, e
-            );
+            eprintln!("Failed to create displacement texture for {type_name}: {e}");
             continue;
         }
 
         // Write MTL file
-        let mtl_filename = format!("{}_{:03}_{}.mtl", type_name, i, case_name);
+        let mtl_filename = format!("{type_name}_{i:03}_{case_name}.mtl");
         let mtl_path = Path::new(output_dir).join(&mtl_filename);
 
         if let Ok(mut mtl_file) = File::create(&mtl_path) {
             writeln!(
                 mtl_file,
-                "newmtl displacement_material\nKa 1 1 1\nKd 1 1 1\nmap_Kd {}",
-                tex_filename
+                "newmtl displacement_material\nKa 1 1 1\nKd 1 1 1\nmap_Kd {tex_filename}"
             )
-            .unwrap_or_else(|e| eprintln!("Failed to write MTL file: {}", e));
+            .unwrap_or_else(|e| eprintln!("Failed to write MTL file: {e}"));
         }
     }
 
@@ -164,7 +160,7 @@ fn write_black_texture(
 
         // Save black texture
         let type_name = get_contour_type_name(contour_type);
-        let tex_filename = format!("{}_{:03}_{}.png", type_name, i, case_name);
+        let tex_filename = format!("{type_name}_{i:03}_{case_name}.png");
         let texture_path = Path::new(output_dir).join(&tex_filename);
 
         if let Err(e) = create_black_texture(
@@ -172,21 +168,20 @@ fn write_black_texture(
             texture_height,
             texture_path.to_str().unwrap(),
         ) {
-            eprintln!("Failed to create black texture for {}: {}", type_name, e);
+            eprintln!("Failed to create black texture for {type_name}: {e}");
             continue;
         }
 
         // Write MTL file
-        let mtl_filename = format!("{}_{:03}_{}.mtl", type_name, i, case_name);
+        let mtl_filename = format!("{type_name}_{i:03}_{case_name}.mtl");
         let mtl_path = Path::new(output_dir).join(&mtl_filename);
 
         if let Ok(mut mtl_file) = File::create(&mtl_path) {
             writeln!(
                 mtl_file,
-                "newmtl black_material\nKa 0 0 0\nKd 0 0 0\nmap_Kd {}",
-                tex_filename
+                "newmtl black_material\nKa 0 0 0\nKd 0 0 0\nmap_Kd {tex_filename}"
             )
-            .unwrap_or_else(|e| eprintln!("Failed to write MTL file: {}", e));
+            .unwrap_or_else(|e| eprintln!("Failed to write MTL file: {e}"));
         }
     }
 
@@ -222,7 +217,7 @@ fn write_transparent_texture(
 
         // Save transparent texture
         let type_name = get_contour_type_name(contour_type);
-        let tex_filename = format!("{}_{:03}_{}.png", type_name, i, case_name);
+        let tex_filename = format!("{type_name}_{i:03}_{case_name}.png");
         let texture_path = Path::new(output_dir).join(&tex_filename);
 
         if let Err(e) = create_transparent_texture(
@@ -231,24 +226,20 @@ fn write_transparent_texture(
             0.7, // alpha value
             texture_path.to_str().unwrap(),
         ) {
-            eprintln!(
-                "Failed to create transparent texture for {}: {}",
-                type_name, e
-            );
+            eprintln!("Failed to create transparent texture for {type_name}: {e}");
             continue;
         }
 
         // Write MTL file
-        let mtl_filename = format!("{}_{:03}_{}.mtl", type_name, i, case_name);
+        let mtl_filename = format!("{type_name}_{i:03}_{case_name}.mtl");
         let mtl_path = Path::new(output_dir).join(&mtl_filename);
 
         if let Ok(mut mtl_file) = File::create(&mtl_path) {
             writeln!(
                 mtl_file,
-                "newmtl transparent_material\nKa 0 0 0\nKd 0 0 0\nmap_Kd {}",
-                tex_filename
+                "newmtl transparent_material\nKa 0 0 0\nKd 0 0 0\nmap_Kd {tex_filename}"
             )
-            .unwrap_or_else(|e| eprintln!("Failed to write MTL file: {}", e));
+            .unwrap_or_else(|e| eprintln!("Failed to write MTL file: {e}"));
         }
     }
 

@@ -434,7 +434,7 @@ mod test_utils_tests {
     #[test]
     fn test_dummy_geometry_ref_middle() {
         let geometry = dummy_geometry_center_reference();
-        println!("Geometry: {:?}", geometry);
+        println!("Geometry: {geometry:?}");
         assert_eq!(geometry.frames.len(), 6);
         assert!(geometry.frames[0].reference_point.is_none());
 

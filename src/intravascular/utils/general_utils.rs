@@ -163,16 +163,16 @@ pub fn write_debug_obj_mesh(contours: &[Contour], filename: &str) -> Result<(), 
             let v1 = offset1 + j;
             let v2 = offset1 + j_next;
             let v3 = offset2 + j;
-            writeln!(writer, "f {} {} {}", v1, v2, v3)?;
+            writeln!(writer, "f {v1} {v2} {v3}")?;
 
             // Second triangle
             let v4 = offset2 + j;
             let v5 = offset1 + j_next;
             let v6 = offset2 + j_next;
-            writeln!(writer, "f {} {} {}", v4, v5, v6)?;
+            writeln!(writer, "f {v4} {v5} {v6}")?;
         }
     }
 
-    println!("Debug OBJ mesh written to {}", filename);
+    println!("Debug OBJ mesh written to {filename}");
     Ok(())
 }

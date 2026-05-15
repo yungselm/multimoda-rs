@@ -166,7 +166,7 @@ impl Contour {
 
         for (original_frame_idx, points) in sorted_groups {
             let sequential_id = *frame_mapping.get(&original_frame_idx).ok_or_else(|| {
-                anyhow::anyhow!("No mapping found for original frame {}", original_frame_idx)
+                anyhow::anyhow!("No mapping found for original frame {original_frame_idx}")
             })?;
 
             let (aortic, pulmonary) = if let Some(ref meas) = measurements {
@@ -1339,7 +1339,7 @@ mod geometry_tests {
         let rotation_deg: f64 = 15.0;
 
         geometry_rotate.rotate_geometry(rotation_deg.to_radians());
-        geometry_rotate.rotate_geometry(-1.0 * rotation_deg.to_radians());
+        geometry_rotate.rotate_geometry(-rotation_deg.to_radians());
 
         assert_eq!(
             geometry.frames[0].lumen.points[0],
@@ -1347,7 +1347,7 @@ mod geometry_tests {
         );
 
         geometry_rotate.frames[0].rotate_frame(rotation_deg.to_radians());
-        geometry_rotate.frames[0].rotate_frame(-1.0 * rotation_deg.to_radians());
+        geometry_rotate.frames[0].rotate_frame(-rotation_deg.to_radians());
 
         assert_eq!(
             geometry.frames[0].lumen.points[0],
@@ -1359,7 +1359,7 @@ mod geometry_tests {
             .rotate_contour(rotation_deg.to_radians());
         geometry_rotate.frames[0]
             .lumen
-            .rotate_contour(-1.0 * rotation_deg.to_radians());
+            .rotate_contour(-rotation_deg.to_radians());
 
         assert_eq!(
             geometry.frames[0].lumen.points[0],
@@ -1370,7 +1370,7 @@ mod geometry_tests {
         geometry_rotate.frames[0].lumen.points[0]
             .rotate_point(rotation_deg.to_radians(), (center.0, center.1));
         geometry_rotate.frames[0].lumen.points[0]
-            .rotate_point(-1.0 * rotation_deg.to_radians(), (center.0, center.1));
+            .rotate_point(-rotation_deg.to_radians(), (center.0, center.1));
 
         assert_eq!(
             geometry.frames[0].lumen.points[0],
@@ -1910,8 +1910,7 @@ mod geometry_tests {
             assert_eq!(
                 (p.x, p.y, p.z),
                 expected_lumen[i],
-                "lumen point {} mismatch",
-                i
+                "lumen point {i} mismatch"
             );
         }
 
@@ -1926,7 +1925,7 @@ mod geometry_tests {
             (1.0, 1.0, 3.0),
         ];
         for (i, p) in rotated_eem.points.iter().enumerate() {
-            assert_eq!((p.x, p.y, p.z), expected_eem[i], "eem point {} mismatch", i);
+            assert_eq!((p.x, p.y, p.z), expected_eem[i], "eem point {i} mismatch");
         }
 
         // Reference point should also have been translated
@@ -2003,8 +2002,7 @@ mod geometry_tests {
         let area = c.area();
         assert!(
             (area - 6.0).abs() < 1e-6,
-            "triangle area should be 6.0, got {}",
-            area
+            "triangle area should be 6.0, got {area}"
         );
     }
 
@@ -2666,7 +2664,7 @@ mod geometry_tests {
 
         println!("Before smoothing:");
         for (i, frame) in geometry.frames.iter().enumerate() {
-            println!("Frame {}:", i);
+            println!("Frame {i}:");
             for point in &frame.lumen.points {
                 println!("  Point: ({:.2}, {:.2}, {:.2})", point.x, point.y, point.z);
             }
@@ -2677,7 +2675,7 @@ mod geometry_tests {
 
         println!("\nAfter smoothing:");
         for (i, frame) in smoothed_geometry.frames.iter().enumerate() {
-            println!("Frame {}:", i);
+            println!("Frame {i}:");
             for point in &frame.lumen.points {
                 println!("  Point: ({:.2}, {:.2}, {:.2})", point.x, point.y, point.z);
             }

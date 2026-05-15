@@ -112,7 +112,7 @@ fn check_reference_point(geometry: &Geometry) -> Result<()> {
 
     match reference_frames.len() {
         1 => Ok(()),
-        n => Err(anyhow!("Expected exactly one reference point, found {}", n)),
+        n => Err(anyhow!("Expected exactly one reference point, found {n}")),
     }
 }
 
@@ -214,10 +214,7 @@ fn check_proximal_end_index(geometry: &Geometry) -> Result<()> {
 
     if proximal_idx != min_idx {
         return Err(anyhow!(
-            "Proximal end index is {}, but frame with minimum z is {} (z={}).",
-            proximal_idx,
-            min_idx,
-            min_z
+            "Proximal end index is {proximal_idx}, but frame with minimum z is {min_idx} (z={min_z})."
         ));
     }
     Ok(())
@@ -229,9 +226,7 @@ fn check_z_distribution(geometry: &Geometry) -> Result<()> {
     let z_pos_n = geometry.frames[n - 1].centroid.2;
     if z_pos_zero > z_pos_n {
         return Err(anyhow!(
-            "First frame has higher z-coords {} than last frame {}",
-            z_pos_zero,
-            z_pos_n,
+            "First frame has higher z-coords {z_pos_zero} than last frame {z_pos_n}",
         ));
     }
     Ok(())
