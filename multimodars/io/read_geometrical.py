@@ -4,6 +4,7 @@ import trimesh
 from pathlib import Path
 import warnings
 
+
 def read_mesh(path: Path | str) -> trimesh.base.Trimesh:
     """Load a mesh from disk and attempt lightweight repairs.
 
@@ -61,6 +62,8 @@ def read_mesh(path: Path | str) -> trimesh.base.Trimesh:
         warnings.warn(f"fill_holes failed for mesh from {path}", RuntimeWarning)
 
     if not mesh.is_watertight:
-        warnings.warn(f"Mesh from {path} is not watertight after repairs", RuntimeWarning)
+        warnings.warn(
+            f"Mesh from {path} is not watertight after repairs", RuntimeWarning
+        )
 
     return mesh

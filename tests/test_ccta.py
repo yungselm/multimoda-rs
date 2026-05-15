@@ -10,6 +10,7 @@ Covers:
                   _rotate_to_nearest_iv, _fix_ring_direction_by_distance,
                   _stitch_boundary_ring
 """
+
 from __future__ import annotations
 
 import importlib
@@ -19,7 +20,10 @@ import pytest
 import trimesh
 
 from multimodars import PyContourPoint
-from multimodars.ccta.fixing_functions import manual_hole_fill, postprocess_stitched_mesh
+from multimodars.ccta.fixing_functions import (
+    manual_hole_fill,
+    postprocess_stitched_mesh,
+)
 from multimodars.ccta.labeling import (
     _find_aortic_points,
     _find_faces_for_points,
@@ -40,10 +44,10 @@ from multimodars.ccta.manipulating import (
     sync_results_to_mesh,
 )
 
-
 # ---------------------------------------------------------------------------
 # Shared mesh factories
 # ---------------------------------------------------------------------------
+
 
 def _make_grid_mesh() -> trimesh.Trimesh:
     """3x3 grid (9 vertices, 8 triangular faces, z=0 plane).
@@ -108,6 +112,7 @@ def _make_iv_pts(coords) -> list[PyContourPoint]:
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def grid_mesh():
     return _make_grid_mesh()
@@ -124,9 +129,9 @@ def grid_results(grid_mesh):
     verts = [tuple(v) for v in grid_mesh.vertices]
     return {
         "mesh": grid_mesh,
-        "aorta_points": verts[6:9],   # vertices 6, 7, 8
-        "rca_points":   verts[0:3],   # vertices 0, 1, 2
-        "lca_points":   verts[3:6],   # vertices 3, 4, 5
+        "aorta_points": verts[6:9],  # vertices 6, 7, 8
+        "rca_points": verts[0:3],  # vertices 0, 1, 2
+        "lca_points": verts[3:6],  # vertices 3, 4, 5
         "rca_removed_points": [],
         "lca_removed_points": [],
     }
@@ -135,6 +140,7 @@ def grid_results(grid_mesh):
 # ===========================================================================
 # labeling._find_aortic_points
 # ===========================================================================
+
 
 class TestFindAorticPoints:
     def test_basic_set_difference(self, grid_mesh):
@@ -164,6 +170,7 @@ class TestFindAorticPoints:
 # labeling._find_faces_for_points
 # ===========================================================================
 
+
 class TestFindFacesForPoints:
     def test_corner_vertex_finds_its_face(self, grid_mesh):
         # vertex 0 = (0,0,0) belongs to face [0,1,3] → face index 0
@@ -191,6 +198,7 @@ class TestFindFacesForPoints:
 # labeling._prepare_faces_for_rust
 # ===========================================================================
 
+
 class TestPrepareFacesForRust:
     def test_all_faces_when_no_args(self, grid_mesh):
         rust_faces = _prepare_faces_for_rust(grid_mesh)
@@ -212,7 +220,9 @@ class TestPrepareFacesForRust:
 
     def test_subset_via_points(self, grid_mesh):
         # corner vertex 0 only in ~1 face, so subset < all
-        rust_faces = _prepare_faces_for_rust(grid_mesh, points=[(0.0, 0.0, 0.0)], tol=1e-6)
+        rust_faces = _prepare_faces_for_rust(
+            grid_mesh, points=[(0.0, 0.0, 0.0)], tol=1e-6
+        )
         assert 0 < len(rust_faces) < len(grid_mesh.faces)
 
     def test_empty_points_returns_all(self, grid_mesh):
@@ -224,6 +234,7 @@ class TestPrepareFacesForRust:
 # ===========================================================================
 # labeling._final_reclassification
 # ===========================================================================
+
 
 class TestFinalReclassification:
     # ------------------------------------------------------------------
@@ -311,15 +322,26 @@ class TestFinalReclassification:
         new = _final_reclassification(results)
         total = sum(
             len(new[k])
-            for k in ("aorta_points", "rca_points", "lca_points",
-                      "rca_removed_points", "lca_removed_points")
+            for k in (
+                "aorta_points",
+                "rca_points",
+                "lca_points",
+                "rca_removed_points",
+                "lca_removed_points",
+            )
         )
         assert total == len(grid_mesh.vertices)
 
     def test_returns_dict_with_required_keys(self, grid_results):
         new = _final_reclassification(grid_results)
-        for key in ("mesh", "aorta_points", "rca_points", "lca_points",
-                    "rca_removed_points", "lca_removed_points"):
+        for key in (
+            "mesh",
+            "aorta_points",
+            "rca_points",
+            "lca_points",
+            "rca_removed_points",
+            "lca_removed_points",
+        ):
             assert key in new
 
 
@@ -327,11 +349,12 @@ class TestFinalReclassification:
 # fixing_functions.manual_hole_fill
 # ===========================================================================
 
+
 class TestManualHoleFill:
     def test_adds_faces_to_open_mesh(self):
         """Box with top cap removed gets new faces from hole fill."""
         box = trimesh.creation.box()
-        top_mask = box.face_normals[:, 2] < 0.9   # keep all non-top faces
+        top_mask = box.face_normals[:, 2] < 0.9  # keep all non-top faces
         holed = trimesh.Trimesh(
             vertices=box.vertices,
             faces=box.faces[top_mask],
@@ -358,6 +381,7 @@ class TestManualHoleFill:
 # fixing_functions.postprocess_stitched_mesh
 # ===========================================================================
 
+
 class TestPostprocessStitchedMesh:
     def test_passthrough_when_disabled(self, grid_mesh):
         result = postprocess_stitched_mesh(grid_mesh, postprocessing=False)
@@ -374,25 +398,34 @@ class TestPostprocessStitchedMesh:
 # manipulating.remove_labeled_points_from_mesh
 # ===========================================================================
 
+
 class TestRemoveLabeledPoints:
     def test_removes_vertices_from_mesh(self, grid_results):
-        updated = remove_labeled_points_from_mesh(grid_results, region_keys="rca_points")
+        updated = remove_labeled_points_from_mesh(
+            grid_results, region_keys="rca_points"
+        )
         new_verts = {tuple(v) for v in updated["mesh"].vertices}
         rca_set = {(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (2.0, 0.0, 0.0)}
         assert rca_set.isdisjoint(new_verts)
 
     def test_boundary_points_populated(self, grid_results):
-        updated = remove_labeled_points_from_mesh(grid_results, region_keys="rca_points")
+        updated = remove_labeled_points_from_mesh(
+            grid_results, region_keys="rca_points"
+        )
         assert len(updated["boundary_points"]) > 0
 
     def test_removed_key_cleared(self, grid_results):
-        updated = remove_labeled_points_from_mesh(grid_results, region_keys="rca_points")
+        updated = remove_labeled_points_from_mesh(
+            grid_results, region_keys="rca_points"
+        )
         assert updated["rca_points"] == []
 
     def test_empty_region_is_noop(self, grid_results):
         grid_results["rca_points"] = []
         n_before = len(grid_results["mesh"].vertices)
-        updated = remove_labeled_points_from_mesh(grid_results, region_keys="rca_points")
+        updated = remove_labeled_points_from_mesh(
+            grid_results, region_keys="rca_points"
+        )
         assert len(updated["mesh"].vertices) == n_before
 
     def test_multiple_keys(self, grid_results):
@@ -405,7 +438,9 @@ class TestRemoveLabeledPoints:
         assert len(updated["mesh"].vertices) == 3
 
     def test_remaining_lists_consistent_with_new_mesh(self, grid_results):
-        updated = remove_labeled_points_from_mesh(grid_results, region_keys="rca_points")
+        updated = remove_labeled_points_from_mesh(
+            grid_results, region_keys="rca_points"
+        )
         new_verts = {tuple(v) for v in updated["mesh"].vertices}
         for key in ("aorta_points", "lca_points"):
             for pt in updated.get(key, []):
@@ -414,14 +449,20 @@ class TestRemoveLabeledPoints:
     def test_string_or_list_region_keys(self, grid_results):
         """String and single-item list should produce identical results."""
         import copy
-        r1 = remove_labeled_points_from_mesh(copy.deepcopy(grid_results), region_keys="rca_points")
-        r2 = remove_labeled_points_from_mesh(copy.deepcopy(grid_results), region_keys=["rca_points"])
+
+        r1 = remove_labeled_points_from_mesh(
+            copy.deepcopy(grid_results), region_keys="rca_points"
+        )
+        r2 = remove_labeled_points_from_mesh(
+            copy.deepcopy(grid_results), region_keys=["rca_points"]
+        )
         assert len(r1["mesh"].vertices) == len(r2["mesh"].vertices)
 
 
 # ===========================================================================
 # manipulating.keep_labeled_points_from_mesh
 # ===========================================================================
+
 
 class TestKeepLabeledPoints:
     def test_mesh_vertex_count_reduced(self, grid_results):
@@ -450,6 +491,7 @@ class TestKeepLabeledPoints:
 # manipulating.sync_results_to_mesh
 # ===========================================================================
 
+
 class TestSyncResultsToMesh:
     def test_mesh_replaced(self, grid_results, grid_mesh):
         new_mesh = trimesh.Trimesh(
@@ -463,7 +505,9 @@ class TestSyncResultsToMesh:
     def test_coordinate_lists_updated(self, grid_results, grid_mesh):
         shift = np.array([10.0, 0.0, 0.0])
         new_verts = grid_mesh.vertices.copy() + shift
-        new_mesh = trimesh.Trimesh(vertices=new_verts, faces=grid_mesh.faces, process=False)
+        new_mesh = trimesh.Trimesh(
+            vertices=new_verts, faces=grid_mesh.faces, process=False
+        )
         updated = sync_results_to_mesh(grid_results, grid_mesh, new_mesh)
         for pt in updated["rca_points"]:
             assert pt[0] >= 10.0
@@ -482,6 +526,7 @@ class TestSyncResultsToMesh:
 # ===========================================================================
 # manipulating.order_points_list
 # ===========================================================================
+
 
 class TestOrderPointsList:
     def test_single_point_returns_same(self, hex_fan_mesh):
@@ -519,6 +564,7 @@ class TestOrderPointsList:
 # manipulating.scale_region_centerline_morphing
 # ===========================================================================
 
+
 class TestScaleRegionCenterlineMorphing:
     def test_no_matching_vertices_returns_copy(self, grid_mesh, capsys):
         """Passing points not on the mesh triggers the warning path (no Rust call)."""
@@ -538,6 +584,7 @@ class TestScaleRegionCenterlineMorphing:
 # ===========================================================================
 # manipulating._rotate_to_nearest_iv
 # ===========================================================================
+
 
 class TestRotateToNearestIv:
     def test_rotates_to_nearest_iv_point(self):
@@ -571,6 +618,7 @@ class TestRotateToNearestIv:
 # ===========================================================================
 # manipulating._fix_ring_direction_by_distance
 # ===========================================================================
+
 
 class TestFixRingDirectionByDistance:
     def test_correct_direction_unchanged(self):
@@ -614,10 +662,13 @@ class TestFixRingDirectionByDistance:
 # manipulating._stitch_boundary_ring
 # ===========================================================================
 
+
 class TestStitchBoundaryRing:
     def _ring_pts(self, n: int, radius: float = 1.0, z: float = 0.0):
         angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
-        return [(radius * float(np.cos(a)), radius * float(np.sin(a)), z) for a in angles]
+        return [
+            (radius * float(np.cos(a)), radius * float(np.sin(a)), z) for a in angles
+        ]
 
     def test_creates_trimesh(self):
         n_b, n_iv = 6, 12
@@ -653,7 +704,9 @@ class TestStitchBoundaryRing:
         boundary_pts = self._ring_pts(n_b, z=0.0)
         iv_pts = _make_iv_pts(self._ring_pts(n_iv, radius=1.2, z=0.0))
         outward = np.array([0.0, 0.0, 1.0])
-        patch = _stitch_boundary_ring(boundary_pts, iv_pts, n_iv // n_b, outward_direction=outward)
+        patch = _stitch_boundary_ring(
+            boundary_pts, iv_pts, n_iv // n_b, outward_direction=outward
+        )
         valid = ~np.isnan(patch.face_normals).any(axis=1)
         if valid.any():
             avg_normal = patch.face_normals[valid].mean(axis=0)
@@ -663,6 +716,7 @@ class TestStitchBoundaryRing:
 # ---------------------------------------------------------------------------
 # Additional mesh factories for ostium tests
 # ---------------------------------------------------------------------------
+
 
 def _make_concentric_ring_mesh() -> trimesh.Trimesh:
     """Three concentric rings of 4 vertices each in the z=0 plane.
@@ -682,10 +736,14 @@ def _make_concentric_ring_mesh() -> trimesh.Trimesh:
     faces = []
     for i in range(4):
         j = (i + 1) % 4
-        faces.extend([
-            [i, j, i + 4], [j, j + 4, i + 4],
-            [i + 4, j + 4, i + 8], [j + 4, j + 8, i + 8],
-        ])
+        faces.extend(
+            [
+                [i, j, i + 4],
+                [j, j + 4, i + 4],
+                [i + 4, j + 4, i + 8],
+                [j + 4, j + 8, i + 8],
+            ]
+        )
     return trimesh.Trimesh(vertices=verts, faces=np.array(faces), process=False)
 
 
@@ -714,6 +772,7 @@ def _make_annular_xz_mesh() -> trimesh.Trimesh:
 # manipulating._clamp_to_plane
 # ===========================================================================
 
+
 class TestClampToPlane:
     """Plane: z=0, normal=[0,0,1]. Correct side is z>0."""
 
@@ -737,15 +796,15 @@ class TestClampToPlane:
         """Wrong-side point clamped to plane then pushed 1 mm past it."""
         pts = [(0.0, 0.0, 2.0), (0.0, 0.0, -0.5)]
         result = _clamp_to_plane(pts, self._origin, self._normal, overshoot=1.0)
-        assert result[0][2] == pytest.approx(2.0)   # already beyond overshoot
-        assert result[1][2] == pytest.approx(1.0)   # clamped to 0, then pushed to 1
+        assert result[0][2] == pytest.approx(2.0)  # already beyond overshoot
+        assert result[1][2] == pytest.approx(1.0)  # clamped to 0, then pushed to 1
 
     def test_overshoot_pushes_near_plane_correct_side_point(self):
         """Correct-side point within overshoot distance is pushed to that distance."""
         pts = [(0.0, 0.0, 3.0), (0.0, 0.0, 0.3)]
         result = _clamp_to_plane(pts, self._origin, self._normal, overshoot=1.0)
-        assert result[0][2] == pytest.approx(3.0)   # far enough, unchanged
-        assert result[1][2] == pytest.approx(1.0)   # 0.3 < 1.0, pushed
+        assert result[0][2] == pytest.approx(3.0)  # far enough, unchanged
+        assert result[1][2] == pytest.approx(1.0)  # 0.3 < 1.0, pushed
 
     def test_all_points_satisfy_minimum_gap(self):
         pts = [(float(i), 0.0, float(i % 5) * 0.2 - 0.2) for i in range(10)]
@@ -762,6 +821,7 @@ class TestClampToPlane:
 # ===========================================================================
 # manipulating._enforce_layer_gap_from_plane
 # ===========================================================================
+
 
 class TestEnforceLayerGapFromPlane:
     """Uses the concentric-ring mesh (z=0 plane, IV normal=[0,0,1]).
@@ -809,7 +869,9 @@ class TestEnforceLayerGapFromPlane:
         result = _enforce_layer_gap_from_plane(
             mesh, self._seeds, self._origin, self._normal, layer_step_mm=0.1
         )
-        np.testing.assert_allclose(result.vertices[:, 2], mesh.vertices[:, 2], atol=1e-10)
+        np.testing.assert_allclose(
+            result.vertices[:, 2], mesh.vertices[:, 2], atol=1e-10
+        )
 
     def test_returns_trimesh(self):
         mesh = _make_concentric_ring_mesh()
@@ -822,6 +884,7 @@ class TestEnforceLayerGapFromPlane:
 # ===========================================================================
 # manipulating._prepare_prox_dist_boundary_pts
 # ===========================================================================
+
 
 class TestPrepareProxDistBoundaryPts:
     """Two sub-cases: non-anomalous (proximal_is_ostium=False) and anomalous."""
@@ -837,7 +900,7 @@ class TestPrepareProxDistBoundaryPts:
         outer = [tuple(mesh.vertices[i]) for i in range(6)]
 
         # Put three outer vertices near prox_centroid, three near dist_centroid
-        prox_centroid = (1.0, 0.0, 0.0)   # near vertex 0
+        prox_centroid = (1.0, 0.0, 0.0)  # near vertex 0
         dist_centroid = (-1.0, 0.0, 0.0)  # near vertex 3
         results = {"boundary_points": outer}
 
@@ -885,7 +948,9 @@ class TestPrepareProxDistBoundaryPts:
     def _make_iv_frame_xy(self, n: int = 8, radius: float = 0.5):
         """IV lumen ring in the XY plane (z=0), normal ≈ [0,0,1]."""
         angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
-        coords = [(radius * float(np.cos(a)), radius * float(np.sin(a)), 0.0) for a in angles]
+        coords = [
+            (radius * float(np.cos(a)), radius * float(np.sin(a)), 0.0) for a in angles
+        ]
         return _make_iv_pts(coords)
 
     def test_anomalous_prox_boundary_pts_respect_overshoot(self):
@@ -898,7 +963,10 @@ class TestPrepareProxDistBoundaryPts:
         dist_centroid = (100.0, 0.0, 0.0)  # all boundary pts go to prox
 
         prox_pts, _, _ = _prepare_prox_dist_boundary_pts(
-            mesh, results, prox_centroid, dist_centroid,
+            mesh,
+            results,
+            prox_centroid,
+            dist_centroid,
             proximal_is_ostium=True,
             proximal_iv_frame_pts=iv_pts,
             clamp_overshoot=overshoot,
@@ -919,7 +987,10 @@ class TestPrepareProxDistBoundaryPts:
         dist_centroid = (100.0, 0.0, 0.0)
 
         prox_pts, _, _ = _prepare_prox_dist_boundary_pts(
-            mesh, results, prox_centroid, dist_centroid,
+            mesh,
+            results,
+            prox_centroid,
+            dist_centroid,
             proximal_is_ostium=True,
             proximal_iv_frame_pts=iv_pts,
         )
@@ -934,7 +1005,10 @@ class TestPrepareProxDistBoundaryPts:
         dist_centroid = (100.0, 0.0, 0.0)
 
         _, _, updated_mesh = _prepare_prox_dist_boundary_pts(
-            mesh, results, prox_centroid, dist_centroid,
+            mesh,
+            results,
+            prox_centroid,
+            dist_centroid,
             proximal_is_ostium=True,
             proximal_iv_frame_pts=iv_pts,
         )
@@ -943,12 +1017,12 @@ class TestPrepareProxDistBoundaryPts:
         # Vertices with x != 0 in the IV-plane projection are the ones that move.
         moved = False
         for i in range(8, 16):
-            old_r = np.linalg.norm(mesh.vertices[i, [0, 1]])   # XY radius
+            old_r = np.linalg.norm(mesh.vertices[i, [0, 1]])  # XY radius
             new_r = np.linalg.norm(updated_mesh.vertices[i, [0, 1]])
             if old_r > 1e-6:  # skip vertices projecting to IV centre
-                assert new_r >= old_r - 1e-6, (
-                    f"Vertex {i} moved inward: {old_r:.4f} → {new_r:.4f}"
-                )
+                assert (
+                    new_r >= old_r - 1e-6
+                ), f"Vertex {i} moved inward: {old_r:.4f} → {new_r:.4f}"
                 if new_r > old_r + 1e-6:
                     moved = True
         assert moved, "Expected at least some outer-ring vertices to move outward"

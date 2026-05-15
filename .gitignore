@@ -5,6 +5,8 @@
 /paper/old
 .VSCodeCounter
 /test
+.mypy_cache/
+.ruff_cache/
 examples/__pycache__/
 examples/logs/
 examples/data/output/

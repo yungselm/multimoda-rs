@@ -6,8 +6,6 @@ from multimodars import (
     PyContourPoint,
     PyContour,
     PyCenterline,
-    PyGeometry,
-    PyGeometryPair,
 )
 from multimodars._converters import (
     to_array,
@@ -156,6 +154,7 @@ def test_to_array_and_back_geometry_roundtrip():
 def test_to_array_geometry_pair():
     pytest.skip("Geometry pair conversion needs more complex setup")
 
+
 def test_numpy_to_inputdata_roundtrip():
     # Build two simple contours (frames 0 and 1)
     c0 = _make_simple_contour(0, n=2, offset=0.0)
@@ -165,8 +164,8 @@ def test_numpy_to_inputdata_roundtrip():
     lumen_arr = np.vstack([to_array(c0), to_array(c1)])
 
     # Provide an EEM only for frame 0 and a sidebranch only for frame 1
-    eem_arr = to_array(c0)           # only frame 0 present
-    sidebranch_arr = to_array(c1)    # only frame 1 present
+    eem_arr = to_array(c0)  # only frame 0 present
+    sidebranch_arr = to_array(c1)  # only frame 1 present
 
     # Empty calcification array
     calc_arr = np.zeros((0, 4))
@@ -222,4 +221,3 @@ def test_numpy_to_inputdata_roundtrip():
         assert pytest.approx(o.x) == n.x
         assert pytest.approx(o.y) == n.y
         assert pytest.approx(o.z) == n.z
-

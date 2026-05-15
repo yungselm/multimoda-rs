@@ -86,7 +86,6 @@ def _clamp_to_plane(
     return [tuple(p) for p in pts]
 
 
-
 def _smooth_ring_laplacian(
     points: list[tuple[float, float, float]],
     iterations: int = 5,
@@ -947,7 +946,9 @@ def _prepare_prox_dist_boundary_pts(
             if angle >= ostium_angle_threshold_deg:
                 iv_origin = np.array(prox_centroid, dtype=np.float64)
                 prox_boundary_pts_ord = _clamp_to_plane(
-                    prox_boundary_pts_ord, iv_origin, iv_normal,
+                    prox_boundary_pts_ord,
+                    iv_origin,
+                    iv_normal,
                     overshoot=clamp_overshoot,
                 )
                 clamping_applied = True
@@ -963,6 +964,7 @@ def _prepare_prox_dist_boundary_pts(
         mesh = trimesh.Trimesh(vertices=new_vertices, faces=mesh.faces, process=False)
 
         if clamping_applied and fixed_indices:
+            assert iv_origin is not None and iv_normal is not None
             mesh = _enforce_layer_gap_from_plane(
                 mesh, fixed_indices, iv_origin, iv_normal
             )

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 import trimesh
 from .multimodars import (
@@ -139,7 +141,9 @@ def _geometry_to_numpy(geom) -> dict[str, np.ndarray]:
                 if len(result[key]) == 0:
                     result[key] = frame_data[key]
                 else:
-                    result[key] = np.vstack([result[key], frame_data[key]])
+                    result[key] = cast(
+                        np.ndarray, np.vstack([result[key], frame_data[key]])
+                    )
 
     return result
 

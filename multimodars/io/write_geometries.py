@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from ..multimodars import PyCenterline
 
+
 def centerline_to_obj(cl, filename: str) -> None:
     """
     Write out a centerline as an OBJ with:
@@ -16,11 +17,11 @@ def centerline_to_obj(cl, filename: str) -> None:
     """
     if not isinstance(cl, PyCenterline):
         raise TypeError("Expected PyCenterline instance")
-    
+
     with open(filename, "w") as f:
         good_pts = []
         for i, pt in enumerate(cl.points):
-            x,y,z = pt.contour_point.x, pt.contour_point.y, pt.contour_point.z
+            x, y, z = pt.contour_point.x, pt.contour_point.y, pt.contour_point.z
             if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(z)):
                 # skip any malformed point
                 continue
@@ -30,16 +31,16 @@ def centerline_to_obj(cl, filename: str) -> None:
         has_normals = any(
             math.isfinite(nx) and math.isfinite(ny) and math.isfinite(nz)
             for pt in good_pts
-            for nx,ny,nz in [pt.normal]
+            for nx, ny, nz in [pt.normal]
         )
         if has_normals:
             for pt in good_pts:
-                nx,ny,nz = pt.normal
+                nx, ny, nz = pt.normal
                 if math.isfinite(nx) and math.isfinite(ny) and math.isfinite(nz):
                     f.write(f"vn {nx:.6f} {ny:.6f} {nz:.6f}\n")
                 else:
                     f.write("vn 0.000000 0.000000 0.000000\n")
 
-        idxs = " ".join(str(i+1) for i in range(len(good_pts)))
+        idxs = " ".join(str(i + 1) for i in range(len(good_pts)))
         f.write(f"l {idxs}\n")
     print(f"Wrote {len(good_pts)} valid points to {filename!r}")
