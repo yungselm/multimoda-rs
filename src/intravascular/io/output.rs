@@ -15,7 +15,7 @@ pub fn write_obj_mesh(
 ) -> anyhow::Result<()> {
     if let Some(parent) = Path::new(filename).parent() {
         std::fs::create_dir_all(parent)
-            .context(format!("Could not create output directory: {:?}", parent))?;
+            .context(format!("Could not create output directory: {parent:?}"))?;
     }
 
     let sorted_contours = contours.to_owned();
@@ -56,12 +56,12 @@ pub fn write_obj_mesh(
     }
 
     // Write material reference
-    writeln!(writer, "mtllib {}", mtl_filename)?;
+    writeln!(writer, "mtllib {mtl_filename}")?;
     writeln!(writer, "usemtl displacement_material")?;
 
     // Write UV coordinates for original vertices
     for (u, v) in uv_coords {
-        writeln!(writer, "vt {} {}", u, v)?;
+        writeln!(writer, "vt {u} {v}")?;
     }
 
     // Compute and write normals for original vertices
@@ -89,15 +89,14 @@ pub fn write_obj_mesh(
             let v1 = offset1 + j;
             let v2 = offset1 + j_next;
             let v3 = offset2 + j;
-            writeln!(writer, "f {0}/{0}/{0} {1}/{1}/{1} {2}/{2}/{2}", v1, v2, v3)?;
+            writeln!(writer, "f {v1}/{v1}/{v1} {v2}/{v2}/{v2} {v3}/{v3}/{v3}")?;
 
             let v1_t2 = offset2 + j;
             let v2_t2 = offset1 + j_next;
             let v3_t2 = offset2 + j_next;
             writeln!(
                 writer,
-                "f {0}/{0}/{0} {1}/{1}/{1} {2}/{2}/{2}",
-                v1_t2, v2_t2, v3_t2
+                "f {v1_t2}/{v1_t2}/{v1_t2} {v2_t2}/{v2_t2}/{v2_t2} {v3_t2}/{v3_t2}/{v3_t2}"
             )?;
         }
     }
@@ -161,9 +160,9 @@ fn close_end(
         let v3 = centroid_vertex_index;
 
         if reverse_winding {
-            writeln!(writer, "f {0}/{0}/{0} {1}/{1}/{1} {2}/{2}/{2}", v3, v2, v1)?;
+            writeln!(writer, "f {v3}/{v3}/{v3} {v2}/{v2}/{v2} {v1}/{v1}/{v1}")?;
         } else {
-            writeln!(writer, "f {0}/{0}/{0} {1}/{1}/{1} {2}/{2}/{2}", v1, v2, v3)?;
+            writeln!(writer, "f {v1}/{v1}/{v1} {v2}/{v2}/{v2} {v3}/{v3}/{v3}")?;
         }
     }
     Ok(())
@@ -183,7 +182,7 @@ pub fn write_obj_mesh_without_uv(
         mtl_filename,
         watertight,
     )
-    .map_err(|e| anyhow!("Failed to write OBJ mesh without UV: {}", e))
+    .map_err(|e| anyhow!("Failed to write OBJ mesh without UV: {e}"))
 }
 
 impl ContourType {
@@ -251,10 +250,8 @@ pub fn write_geometry_vec_to_obj(
 ) -> anyhow::Result<()> {
     // Create owned versions for thread-safe capture
     let output_dir = output_dir.as_ref();
-    std::fs::create_dir_all(output_dir).context(format!(
-        "Could not create output directory: {:?}",
-        output_dir
-    ))?;
+    std::fs::create_dir_all(output_dir)
+        .context(format!("Could not create output directory: {output_dir:?}"))?;
 
     let case_name = case_name.to_owned();
     let total = geometries.len();
@@ -275,7 +272,7 @@ pub fn write_geometry_vec_to_obj(
 
             let contours = contour_type.get_contours(geometry);
             write_obj_mesh(&contours, mesh_uv, obj_path_str, &mtl_name, watertight)
-                .map_err(|e| anyhow!("Failed [{}]: {}", obj_name, e))
+                .map_err(|e| anyhow!("Failed [{obj_name}]: {e}"))
         })
         .collect();
 
@@ -288,7 +285,7 @@ pub fn write_geometry_vec_to_obj(
         success_count,
         total,
         if fail_count > 0 {
-            format!(", {} failures", fail_count)
+            format!(", {fail_count} failures")
         } else {
             String::new()
         }
@@ -302,7 +299,7 @@ pub fn write_geometry_vec_to_obj(
             .map(|e| e.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        bail!("Some .obj writes failed:\n{}", errors);
+        bail!("Some .obj writes failed:\n{errors}");
     }
 
     Ok(())

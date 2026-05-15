@@ -130,10 +130,7 @@ pub fn prepare_n_geometries(
                     n_points,
                 )
                 .with_context(|| {
-                    format!(
-                        "Failed to build geometry for Pair with diastole={}",
-                        diastole
-                    )
+                    format!("Failed to build geometry for Pair with diastole={diastole}")
                 })?;
                 geometries.push(geom);
             }
@@ -193,8 +190,7 @@ pub fn prepare_n_geometries(
                     )
                     .with_context(|| {
                         format!(
-                            "Failed to build geometry for Full from path with diastole={}",
-                            diastole
+                            "Failed to build geometry for Full from path with diastole={diastole}"
                         )
                     })?;
                     geometries.push(geom);
@@ -421,7 +417,7 @@ mod preprocessing_tests {
 
         assert_eq!(geometry.len(), 4);
         for (i, geom) in geometry.iter().enumerate() {
-            assert_eq!(geom.label, format!("test_{}", i));
+            assert_eq!(geom.label, format!("test_{i}"));
         }
         Ok(())
     }

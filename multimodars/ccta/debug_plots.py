@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import trimesh
 from trimesh.points import PointCloud
+from trimesh.visual import ColorVisuals
 
 if TYPE_CHECKING:
     from ..multimodars import PyCenterline
@@ -157,7 +158,12 @@ def compare_centerline_scaling(
     scene1 = trimesh.Scene(
         [original_mesh, PointCloud(region_array, colors=region_colors)]
     )
-    original_mesh.visual.face_colors = [200, 200, 200, 100]  # Semi-transparent
+    cast(ColorVisuals, original_mesh.visual).face_colors = [
+        200,
+        200,
+        200,
+        100,
+    ]  # Semi-transparent
 
     centerline_points = None
     centerline_colors = None
@@ -181,7 +187,12 @@ def compare_centerline_scaling(
     scene2 = trimesh.Scene(
         [scaled_mesh, PointCloud(region_array, colors=region_colors)]
     )
-    scaled_mesh.visual.face_colors = [200, 200, 200, 100]  # Semi-transparent
+    cast(ColorVisuals, scaled_mesh.visual).face_colors = [
+        200,
+        200,
+        200,
+        100,
+    ]  # Semi-transparent
 
     if centerline_points is not None:
         scene2.add_geometry(PointCloud(centerline_points, colors=centerline_colors))
@@ -196,8 +207,18 @@ def compare_centerline_scaling(
 
     scene3 = trimesh.Scene([original_mesh, scaled_mesh_shifted])
 
-    original_mesh.visual.face_colors = [0, 100, 200, 100]  # Blue-ish
-    scaled_mesh_shifted.visual.face_colors = [200, 100, 0, 100]  # Orange-ish
+    cast(ColorVisuals, original_mesh.visual).face_colors = [
+        0,
+        100,
+        200,
+        100,
+    ]  # Blue-ish
+    cast(ColorVisuals, scaled_mesh_shifted.visual).face_colors = [
+        200,
+        100,
+        0,
+        100,
+    ]  # Orange-ish
 
     if centerline_points is not None:
         centerline_shifted = centerline_points + shift_amount

@@ -229,7 +229,7 @@ pub fn from_file_full(
         sample_size,
         postprocessing,
     )
-    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{:#}", e)))?;
+    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))?;
 
     let py_geom_ab = geom_ab_final.into();
     let py_geom_cd = geom_cd_final.into();
@@ -401,7 +401,7 @@ pub fn from_file_doublepair(
         sample_size,
         postprocessing,
     )
-    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{:#}", e)))?;
+    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))?;
 
     let py_geom_ab = geom_ab_final.into();
     let py_geom_cd = geom_cd_final.into();
@@ -559,7 +559,7 @@ pub fn from_file_singlepair(
         sample_size,
         postprocessing,
     )
-    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{:#}", e)))?;
+    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))?;
 
     let py_geom_ab = geom_pair_final.into();
     let py_logs_a = logs_to_tuples(logs_a);
@@ -695,7 +695,7 @@ pub fn from_file_single(
         bruteforce,
         sample_size,
     )
-    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{:#}", e)))?;
+    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))?;
 
     let py_geom = geom.into();
     let py_logs = logs_to_tuples(logs);
@@ -857,16 +857,16 @@ pub fn from_array_full(
         contour_types.iter().map(|ct| ct.into()).collect();
 
     let input_data_a_rust: InputData = input_data_a.try_into().map_err(|e| {
-        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_a: {}", e))
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_a: {e}"))
     })?;
     let input_data_b_rust: InputData = input_data_b.try_into().map_err(|e| {
-        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_b: {}", e))
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_b: {e}"))
     })?;
     let input_data_c_rust: InputData = input_data_c.try_into().map_err(|e| {
-        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_c: {}", e))
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_c: {e}"))
     })?;
     let input_data_d_rust: InputData = input_data_d.try_into().map_err(|e| {
-        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_d: {}", e))
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_d: {e}"))
     })?;
 
     let (
@@ -904,7 +904,7 @@ pub fn from_array_full(
         sample_size,
         postprocessing,
     )
-    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{:#}", e)))?;
+    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))?;
 
     let py_geom_ab = geom_ab_final.into();
     let py_geom_cd = geom_cd_final.into();
@@ -1064,16 +1064,16 @@ pub fn from_array_doublepair(
         contour_types.iter().map(|ct| ct.into()).collect();
 
     let input_data_a_rust: InputData = input_data_a.try_into().map_err(|e| {
-        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_a: {}", e))
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_a: {e}"))
     })?;
     let input_data_b_rust: InputData = input_data_b.try_into().map_err(|e| {
-        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_b: {}", e))
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_b: {e}"))
     })?;
     let input_data_c_rust: InputData = input_data_c.try_into().map_err(|e| {
-        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_c: {}", e))
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_c: {e}"))
     })?;
     let input_data_d_rust: InputData = input_data_d.try_into().map_err(|e| {
-        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_d: {}", e))
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_d: {e}"))
     })?;
 
     let (geom_ab_final, geom_cd_final, logs_a, logs_b, logs_c, logs_d) = double_pair_processing_rs(
@@ -1100,7 +1100,7 @@ pub fn from_array_doublepair(
         sample_size,
         postprocessing,
     )
-    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{:#}", e)))?;
+    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))?;
 
     let py_geom_ab = geom_ab_final.into();
     let py_geom_cd = geom_cd_final.into();
@@ -1235,10 +1235,10 @@ pub fn from_array_singlepair(
         contour_types.iter().map(|ct| ct.into()).collect();
 
     let input_data_a_rust: InputData = input_data_a.try_into().map_err(|e| {
-        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_a: {}", e))
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_a: {e}"))
     })?;
     let input_data_b_rust: InputData = input_data_b.try_into().map_err(|e| {
-        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_b: {}", e))
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_b: {e}"))
     })?;
 
     let (geom_ab_final, logs_a, logs_b) = pair_processing_rs(
@@ -1261,7 +1261,7 @@ pub fn from_array_singlepair(
         sample_size,
         postprocessing,
     )
-    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{:#}", e)))?;
+    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))?;
 
     let py_geom_ab = geom_ab_final.into();
     let py_logs_a = logs_to_tuples(logs_a);
@@ -1372,7 +1372,7 @@ pub fn from_array_single(
         contour_types.iter().map(|ct| ct.into()).collect();
 
     let input_data_rust: InputData = input_data.try_into().map_err(|e| {
-        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_a: {}", e))
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert input_data_a: {e}"))
     })?;
 
     let (geom_rs, logs) = single_processing_rs(
@@ -1393,7 +1393,7 @@ pub fn from_array_single(
         bruteforce,
         sample_size,
     )
-    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{:#}", e)))?;
+    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))?;
 
     let py_geom = PyGeometry::from(geom_rs);
     let py_logs = logs_to_tuples(logs);
@@ -1445,14 +1445,13 @@ pub fn to_obj(
 ) -> PyResult<()> {
     // Convert the Python geometry to Rust representation
     let geometry_rs = geometry.to_rust_geometry().map_err(|e| {
-        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert geometry: {}", e))
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to convert geometry: {e}"))
     })?;
 
     // Ensure output directory exists
     std::fs::create_dir_all(output_path).map_err(|e| {
         pyo3::exceptions::PyRuntimeError::new_err(format!(
-            "Could not create output directory '{}': {}",
-            output_path, e
+            "Could not create output directory '{output_path}': {e}"
         ))
     })?;
 
@@ -1461,23 +1460,20 @@ pub fn to_obj(
         let contours = extract_contours_by_type(&geometry_rs, contour_type.into());
 
         if contours.is_empty() {
-            eprintln!(
-                "Warning: No contours found for type {:?}, skipping",
-                contour_type
-            );
+            eprintln!("Warning: No contours found for type {contour_type:?}, skipping");
             continue;
         }
 
         let type_name = get_contour_type_name(contour_type.into());
         let filename = if filename_prefix.is_empty() {
-            format!("{}.obj", type_name)
+            format!("{type_name}.obj")
         } else {
-            format!("{}_{}.obj", filename_prefix, type_name)
+            format!("{filename_prefix}_{type_name}.obj")
         };
         let material_name = if filename_prefix.is_empty() {
-            format!("{}.mtl", type_name)
+            format!("{type_name}.mtl")
         } else {
-            format!("{}_{}.mtl", filename_prefix, type_name)
+            format!("{filename_prefix}_{type_name}.mtl")
         };
 
         let obj_path = Path::new(output_path).join(&filename);
@@ -1486,8 +1482,7 @@ pub fn to_obj(
         // Create appropriate MTL file based on contour type
         create_mtl_for_contour_type(contour_type.into(), &mtl_path, &filename).map_err(|e| {
             pyo3::exceptions::PyRuntimeError::new_err(format!(
-                "Failed to create mtl for geometry: {}",
-                e
+                "Failed to create mtl for geometry: {e}"
             ))
         })?;
 
@@ -1500,8 +1495,7 @@ pub fn to_obj(
         )
         .map_err(|e| {
             pyo3::exceptions::PyRuntimeError::new_err(format!(
-                "Failed to write {} OBJ: {}",
-                type_name, e
+                "Failed to write {type_name} OBJ: {e}"
             ))
         })?;
 

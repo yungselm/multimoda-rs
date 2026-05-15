@@ -374,6 +374,12 @@ geometry with a triangulated patch:
     this when the pullback axis is nearly aligned with the image z-axis, as is common for
     straight intramural segments.
 
+- ``clamp_overshoot``: minimum distance in mm that every proximal boundary point must sit
+  away from the IV plane after clamping (default 0.5).  Only active for anomalous ostia
+  where the boundary-ring plane and the IV plane diverge by ≥ 45°.  Increase this value
+  if stitching artefacts remain visible near the ostium; decrease it (toward 0.0) for
+  more tightly fitted geometries.
+
 The return value is a new ``results``-like dictionary that additionally contains:
 
 - ``"prox_boundary_points"`` — the ordered proximal boundary ring used for stitching.

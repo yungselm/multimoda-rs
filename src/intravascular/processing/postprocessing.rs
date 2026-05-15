@@ -615,7 +615,7 @@ mod tests {
 
         // The current implementation uses absolute difference, so these should be different
         // If the test fails, we need to check the actual implementation
-        println!("same: {}, diff_a: {}, diff_b: {}", same, diff_a, diff_b);
+        println!("same: {same}, diff_a: {diff_a}, diff_b: {diff_b}");
         // Just test that we get some values back
         assert!(diff_a > 0.0);
         assert!(diff_b > 0.0);

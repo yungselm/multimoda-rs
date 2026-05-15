@@ -367,8 +367,7 @@ mod test_find_cl_bounded_points {
         for expected_point in &points_inside {
             assert!(
                 result.contains(expected_point),
-                "Missing point: {:?}",
-                expected_point
+                "Missing point: {expected_point:?}"
             );
         }
 
@@ -376,8 +375,7 @@ mod test_find_cl_bounded_points {
         for outside_point in &points_outside {
             assert!(
                 !result.contains(outside_point),
-                "Unexpected point: {:?}",
-                outside_point
+                "Unexpected point: {outside_point:?}"
             );
         }
     }
@@ -394,10 +392,10 @@ mod test_find_cl_bounded_points {
         let result = ray_triangle_intersection(&ray_origin, &ray_direction, &triangle);
 
         println!("=== Single Ray-Triangle Test ===");
-        println!("Ray origin: {:?}", ray_origin);
-        println!("Ray direction: {:?}", ray_direction);
-        println!("Triangle: {:?}", triangle);
-        println!("Intersection result: {:?}", result);
+        println!("Ray origin: {ray_origin:?}");
+        println!("Ray direction: {ray_direction:?}");
+        println!("Triangle: {triangle:?}");
+        println!("Intersection result: {result:?}");
 
         assert!(result.is_some(), "Ray should intersect triangle");
         assert!(

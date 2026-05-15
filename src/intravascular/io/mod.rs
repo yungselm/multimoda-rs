@@ -293,10 +293,7 @@ mod io_tests {
                             .or_default()
                             .push(contour.original_frame);
                     }
-                    None => panic!(
-                        "Frame {} missing expected contour type {:?}",
-                        idx, wanted_type
-                    ),
+                    None => panic!("Frame {idx} missing expected contour type {wanted_type:?}"),
                 }
             }
         }
@@ -333,13 +330,11 @@ mod io_tests {
                 let of = orig_map.get(t).unwrap()[i];
                 assert_eq!(
                     id, first_id,
-                    "mismatched id at frame {}: {:?} has id {}, but {:?} has {}",
-                    i, first_type, first_id, t, id
+                    "mismatched id at frame {i}: {first_type:?} has id {first_id}, but {t:?} has {id}"
                 );
                 assert_eq!(
                     of, first_of,
-                    "mismatched original_frame at frame {}: {:?} has {}, but {:?} has {}",
-                    i, first_type, first_of, t, of
+                    "mismatched original_frame at frame {i}: {first_type:?} has {first_of}, but {t:?} has {of}"
                 );
             }
         }

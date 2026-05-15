@@ -79,12 +79,12 @@ pub fn align_three_point_rs<T: Processable>(
     case_name: &str,
 ) -> anyhow::Result<(T, Centerline)> {
     let resampled_centerline = preprocess_centerline(centerline, target.primary_geometry())
-        .map_err(|e| anyhow!("Couldn't resample the centerline: {}", e))?;
+        .map_err(|e| anyhow!("Couldn't resample the centerline: {e}"))?;
 
     let ref_idx = target
         .primary_geometry()
         .find_ref_frame_idx()
-        .map_err(|e| anyhow!("Couldn't find ref frame idx: {:?}", e))?;
+        .map_err(|e| anyhow!("Couldn't find ref frame idx: {e:?}"))?;
     let ref_point = target.primary_geometry().frames[ref_idx]
         .reference_point
         .as_ref()
@@ -113,7 +113,7 @@ pub fn align_three_point_rs<T: Processable>(
                 watertight,
                 &contour_types,
             )
-            .map_err(|e| anyhow!("Failed to write obj: {}", e))?
+            .map_err(|e| anyhow!("Failed to write obj: {e}"))?
     } else {
         target
     };
@@ -134,7 +134,7 @@ pub fn align_manual_rs<T: Processable>(
     case_name: &str,
 ) -> anyhow::Result<(T, Centerline)> {
     let resampled_centerline = preprocess_centerline(centerline, target.primary_geometry())
-        .map_err(|e| anyhow!("Couldn't resample the centerline: {}", e))?;
+        .map_err(|e| anyhow!("Couldn't resample the centerline: {e}"))?;
 
     target = rotate_by_best_rotation(target, rotation_angle_deg.to_radians());
     target = apply_transformations(target, &resampled_centerline, &ref_pt);
@@ -148,7 +148,7 @@ pub fn align_manual_rs<T: Processable>(
                 watertight,
                 &contour_types,
             )
-            .map_err(|e| anyhow!("Failed to write obj: {}", e))?
+            .map_err(|e| anyhow!("Failed to write obj: {e}"))?
     } else {
         target
     };
@@ -180,12 +180,12 @@ pub fn align_combined_rs<T: Processable>(
 
     let resampled_centerline =
         preprocess_centerline(centerline.clone(), original.primary_geometry())
-            .map_err(|e| anyhow!("Couldn't resample the centerline: {}", e))?;
+            .map_err(|e| anyhow!("Couldn't resample the centerline: {e}"))?;
 
     let ref_idx = original
         .primary_geometry()
         .find_ref_frame_idx()
-        .map_err(|e| anyhow!("Couldn't find ref frame idx: {:?}", e))?;
+        .map_err(|e| anyhow!("Couldn't find ref frame idx: {e:?}"))?;
 
     let ref_point = original.primary_geometry().frames[ref_idx]
         .reference_point
@@ -231,7 +231,7 @@ pub fn align_combined_rs<T: Processable>(
         total_rotation.to_degrees()
     );
     let diff = initial_cl_ref_idx as i32 - refined_cl_ref_idx as i32;
-    println!("Moving ostium by {} centerline points", diff);
+    println!("Moving ostium by {diff} centerline points");
 
     let refined_ref_pt = (
         resampled_centerline.points[refined_cl_ref_idx]
@@ -260,7 +260,7 @@ pub fn align_combined_rs<T: Processable>(
                 watertight,
                 &contour_types,
             )
-            .map_err(|e| anyhow!("Failed to write obj: {}", e))?
+            .map_err(|e| anyhow!("Failed to write obj: {e}"))?
     } else {
         final_target
     };

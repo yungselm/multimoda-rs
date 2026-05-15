@@ -52,10 +52,7 @@ pub fn process_case(
                 watertight,
             )?;
         } else {
-            eprintln!(
-                "Warning: No UV coordinates found for contour type {:?}",
-                contour_type
-            );
+            eprintln!("Warning: No UV coordinates found for contour type {contour_type:?}");
         }
     }
 
@@ -77,20 +74,17 @@ pub fn write_single_geometry(
 ) -> anyhow::Result<Geometry> {
     std::fs::create_dir_all(output_dir)?;
 
-    println!("\nSaving files for '{}' to '{}'", case_name, output_dir);
+    println!("\nSaving files for '{case_name}' to '{output_dir}'");
     for &contour_type in contour_types {
         let contours = contour_type.get_contours(&geometry);
         if contours.is_empty() {
-            eprintln!(
-                "Warning: No contours found for type {:?}, skipping",
-                contour_type
-            );
+            eprintln!("Warning: No contours found for type {contour_type:?}, skipping");
             continue;
         }
 
         let type_name = format!("{contour_type}").to_lowercase();
-        let obj_filename = format!("{}_{}.obj", case_name, type_name);
-        let mtl_filename = format!("{}_{}.mtl", case_name, type_name);
+        let obj_filename = format!("{case_name}_{type_name}.obj");
+        let mtl_filename = format!("{case_name}_{type_name}.mtl");
         let obj_path = Path::new(output_dir).join(&obj_filename);
         let mtl_path = Path::new(output_dir).join(&mtl_filename);
 

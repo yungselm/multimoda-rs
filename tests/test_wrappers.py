@@ -1,6 +1,5 @@
 # tests/test_wrappers.py
 import pytest
-import numpy as np
 from multimodars import from_file_single, from_array_single
 
 

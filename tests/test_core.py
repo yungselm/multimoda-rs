@@ -1,13 +1,10 @@
 # tests/test_core.py
-import math
 import pytest
 from multimodars import (
     PyContourPoint,
     PyContour,
     PyGeometry,
-    PyFrame,
 )
-from conftest import _create_round_contour, _create_elliptic_contour
 
 
 # -----------------PyContourPoint---------------------------

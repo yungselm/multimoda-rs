@@ -74,27 +74,25 @@ impl InputData {
         let phase = if diastole { "diastolic" } else { "systolic" };
 
         // Read required files - these will crash if missing
-        let contours_fname = format!("{}_contours.csv", phase);
+        let contours_fname = format!("{phase}_contours.csv");
         let contours_path = path.join(&contours_fname);
         let lumen = if contours_path.exists() {
             ContourPoint::read_contour_data(&contours_path)
                 .with_context(|| format!("reading {}", contours_path.display()))?
         } else {
             return Err(anyhow::anyhow!(
-                "required contours file missing: {:?}",
-                contours_path
+                "required contours file missing: {contours_path:?}"
             ));
         };
 
-        let ref_fname = format!("{}_reference_points.csv", phase);
+        let ref_fname = format!("{phase}_reference_points.csv");
         let ref_path = path.join(&ref_fname);
         let ref_point = if ref_path.exists() {
             ContourPoint::read_reference_point(&ref_path)
                 .with_context(|| format!("reading {}", ref_path.display()))?
         } else {
             return Err(anyhow::anyhow!(
-                "required reference-point file missing: {:?}",
-                ref_path
+                "required reference-point file missing: {ref_path:?}"
             ));
         };
 
@@ -114,7 +112,7 @@ impl InputData {
                                 .with_context(|| format!("reading {}", p.display()))?,
                         );
                     } else {
-                        eprintln!("sidebranch file not found, skipping: {:?}", p);
+                        eprintln!("sidebranch file not found, skipping: {p:?}");
                     }
                 }
 
@@ -127,7 +125,7 @@ impl InputData {
                                 .with_context(|| format!("reading {}", p.display()))?,
                         );
                     } else {
-                        eprintln!("calcification file not found, skipping: {:?}", p);
+                        eprintln!("calcification file not found, skipping: {p:?}");
                     }
                 }
 
@@ -140,7 +138,7 @@ impl InputData {
                                 .with_context(|| format!("reading {}", p.display()))?,
                         );
                     } else {
-                        eprintln!("eem file not found, skipping: {:?}", p);
+                        eprintln!("eem file not found, skipping: {p:?}");
                     }
                 }
 
@@ -152,15 +150,12 @@ impl InputData {
                             read_records(&p).with_context(|| format!("reading {}", p.display()))?,
                         );
                     } else {
-                        eprintln!("records file not found, skipping: {:?}", p);
+                        eprintln!("records file not found, skipping: {p:?}");
                     }
                 }
 
                 other => {
-                    eprintln!(
-                        "process_directory: unknown mapping name '{}', skipping",
-                        other
-                    );
+                    eprintln!("process_directory: unknown mapping name '{other}', skipping");
                 }
             }
         }
@@ -254,9 +249,9 @@ impl ContourPoint {
             match result {
                 Ok(record) => match record.deserialize(None) {
                     Ok(point) => points.push(point),
-                    Err(e) => eprintln!("Skipping invalid record: {:?}", e),
+                    Err(e) => eprintln!("Skipping invalid record: {e:?}"),
                 },
-                Err(e) => eprintln!("Skipping invalid row: {:?}", e),
+                Err(e) => eprintln!("Skipping invalid row: {e:?}"),
             }
         }
 

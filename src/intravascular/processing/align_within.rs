@@ -380,7 +380,7 @@ pub fn fill_holes(geometry: &mut Geometry) -> anyhow::Result<Geometry> {
         return Err(anyhow!("Baseline spacing is zero or too small to decide."));
     }
 
-    println!("⚠️\tHole detected! Attempting to fix using Geometry::insert_frame(...) (baseline spacing = {:.3})", baseline);
+    println!("⚠️\tHole detected! Attempting to fix using Geometry::insert_frame(...) (baseline spacing = {baseline:.3})");
 
     let mut i: usize = 1;
     while i < geometry.frames.len() {
@@ -823,8 +823,8 @@ mod align_within_tests {
         );
         for (i, log) in logs.iter().enumerate() {
             let idx = i as f64 + 1.0;
-            let expected_tx = -1.0 * idx;
-            let expected_ty = -1.0 * idx;
+            let expected_tx = -idx;
+            let expected_ty = -idx;
             assert_relative_eq!(log.rot_deg, -15.0, epsilon = 1e-6);
             assert_relative_eq!(log.tx, expected_tx, epsilon = 1e-6);
             assert_relative_eq!(log.ty, expected_ty, epsilon = 1e-6);
@@ -836,7 +836,7 @@ mod align_within_tests {
     fn test_simple_geometry_middle_ref() -> anyhow::Result<()> {
         let mut dummy = dummy_geometry_center_reference();
         let ref_frame_idx = dummy.find_ref_frame_idx();
-        println!("Reference idx: {:?}", ref_frame_idx);
+        println!("Reference idx: {ref_frame_idx:?}");
 
         for frame in dummy.frames.iter() {
             println!("Frame {:?}:\nz.position:{:?}, point0 x: {:?}, point0 y: {:?}, point0 z: {:?}, ref_point present?: {:?}",

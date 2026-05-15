@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 import numpy as np
 import trimesh
 
@@ -14,6 +15,147 @@ from ..multimodars import (
     find_aortic_wall_scaling as _find_aortic_wall_scaling,
 )
 from .._converters import geometry_to_trimesh
+
+
+def _project_to_best_fit_plane(
+    points: list[tuple[float, float, float]],
+) -> list[tuple[float, float, float]]:
+    """Project a ring of boundary points onto their best-fit plane.
+
+    Fits a plane via SVD (the plane normal is the direction of minimum variance)
+    and orthogonally projects every point onto it, flattening noise perpendicular
+    to the ring.
+    """
+    if len(points) < 3:
+        return points
+    pts = np.array(points, dtype=np.float64)
+    centroid = pts.mean(axis=0)
+    _, _, Vt = np.linalg.svd(pts - centroid, full_matrices=False)
+    normal = Vt[-1]
+    distances = (pts - centroid) @ normal
+    projected = pts - np.outer(distances, normal)
+    return [tuple(p) for p in projected]
+
+
+def _plane_normal_svd(pts: np.ndarray) -> np.ndarray:
+    """Best-fit plane normal for a point cloud via SVD (minimum-variance axis)."""
+    centroid = pts.mean(axis=0)
+    _, _, Vt = np.linalg.svd(pts - centroid, full_matrices=False)
+    return Vt[-1]
+
+
+def _angle_between_planes_deg(n1: np.ndarray, n2: np.ndarray) -> float:
+    """Acute angle in degrees between two planes given their normals."""
+    cos = np.clip(np.abs(np.dot(n1, n2)), 0.0, 1.0)
+    return float(np.degrees(np.arccos(cos)))
+
+
+def _clamp_to_plane(
+    points: list[tuple[float, float, float]],
+    plane_origin: np.ndarray,
+    plane_normal: np.ndarray,
+    overshoot: float = 0.0,
+) -> list[tuple[float, float, float]]:
+    """Clamp wrong-side points to the IV plane, then enforce a minimum gap.
+
+    Step 1: project any point on the wrong side of the plane onto it.
+    Step 2: if ``overshoot`` > 0, every point (including freshly clamped ones
+    that now sit exactly on the plane) that is within ``overshoot`` mm of the
+    plane on the correct side is pushed further away until it is exactly
+    ``overshoot`` mm from the plane.  This creates a clean buffer zone between
+    the aortic boundary ring and the IV ostium plane, avoiding the sharp angle
+    that would otherwise form.
+    """
+    pts = np.array(points, dtype=np.float64)
+    dists = (pts - plane_origin) @ plane_normal
+    correct_sign = np.sign(np.median(dists))
+
+    # Step 1: project wrong-side points onto the plane
+    wrong = (np.sign(dists) != correct_sign) & (dists != 0.0)
+    pts[wrong] -= np.outer(dists[wrong], plane_normal)
+
+    if overshoot > 0.0:
+        # Step 2: recompute distances and push any point within the buffer zone
+        # further away on the aortic (correct) side
+        dists2 = (pts - plane_origin) @ plane_normal
+        signed_dist = correct_sign * dists2  # positive = on correct side
+        too_close = signed_dist < overshoot
+        deficit = overshoot - signed_dist[too_close]
+        pts[too_close] += np.outer(deficit * correct_sign, plane_normal)
+
+    return [tuple(p) for p in pts]
+
+
+def _smooth_ring_laplacian(
+    points: list[tuple[float, float, float]],
+    iterations: int = 5,
+    alpha: float = 0.5,
+) -> list[tuple[float, float, float]]:
+    """Laplacian smoothing of a closed boundary ring.
+
+    Each vertex is blended toward the midpoint of its two ring neighbors.
+    Since the input is already coplanar, the result stays on the same plane
+    (a linear combination of coplanar points is coplanar).
+
+    Parameters
+    ----------
+    iterations : int
+        Number of smoothing passes.
+    alpha : float
+        Weight kept on the original position (0 = full Laplacian, 1 = no-op).
+    """
+    if len(points) < 3:
+        return points
+    pts = np.array(points, dtype=np.float64)
+    for _ in range(iterations):
+        prev = pts.copy()
+        neighbor_avg = (np.roll(prev, 1, axis=0) + np.roll(prev, -1, axis=0)) / 2.0
+        pts = alpha * prev + (1.0 - alpha) * neighbor_avg
+    return [tuple(p) for p in pts]
+
+
+def _order_boundary_components(
+    boundary_indices: set[int],
+    adj_map: Mapping[int, list[int] | set[int]],
+) -> list[list[int]]:
+    """Walk every connected component of the boundary in edge order.
+
+    Returns one ordered list per component so callers can project each ring
+    onto its own best-fit plane rather than a combined plane fitted to all rings.
+    """
+    if not boundary_indices:
+        return []
+    if len(boundary_indices) == 1:
+        return [list(boundary_indices)]
+
+    ring_adj = {
+        i: [j for j in adj_map.get(i, []) if j in boundary_indices]
+        for i in boundary_indices
+    }
+
+    remaining = set(boundary_indices)
+    components: list[list[int]] = []
+
+    while remaining:
+        start = next(iter(remaining))
+        component = [start]
+        remaining.discard(start)
+        prev, current = -1, start
+
+        while True:
+            nxt = next(
+                (n for n in ring_adj.get(current, []) if n != prev and n in remaining),
+                None,
+            )
+            if nxt is None:
+                break
+            component.append(nxt)
+            remaining.discard(nxt)
+            prev, current = current, nxt
+
+        components.append(component)
+
+    return components
 
 
 def scale_region_centerline_morphing(
@@ -370,7 +512,10 @@ def remove_labeled_points_from_mesh(
         for i in range(n_vertices)
         if keep_mask[i] and any(j in remove_indices for j in adj_map.get(i, []))
     }
-    boundary_points = [tuple(mesh.vertices[i]) for i in boundary_indices]
+    components = _order_boundary_components(boundary_indices, adj_map)
+    boundary_points: list[tuple] = [
+        tuple(mesh.vertices[i]) for component in components for i in component
+    ]
 
     # 4. Drop faces that reference any removed vertex
     face_keep_mask = np.all(keep_mask[mesh.faces], axis=1)
@@ -475,7 +620,10 @@ def keep_labeled_points_from_mesh(
     boundary_indices = {
         i for i in keep_indices if any(j in remove_indices for j in adj_map.get(i, []))
     }
-    boundary_points = [tuple(mesh.vertices[i]) for i in boundary_indices]
+    components = _order_boundary_components(boundary_indices, adj_map)
+    boundary_points: list[tuple] = [
+        tuple(mesh.vertices[i]) for component in components for i in component
+    ]
 
     # Drop faces that reference any removed vertex
     face_keep_mask = np.all(keep_mask[mesh.faces], axis=1)
@@ -583,16 +731,26 @@ def stitch_ccta_to_intravascular(
     n_points_iv_cont: int = 100,
     prox_start_mode: str = "nearest_iv",
     dist_start_mode: str = "nearest_iv",
+    proximal_is_ostium: bool = True,
+    clamp_overshoot: float = 0.5,
 ) -> dict:
-    """
+    """Stitch an aligned intravascular mesh to a CCTA mesh.
+
     ``prox_start_mode`` / ``dist_start_mode`` control how index 0 of each
     boundary ring is chosen before stitching:
 
     * ``"nearest_iv"`` (default) - rotate to the point closest to IV point 0.
     * ``"highest_z"`` - rotate to the point with the largest z-coordinate.
-    """
-    """
-    Uses an aligned intravascular mesh and stitches it to a CCTA mesh using the following steps.
+
+    ``clamp_overshoot`` sets the minimum distance (mm) that every proximal
+    boundary point must sit away from the IV plane after clamping.  Points
+    that land too close are pushed further until they are exactly
+    ``clamp_overshoot`` mm from the plane, creating a slight inward step that
+    softens the stitching angle.  The two mesh rings adjacent to the boundary
+    are also pushed radially outward (ring 1: 0.1 mm, ring 2: 0.2 mm) within
+    the IV plane to avoid ridges at the clamping zone.  Only active when the
+    boundary-ring plane and the IV plane form an angle ≥ ``ostium_angle_threshold_deg``
+    (default 45°).
     """
     iv_mesh = iv_mesh.downsample(n_points_iv_cont)
     iv_mesh_points = [
@@ -603,11 +761,14 @@ def stitch_ccta_to_intravascular(
     proximal_points = iv_mesh.frames[0].lumen.points
     distal_points = iv_mesh.frames[-1].lumen.points
 
-    prox_boundary_pts, dist_boundary_pts = _prepare_prox_dist_boundary_pts(
+    prox_boundary_pts, dist_boundary_pts, mesh = _prepare_prox_dist_boundary_pts(
         mesh,
         results,
         proximal_centroid,
         distal_centroid,
+        proximal_is_ostium=proximal_is_ostium,
+        proximal_iv_frame_pts=iv_mesh.frames[0].lumen.points,
+        clamp_overshoot=clamp_overshoot,
     )
     prox_point_step = len(proximal_points) // len(prox_boundary_pts)
     dist_point_step = len(distal_points) // len(dist_boundary_pts)
@@ -688,12 +849,69 @@ def stitch_ccta_to_intravascular(
     return results
 
 
+def _enforce_layer_gap_from_plane(
+    mesh: trimesh.Trimesh,
+    seed_indices: set[int],
+    plane_origin: np.ndarray,
+    plane_normal: np.ndarray,
+    layer_step_mm: float = 0.1,
+    n_rings: int = 2,
+) -> trimesh.Trimesh:
+    """Push neighboring mesh rings radially away from the IV ring center.
+
+    The boundary ring was clamped toward the IV plane, which can leave second-
+    and third-layer aortic vertices sitting closer to the coronary axis than
+    the boundary ring itself — creating a visible ridge.  The fix is to push
+    those vertices outward *within* the IV plane (i.e. along the aortic
+    surface, away from the coronary center), not perpendicular to it.
+
+    Ring k is displaced by ``k * layer_step_mm`` in the radial direction:
+    the projection of the vertex onto the IV plane, measured from the IV
+    ring centre (``plane_origin``), gives the outward direction.
+    """
+    adj_map = build_adjacency_map(mesh.faces.tolist())
+    new_vertices = mesh.vertices.copy()
+
+    frontier = set(seed_indices)
+    visited = set(seed_indices)
+
+    for ring in range(1, n_rings + 1):
+        push_dist = ring * layer_step_mm
+        next_frontier = set()
+        for vi in frontier:
+            for nb in adj_map.get(vi, []):
+                if nb not in visited:
+                    next_frontier.add(nb)
+
+        for vi in next_frontier:
+            p = new_vertices[vi]
+            # Project the vertex onto the IV plane to get its lateral position
+            p_proj = p - float(np.dot(p - plane_origin, plane_normal)) * plane_normal
+            # Radial direction: from IV ring centre outward, within the IV plane
+            radial = p_proj - plane_origin
+            r_norm = np.linalg.norm(radial)
+            if r_norm < 1e-10:
+                continue
+            new_vertices[vi] = p + (push_dist / r_norm) * radial
+
+        visited.update(next_frontier)
+        frontier = next_frontier
+        if not frontier:
+            break
+
+    return trimesh.Trimesh(vertices=new_vertices, faces=mesh.faces, process=False)
+
+
 def _prepare_prox_dist_boundary_pts(
     mesh: trimesh.Trimesh,
     results: dict,
     prox_centroid: tuple[float, float, float],
     dist_centroid: tuple[float, float, float],
-) -> tuple[list, list]:
+    proximal_is_ostium: bool = True,
+    proximal_iv_frame_pts=None,
+    ostium_angle_threshold_deg: float = 45.0,
+    clamp_overshoot: float = 1.0,
+) -> tuple[list, list, trimesh.Trimesh]:
     proximal_boundary_pts = []
     distal_boundary_pts = []
     for pt in results["boundary_points"]:
@@ -704,10 +922,58 @@ def _prepare_prox_dist_boundary_pts(
         else:
             distal_boundary_pts.append(pt)
 
-    prox_boundary_pts_ord = order_points_list(mesh, proximal_boundary_pts)
+    if proximal_is_ostium:
+        # Project onto best-fit plane + Laplacian smooth.
+        prox_projected = _project_to_best_fit_plane(proximal_boundary_pts)
+        prox_boundary_pts_ord = _smooth_ring_laplacian(prox_projected)
+
+        # Final check for anomalous vessels: the aortic ostium is nearly
+        # perpendicular to the coronary ostial plane, which can leave some
+        # boundary points on the wrong side after smoothing.  Compare the two
+        # plane normals and, if the angle exceeds the threshold, project any
+        # outlier that crossed the IV-frame plane back onto it.
+        iv_origin: np.ndarray | None = None
+        iv_normal: np.ndarray | None = None
+        clamping_applied = False
+        if proximal_iv_frame_pts is not None and len(prox_boundary_pts_ord) >= 3:
+            boundary_arr = np.array(prox_boundary_pts_ord, dtype=np.float64)
+            iv_arr = np.array(
+                [[p.x, p.y, p.z] for p in proximal_iv_frame_pts], dtype=np.float64
+            )
+            boundary_normal = _plane_normal_svd(boundary_arr)
+            iv_normal = _plane_normal_svd(iv_arr)
+            angle = _angle_between_planes_deg(boundary_normal, iv_normal)
+            if angle >= ostium_angle_threshold_deg:
+                iv_origin = np.array(prox_centroid, dtype=np.float64)
+                prox_boundary_pts_ord = _clamp_to_plane(
+                    prox_boundary_pts_ord,
+                    iv_origin,
+                    iv_normal,
+                    overshoot=clamp_overshoot,
+                )
+                clamping_applied = True
+
+        coord_to_idx = {tuple(v): i for i, v in enumerate(mesh.vertices)}
+        new_vertices = mesh.vertices.copy()
+        fixed_indices: set[int] = set()
+        for old_pt, new_pt in zip(proximal_boundary_pts, prox_boundary_pts_ord):
+            idx = coord_to_idx.get(tuple(old_pt))
+            if idx is not None:
+                new_vertices[idx] = new_pt
+                fixed_indices.add(idx)
+        mesh = trimesh.Trimesh(vertices=new_vertices, faces=mesh.faces, process=False)
+
+        if clamping_applied and fixed_indices:
+            assert iv_origin is not None and iv_normal is not None
+            mesh = _enforce_layer_gap_from_plane(
+                mesh, fixed_indices, iv_origin, iv_normal
+            )
+    else:
+        prox_boundary_pts_ord = order_points_list(mesh, proximal_boundary_pts)
+
     dist_boundary_pts_ord = order_points_list(mesh, distal_boundary_pts)
 
-    return prox_boundary_pts_ord, dist_boundary_pts_ord
+    return prox_boundary_pts_ord, dist_boundary_pts_ord, mesh
 
 
 def order_points_list(mesh: trimesh.Trimesh, points: list) -> list:
