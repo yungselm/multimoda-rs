@@ -845,6 +845,59 @@ def stitch_ccta_to_intravascular(
     return results
 
 
+def _enforce_layer_gap_from_plane(
+    mesh: trimesh.Trimesh,
+    seed_indices: set[int],
+    plane_origin: np.ndarray,
+    plane_normal: np.ndarray,
+    layer_step_mm: float = 0.1,
+    n_rings: int = 2,
+) -> trimesh.Trimesh:
+    """Push neighboring mesh rings radially away from the IV ring center.
+
+    The boundary ring was clamped toward the IV plane, which can leave second-
+    and third-layer aortic vertices sitting closer to the coronary axis than
+    the boundary ring itself — creating a visible ridge.  The fix is to push
+    those vertices outward *within* the IV plane (i.e. along the aortic
+    surface, away from the coronary center), not perpendicular to it.
+
+    Ring k is displaced by ``k * layer_step_mm`` in the radial direction:
+    the projection of the vertex onto the IV plane, measured from the IV
+    ring centre (``plane_origin``), gives the outward direction.
+    """
+    adj_map = build_adjacency_map(mesh.faces.tolist())
+    new_vertices = mesh.vertices.copy()
+
+    frontier = set(seed_indices)
+    visited = set(seed_indices)
+
+    for ring in range(1, n_rings + 1):
+        push_dist = ring * layer_step_mm
+        next_frontier = set()
+        for vi in frontier:
+            for nb in adj_map.get(vi, []):
+                if nb not in visited:
+                    next_frontier.add(nb)
+
+        for vi in next_frontier:
+            p = new_vertices[vi]
+            # Project the vertex onto the IV plane to get its lateral position
+            p_proj = p - float(np.dot(p - plane_origin, plane_normal)) * plane_normal
+            # Radial direction: from IV ring centre outward, within the IV plane
+            radial = p_proj - plane_origin
+            r_norm = np.linalg.norm(radial)
+            if r_norm < 1e-10:
+                continue
+            new_vertices[vi] = p + (push_dist / r_norm) * radial
+
+        visited.update(next_frontier)
+        frontier = next_frontier
+        if not frontier:
+            break
+
+    return trimesh.Trimesh(vertices=new_vertices, faces=mesh.faces, process=False)
+
+
 def _prepare_prox_dist_boundary_pts(
     mesh: trimesh.Trimesh,
     results: dict,
@@ -875,6 +928,9 @@ def _prepare_prox_dist_boundary_pts(
         # boundary points on the wrong side after smoothing.  Compare the two
         # plane normals and, if the angle exceeds the threshold, project any
         # outlier that crossed the IV-frame plane back onto it.
+        iv_origin: np.ndarray | None = None
+        iv_normal: np.ndarray | None = None
+        clamping_applied = False
         if proximal_iv_frame_pts is not None and len(prox_boundary_pts_ord) >= 3:
             boundary_arr = np.array(prox_boundary_pts_ord, dtype=np.float64)
             iv_arr = np.array(
@@ -889,13 +945,22 @@ def _prepare_prox_dist_boundary_pts(
                     prox_boundary_pts_ord, iv_origin, iv_normal,
                     overshoot=clamp_overshoot,
                 )
+                clamping_applied = True
+
         coord_to_idx = {tuple(v): i for i, v in enumerate(mesh.vertices)}
         new_vertices = mesh.vertices.copy()
+        fixed_indices: set[int] = set()
         for old_pt, new_pt in zip(proximal_boundary_pts, prox_boundary_pts_ord):
             idx = coord_to_idx.get(tuple(old_pt))
             if idx is not None:
                 new_vertices[idx] = new_pt
+                fixed_indices.add(idx)
         mesh = trimesh.Trimesh(vertices=new_vertices, faces=mesh.faces, process=False)
+
+        if clamping_applied and fixed_indices:
+            mesh = _enforce_layer_gap_from_plane(
+                mesh, fixed_indices, iv_origin, iv_normal
+            )
     else:
         prox_boundary_pts_ord = order_points_list(mesh, proximal_boundary_pts)
 
