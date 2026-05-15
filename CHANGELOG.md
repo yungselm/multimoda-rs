@@ -25,11 +25,12 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - `align_three_point`, `align_manual` and `align_combined` are now all generic, taking either `PyGeometryPair` or `PyGeometry` as input
 - Test file added `test_intravascular.py` to demonstrate that same results with both
 
-## [0.3.3] - 2026-05-06
+## [0.3.3] - 2026-05-06 Release JOSS paper
 
 ### Added
 - `CITATION.cff` with full author list, ORCIDs, and preferred citation for JOSS/Zenodo archival.
 - Zenodo DOI badge added to README.
+- Created a release coupled to JOSS publication
 
 ## [0.3.2] - 2026-05-05
 
