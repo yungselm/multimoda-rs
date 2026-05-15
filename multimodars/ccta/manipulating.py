@@ -733,7 +733,7 @@ def stitch_ccta_to_intravascular(
     prox_start_mode: str = "nearest_iv",
     dist_start_mode: str = "nearest_iv",
     proximal_is_ostium: bool = True,
-    clamp_overshoot: float = 1.0,
+    clamp_overshoot: float = 0.5,
 ) -> dict:
     """Stitch an aligned intravascular mesh to a CCTA mesh.
 
@@ -743,10 +743,15 @@ def stitch_ccta_to_intravascular(
     * ``"nearest_iv"`` (default) - rotate to the point closest to IV point 0.
     * ``"highest_z"`` - rotate to the point with the largest z-coordinate.
 
-    ``clamp_overshoot`` controls how far past the IV plane clamped ostium
-    points are pushed (as a fraction of their original displacement).  The
-    default 0.1 adds 10 % extra travel, creating a slight inward step that
-    softens the stitching angle.
+    ``clamp_overshoot`` sets the minimum distance (mm) that every proximal
+    boundary point must sit away from the IV plane after clamping.  Points
+    that land too close are pushed further until they are exactly
+    ``clamp_overshoot`` mm from the plane, creating a slight inward step that
+    softens the stitching angle.  The two mesh rings adjacent to the boundary
+    are also pushed radially outward (ring 1: 0.1 mm, ring 2: 0.2 mm) within
+    the IV plane to avoid ridges at the clamping zone.  Only active when the
+    boundary-ring plane and the IV plane form an angle ≥ ``ostium_angle_threshold_deg``
+    (default 45°).
     """
     iv_mesh = iv_mesh.downsample(n_points_iv_cont)
     iv_mesh_points = [

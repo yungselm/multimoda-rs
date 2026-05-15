@@ -3,6 +3,22 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.5] - 2026-05-15
+
+### Added
+- `clamp_overshoot` parameter in `stitch_ccta_to_intravascular` (default 0.5 mm): for anomalous
+  ostia where the boundary-ring plane and the IV plane diverge by ≥ 45°, every proximal boundary
+  point is projected onto the IV plane and then pushed at least `clamp_overshoot` mm away from it,
+  creating an inward step that softens the stitching angle.
+- `_enforce_layer_gap_from_plane`: the two mesh rings adjacent to the clamped boundary are
+  pushed radially outward within the IV plane (ring 1: 0.1 mm, ring 2: 0.2 mm) to eliminate
+  ridges at the clamping zone.
+- Tests for `_clamp_to_plane`, `_enforce_layer_gap_from_plane`, and `_prepare_prox_dist_boundary_pts`
+  with idealized geometries (`test_ccta.py`, 17 tests).
+
+### Performance
+- Ray-intersection labeling step parallelized via `par_iter()`, reducing wall time on large meshes.
+
 ## [0.3.4] - 2026-05-13
 
 ### Changed
