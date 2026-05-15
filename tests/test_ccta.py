@@ -27,7 +27,10 @@ from multimodars.ccta.labeling import (
     _prepare_faces_for_rust,
 )
 from multimodars.ccta.manipulating import (
+    _clamp_to_plane,
+    _enforce_layer_gap_from_plane,
     _fix_ring_direction_by_distance,
+    _prepare_prox_dist_boundary_pts,
     _rotate_to_nearest_iv,
     _stitch_boundary_ring,
     keep_labeled_points_from_mesh,
@@ -655,3 +658,311 @@ class TestStitchBoundaryRing:
         if valid.any():
             avg_normal = patch.face_normals[valid].mean(axis=0)
             assert np.dot(avg_normal, outward) > 0
+
+
+# ---------------------------------------------------------------------------
+# Additional mesh factories for ostium tests
+# ---------------------------------------------------------------------------
+
+def _make_concentric_ring_mesh() -> trimesh.Trimesh:
+    """Three concentric rings of 4 vertices each in the z=0 plane.
+
+    Ring A (inner, radius 1): indices 0-3
+    Ring B (middle, radius 2): indices 4-7
+    Ring C (outer, radius 3): indices 8-11
+
+    Faces connect adjacent rings so adjacency map gives
+    A-neighbours = B and B-neighbours = C.
+    """
+    angles = [0.0, np.pi / 2, np.pi, 3 * np.pi / 2]
+    ring_a = [(np.cos(a), np.sin(a), 0.0) for a in angles]
+    ring_b = [(2.0 * np.cos(a), 2.0 * np.sin(a), 0.0) for a in angles]
+    ring_c = [(3.0 * np.cos(a), 3.0 * np.sin(a), 0.0) for a in angles]
+    verts = np.array(ring_a + ring_b + ring_c, dtype=float)
+    faces = []
+    for i in range(4):
+        j = (i + 1) % 4
+        faces.extend([
+            [i, j, i + 4], [j, j + 4, i + 4],
+            [i + 4, j + 4, i + 8], [j + 4, j + 8, i + 8],
+        ])
+    return trimesh.Trimesh(vertices=verts, faces=np.array(faces), process=False)
+
+
+def _make_annular_xz_mesh() -> trimesh.Trimesh:
+    """Annular mesh lying in the XZ plane (y=0).
+
+    Inner ring (radius 1, 8 verts): indices 0-7  — these become boundary_points.
+    Outer ring (radius 2, 8 verts): indices 8-15 — second aortic layer.
+
+    The ring plane has normal [0,1,0]; the IV ring (XY plane) has normal [0,0,1].
+    The angle between them is 90°, so the anomalous clamping path is triggered.
+    """
+    n = 8
+    angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
+    inner = np.column_stack([np.cos(angles), np.zeros(n), np.sin(angles)])
+    outer = np.column_stack([2.0 * np.cos(angles), np.zeros(n), 2.0 * np.sin(angles)])
+    verts = np.vstack([inner, outer])
+    faces = []
+    for i in range(n):
+        j = (i + 1) % n
+        faces.extend([[i, j, i + n], [j, j + n, i + n]])
+    return trimesh.Trimesh(vertices=verts, faces=np.array(faces), process=False)
+
+
+# ===========================================================================
+# manipulating._clamp_to_plane
+# ===========================================================================
+
+class TestClampToPlane:
+    """Plane: z=0, normal=[0,0,1]. Correct side is z>0."""
+
+    _origin = np.array([0.0, 0.0, 0.0])
+    _normal = np.array([0.0, 0.0, 1.0])
+
+    def test_wrong_side_point_projected_onto_plane(self):
+        pts = [(0.0, 0.0, 1.0), (1.0, 0.0, 1.0), (0.5, 0.0, -0.5)]
+        result = _clamp_to_plane(pts, self._origin, self._normal, overshoot=0.0)
+        assert result[2][2] == pytest.approx(0.0, abs=1e-10)
+        assert result[0][2] == pytest.approx(1.0)
+        assert result[1][2] == pytest.approx(1.0)
+
+    def test_correct_side_points_unchanged_without_overshoot(self):
+        pts = [(0.0, 0.0, 0.5), (1.0, 0.0, 1.5), (0.0, 1.0, 2.0)]
+        result = _clamp_to_plane(pts, self._origin, self._normal, overshoot=0.0)
+        for orig, res in zip(pts, result):
+            assert res == pytest.approx(orig)
+
+    def test_overshoot_pushes_wrong_side_past_plane(self):
+        """Wrong-side point clamped to plane then pushed 1 mm past it."""
+        pts = [(0.0, 0.0, 2.0), (0.0, 0.0, -0.5)]
+        result = _clamp_to_plane(pts, self._origin, self._normal, overshoot=1.0)
+        assert result[0][2] == pytest.approx(2.0)   # already beyond overshoot
+        assert result[1][2] == pytest.approx(1.0)   # clamped to 0, then pushed to 1
+
+    def test_overshoot_pushes_near_plane_correct_side_point(self):
+        """Correct-side point within overshoot distance is pushed to that distance."""
+        pts = [(0.0, 0.0, 3.0), (0.0, 0.0, 0.3)]
+        result = _clamp_to_plane(pts, self._origin, self._normal, overshoot=1.0)
+        assert result[0][2] == pytest.approx(3.0)   # far enough, unchanged
+        assert result[1][2] == pytest.approx(1.0)   # 0.3 < 1.0, pushed
+
+    def test_all_points_satisfy_minimum_gap(self):
+        pts = [(float(i), 0.0, float(i % 5) * 0.2 - 0.2) for i in range(10)]
+        result = _clamp_to_plane(pts, self._origin, self._normal, overshoot=1.0)
+        assert all(p[2] >= 1.0 - 1e-9 for p in result)
+
+    def test_returns_list_of_3_tuples(self):
+        pts = [(0.0, 0.0, 1.0), (1.0, 0.0, 1.0)]
+        result = _clamp_to_plane(pts, self._origin, self._normal)
+        assert isinstance(result, list)
+        assert all(isinstance(p, tuple) and len(p) == 3 for p in result)
+
+
+# ===========================================================================
+# manipulating._enforce_layer_gap_from_plane
+# ===========================================================================
+
+class TestEnforceLayerGapFromPlane:
+    """Uses the concentric-ring mesh (z=0 plane, IV normal=[0,0,1]).
+
+    Seed = ring A (radius 1, indices 0-3).
+    IV centre = origin.  Radial push per ring = 0.1 mm.
+
+    Ring B (radius 2) → pushed 0.1 mm outward → expected radius 2.1.
+    Ring C (radius 3) → pushed 0.2 mm outward → expected radius 3.2.
+    """
+
+    _origin = np.array([0.0, 0.0, 0.0])
+    _normal = np.array([0.0, 0.0, 1.0])
+    _seeds = {0, 1, 2, 3}
+
+    def test_ring1_pushed_radially_outward(self):
+        mesh = _make_concentric_ring_mesh()
+        result = _enforce_layer_gap_from_plane(
+            mesh, self._seeds, self._origin, self._normal, layer_step_mm=0.1
+        )
+        for i in range(4, 8):
+            r = np.linalg.norm(result.vertices[i, :2])
+            assert r == pytest.approx(2.1, abs=1e-6)
+
+    def test_ring2_pushed_twice_the_step(self):
+        mesh = _make_concentric_ring_mesh()
+        result = _enforce_layer_gap_from_plane(
+            mesh, self._seeds, self._origin, self._normal, layer_step_mm=0.1
+        )
+        for i in range(8, 12):
+            r = np.linalg.norm(result.vertices[i, :2])
+            assert r == pytest.approx(3.2, abs=1e-6)
+
+    def test_seed_vertices_untouched(self):
+        mesh = _make_concentric_ring_mesh()
+        result = _enforce_layer_gap_from_plane(
+            mesh, self._seeds, self._origin, self._normal, layer_step_mm=0.1
+        )
+        for i in self._seeds:
+            np.testing.assert_allclose(result.vertices[i], mesh.vertices[i])
+
+    def test_z_coordinates_unchanged(self):
+        """Push is within the IV plane; z must not change."""
+        mesh = _make_concentric_ring_mesh()
+        result = _enforce_layer_gap_from_plane(
+            mesh, self._seeds, self._origin, self._normal, layer_step_mm=0.1
+        )
+        np.testing.assert_allclose(result.vertices[:, 2], mesh.vertices[:, 2], atol=1e-10)
+
+    def test_returns_trimesh(self):
+        mesh = _make_concentric_ring_mesh()
+        result = _enforce_layer_gap_from_plane(
+            mesh, self._seeds, self._origin, self._normal
+        )
+        assert isinstance(result, trimesh.Trimesh)
+
+
+# ===========================================================================
+# manipulating._prepare_prox_dist_boundary_pts
+# ===========================================================================
+
+class TestPrepareProxDistBoundaryPts:
+    """Two sub-cases: non-anomalous (proximal_is_ostium=False) and anomalous."""
+
+    # ------------------------------------------------------------------
+    # Non-anomalous: proximal path must be identical to the distal path
+    # (both use order_points_list — no projection, no clamping).
+    # ------------------------------------------------------------------
+
+    def test_non_anomalous_prox_same_as_distal_algo(self):
+        """proximal_is_ostium=False: prox result is just ordered by adjacency, same as dist."""
+        mesh = _make_hex_fan_mesh()
+        outer = [tuple(mesh.vertices[i]) for i in range(6)]
+
+        # Put three outer vertices near prox_centroid, three near dist_centroid
+        prox_centroid = (1.0, 0.0, 0.0)   # near vertex 0
+        dist_centroid = (-1.0, 0.0, 0.0)  # near vertex 3
+        results = {"boundary_points": outer}
+
+        prox_pts, dist_pts, _ = _prepare_prox_dist_boundary_pts(
+            mesh, results, prox_centroid, dist_centroid, proximal_is_ostium=False
+        )
+
+        # Sets must cover all outer vertices between them
+        assert set(prox_pts) | set(dist_pts) == set(outer)
+        # Both halves are non-empty
+        assert len(prox_pts) > 0 and len(dist_pts) > 0
+
+    def test_non_anomalous_prox_points_are_mesh_adjacent(self):
+        """Proximal points returned by non-anomalous path are edge-connected in order."""
+        from multimodars.multimodars import build_adjacency_map
+
+        mesh = _make_hex_fan_mesh()
+        outer = [tuple(mesh.vertices[i]) for i in range(6)]
+        prox_centroid = (1.0, 0.0, 0.0)
+        dist_centroid = (-100.0, 0.0, 0.0)  # all vertices are proximal
+        results = {"boundary_points": outer}
+
+        prox_pts, _, _ = _prepare_prox_dist_boundary_pts(
+            mesh, results, prox_centroid, dist_centroid, proximal_is_ostium=False
+        )
+
+        adj = build_adjacency_map(mesh.faces.tolist())
+        coord_to_idx = {tuple(v): i for i, v in enumerate(mesh.vertices)}
+        for k in range(len(prox_pts) - 1):
+            a = coord_to_idx[tuple(prox_pts[k])]
+            b = coord_to_idx[tuple(prox_pts[k + 1])]
+            assert b in adj.get(a, [])
+
+    # ------------------------------------------------------------------
+    # Anomalous: boundary ring in XZ plane (normal [0,1,0]),
+    # IV frame in XY plane (normal [0,0,1]).  Angle = 90° > 45° threshold
+    # → clamping + overshoot are applied.
+    # ------------------------------------------------------------------
+
+    def _make_anomalous_results(self):
+        mesh = _make_annular_xz_mesh()
+        inner = [tuple(mesh.vertices[i]) for i in range(8)]
+        return mesh, {"boundary_points": inner}
+
+    def _make_iv_frame_xy(self, n: int = 8, radius: float = 0.5):
+        """IV lumen ring in the XY plane (z=0), normal ≈ [0,0,1]."""
+        angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
+        coords = [(radius * float(np.cos(a)), radius * float(np.sin(a)), 0.0) for a in angles]
+        return _make_iv_pts(coords)
+
+    def test_anomalous_prox_boundary_pts_respect_overshoot(self):
+        """After clamping, all proximal boundary points must be >= overshoot from IV plane."""
+        mesh, results = self._make_anomalous_results()
+        iv_pts = self._make_iv_frame_xy()
+        overshoot = 1.0
+        # IV plane: z=0 (normal [0,0,1]), prox_centroid at origin
+        prox_centroid = (0.0, 0.0, 0.0)
+        dist_centroid = (100.0, 0.0, 0.0)  # all boundary pts go to prox
+
+        prox_pts, _, _ = _prepare_prox_dist_boundary_pts(
+            mesh, results, prox_centroid, dist_centroid,
+            proximal_is_ostium=True,
+            proximal_iv_frame_pts=iv_pts,
+            clamp_overshoot=overshoot,
+        )
+
+        # IV plane normal is [0,0,1]; correct side is z>0 after clamping.
+        # All returned proximal points must be >= overshoot from IV plane.
+        assert all(p[2] >= overshoot - 1e-6 for p in prox_pts), (
+            f"Some prox boundary points are closer than {overshoot} mm to IV plane: "
+            f"{[p[2] for p in prox_pts]}"
+        )
+
+    def test_anomalous_no_prox_point_on_wrong_side(self):
+        """No proximal boundary point must end up on the intravascular (z<0) side."""
+        mesh, results = self._make_anomalous_results()
+        iv_pts = self._make_iv_frame_xy()
+        prox_centroid = (0.0, 0.0, 0.0)
+        dist_centroid = (100.0, 0.0, 0.0)
+
+        prox_pts, _, _ = _prepare_prox_dist_boundary_pts(
+            mesh, results, prox_centroid, dist_centroid,
+            proximal_is_ostium=True,
+            proximal_iv_frame_pts=iv_pts,
+        )
+
+        assert all(p[2] >= -1e-6 for p in prox_pts)
+
+    def test_anomalous_outer_ring_pushed_radially_outward(self):
+        """After clamping, outer-ring mesh vertices are shifted radially away from IV centre."""
+        mesh, results = self._make_anomalous_results()
+        iv_pts = self._make_iv_frame_xy()
+        prox_centroid = (0.0, 0.0, 0.0)
+        dist_centroid = (100.0, 0.0, 0.0)
+
+        _, _, updated_mesh = _prepare_prox_dist_boundary_pts(
+            mesh, results, prox_centroid, dist_centroid,
+            proximal_is_ostium=True,
+            proximal_iv_frame_pts=iv_pts,
+        )
+
+        # Outer ring (indices 8-15) should be pushed radially outward.
+        # Vertices with x != 0 in the IV-plane projection are the ones that move.
+        moved = False
+        for i in range(8, 16):
+            old_r = np.linalg.norm(mesh.vertices[i, [0, 1]])   # XY radius
+            new_r = np.linalg.norm(updated_mesh.vertices[i, [0, 1]])
+            if old_r > 1e-6:  # skip vertices projecting to IV centre
+                assert new_r >= old_r - 1e-6, (
+                    f"Vertex {i} moved inward: {old_r:.4f} → {new_r:.4f}"
+                )
+                if new_r > old_r + 1e-6:
+                    moved = True
+        assert moved, "Expected at least some outer-ring vertices to move outward"
+
+    def test_non_anomalous_mesh_unchanged(self):
+        """proximal_is_ostium=False must not modify mesh vertex positions."""
+        mesh = _make_hex_fan_mesh()
+        outer = [tuple(mesh.vertices[i]) for i in range(6)]
+        results = {"boundary_points": outer}
+        prox_centroid = (1.0, 0.0, 0.0)
+        dist_centroid = (-100.0, 0.0, 0.0)
+
+        _, _, updated_mesh = _prepare_prox_dist_boundary_pts(
+            mesh, results, prox_centroid, dist_centroid, proximal_is_ostium=False
+        )
+
+        np.testing.assert_allclose(updated_mesh.vertices, mesh.vertices)
