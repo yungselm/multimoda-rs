@@ -54,18 +54,37 @@ def _clamp_to_plane(
     points: list[tuple[float, float, float]],
     plane_origin: np.ndarray,
     plane_normal: np.ndarray,
+    overshoot: float = 0.0,
 ) -> list[tuple[float, float, float]]:
-    """Project any point on the wrong side of a plane back onto it.
+    """Clamp wrong-side points to the IV plane, then enforce a minimum gap.
 
-    The 'correct' side is determined by the majority of points.  Only
-    outliers that have crossed the plane are moved; all others are untouched.
+    Step 1: project any point on the wrong side of the plane onto it.
+    Step 2: if ``overshoot`` > 0, every point (including freshly clamped ones
+    that now sit exactly on the plane) that is within ``overshoot`` mm of the
+    plane on the correct side is pushed further away until it is exactly
+    ``overshoot`` mm from the plane.  This creates a clean buffer zone between
+    the aortic boundary ring and the IV ostium plane, avoiding the sharp angle
+    that would otherwise form.
     """
     pts = np.array(points, dtype=np.float64)
     dists = (pts - plane_origin) @ plane_normal
     correct_sign = np.sign(np.median(dists))
+
+    # Step 1: project wrong-side points onto the plane
     wrong = (np.sign(dists) != correct_sign) & (dists != 0.0)
     pts[wrong] -= np.outer(dists[wrong], plane_normal)
+
+    if overshoot > 0.0:
+        # Step 2: recompute distances and push any point within the buffer zone
+        # further away on the aortic (correct) side
+        dists2 = (pts - plane_origin) @ plane_normal
+        signed_dist = correct_sign * dists2  # positive = on correct side
+        too_close = signed_dist < overshoot
+        deficit = overshoot - signed_dist[too_close]
+        pts[too_close] += np.outer(deficit * correct_sign, plane_normal)
+
     return [tuple(p) for p in pts]
+
 
 
 def _smooth_ring_laplacian(
@@ -714,16 +733,20 @@ def stitch_ccta_to_intravascular(
     prox_start_mode: str = "nearest_iv",
     dist_start_mode: str = "nearest_iv",
     proximal_is_ostium: bool = True,
+    clamp_overshoot: float = 1.0,
 ) -> dict:
-    """
+    """Stitch an aligned intravascular mesh to a CCTA mesh.
+
     ``prox_start_mode`` / ``dist_start_mode`` control how index 0 of each
     boundary ring is chosen before stitching:
 
     * ``"nearest_iv"`` (default) - rotate to the point closest to IV point 0.
     * ``"highest_z"`` - rotate to the point with the largest z-coordinate.
-    """
-    """
-    Uses an aligned intravascular mesh and stitches it to a CCTA mesh using the following steps.
+
+    ``clamp_overshoot`` controls how far past the IV plane clamped ostium
+    points are pushed (as a fraction of their original displacement).  The
+    default 0.1 adds 10 % extra travel, creating a slight inward step that
+    softens the stitching angle.
     """
     iv_mesh = iv_mesh.downsample(n_points_iv_cont)
     iv_mesh_points = [
@@ -741,6 +764,7 @@ def stitch_ccta_to_intravascular(
         distal_centroid,
         proximal_is_ostium=proximal_is_ostium,
         proximal_iv_frame_pts=iv_mesh.frames[0].lumen.points,
+        clamp_overshoot=clamp_overshoot,
     )
     prox_point_step = len(proximal_points) // len(prox_boundary_pts)
     dist_point_step = len(distal_points) // len(dist_boundary_pts)
@@ -829,6 +853,7 @@ def _prepare_prox_dist_boundary_pts(
     proximal_is_ostium: bool = True,
     proximal_iv_frame_pts=None,
     ostium_angle_threshold_deg: float = 45.0,
+    clamp_overshoot: float = 1.0,
 ) -> tuple[list, list, trimesh.Trimesh]:
     proximal_boundary_pts = []
     distal_boundary_pts = []
@@ -861,7 +886,8 @@ def _prepare_prox_dist_boundary_pts(
             if angle >= ostium_angle_threshold_deg:
                 iv_origin = np.array(prox_centroid, dtype=np.float64)
                 prox_boundary_pts_ord = _clamp_to_plane(
-                    prox_boundary_pts_ord, iv_origin, iv_normal
+                    prox_boundary_pts_ord, iv_origin, iv_normal,
+                    overshoot=clamp_overshoot,
                 )
         coord_to_idx = {tuple(v): i for i, v in enumerate(mesh.vertices)}
         new_vertices = mesh.vertices.copy()
