@@ -133,7 +133,7 @@ fn interpolate_contour_point(start: &ContourPoint, end: &ContourPoint, t: f64) -
         x: start.x * (1.0 - t) + end.x * t,
         y: start.y * (1.0 - t) + end.y * t,
         z: start.z * (1.0 - t) + end.z * t,
-        aortic: start.aortic, // Keep aortic flag from start
+        aortic: start.aortic,
     }
 }
 

@@ -1,3 +1,6 @@
+#[allow(unused_imports)]
+use crate::ccta::binding::ccta_py::build_adjacency_map;
+
 use super::geometry::ContourType;
 
 use anyhow::{anyhow, Context, Result};
@@ -434,8 +437,8 @@ impl Centerline {
     pub fn calculate_branches(&mut self, spacing_tolerance: f64) {
         const MIN_BRANCH_SIZE: usize = 5;
 
-        let n = self.points.len();
-        if n == 0 {
+        let n_points = self.points.len();
+        if n_points == 0 {
             self.branch_start_indices = vec![];
             return;
         }
@@ -444,7 +447,7 @@ impl Centerline {
 
         // Identify segment boundaries (large consecutive gaps).
         let mut seg_starts: Vec<usize> = vec![0];
-        for i in 1..n {
+        for i in 1..n_points {
             if self.points[i - 1]
                 .contour_point
                 .distance_to(&self.points[i].contour_point)
@@ -453,14 +456,85 @@ impl Centerline {
                 seg_starts.push(i);
             }
         }
-        seg_starts.push(n); // sentinel
+        seg_starts.push(n_points); // sentinel
+
+        let adj_map = self.build_sparse_tree_adjacency(seg_starts, n_points, threshold);
+
+        let (main_path, side_components) = self.identify_components_with_bfs(&adj_map, n_points);
+
+        // Tiny components are artefacts; merge into branch 0 instead of own branch.
+        let mut artefacts: Vec<Vec<usize>> = Vec::new();
+        let mut real_branches: Vec<Vec<usize>> = Vec::new();
+        for comp in side_components {
+            if comp.len() < MIN_BRANCH_SIZE {
+                artefacts.push(comp);
+            } else {
+                real_branches.push(comp);
+            }
+        }
+        real_branches.sort_by_key(|b| std::cmp::Reverse(b.len()));
+
+        // Order each branch spatially before split_sharp_angles, which requires
+        // consecutive triplets to represent actual spatial neighbours.
+        let ordered_real_branches: Vec<Vec<usize>> = real_branches
+            .into_iter()
+            .map(|b| Self::order_chain(&b, &adj_map))
+            .collect();
+
+        let real_branches = self.split_sharp_angles(ordered_real_branches);
+
+        let mut new_points: Vec<CenterlinePoint> = Vec::with_capacity(n_points);
+        let mut branch_start_indices: Vec<usize> = Vec::new();
+        let mut global_idx: u32 = 0;
+
+        branch_start_indices.push(0);
+        for &idx in &main_path {
+            let mut pt = self.points[idx].clone();
+            pt.branch_id = 0;
+            pt.contour_point.point_index = global_idx;
+            global_idx += 1;
+            new_points.push(pt);
+        }
+        for artefact in &artefacts {
+            for idx in Self::order_chain(artefact, &adj_map) {
+                let mut pt = self.points[idx].clone();
+                pt.branch_id = 0;
+                pt.contour_point.point_index = global_idx;
+                global_idx += 1;
+                new_points.push(pt);
+            }
+        }
+
+        for (i, branch) in real_branches.iter().enumerate() {
+            branch_start_indices.push(new_points.len());
+            // branch is already spatially ordered from the pre-sort above
+            for &idx in branch {
+                let mut pt = self.points[idx].clone();
+                pt.branch_id = (i + 1) as u32;
+                pt.contour_point.point_index = global_idx;
+                global_idx += 1;
+                new_points.push(pt);
+            }
+        }
+
+        self.points = new_points;
+        self.branch_start_indices = branch_start_indices;
+        self.recompute_normals();
+    }
+
+    /// Build a sparse tree adjacency map. Within the segment and then between segments
+    fn build_sparse_tree_adjacency(
+        &self,
+        seg_starts: Vec<usize>,
+        n_points: usize,
+        threshold: f64,
+    ) -> Vec<Vec<usize>> {
         let num_segs = seg_starts.len() - 1;
 
-        // Build sparse tree adjacency.
-        let mut adj: Vec<Vec<usize>> = vec![vec![]; n];
+        let mut adj: Vec<Vec<usize>> = vec![vec![]; n_points];
 
         // Within-segment: consecutive edges.
-        for i in 1..n {
+        for i in 1..n_points {
             if self.points[i - 1]
                 .contour_point
                 .distance_to(&self.points[i].contour_point)
@@ -497,21 +571,28 @@ impl Centerline {
                 }
             }
         }
+        adj
+    }
 
+    fn identify_components_with_bfs(
+        &self,
+        adj_map: &[Vec<usize>],
+        n_points: usize,
+    ) -> (Vec<usize>, Vec<Vec<usize>>) {
         // Double BFS on the tree to find the diameter (longest path = main branch).
-        let (a, _) = Self::bfs_farthest(&adj, n, 0);
-        let (b, prev) = Self::bfs_farthest(&adj, n, a);
+        let (a, _) = Self::bfs_farthest(adj_map, n_points, 0);
+        let (b, prev) = Self::bfs_farthest(adj_map, n_points, a);
         let main_path = Self::trace_path(b, a, &prev);
 
-        let mut in_main = vec![false; n];
+        let mut in_main_branch = vec![false; n_points];
         for &idx in &main_path {
-            in_main[idx] = true;
+            in_main_branch[idx] = true;
         }
 
         // BFS connected components of nodes not on the main path.
-        let mut visited = in_main.clone();
+        let mut visited = in_main_branch.clone();
         let mut side_components: Vec<Vec<usize>> = Vec::new();
-        for start in 0..n {
+        for start in 0..n_points {
             if visited[start] {
                 continue;
             }
@@ -521,7 +602,7 @@ impl Centerline {
             visited[start] = true;
             while let Some(node) = q.pop_front() {
                 comp.push(node);
-                for &nb in &adj[node] {
+                for &nb in &adj_map[node] {
                     if !visited[nb] {
                         visited[nb] = true;
                         q.push_back(nb);
@@ -530,48 +611,7 @@ impl Centerline {
             }
             side_components.push(comp);
         }
-
-        // Tiny components are artefacts; merge into branch 0 instead of own branch.
-        let mut artefacts: Vec<Vec<usize>> = Vec::new();
-        let mut real_branches: Vec<Vec<usize>> = Vec::new();
-        for comp in side_components {
-            if comp.len() < MIN_BRANCH_SIZE {
-                artefacts.push(comp);
-            } else {
-                real_branches.push(comp);
-            }
-        }
-        real_branches.sort_by_key(|b| std::cmp::Reverse(b.len()));
-
-        let mut new_points: Vec<CenterlinePoint> = Vec::with_capacity(n);
-        let mut branch_start_indices: Vec<usize> = Vec::new();
-
-        branch_start_indices.push(0);
-        for &idx in &main_path {
-            let mut pt = self.points[idx].clone();
-            pt.branch_id = 0;
-            new_points.push(pt);
-        }
-        for comp in &artefacts {
-            for idx in Self::order_chain(comp, &adj) {
-                let mut pt = self.points[idx].clone();
-                pt.branch_id = 0;
-                new_points.push(pt);
-            }
-        }
-
-        for (i, comp) in real_branches.iter().enumerate() {
-            branch_start_indices.push(new_points.len());
-            for idx in Self::order_chain(comp, &adj) {
-                let mut pt = self.points[idx].clone();
-                pt.branch_id = (i + 1) as u32;
-                new_points.push(pt);
-            }
-        }
-
-        self.points = new_points;
-        self.branch_start_indices = branch_start_indices;
-        self.recompute_normals();
+        (main_path, side_components)
     }
 
     /// BFS from `start`; returns the farthest reachable node and a predecessor array.
@@ -664,6 +704,68 @@ impl Centerline {
             }
         }
         ordered
+    }
+
+    /// Split any branch whose path contains an opening angle < 90° at an interior
+    /// point.  The opening angle at `curr` is measured between the arms
+    /// `prev→curr` and `next→curr`; for a straight segment this is ≈ 180°, so
+    /// `cos > 0` reliably marks an acute elbow that indicates two sub-branches
+    /// were accidentally concatenated.
+    ///
+    /// A work queue handles cascading splits; every sub-segment is re-checked
+    /// until no sharp angle remains.  Returns two or more branch index lists.
+    fn split_sharp_angles(&self, branches: Vec<Vec<usize>>) -> Vec<Vec<usize>> {
+        let mut result: Vec<Vec<usize>> = Vec::new();
+        let mut queue: Vec<Vec<usize>> = branches;
+
+        while let Some(branch) = queue.pop() {
+            let n = branch.len();
+            if n < 3 {
+                result.push(branch);
+                continue;
+            }
+
+            let mut split_at: Option<usize> = None;
+            for i in 1..n - 1 {
+                let prev = &self.points[branch[i - 1]].contour_point;
+                let curr = &self.points[branch[i]].contour_point;
+                let next = &self.points[branch[i + 1]].contour_point;
+
+                let v1 = Vector3::new(prev.x - curr.x, prev.y - curr.y, prev.z - curr.z);
+                let v2 = Vector3::new(next.x - curr.x, next.y - curr.y, next.z - curr.z);
+
+                let norm1 = v1.norm();
+                let norm2 = v2.norm();
+                if norm1 < 1e-10 || norm2 < 1e-10 {
+                    continue;
+                }
+
+                // cos > 0 ↔ opening angle < 90° → acute elbow, split here
+                let cos_angle = v1.dot(&v2) / (norm1 * norm2);
+                if cos_angle > 0.0 {
+                    split_at = Some(i);
+                    break;
+                }
+            }
+
+            match split_at {
+                Some(i) => {
+                    // Both sub-segments share the split point so neither loses
+                    // the bifurcation vertex.
+                    let seg1 = branch[..=i].to_vec();
+                    let seg2 = branch[i..].to_vec();
+                    if seg1.len() >= 2 {
+                        queue.push(seg1);
+                    }
+                    if seg2.len() >= 2 {
+                        queue.push(seg2);
+                    }
+                }
+                None => result.push(branch),
+            }
+        }
+
+        result
     }
 
     /// Recompute normals after points have been reordered.
