@@ -472,6 +472,24 @@ impl Centerline {
                 real_branches.push(comp);
             }
         }
+        // Split the main path at sharp angles too: BFS diameter goes from one tip
+        // to the other, so a bifurcation (e.g. LAD/LCX) sits as an interior elbow.
+        // The longest resulting segment stays as branch 0; shorter ones join real_branches.
+        let mut main_path_segs = self.split_sharp_angles(vec![main_path]);
+        let new_main_path = if main_path_segs.len() == 1 {
+            main_path_segs.remove(0)
+        } else {
+            let longest_idx = main_path_segs
+                .iter()
+                .enumerate()
+                .max_by_key(|(_, s)| s.len())
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            let longest = main_path_segs.remove(longest_idx);
+            real_branches.extend(main_path_segs);
+            longest
+        };
+
         real_branches.sort_by_key(|b| std::cmp::Reverse(b.len()));
 
         // Order each branch spatially before split_sharp_angles, which requires
@@ -481,14 +499,12 @@ impl Centerline {
             .map(|b| Self::order_chain(&b, &adj_map))
             .collect();
 
-        let real_branches = self.split_sharp_angles(ordered_real_branches);
-
         let mut new_points: Vec<CenterlinePoint> = Vec::with_capacity(n_points);
         let mut branch_start_indices: Vec<usize> = Vec::new();
         let mut global_idx: u32 = 0;
 
         branch_start_indices.push(0);
-        for &idx in &main_path {
+        for &idx in &new_main_path {
             let mut pt = self.points[idx].clone();
             pt.branch_id = 0;
             pt.contour_point.point_index = global_idx;
@@ -505,7 +521,7 @@ impl Centerline {
             }
         }
 
-        for (i, branch) in real_branches.iter().enumerate() {
+        for (i, branch) in ordered_real_branches.iter().enumerate() {
             branch_start_indices.push(new_points.len());
             // branch is already spatially ordered from the pre-sort above
             for &idx in branch {
@@ -742,7 +758,11 @@ impl Centerline {
 
                 // cos > 0 ↔ opening angle < 90° → acute elbow, split here
                 let cos_angle = v1.dot(&v2) / (norm1 * norm2);
-                if cos_angle > 0.0 {
+                if cos_angle > 0.5 {
+                    println!(
+                        "split_sharp_angles: splitting branch at local pos {}/{} (old_pt_idx={}, cos={:.4})",
+                        i, n, curr.point_index, cos_angle
+                    );
                     split_at = Some(i);
                     break;
                 }

@@ -87,16 +87,16 @@ print(
     f"Branches: {len(lca_cl.branch_start_indices)}, start indices: {lca_cl.branch_start_indices}"
 )
 
-for x, y, z, idx in zip(list_x, list_y, list_z, point_ids):
-    ax.text(
-        x,
-        y,
-        z,
-        str(idx),
-        fontsize=6,
-        ha="center",
-        va="center",
-    )
+# for x, y, z, idx in zip(list_x, list_y, list_z, point_ids):
+#     ax.text(
+#         x,
+#         y,
+#         z,
+#         str(idx),
+#         fontsize=6,
+#         ha="center",
+#         va="center",
+#     )
 
 plt.tight_layout()
 plt.show()
