@@ -60,6 +60,10 @@ plt.tight_layout()
 plt.show()
 
 lca_cl = lca_cl.calculate_branches(2.0)
+list_edges = lca_cl.find_sharp_angles(0, 0.0)
+print(list_edges)
+lca_cl = lca_cl.split_branch(0, 334)
+lca_cl = lca_cl.merge_branches(0, 4)
 
 list_x = []
 list_y = []

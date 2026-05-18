@@ -299,9 +299,13 @@ class PyCenterline:
     ----------
     points : list of PyCenterlinePoint
         Ordered list of centerline points.
+    branch_start_indices : list of int
+        Index into ``points`` where each branch begins.
+        ``branch_start_indices[0]`` is always 0 (main vessel).
     """
 
     points: list[PyCenterlinePoint]
+    branch_start_indices: list[int]
 
     def __init__(self, points: list[PyCenterlinePoint]) -> None: ...
     def __len__(self) -> int: ...
@@ -310,6 +314,50 @@ class PyCenterline:
     @staticmethod
     def from_contour_points(contour_points: list[PyContourPoint]) -> PyCenterline: ...
     def points_as_tuples(self) -> list[tuple[float, float, float]]: ...
+    def calculate_branches(self, spacing_tolerance: float = 1.0) -> PyCenterline: ...
+    def find_sharp_angles(self, branch_id: int, cos_threshold: float) -> list[int]:
+        """Return local positions within the branch where the opening angle is sharp.
+
+        Parameters
+        ----------
+        branch_id : int
+            Branch to inspect (0 = main vessel).
+        cos_threshold : float
+            Cosine above which an angle is considered sharp.
+            Use ``0.0`` for < 90°, ``0.5`` for < 60°, ``0.866`` for < 30°.
+
+        Returns
+        -------
+        list[int]
+            0-indexed positions within the branch (suitable for ``split_branch``).
+        """
+        ...
+    def split_branch(self, branch_id: int, local_pos: int) -> PyCenterline:
+        """Split a branch at a local position and return the updated centerline.
+
+        Both resulting segments share the split point. When splitting the main
+        branch (``branch_id=0``) the longer segment stays as branch 0.
+
+        Parameters
+        ----------
+        branch_id : int
+        local_pos : int
+            0-indexed position within the branch (as returned by
+            ``find_sharp_angles``).
+        """
+        ...
+    def merge_branches(self, branch_id_a: int, branch_id_b: int) -> PyCenterline:
+        """Merge two branches into one and return the updated centerline.
+
+        Segments are joined at the closest endpoint pair.
+        If either branch is branch 0, the merged result becomes branch 0.
+
+        Parameters
+        ----------
+        branch_id_a : int
+        branch_id_b : int
+        """
+        ...
 
 
 class PyInputData:

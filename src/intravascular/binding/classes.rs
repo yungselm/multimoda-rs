@@ -1835,6 +1835,70 @@ impl PyCenterline {
         cl.calculate_branches(spacing_tolerance);
         Ok(PyCenterline::from(&cl))
     }
+
+    /// Return local positions (0-indexed within the branch) of interior points
+    /// where the opening angle is sharper than `cos_threshold`.
+    ///
+    /// Parameters
+    /// ----------
+    /// branch_id : int
+    ///     Branch to inspect (0 = main vessel).
+    /// cos_threshold : float
+    ///     Cosine of the opening angle above which a point is considered sharp.
+    ///     Use 0.0 for < 90°, 0.5 for < 60°, 0.866 for < 30°, etc.
+    ///
+    /// Returns
+    /// -------
+    /// list[int]
+    ///     Local positions within the branch where sharp angles were found.
+    pub fn find_sharp_angles(&self, branch_id: u32, cos_threshold: f64) -> Vec<usize> {
+        self.to_rust_centerline()
+            .find_sharp_angles(branch_id, cos_threshold)
+    }
+
+    /// Split a branch at a local position and return the updated centerline.
+    ///
+    /// Both resulting segments include the split point. When splitting the main
+    /// branch (``branch_id=0``) the longer segment stays as branch 0; for side
+    /// branches the first segment keeps its slot and the second is appended.
+    ///
+    /// Parameters
+    /// ----------
+    /// branch_id : int
+    ///     Branch to split.
+    /// local_pos : int
+    ///     0-indexed position within the branch (as returned by
+    ///     ``find_sharp_angles``).
+    ///
+    /// Returns
+    /// -------
+    /// PyCenterline
+    ///     New centerline with the branch split and all IDs reassigned.
+    pub fn split_branch(&self, branch_id: u32, local_pos: usize) -> PyResult<PyCenterline> {
+        let mut cl = self.to_rust_centerline();
+        cl.split_branch(branch_id, local_pos);
+        Ok(PyCenterline::from(&cl))
+    }
+
+    /// Merge two branches and return the updated centerline.
+    ///
+    /// Segments are joined at the closest endpoint pair. If either branch is
+    /// the main branch (id 0) the merged result becomes branch 0.
+    ///
+    /// Parameters
+    /// ----------
+    /// branch_id_a : int
+    /// branch_id_b : int
+    ///
+    /// Returns
+    /// -------
+    /// PyCenterline
+    ///     New centerline with the two branches merged and all IDs reassigned.
+    pub fn merge_branches(&self, branch_id_a: u32, branch_id_b: u32) -> PyResult<PyCenterline> {
+        let mut cl = self.to_rust_centerline();
+        cl.merge_branches(branch_id_a, branch_id_b);
+        Ok(PyCenterline::from(&cl))
+    }
 }
 
 // Moved out of pymethods since it's for internal use

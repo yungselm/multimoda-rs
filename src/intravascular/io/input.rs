@@ -1,6 +1,3 @@
-#[allow(unused_imports)]
-use crate::ccta::binding::ccta_py::build_adjacency_map;
-
 use super::geometry::ContourType;
 
 use anyhow::{anyhow, Context, Result};
@@ -472,28 +469,8 @@ impl Centerline {
                 real_branches.push(comp);
             }
         }
-        // Split the main path at sharp angles too: BFS diameter goes from one tip
-        // to the other, so a bifurcation (e.g. LAD/LCX) sits as an interior elbow.
-        // The longest resulting segment stays as branch 0; shorter ones join real_branches.
-        let mut main_path_segs = self.split_sharp_angles(vec![main_path]);
-        let new_main_path = if main_path_segs.len() == 1 {
-            main_path_segs.remove(0)
-        } else {
-            let longest_idx = main_path_segs
-                .iter()
-                .enumerate()
-                .max_by_key(|(_, s)| s.len())
-                .map(|(i, _)| i)
-                .unwrap_or(0);
-            let longest = main_path_segs.remove(longest_idx);
-            real_branches.extend(main_path_segs);
-            longest
-        };
-
         real_branches.sort_by_key(|b| std::cmp::Reverse(b.len()));
 
-        // Order each branch spatially before split_sharp_angles, which requires
-        // consecutive triplets to represent actual spatial neighbours.
         let ordered_real_branches: Vec<Vec<usize>> = real_branches
             .into_iter()
             .map(|b| Self::order_chain(&b, &adj_map))
@@ -504,7 +481,7 @@ impl Centerline {
         let mut global_idx: u32 = 0;
 
         branch_start_indices.push(0);
-        for &idx in &new_main_path {
+        for &idx in &main_path {
             let mut pt = self.points[idx].clone();
             pt.branch_id = 0;
             pt.contour_point.point_index = global_idx;
@@ -722,72 +699,6 @@ impl Centerline {
         ordered
     }
 
-    /// Split any branch whose path contains an opening angle < 90° at an interior
-    /// point.  The opening angle at `curr` is measured between the arms
-    /// `prev→curr` and `next→curr`; for a straight segment this is ≈ 180°, so
-    /// `cos > 0` reliably marks an acute elbow that indicates two sub-branches
-    /// were accidentally concatenated.
-    ///
-    /// A work queue handles cascading splits; every sub-segment is re-checked
-    /// until no sharp angle remains.  Returns two or more branch index lists.
-    fn split_sharp_angles(&self, branches: Vec<Vec<usize>>) -> Vec<Vec<usize>> {
-        let mut result: Vec<Vec<usize>> = Vec::new();
-        let mut queue: Vec<Vec<usize>> = branches;
-
-        while let Some(branch) = queue.pop() {
-            let n = branch.len();
-            if n < 3 {
-                result.push(branch);
-                continue;
-            }
-
-            let mut split_at: Option<usize> = None;
-            for i in 1..n - 1 {
-                let prev = &self.points[branch[i - 1]].contour_point;
-                let curr = &self.points[branch[i]].contour_point;
-                let next = &self.points[branch[i + 1]].contour_point;
-
-                let v1 = Vector3::new(prev.x - curr.x, prev.y - curr.y, prev.z - curr.z);
-                let v2 = Vector3::new(next.x - curr.x, next.y - curr.y, next.z - curr.z);
-
-                let norm1 = v1.norm();
-                let norm2 = v2.norm();
-                if norm1 < 1e-10 || norm2 < 1e-10 {
-                    continue;
-                }
-
-                // cos > 0 ↔ opening angle < 90° → acute elbow, split here
-                let cos_angle = v1.dot(&v2) / (norm1 * norm2);
-                if cos_angle > 0.5 {
-                    println!(
-                        "split_sharp_angles: splitting branch at local pos {}/{} (old_pt_idx={}, cos={:.4})",
-                        i, n, curr.point_index, cos_angle
-                    );
-                    split_at = Some(i);
-                    break;
-                }
-            }
-
-            match split_at {
-                Some(i) => {
-                    // Both sub-segments share the split point so neither loses
-                    // the bifurcation vertex.
-                    let seg1 = branch[..=i].to_vec();
-                    let seg2 = branch[i..].to_vec();
-                    if seg1.len() >= 2 {
-                        queue.push(seg1);
-                    }
-                    if seg2.len() >= 2 {
-                        queue.push(seg2);
-                    }
-                }
-                None => result.push(branch),
-            }
-        }
-
-        result
-    }
-
     /// Recompute normals after points have been reordered.
     ///
     /// Normals are not computed across branch boundaries so each branch's
@@ -806,6 +717,165 @@ impl Centerline {
             };
             self.points[i].normal = normal;
         }
+    }
+
+    /// Decompose the flat points Vec into one Vec per branch.
+    fn branches_as_vecs(&self) -> Vec<Vec<CenterlinePoint>> {
+        let n = self.branch_start_indices.len();
+        (0..n)
+            .map(|i| {
+                let start = self.branch_start_indices[i];
+                let end = if i + 1 < n {
+                    self.branch_start_indices[i + 1]
+                } else {
+                    self.points.len()
+                };
+                self.points[start..end].to_vec()
+            })
+            .collect()
+    }
+
+    /// Rebuild the flat points Vec and branch_start_indices from a list of branch segments,
+    /// reassigning branch_id and point_index sequentially.
+    fn rebuild_from_branches(&mut self, branches: Vec<Vec<CenterlinePoint>>) {
+        let total: usize = branches.iter().map(|b| b.len()).sum();
+        let mut new_points: Vec<CenterlinePoint> = Vec::with_capacity(total);
+        let mut branch_start_indices: Vec<usize> = Vec::with_capacity(branches.len());
+        let mut global_idx: u32 = 0;
+
+        for (branch_id, branch) in branches.into_iter().enumerate() {
+            branch_start_indices.push(new_points.len());
+            for mut pt in branch {
+                pt.branch_id = branch_id as u32;
+                pt.contour_point.point_index = global_idx;
+                global_idx += 1;
+                new_points.push(pt);
+            }
+        }
+
+        self.points = new_points;
+        self.branch_start_indices = branch_start_indices;
+        self.recompute_normals();
+    }
+
+    /// Return local positions (0-indexed within the branch) of interior points
+    /// where the opening angle satisfies `cos_angle > cos_threshold`.
+    /// Use `cos_threshold = 0.0` for < 90°, `0.5` for < 60°, etc.
+    pub fn find_sharp_angles(&self, branch_id: u32, cos_threshold: f64) -> Vec<usize> {
+        let idx = branch_id as usize;
+        let n = self.branch_start_indices.len();
+        if idx >= n {
+            return vec![];
+        }
+        let start = self.branch_start_indices[idx];
+        let end = if idx + 1 < n {
+            self.branch_start_indices[idx + 1]
+        } else {
+            self.points.len()
+        };
+        let branch = &self.points[start..end];
+
+        (1..branch.len().saturating_sub(1))
+            .filter(|&i| {
+                let prev = &branch[i - 1].contour_point;
+                let curr = &branch[i].contour_point;
+                let next = &branch[i + 1].contour_point;
+                let v1 = Vector3::new(prev.x - curr.x, prev.y - curr.y, prev.z - curr.z);
+                let v2 = Vector3::new(next.x - curr.x, next.y - curr.y, next.z - curr.z);
+                let n1 = v1.norm();
+                let n2 = v2.norm();
+                if n1 < 1e-10 || n2 < 1e-10 {
+                    return false;
+                }
+                v1.dot(&v2) / (n1 * n2) > cos_threshold
+            })
+            .collect()
+    }
+
+    /// Split the branch at `local_pos` (0-indexed within the branch).
+    /// Both resulting segments include the split point.
+    /// If `branch_id == 0` the longer segment stays as branch 0.
+    /// For side branches the first segment keeps its slot; the second is appended.
+    pub fn split_branch(&mut self, branch_id: u32, local_pos: usize) {
+        let mut branches = self.branches_as_vecs();
+        let idx = branch_id as usize;
+        if idx >= branches.len() {
+            return;
+        }
+        let branch = branches.remove(idx);
+        if local_pos == 0 || local_pos >= branch.len().saturating_sub(1) {
+            branches.insert(idx, branch);
+            return;
+        }
+
+        let seg_a = branch[..=local_pos].to_vec();
+        let seg_b = branch[local_pos..].to_vec();
+
+        if branch_id == 0 {
+            let (main_seg, other_seg) = if seg_a.len() >= seg_b.len() {
+                (seg_a, seg_b)
+            } else {
+                (seg_b, seg_a)
+            };
+            branches.insert(0, main_seg);
+            branches.push(other_seg);
+        } else {
+            branches.insert(idx, seg_a);
+            branches.push(seg_b);
+        }
+
+        self.rebuild_from_branches(branches);
+    }
+
+    /// Merge two branches into one. Endpoints are matched by minimum distance
+    /// so the segments are concatenated in the correct spatial order.
+    /// If either branch is the main branch (id 0) the merged result is branch 0.
+    pub fn merge_branches(&mut self, branch_id_a: u32, branch_id_b: u32) {
+        let mut branches = self.branches_as_vecs();
+        let idx_a = branch_id_a as usize;
+        let idx_b = branch_id_b as usize;
+        if idx_a == idx_b || idx_a >= branches.len() || idx_b >= branches.len() {
+            return;
+        }
+
+        let (low, high) = if idx_a < idx_b {
+            (idx_a, idx_b)
+        } else {
+            (idx_b, idx_a)
+        };
+        let b_high = branches.remove(high);
+        let b_low = branches.remove(low);
+
+        let lf = &b_low[0].contour_point;
+        let ll = &b_low[b_low.len() - 1].contour_point;
+        let hf = &b_high[0].contour_point;
+        let hl = &b_high[b_high.len() - 1].contour_point;
+
+        // Find the orientation that puts the closest endpoints adjacent.
+        let d_ll_hf = ll.distance_to(hf);
+        let d_ll_hl = ll.distance_to(hl);
+        let d_lf_hf = lf.distance_to(hf);
+        let d_lf_hl = lf.distance_to(hl);
+        let min_d = d_ll_hf.min(d_ll_hl).min(d_lf_hf).min(d_lf_hl);
+
+        let merged: Vec<CenterlinePoint> = if (min_d - d_ll_hf).abs() < 1e-12 {
+            b_low.into_iter().chain(b_high).collect()
+        } else if (min_d - d_ll_hl).abs() < 1e-12 {
+            b_low.into_iter().chain(b_high.into_iter().rev()).collect()
+        } else if (min_d - d_lf_hf).abs() < 1e-12 {
+            b_high.into_iter().rev().chain(b_low).collect()
+        } else {
+            b_high.into_iter().chain(b_low).collect()
+        };
+
+        let result_is_main = low == 0 || high == 0;
+        if result_is_main {
+            branches.insert(0, merged);
+        } else {
+            branches.insert(low, merged);
+        }
+
+        self.rebuild_from_branches(branches);
     }
 }
 
@@ -842,6 +912,118 @@ mod input_tests {
         assert!(input.ref_point.x > 0.0, "ref_point should not be empty");
 
         Ok(())
+    }
+
+    fn cl_from_coords(coords: &[(f64, f64, f64)]) -> Centerline {
+        let points = coords
+            .iter()
+            .enumerate()
+            .map(|(i, &(x, y, z))| ContourPoint {
+                frame_index: i as u32,
+                point_index: i as u32,
+                x,
+                y,
+                z,
+                aortic: false,
+            })
+            .collect();
+        Centerline::from_contour_points(points)
+    }
+
+    #[test]
+    fn test_find_sharp_angles_straight() {
+        let cl = cl_from_coords(&[
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (2.0, 0.0, 0.0),
+            (3.0, 0.0, 0.0),
+            (4.0, 0.0, 0.0),
+        ]);
+        assert!(cl.find_sharp_angles(0, 0.0).is_empty());
+    }
+
+    #[test]
+    fn test_find_sharp_angles_v_shape() {
+        // At position 3 the path makes a sharp turn back; cos ≈ 0.707 (> 0.0).
+        let cl = cl_from_coords(&[
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (2.0, 0.0, 0.0),
+            (3.0, 0.0, 0.0), // elbow
+            (2.5, 0.5, 0.0),
+            (2.0, 1.0, 0.0),
+        ]);
+        assert_eq!(cl.find_sharp_angles(0, 0.0), vec![3]);
+        // With threshold 0.8 (cos(36°)≈0.81) the ≈0.707 elbow is not detected.
+        assert!(cl.find_sharp_angles(0, 0.8).is_empty());
+        // Out-of-range branch returns empty.
+        assert!(cl.find_sharp_angles(5, 0.0).is_empty());
+    }
+
+    #[test]
+    fn test_split_branch_main_longer_stays() {
+        // 9 points, split at pos 3 → seg_a=4pts, seg_b=6pts → seg_b (longer) is branch 0.
+        let mut cl = cl_from_coords(&[
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (2.0, 0.0, 0.0),
+            (3.0, 0.0, 0.0),
+            (4.0, 0.0, 0.0),
+            (5.0, 0.0, 0.0),
+            (6.0, 0.0, 0.0),
+            (7.0, 0.0, 0.0),
+            (8.0, 0.0, 0.0),
+        ]);
+        cl.split_branch(0, 3);
+        assert_eq!(cl.branch_start_indices.len(), 2);
+        assert_eq!(cl.points.len(), 10); // split point shared
+        let len0 = cl.branch_start_indices[1];
+        let len1 = cl.points.len() - cl.branch_start_indices[1];
+        assert_eq!(len0, 6, "longer segment must be branch 0");
+        assert_eq!(len1, 4);
+        // branch_id and point_index are sequential
+        assert!(cl.points.iter().enumerate().all(|(i, p)| {
+            p.branch_id == if i < 6 { 0 } else { 1 } && p.contour_point.point_index == i as u32
+        }));
+    }
+
+    #[test]
+    fn test_split_branch_equal_length_first_is_main() {
+        // 5 points, split at pos 2 → both segments 3 pts → first (seg_a) stays as branch 0.
+        let mut cl = cl_from_coords(&[
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (2.0, 0.0, 0.0),
+            (3.0, 0.0, 0.0),
+            (4.0, 0.0, 0.0),
+        ]);
+        cl.split_branch(0, 2);
+        assert_eq!(cl.branch_start_indices.len(), 2);
+        assert_eq!(cl.branch_start_indices[1], 3, "branch 0 has 3 pts");
+    }
+
+    #[test]
+    fn test_merge_branches_result_is_main() {
+        // Split a 5-point line into [0,1,2] and [2,3,4], then merge back.
+        // The shared endpoint causes d_ll_hf == 0 → b_low + b_high concatenation.
+        let mut cl = cl_from_coords(&[
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (2.0, 0.0, 0.0),
+            (3.0, 0.0, 0.0),
+            (4.0, 0.0, 0.0),
+        ]);
+        cl.split_branch(0, 2);
+        assert_eq!(cl.branch_start_indices.len(), 2);
+
+        cl.merge_branches(0, 1);
+        assert_eq!(cl.branch_start_indices.len(), 1);
+        assert_eq!(cl.points.len(), 6); // 3+3, shared point duplicated
+        assert!(cl.points.iter().all(|p| p.branch_id == 0));
+        // point_index must be 0..5 sequentially
+        for (i, p) in cl.points.iter().enumerate() {
+            assert_eq!(p.contour_point.point_index, i as u32);
+        }
     }
 
     #[test]
