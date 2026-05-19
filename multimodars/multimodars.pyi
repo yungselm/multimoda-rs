@@ -359,6 +359,24 @@ class PyCenterline:
         """
         ...
 
+    def get_branch(self, branch_id: int) -> PyCenterline:
+        """Return a new centerline containing only the points of one branch.
+
+        All retained points are reassigned to branch_id=0 and
+        branch_start_indices is reset to [0].
+
+        Parameters
+        ----------
+        branch_id : int
+            Branch to extract.
+
+        Raises
+        ------
+        ValueError
+            If branch_id does not exist in this centerline.
+        """
+        ...
+
 
 class PyInputData:
     """Intravascular imaging input data for one cardiac phase.

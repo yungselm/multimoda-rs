@@ -1899,6 +1899,47 @@ impl PyCenterline {
         cl.merge_branches(branch_id_a, branch_id_b);
         Ok(PyCenterline::from(&cl))
     }
+
+    /// Return a new centerline containing only the points of one branch.
+    ///
+    /// All retained points are reassigned to ``branch_id = 0`` and
+    /// ``branch_start_indices`` is reset to ``[0]``.
+    ///
+    /// Parameters
+    /// ----------
+    /// branch_id : int
+    ///     Branch to extract.
+    ///
+    /// Returns
+    /// -------
+    /// PyCenterline
+    ///     Single-branch centerline with the requested points.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If ``branch_id`` does not exist in this centerline.
+    pub fn get_branch(&self, branch_id: u32) -> PyResult<PyCenterline> {
+        let points: Vec<PyCenterlinePoint> = self
+            .points
+            .iter()
+            .filter(|p| p.branch_id == branch_id)
+            .cloned()
+            .map(|mut p| {
+                p.branch_id = 0;
+                p
+            })
+            .collect();
+        if points.is_empty() {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "branch_id {branch_id} not found in centerline"
+            )));
+        }
+        Ok(PyCenterline {
+            points,
+            branch_start_indices: vec![0],
+        })
+    }
 }
 
 // Moved out of pymethods since it's for internal use
