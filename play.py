@@ -117,7 +117,7 @@ print(
 plt.tight_layout()
 plt.show()
 
-contours = mm.discretize_vessel(ao_cl, results["aorta_points"], 0, 1.0, 200)
+contours = mm.discretize_vessel(rca_cl, results["rca_points"], 0, 1.0, 200)
 print(f"Discretized {len(contours)} contours")
 
 fig = plt.figure()

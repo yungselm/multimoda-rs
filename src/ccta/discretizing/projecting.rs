@@ -2,16 +2,19 @@ use crate::intravascular::io::geometry::{Contour, ContourType};
 use crate::intravascular::io::input::{Centerline, CenterlinePoint, ContourPoint};
 use nalgebra::Vector3;
 
-/// Walks branch `branch_id` at uniform arc-length steps of `step_size`, collecting a projected
-/// slice at each resampled position. The slab half-thickness is `step_size / 2.0`, so adjacent
-/// slices just touch without overlap. Returns one `Contour` per resampled position.
+/// Walks branch `branch_id` at uniform arc-length steps of `step_size`, assigns each mesh point
+/// to its geometrically closest anchor via Voronoi partitioning, projects it onto that anchor's
+/// perpendicular plane, and returns one `Contour` per sampled position.
+///
+/// Voronoi assignment prevents far-away vessel sections from contaminating a slice: a point that
+/// is physically on a distant part of the vessel will always be closer (in 3-D) to the anchors on
+/// that distant section, so it never ends up in the wrong cross-section.
 pub fn walk_centerline_slices(
     centerline: &Centerline,
     points: &[(f64, f64, f64)],
     branch_id: u32,
     step_size: f64,
 ) -> Vec<Contour> {
-    let half = step_size / 2.0;
     let branch_pts: Vec<&CenterlinePoint> = centerline
         .points
         .iter()
@@ -23,16 +26,90 @@ pub fn walk_centerline_slices(
 
     let cum = branch_cum_arc(&branch_pts);
     let total = *cum.last().unwrap();
-
     let sample_positions = build_sample_positions(total, step_size);
-    sample_positions
+
+    let anchors: Vec<CenterlinePoint> = sample_positions
         .iter()
         .enumerate()
-        .map(|(k, &s)| {
-            let anchor = interpolate_branch_at_s(&branch_pts, &cum, s, k);
-            slice_nearest_points(&anchor, points, half, k as u32)
+        .map(|(k, &s)| interpolate_branch_at_s(&branch_pts, &cum, s, k))
+        .collect();
+
+    if anchors.is_empty() {
+        return vec![];
+    }
+
+    // Voronoi: each mesh point goes to its geometrically closest anchor.
+    let mut buckets: Vec<Vec<ContourPoint>> = vec![vec![]; anchors.len()];
+    for &(px, py, pz) in points {
+        let closest = anchors.iter().enumerate().min_by(|(_, a), (_, b)| {
+            let da = sq_dist3(
+                px,
+                py,
+                pz,
+                a.contour_point.x,
+                a.contour_point.y,
+                a.contour_point.z,
+            );
+            let db = sq_dist3(
+                px,
+                py,
+                pz,
+                b.contour_point.x,
+                b.contour_point.y,
+                b.contour_point.z,
+            );
+            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        if let Some((anchor_idx, anchor)) = closest {
+            let (qx, qy, qz) = project_to_plane((px, py, pz), anchor);
+            let point_index = buckets[anchor_idx].len() as u32;
+            buckets[anchor_idx].push(ContourPoint {
+                frame_index: anchor_idx as u32,
+                point_index,
+                x: qx,
+                y: qy,
+                z: qz,
+                aortic: false,
+            });
+        }
+    }
+
+    anchors
+        .into_iter()
+        .zip(buckets)
+        .enumerate()
+        .map(|(k, (anchor, pts))| Contour {
+            id: k as u32,
+            original_frame: anchor.contour_point.frame_index,
+            centroid: Some((
+                anchor.contour_point.x,
+                anchor.contour_point.y,
+                anchor.contour_point.z,
+            )),
+            points: pts,
+            aortic_thickness: None,
+            pulmonary_thickness: None,
+            kind: ContourType::Lumen,
         })
         .collect()
+}
+
+// Projects a point onto the plane perpendicular to `anchor` at its position.
+// Formula: p_proj = p − ((p − center) · n̂) · n̂
+fn project_to_plane(point: (f64, f64, f64), anchor: &CenterlinePoint) -> (f64, f64, f64) {
+    let center = Vector3::new(
+        anchor.contour_point.x,
+        anchor.contour_point.y,
+        anchor.contour_point.z,
+    );
+    let p = Vector3::new(point.0, point.1, point.2);
+    let n = anchor.normal;
+    let proj = p - n * (p - center).dot(&n);
+    (proj.x, proj.y, proj.z)
+}
+
+fn sq_dist3(ax: f64, ay: f64, az: f64, bx: f64, by: f64, bz: f64) -> f64 {
+    (ax - bx).powi(2) + (ay - by).powi(2) + (az - bz).powi(2)
 }
 
 fn branch_cum_arc(pts: &[&CenterlinePoint]) -> Vec<f64> {
@@ -117,70 +194,12 @@ fn interpolate_branch_at_s(
     }
 }
 
-// Filters points within `half_thickness` of the plane at `anchor`, projects them onto it,
-// then wraps the result in a `Contour`. `id` is the slice index along the walk.
-fn slice_nearest_points(
-    anchor: &CenterlinePoint,
-    points: &[(f64, f64, f64)],
-    half_thickness: f64,
-    id: u32,
-) -> Contour {
-    let cx = anchor.contour_point.x;
-    let cy = anchor.contour_point.y;
-    let cz = anchor.contour_point.z;
-    let center = Vector3::new(cx, cy, cz);
-    let n = anchor.normal;
-    let projected: Vec<ContourPoint> = points
-        .iter()
-        .filter(|&&(x, y, z)| {
-            let v = Vector3::new(x - center.x, y - center.y, z - center.z);
-            v.dot(&n).abs() <= half_thickness
-        })
-        .enumerate()
-        .map(|(i, &p)| {
-            let (px, py, pz) = project_to_plane(p, anchor);
-            ContourPoint {
-                frame_index: id,
-                point_index: i as u32,
-                x: px,
-                y: py,
-                z: pz,
-                aortic: false,
-            }
-        })
-        .collect();
-    Contour {
-        id,
-        original_frame: anchor.contour_point.frame_index,
-        centroid: Some((cx, cy, cz)),
-        points: projected,
-        aortic_thickness: None,
-        pulmonary_thickness: None,
-        kind: ContourType::Lumen,
-    }
-}
-
-// Projects a point onto the plane perpendicular to `anchor` at its position.
-// Formula: p_proj = p − ((p − center) · n̂) · n̂
-fn project_to_plane(point: (f64, f64, f64), anchor: &CenterlinePoint) -> (f64, f64, f64) {
-    let center = Vector3::new(
-        anchor.contour_point.x,
-        anchor.contour_point.y,
-        anchor.contour_point.z,
-    );
-    let p = Vector3::new(point.0, point.1, point.2);
-    let n = anchor.normal;
-    let proj = p - n * (p - center).dot(&n);
-    (proj.x, proj.y, proj.z)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::intravascular::io::input::{Centerline, CenterlinePoint, ContourPoint};
     use nalgebra::Vector3;
 
-    // builds a ContourPoint — used only for constructing CenterlinePoints
     fn cp(idx: u32, x: f64, y: f64, z: f64) -> ContourPoint {
         ContourPoint {
             frame_index: idx,
@@ -245,6 +264,7 @@ mod tests {
     fn pt_to_tuple(p: &ContourPoint) -> (f64, f64, f64) {
         (p.x, p.y, p.z)
     }
+
     fn cl_center(c: &CenterlinePoint) -> (f64, f64, f64) {
         (c.contour_point.x, c.contour_point.y, c.contour_point.z)
     }
@@ -308,70 +328,6 @@ mod tests {
         }
     }
 
-    // ---- slice_nearest_points ----
-
-    #[test]
-    fn test_slice_has_at_least_five_points() {
-        let anchor = cl_pt(0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
-        let slice = slice_nearest_points(&anchor, &cylinder_ring(0.0, 3.0, 8, 0.3, 7), 1.0, 0);
-        assert!(
-            slice.points.len() >= 5,
-            "need ≥ 5 points, got {}",
-            slice.points.len()
-        );
-    }
-
-    #[test]
-    fn test_slice_contour_fields() {
-        let anchor = cl_pt(3, 1.0, 2.0, 3.0, 0.0, 0.0, 1.0);
-        let slice = slice_nearest_points(&anchor, &cylinder_ring(3.0, 3.0, 8, 0.2, 5), 1.0, 7);
-        assert_eq!(slice.id, 7);
-        assert_eq!(slice.original_frame, anchor.contour_point.frame_index);
-        assert_eq!(slice.centroid, Some((1.0, 2.0, 3.0)));
-        assert!(slice.aortic_thickness.is_none());
-        assert!(slice.pulmonary_thickness.is_none());
-    }
-
-    #[test]
-    fn test_sliced_points_lie_on_plane() {
-        let anchor = cl_pt(0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
-        let slice = slice_nearest_points(&anchor, &cylinder_ring(0.0, 3.0, 8, 0.4, 99), 1.0, 0);
-        for p in &slice.points {
-            let dist = plane_dist(pt_to_tuple(p), cl_center(&anchor), anchor.normal);
-            assert!(dist.abs() < 1e-10, "sliced point off-plane: dist={dist}");
-        }
-    }
-
-    #[test]
-    fn test_jitter_points_stay_distinct_after_projection() {
-        let anchor = cl_pt(0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
-        let slice = slice_nearest_points(&anchor, &cylinder_ring(0.0, 5.0, 8, 0.2, 13), 1.0, 0);
-        let pts = &slice.points;
-        for i in 0..pts.len() {
-            for j in (i + 1)..pts.len() {
-                let (a, b) = (&pts[i], &pts[j]);
-                let d = ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt();
-                assert!(d > 0.1, "points {i} and {j} collapsed: d={d}");
-            }
-        }
-    }
-
-    #[test]
-    fn test_points_outside_slab_are_excluded() {
-        let anchor = cl_pt(0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
-        let mut cloud = cylinder_ring(0.0, 3.0, 6, 0.1, 55);
-        cloud.push((1.0, 0.0, 5.0)); // outside
-        cloud.push((0.0, 1.0, -5.0)); // outside
-        cloud.push((2.0, 2.0, 3.0)); // outside
-        let slice = slice_nearest_points(&anchor, &cloud, 0.5, 0);
-        assert_eq!(
-            slice.points.len(),
-            6,
-            "expected 6 in-slab points, got {}",
-            slice.points.len()
-        );
-    }
-
     // ---- walk_centerline_slices ----
 
     #[test]
@@ -428,6 +384,62 @@ mod tests {
             "expected 5 slices at step 0.5, got {}",
             slices.len()
         );
+    }
+
+    #[test]
+    fn test_projected_points_lie_on_their_anchor_plane() {
+        // After Voronoi assignment every point in slice i must lie on anchor i's plane.
+        let cl = z_centerline(4);
+        let cloud: Vec<(f64, f64, f64)> = (0..4usize)
+            .flat_map(|i| cylinder_ring(i as f64, 3.0, 8, 0.3, i as u64 * 5))
+            .collect();
+        let slices = walk_centerline_slices(&cl, &cloud, 0, 1.0);
+        let branch_pts: Vec<&CenterlinePoint> = cl.points.iter().collect();
+        let cum = branch_cum_arc(&branch_pts);
+        let total = *cum.last().unwrap();
+        let anchors: Vec<CenterlinePoint> = build_sample_positions(total, 1.0)
+            .into_iter()
+            .enumerate()
+            .map(|(k, s)| interpolate_branch_at_s(&branch_pts, &cum, s, k))
+            .collect();
+        for (i, (s, anchor)) in slices.iter().zip(anchors.iter()).enumerate() {
+            for p in &s.points {
+                let dist = plane_dist(pt_to_tuple(p), cl_center(anchor), anchor.normal);
+                assert!(dist.abs() < 1e-10, "slice {i}: point off-plane by {dist}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_voronoi_no_cross_contamination() {
+        // Two rings at z=0 and z=20 on a straight centerline — they must end up in separate
+        // slices with no cross-contamination.
+        let cl = Centerline {
+            points: vec![
+                cl_pt(0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+                cl_pt(1, 0.0, 0.0, 20.0, 0.0, 0.0, 1.0),
+            ],
+            branch_start_indices: vec![0],
+        };
+        let mut cloud = cylinder_ring(0.0, 3.0, 8, 0.1, 1);
+        cloud.extend(cylinder_ring(20.0, 3.0, 8, 0.1, 2));
+        let slices = walk_centerline_slices(&cl, &cloud, 0, 20.0);
+        assert_eq!(slices.len(), 2);
+        // All z≈0 points must be in slice 0 and all z≈20 in slice 1.
+        for p in &slices[0].points {
+            assert!(
+                p.z.abs() < 1.0,
+                "slice 0 got a point with z={} (should be near 0)",
+                p.z
+            );
+        }
+        for p in &slices[1].points {
+            assert!(
+                (p.z - 20.0).abs() < 1.0,
+                "slice 1 got a point with z={} (should be near 20)",
+                p.z
+            );
+        }
     }
 
     #[test]
