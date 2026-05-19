@@ -38,6 +38,15 @@ pub fn walk_centerline_slices(
         return vec![];
     }
 
+    // Collect raw centerline points from every OTHER branch for competitive Voronoi.
+    // A mesh point is only assigned to the target branch if no other-branch centerline
+    // point is closer (in 3-D) than the nearest target-branch anchor.
+    let other_pts: Vec<&CenterlinePoint> = centerline
+        .points
+        .iter()
+        .filter(|p| p.branch_id != branch_id)
+        .collect();
+
     // Voronoi: each mesh point goes to its geometrically closest anchor.
     let mut buckets: Vec<Vec<ContourPoint>> = vec![vec![]; anchors.len()];
     for &(px, py, pz) in points {
@@ -61,16 +70,37 @@ pub fn walk_centerline_slices(
             da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
         });
         if let Some((anchor_idx, anchor)) = closest {
-            let (qx, qy, qz) = project_to_plane((px, py, pz), anchor);
-            let point_index = buckets[anchor_idx].len() as u32;
-            buckets[anchor_idx].push(ContourPoint {
-                frame_index: anchor_idx as u32,
-                point_index,
-                x: qx,
-                y: qy,
-                z: qz,
-                aortic: false,
+            let own_dist = sq_dist3(
+                px,
+                py,
+                pz,
+                anchor.contour_point.x,
+                anchor.contour_point.y,
+                anchor.contour_point.z,
+            );
+            // Reject the point if any other-branch centerline point is closer.
+            let outcompeted = other_pts.iter().any(|op| {
+                sq_dist3(
+                    px,
+                    py,
+                    pz,
+                    op.contour_point.x,
+                    op.contour_point.y,
+                    op.contour_point.z,
+                ) < own_dist
             });
+            if !outcompeted {
+                let (qx, qy, qz) = project_to_plane((px, py, pz), anchor);
+                let point_index = buckets[anchor_idx].len() as u32;
+                buckets[anchor_idx].push(ContourPoint {
+                    frame_index: anchor_idx as u32,
+                    point_index,
+                    x: qx,
+                    y: qy,
+                    z: qz,
+                    aortic: false,
+                });
+            }
         }
     }
 
