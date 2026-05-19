@@ -1940,6 +1940,23 @@ impl PyCenterline {
             branch_start_indices: vec![0],
         })
     }
+
+    /// Normalise branch ordering so that downstream processing is consistent.
+    ///
+    /// * **Branch 0** – the point with the highest z-coordinate is moved to
+    ///   index 0 (the whole branch is reversed if necessary).
+    /// * **Side branches** – the endpoint closest to branch 0 becomes index 0
+    ///   (the branch is reversed if necessary).
+    ///
+    /// Returns
+    /// -------
+    /// PyCenterline
+    ///     New centerline with all branches in canonical order.
+    pub fn check_centerline(&self) -> PyResult<PyCenterline> {
+        let mut cl = self.to_rust_centerline();
+        cl.check_centerline();
+        Ok(PyCenterline::from(&cl))
+    }
 }
 
 // Moved out of pymethods since it's for internal use

@@ -282,6 +282,7 @@ class PyCenterlinePoint:
 
     contour_point: PyContourPoint
     normal: tuple[float, float, float]
+    branch_id: int
 
     def __init__(
         self,
@@ -374,6 +375,20 @@ class PyCenterline:
         ------
         ValueError
             If branch_id does not exist in this centerline.
+        """
+        ...
+
+    def check_centerline(self) -> PyCenterline:
+        """Normalise branch ordering and return the corrected centerline.
+
+        For branch 0, the point with the highest z-coordinate is placed at
+        index 0 (reversed if necessary).  For every side branch, the endpoint
+        closest to branch 0 is placed at index 0.
+
+        Returns
+        -------
+        PyCenterline
+            A new centerline with corrected branch ordering.
         """
         ...
 

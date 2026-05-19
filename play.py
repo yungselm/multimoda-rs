@@ -37,6 +37,7 @@ results, (rca_cl, lca_cl, ao_cl) = mm.label_geometry(
 )
 
 rca_cl = rca_cl.calculate_branches(2.0)
+rca_cl = rca_cl.check_centerline()
 print(rca_cl)
 
 print(rca_cl.points[0])
@@ -72,10 +73,12 @@ plt.tight_layout()
 plt.show()
 
 lca_cl = lca_cl.calculate_branches(2.0)
+lca_cl = lca_cl.check_centerline()
 list_edges = lca_cl.find_sharp_angles(0, 0.0)
 print(list_edges)
-lca_cl = lca_cl.split_branch(0, 334)
+lca_cl = lca_cl.split_branch(0, 473)
 lca_cl = lca_cl.merge_branches(0, 4)
+lca_cl = lca_cl.check_centerline()
 
 list_x = []
 list_y = []
@@ -117,7 +120,8 @@ print(
 plt.tight_layout()
 plt.show()
 results = mm.label_branches(rca_cl, results)
-contours = mm.discretize_vessel(rca_cl, results["rca_points_side_1"], 1, 1.0, 200)
+contours = mm.discretize_vessel(rca_cl, results["rca_points_main"], 0, 1.0, 100)
+# contours = mm.discretize_vessel(ao_cl, results['aorta_points'], 0, 1.0, 100)
 print(f"Discretized {len(contours)} contours")
 
 fig = plt.figure()
@@ -154,5 +158,9 @@ ax.set_title(f"Discretized vessel — {len(contours)} contours")
 plt.tight_layout()
 plt.show()
 
+results = mm.label_branches(lca_cl, results, results_key="lca_points")
+contours = mm.discretize_vessel(lca_cl, results["lca_points_main"], 0, 1.0, 100)
 print(contours[0].get_area())
+print(contours[0])
 print(contours[-1].get_area())
+print(contours[-1])

@@ -877,6 +877,67 @@ impl Centerline {
 
         self.rebuild_from_branches(branches);
     }
+
+    /// Ensure consistent ordering across all branches:
+    ///
+    /// * **Branch 0** – the point with the highest z-coordinate must be at index 0.
+    ///   If it is not, the entire branch is reversed.
+    /// * **Side branches (1 … n-1)** – the endpoint that is closest to any point on
+    ///   branch 0 must be the *first* point of the branch.  If the last point is
+    ///   closer to branch 0 than the first, the branch is reversed.
+    pub fn check_centerline(&mut self) {
+        let n = self.branch_start_indices.len();
+        if n == 0 {
+            return;
+        }
+
+        let mut branches = self.branches_as_vecs();
+
+        // --- Branch 0: highest-z point must be at index 0 ---
+        if !branches[0].is_empty() {
+            let max_z_idx = branches[0]
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| {
+                    a.contour_point
+                        .z
+                        .partial_cmp(&b.contour_point.z)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            if max_z_idx != 0 {
+                branches[0].reverse();
+            }
+        }
+
+        // --- Side branches: first point must be the one closest to branch 0 ---
+        for k in 1..n {
+            if branches[k].is_empty() || branches[0].is_empty() {
+                continue;
+            }
+
+            // Clone endpoints so we can borrow branches[0] freely afterwards.
+            let first_pt = branches[k][0].contour_point;
+            let last_pt = branches[k].last().unwrap().contour_point;
+
+            let dist_first = branches[0]
+                .iter()
+                .map(|p| p.contour_point.distance_to(&first_pt))
+                .fold(f64::INFINITY, f64::min);
+
+            let dist_last = branches[0]
+                .iter()
+                .map(|p| p.contour_point.distance_to(&last_pt))
+                .fold(f64::INFINITY, f64::min);
+
+            if dist_last < dist_first {
+                branches[k].reverse();
+            }
+        }
+
+        self.rebuild_from_branches(branches);
+    }
 }
 
 #[cfg(test)]
