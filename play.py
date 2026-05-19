@@ -117,7 +117,7 @@ print(
 plt.tight_layout()
 plt.show()
 results = mm.label_branches(rca_cl, results)
-contours = mm.discretize_vessel(rca_cl, results["rca_points_side"], 1, 1.0, 200)
+contours = mm.discretize_vessel(rca_cl, results["rca_points_side_1"], 1, 1.0, 200)
 print(f"Discretized {len(contours)} contours")
 
 fig = plt.figure()
