@@ -753,3 +753,12 @@ def smooth_mesh_labels(
     adjacency_map: dict[int, set[int]],
     iterations: int,
 ) -> list[int]: ...
+
+
+def discretize_vessel(
+    centerline: PyCenterline,
+    points: list[tuple[float, float, float]],
+    branch_id: int = ...,
+    step_size: float = ...,
+    n_points: int = ...,
+) -> list[PyContour]: ...

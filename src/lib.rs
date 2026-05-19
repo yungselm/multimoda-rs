@@ -6,9 +6,9 @@ mod intravascular;
 
 use crate::ccta::binding::ccta_py::{
     adjust_diameter_centerline_morphing_simple, build_adjacency_map, clean_outlier_points,
-    find_aortic_scaling, find_aortic_wall_scaling, find_centerline_bounded_points_simple,
-    find_points_by_cl_region, find_proximal_distal_scaling, remove_occluded_points_ray_triangle,
-    smooth_mesh_labels,
+    discretize_vessel, find_aortic_scaling, find_aortic_wall_scaling,
+    find_centerline_bounded_points_simple, find_points_by_cl_region, find_proximal_distal_scaling,
+    remove_occluded_points_ray_triangle, smooth_mesh_labels,
 };
 use crate::intravascular::binding::align::{align_combined, align_manual, align_three_point};
 use crate::intravascular::binding::classes::*;
@@ -64,6 +64,7 @@ fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<(
     m.add_function(wrap_pyfunction!(find_aortic_wall_scaling, m.clone())?)?;
     m.add_function(wrap_pyfunction!(build_adjacency_map, m.clone())?)?;
     m.add_function(wrap_pyfunction!(smooth_mesh_labels, m.clone())?)?;
+    m.add_function(wrap_pyfunction!(discretize_vessel, m.clone())?)?;
 
     // Updated class registration
     m.add_class::<PyInputData>()?;

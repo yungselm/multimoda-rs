@@ -31,6 +31,7 @@ from ._processing import (
     find_centerline_bounded_points_simple,
     find_proximal_distal_scaling,
     build_adjacency_map,
+    discretize_vessel,
 )
 from ._converters import (
     to_array,
@@ -113,6 +114,7 @@ __all__ = [
     "postprocess_stitched_mesh",
     "manual_hole_fill",
     "plot_results_key",
+    "discretize_vessel",
 ]
 
 # def _print_banner():

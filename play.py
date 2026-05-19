@@ -24,6 +24,18 @@ rca_cl = mm.numpy_to_centerline(rca_cl_raw)
 lca_cl = mm.numpy_to_centerline(lca_cl_raw)
 aorta_cl = mm.numpy_to_centerline(aorta_cl_raw)
 
+results, (rca_cl, lca_cl, ao_cl) = mm.label_geometry(
+    path_ccta_geometry="./NARCO_119_noside.stl",
+    path_centerline_aorta="./centerline_aorta.csv",
+    path_centerline_rca="./centerline_rca_short.csv",
+    path_centerline_lca="./centerline_lca.csv",
+    bounding_sphere_radius_mm=3.0,
+    n_points_intramural=100,
+    anomalous_rca=True,
+    anomalous_lca=False,
+    control_plot=False,
+)
+
 rca_cl = rca_cl.calculate_branches(2.0)
 print(rca_cl)
 
@@ -102,5 +114,42 @@ print(
 #         va="center",
 #     )
 
+plt.tight_layout()
+plt.show()
+
+contours = mm.discretize_vessel(ao_cl, results["aorta_points"], 0, 1.0, 200)
+print(f"Discretized {len(contours)} contours")
+
+fig = plt.figure()
+ax = fig.add_subplot(projection="3d")
+
+all_pts = []
+for contour in contours:
+    xs = [p.x for p in contour.points]
+    ys = [p.y for p in contour.points]
+    zs = [p.z for p in contour.points]
+    # close the loop
+    xs.append(xs[0])
+    ys.append(ys[0])
+    zs.append(zs[0])
+    ax.plot(xs, ys, zs, color="steelblue", linewidth=0.5, alpha=0.6)
+    all_pts.extend(zip(xs, ys, zs))
+    if contour.centroid is not None:
+        cx, cy, cz = contour.centroid
+        ax.scatter(cx, cy, cz, color="yellow", s=8, zorder=5)
+
+# Equal aspect ratio (real scale)
+if all_pts:
+    arr = np.array(all_pts)
+    mid = arr.mean(axis=0)
+    half = (arr.max(axis=0) - arr.min(axis=0)).max() / 2
+    ax.set_xlim(mid[0] - half, mid[0] + half)
+    ax.set_ylim(mid[1] - half, mid[1] + half)
+    ax.set_zlim(mid[2] - half, mid[2] + half)
+
+ax.set_xlabel("X")
+ax.set_ylabel("Y")
+ax.set_zlabel("Z")
+ax.set_title(f"Discretized vessel — {len(contours)} contours")
 plt.tight_layout()
 plt.show()

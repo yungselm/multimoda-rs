@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .multimodars import (
+    PyContour,
     PyContourType,
     PyGeometry,
     PyGeometryPair,
@@ -21,6 +22,7 @@ from .multimodars import (
     find_centerline_bounded_points_simple as _find_centerline_bounded_points_simple,
     find_proximal_distal_scaling as _find_proximal_distal_scaling,
     build_adjacency_map as _build_adjacency_map,
+    discretize_vessel as _discretize_vessel,
 )
 
 _AlignLog = list[tuple[int, int, float, float, float, float, float]]
@@ -1423,4 +1425,55 @@ def build_adjacency_map(
     >>> print(adj[1])  # {0, 2, 3}"""
     return _build_adjacency_map(
         faces,
+    )
+
+
+def discretize_vessel(
+    centerline: "PyCenterline",
+    points: list[tuple[float, float, float]],
+    branch_id: int = 0,
+    step_size: float = 0.5,
+    n_points: int = 200,
+) -> list[PyContour]:
+    """Discretize a vessel surface mesh along a centerline branch into uniform cross-sections.
+
+    Walks the specified centerline branch at uniform arc-length intervals of ``step_size``,
+    projects the supplied mesh points onto each perpendicular cross-sectional plane, discards
+    incomplete slices (empty or not covering all four angular quadrants), and resamples the
+    remaining contours to exactly ``n_points`` evenly-spaced points via a closed Catmull-Rom
+    spline.
+
+    Parameters
+    ----------
+    centerline : PyCenterline
+        Centerline object containing one or more branches.
+    points : list of tuple of (float, float, float)
+        3-D surface mesh points ``(x, y, z)`` to project onto each cross-section.
+    branch_id : int, optional
+        Index of the centerline branch to walk. Default is ``0``.
+    step_size : float, optional
+        Arc-length distance between consecutive cross-sections in the same units as
+        ``centerline`` and ``points``. Default is ``0.5``.
+    n_points : int, optional
+        Number of evenly-spaced points per output contour. Default is ``200``.
+
+    Returns
+    -------
+    contours : list of PyContour
+        One contour per surviving cross-section, each containing exactly ``n_points``
+        uniformly distributed points lying on a Catmull-Rom spline fit to the projected
+        surface points.
+
+    Examples
+    --------
+    >>> import multimodars as mm
+    >>>
+    >>> contours = mm.discretize_vessel(centerline, mesh_points, branch_id=0, step_size=0.5)
+    >>> print(len(contours))"""
+    return _discretize_vessel(
+        centerline,
+        points,
+        branch_id,
+        step_size,
+        n_points,
     )

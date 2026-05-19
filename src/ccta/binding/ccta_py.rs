@@ -10,7 +10,8 @@ use crate::ccta::adjust_mesh::scale_coronary::{
     centerline_based_diameter_optimization, centerline_based_wall_diameter_optimization,
     clean_up_non_section_points, find_points_by_cl_region_rs,
 };
-use crate::intravascular::binding::classes::{PyCenterline, PyFrame};
+use crate::ccta::discretizing::discretize_vessel_rs;
+use crate::intravascular::binding::classes::{PyCenterline, PyContour, PyFrame};
 use pyo3::prelude::*;
 
 type Point3D = (f64, f64, f64);
@@ -384,6 +385,53 @@ pub fn build_adjacency_map(faces: Vec<[usize; 3]>) -> HashMap<usize, HashSet<usi
     }
 
     adjacency
+}
+
+/// Discretize a coronary vessel into uniform cross-sectional contours.
+///
+/// Walks ``branch_id`` of ``centerline`` at uniform arc-length intervals of
+/// ``step_size``, projects the supplied mesh ``points`` onto the perpendicular
+/// plane at each position, filters out empty and incomplete (half-circle) slices,
+/// and resamples each surviving slice to exactly ``n_points`` evenly-spaced
+/// points via a closed Catmull-Rom spline.
+///
+/// Parameters
+/// ----------
+/// centerline : PyCenterline
+///     Centerline of the vessel to discretize.
+/// points : list of tuple of float
+///     ``(x, y, z)`` surface point cloud of the vessel (e.g. mesh vertices).
+/// branch_id : int
+///     Branch of the centerline to walk (0 = main vessel, 1+ = side branches).
+/// step_size : float
+///     Arc-length step between successive cross-sections in mm.  The slab
+///     half-thickness used for point selection is ``step_size / 2``.
+/// n_points : int
+///     Number of evenly-spaced points on each output contour.
+///
+/// Returns
+/// -------
+/// contours : list of PyContour
+///     One uniformly-sampled closed contour per valid cross-section.
+///
+/// Examples
+/// --------
+/// >>> import multimodars as mm
+/// >>> centerline = mm.load_centerline("vessel.json")
+/// >>> vertices = mesh.vertices.tolist()
+/// >>> contours = mm.discretize_vessel(centerline, vertices, 0, 0.5, 200)
+/// >>> print(f"Got {len(contours)} cross-sections")
+#[pyfunction]
+pub fn discretize_vessel(
+    centerline: PyCenterline,
+    points: Vec<Point3D>,
+    branch_id: u32,
+    step_size: f64,
+    n_points: usize,
+) -> PyResult<Vec<PyContour>> {
+    let rust_centerline = centerline.to_rust_centerline();
+    let contours = discretize_vessel_rs(&rust_centerline, &points, branch_id, step_size, n_points);
+    Ok(contours.iter().map(PyContour::from).collect())
 }
 
 /// Smooth per-vertex mesh labels by majority voting over neighbours.
