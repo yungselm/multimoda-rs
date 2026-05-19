@@ -44,6 +44,7 @@ from .ccta import label, scale, stitch, export_section_stl, create_wall_mesh
 from .ccta.labeling import (
     label_geometry,
     label_anomalous_region,
+    label_branches,
 )
 from .ccta.manipulating import (
     scale_region_centerline_morphing,
@@ -115,6 +116,7 @@ __all__ = [
     "manual_hole_fill",
     "plot_results_key",
     "discretize_vessel",
+    "label_branches",
 ]
 
 # def _print_banner():
