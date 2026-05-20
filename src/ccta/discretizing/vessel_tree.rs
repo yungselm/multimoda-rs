@@ -1,9 +1,9 @@
 use crate::intravascular::io::geometry::Contour;
 use crate::intravascular::io::input::Centerline;
 use anyhow::{Ok, Result};
+use nalgebra::Vector3;
 
 use super::discretize_vessel_rs;
-use super::utils::smooth_centerline;
 
 pub struct ReferenceTriplet {
     pub main_ref: (f64, f64, f64),
@@ -22,8 +22,10 @@ pub struct DiscretizedVesselTree {
     pub lca_branches: Vec<Vec<Contour>>,
     pub rca_references: Vec<ReferenceTriplet>,
     pub lca_references: Vec<ReferenceTriplet>,
-    pub index_ao_lca: usize,
-    pub index_ao_rca: usize,
+    /// Centroid of the aorta slice closest to the RCA ostium.
+    pub ao_rca: (f64, f64, f64),
+    /// Centroid of the aorta slice closest to the LCA ostium.
+    pub ao_lca: (f64, f64, f64),
     pub pts_cusp_rcc: Option<Vec<(f64, f64, f64)>>,
     pub pts_cusp_lcc: Option<Vec<(f64, f64, f64)>>,
     pub pts_cusp_acc: Option<Vec<(f64, f64, f64)>>,
@@ -41,8 +43,8 @@ impl DiscretizedVesselTree {
         lca_branches: Vec<Vec<Contour>>,
         rca_references: Vec<ReferenceTriplet>,
         lca_references: Vec<ReferenceTriplet>,
-        index_ao_lca: usize,
-        index_ao_rca: usize,
+        ao_lca: (f64, f64, f64),
+        ao_rca: (f64, f64, f64),
         pts_cusp_rcc: Option<Vec<(f64, f64, f64)>>,
         pts_cusp_lcc: Option<Vec<(f64, f64, f64)>>,
         pts_cusp_acc: Option<Vec<(f64, f64, f64)>>,
@@ -58,8 +60,8 @@ impl DiscretizedVesselTree {
             lca_branches,
             rca_references,
             lca_references,
-            index_ao_lca,
-            index_ao_rca,
+            ao_lca,
+            ao_rca,
             pts_cusp_rcc,
             pts_cusp_lcc,
             pts_cusp_acc,
@@ -95,43 +97,23 @@ impl DiscretizedVesselTree {
         step_size: f64,
         n_points: usize,
     ) -> Result<DiscretizedVesselTree> {
-        const SMOOTH_SIGMA: f64 = 2.5;
-
-        let ao_cl_s = smooth_centerline(ao_cl, SMOOTH_SIGMA);
-        let rca_cl_s = smooth_centerline(rca_cl, SMOOTH_SIGMA);
-        let lca_cl_s = smooth_centerline(lca_cl, SMOOTH_SIGMA);
-
-        let discretized_aorta = discretize_vessel_rs(&ao_cl_s, points_ao, 0, step_size, n_points);
-        let discretized_rca_main = discretize_vessel_rs(
-            &rca_cl_s,
-            points_rca_main,
-            branch_id_rca,
-            step_size,
-            n_points,
-        );
-        let discretized_lca_main = discretize_vessel_rs(
-            &lca_cl_s,
-            points_lca_main,
-            branch_id_lca,
-            step_size,
-            n_points,
-        );
+        let discretized_aorta = discretize_vessel_rs(ao_cl, points_ao, 0, step_size, n_points);
+        let discretized_rca_main =
+            discretize_vessel_rs(rca_cl, points_rca_main, branch_id_rca, step_size, n_points);
+        let discretized_lca_main =
+            discretize_vessel_rs(lca_cl, points_lca_main, branch_id_lca, step_size, n_points);
 
         // side_branches_rca[i] carries the surface points for branch_id i+1.
         let rca_branches: Vec<Vec<Contour>> = side_branches_rca
             .iter()
             .enumerate()
-            .map(|(i, pts)| {
-                discretize_vessel_rs(&rca_cl_s, pts, (i + 1) as u32, step_size, n_points)
-            })
+            .map(|(i, pts)| discretize_vessel_rs(rca_cl, pts, (i + 1) as u32, step_size, n_points))
             .collect();
 
         let lca_branches: Vec<Vec<Contour>> = side_branches_lca
             .iter()
             .enumerate()
-            .map(|(i, pts)| {
-                discretize_vessel_rs(&lca_cl_s, pts, (i + 1) as u32, step_size, n_points)
-            })
+            .map(|(i, pts)| discretize_vessel_rs(lca_cl, pts, (i + 1) as u32, step_size, n_points))
             .collect();
 
         Ok(DiscretizedVesselTree {
@@ -143,8 +125,8 @@ impl DiscretizedVesselTree {
             lca_branches,
             rca_references: vec![],
             lca_references: vec![],
-            index_ao_lca: 0,
-            index_ao_rca: 0,
+            ao_lca: (0.0, 0.0, 0.0),
+            ao_rca: (0.0, 0.0, 0.0),
             pts_cusp_rcc: None,
             pts_cusp_lcc: None,
             pts_cusp_acc: None,
@@ -153,9 +135,9 @@ impl DiscretizedVesselTree {
         })
     }
 
-    /// Compute `index_ao_rca`, `index_ao_lca`, `rca_references`, and `lca_references`.
+    /// Compute `ao_rca`, `ao_lca`, `rca_references`, and `lca_references`.
     ///
-    /// **`index_ao_*`** – index into `discretized_aorta` whose centroid is closest to
+    /// **`ao_rca` / `ao_lca`** – centroid of the aorta slice whose centroid is closest to
     /// the first contour of the respective main-vessel discretization.
     ///
     /// **Reference triplets** are built at two kinds of landmarks, then sorted
@@ -178,49 +160,41 @@ impl DiscretizedVesselTree {
     /// Left/right is determined by an "up" hint = direction from aorta centroid to
     /// first main-vessel centroid, projected perpendicular to the local vessel normal.
     pub fn calculate_ref_pts(mut self) -> Self {
-        // Compute index_ao_rca / index_ao_lca: aorta slice closest to each vessel's first contour.
         if !self.discretized_aorta.is_empty() {
             if !self.discretized_rca_main.is_empty() {
                 let c0 = contour_centroid(&self.discretized_rca_main[0]);
-                self.index_ao_rca = self
-                    .discretized_aorta
-                    .iter()
-                    .enumerate()
-                    .min_by(|(_, a), (_, b)| {
-                        v3_dist(contour_centroid(a), c0)
-                            .partial_cmp(&v3_dist(contour_centroid(b), c0))
-                            .unwrap()
-                    })
-                    .map(|(i, _)| i)
-                    .unwrap_or(0);
+                if let Some(closest) = self.discretized_aorta.iter().min_by(|a, b| {
+                    (contour_centroid(a) - c0)
+                        .norm()
+                        .partial_cmp(&(contour_centroid(b) - c0).norm())
+                        .unwrap()
+                }) {
+                    let ao_centroid = contour_centroid(closest);
+                    self.ao_rca = (ao_centroid.x, ao_centroid.y, ao_centroid.z);
+                    self.rca_references = vessel_references(
+                        ao_centroid,
+                        &self.discretized_rca_main,
+                        &self.rca_branches,
+                    );
+                }
             }
             if !self.discretized_lca_main.is_empty() {
                 let c0 = contour_centroid(&self.discretized_lca_main[0]);
-                self.index_ao_lca = self
-                    .discretized_aorta
-                    .iter()
-                    .enumerate()
-                    .min_by(|(_, a), (_, b)| {
-                        v3_dist(contour_centroid(a), c0)
-                            .partial_cmp(&v3_dist(contour_centroid(b), c0))
-                            .unwrap()
-                    })
-                    .map(|(i, _)| i)
-                    .unwrap_or(0);
+                if let Some(closest) = self.discretized_aorta.iter().min_by(|a, b| {
+                    (contour_centroid(a) - c0)
+                        .norm()
+                        .partial_cmp(&(contour_centroid(b) - c0).norm())
+                        .unwrap()
+                }) {
+                    let ao_centroid = contour_centroid(closest);
+                    self.ao_lca = (ao_centroid.x, ao_centroid.y, ao_centroid.z);
+                    self.lca_references = vessel_references(
+                        ao_centroid,
+                        &self.discretized_lca_main,
+                        &self.lca_branches,
+                    );
+                }
             }
-        }
-
-        if !self.discretized_rca_main.is_empty() && self.index_ao_rca < self.discretized_aorta.len()
-        {
-            let ao_centroid = contour_centroid(&self.discretized_aorta[self.index_ao_rca]);
-            self.rca_references =
-                vessel_references(ao_centroid, &self.discretized_rca_main, &self.rca_branches);
-        }
-        if !self.discretized_lca_main.is_empty() && self.index_ao_lca < self.discretized_aorta.len()
-        {
-            let ao_centroid = contour_centroid(&self.discretized_aorta[self.index_ao_lca]);
-            self.lca_references =
-                vessel_references(ao_centroid, &self.discretized_lca_main, &self.lca_branches);
         }
         self
     }
@@ -230,16 +204,17 @@ impl DiscretizedVesselTree {
 
 /// Build a sorted (proximal→distal) reference-triplet list for one vessel.
 fn vessel_references(
-    ao_centroid: (f64, f64, f64),
+    ao_centroid: Vector3<f64>,
     main: &[Contour],
     side_branches: &[Vec<Contour>],
 ) -> Vec<ReferenceTriplet> {
-    // Pre-compute all main-contour centroids once.
-    let main_centroids: Vec<(f64, f64, f64)> = main.iter().map(contour_centroid).collect();
+    let main_centroids: Vec<Vector3<f64>> = main.iter().map(contour_centroid).collect();
 
     // "Up" hint: direction from aorta centroid to first main-vessel centroid,
     // constant for the whole vessel to keep all refs in the same orientation frame.
-    let up_hint = v3_normalize(v3_sub(main_centroids[0], ao_centroid));
+    let up_hint = (main_centroids[0] - ao_centroid)
+        .try_normalize(1e-12)
+        .unwrap_or(Vector3::z());
 
     // (sorting_key, ReferenceTriplet) – key = index in main contour list
     let mut tagged: Vec<(usize, ReferenceTriplet)> = Vec::new();
@@ -249,16 +224,20 @@ fn vessel_references(
         if first.points.len() > 2 {
             // Normal at the ostium: toward the second contour
             let normal = if main.len() > 1 {
-                v3_normalize(v3_sub(main_centroids[1], main_centroids[0]))
+                (main_centroids[1] - main_centroids[0])
+                    .try_normalize(1e-12)
+                    .unwrap_or(Vector3::z())
             } else {
-                v3_normalize(v3_sub(main_centroids[0], ao_centroid))
+                (main_centroids[0] - ao_centroid)
+                    .try_normalize(1e-12)
+                    .unwrap_or(Vector3::z())
             };
 
             // main_ref: minor-axis point closer to the aorta
             let ((pa, pb), _) = first.find_closest_opposite_3d();
-            let pta = (pa.x, pa.y, pa.z);
-            let ptb = (pb.x, pb.y, pb.z);
-            let main_ref = if v3_dist(pta, ao_centroid) <= v3_dist(ptb, ao_centroid) {
+            let pta = Vector3::new(pa.x, pa.y, pa.z);
+            let ptb = Vector3::new(pb.x, pb.y, pb.z);
+            let main_ref_v = if (pta - ao_centroid).norm() <= (ptb - ao_centroid).norm() {
                 pta
             } else {
                 ptb
@@ -266,9 +245,9 @@ fn vessel_references(
 
             // counter_clock / clock: major-axis pair
             let ((p1, p2), _) = first.find_farthest_points();
-            let (counter_clock_ref, clock_ref) = assign_cc_clock(
-                (p1.x, p1.y, p1.z),
-                (p2.x, p2.y, p2.z),
+            let (cc, cl) = assign_cc_clock(
+                Vector3::new(p1.x, p1.y, p1.z),
+                Vector3::new(p2.x, p2.y, p2.z),
                 main_centroids[0],
                 normal,
                 up_hint,
@@ -277,9 +256,9 @@ fn vessel_references(
             tagged.push((
                 0,
                 ReferenceTriplet {
-                    main_ref,
-                    counter_clock_ref,
-                    clock_ref,
+                    main_ref: (main_ref_v.x, main_ref_v.y, main_ref_v.z),
+                    counter_clock_ref: (cc.x, cc.y, cc.z),
+                    clock_ref: (cl.x, cl.y, cl.z),
                 },
             ));
         }
@@ -297,8 +276,9 @@ fn vessel_references(
             .iter()
             .enumerate()
             .min_by(|(_, a), (_, b)| {
-                v3_dist(**a, side_c0)
-                    .partial_cmp(&v3_dist(**b, side_c0))
+                (*a - side_c0)
+                    .norm()
+                    .partial_cmp(&(*b - side_c0).norm())
                     .unwrap()
             })
             .unwrap_or((0, &main_centroids[0]));
@@ -307,11 +287,17 @@ fn vessel_references(
 
         // Local proximal→distal normal at the bifurcation
         let normal = if bifurc_idx + 1 < main.len() {
-            v3_normalize(v3_sub(main_centroids[bifurc_idx + 1], bifurc_centroid))
+            (main_centroids[bifurc_idx + 1] - bifurc_centroid)
+                .try_normalize(1e-12)
+                .unwrap_or(Vector3::z())
         } else if bifurc_idx > 0 {
-            v3_normalize(v3_sub(bifurc_centroid, main_centroids[bifurc_idx - 1]))
+            (bifurc_centroid - main_centroids[bifurc_idx - 1])
+                .try_normalize(1e-12)
+                .unwrap_or(Vector3::z())
         } else {
-            v3_normalize(v3_sub(bifurc_centroid, ao_centroid))
+            (bifurc_centroid - ao_centroid)
+                .try_normalize(1e-12)
+                .unwrap_or(Vector3::z())
         };
 
         let bifurc_contour = &main[bifurc_idx];
@@ -326,8 +312,9 @@ fn vessel_references(
             .iter()
             .enumerate()
             .min_by(|(_, a), (_, b)| {
-                v3_dist((a.x, a.y, a.z), side_c0)
-                    .partial_cmp(&v3_dist((b.x, b.y, b.z), side_c0))
+                (Vector3::new(a.x, a.y, a.z) - side_c0)
+                    .norm()
+                    .partial_cmp(&(Vector3::new(b.x, b.y, b.z) - side_c0).norm())
                     .unwrap()
             })
             .map(|(i, _)| i)
@@ -340,9 +327,9 @@ fn vessel_references(
         let pp = &bifurc_contour.points[idx_plus];
         let pm = &bifurc_contour.points[idx_minus];
 
-        let (counter_clock_ref, clock_ref) = assign_cc_clock(
-            (pp.x, pp.y, pp.z),
-            (pm.x, pm.y, pm.z),
+        let (cc, cl) = assign_cc_clock(
+            Vector3::new(pp.x, pp.y, pp.z),
+            Vector3::new(pm.x, pm.y, pm.z),
             bifurc_centroid,
             normal,
             up_hint,
@@ -351,9 +338,9 @@ fn vessel_references(
         tagged.push((
             bifurc_idx,
             ReferenceTriplet {
-                main_ref: side_c0,
-                counter_clock_ref,
-                clock_ref,
+                main_ref: (side_c0.x, side_c0.y, side_c0.z),
+                counter_clock_ref: (cc.x, cc.y, cc.z),
+                clock_ref: (cl.x, cl.y, cl.z),
             },
         ));
     }
@@ -370,70 +357,34 @@ fn vessel_references(
 /// - `right = up_perp × normal` (right-hand rule: up × forward = right)
 /// - `p` is counter_clock (left) if its component along `right` is negative
 fn assign_cc_clock(
-    p1: (f64, f64, f64),
-    p2: (f64, f64, f64),
-    centroid: (f64, f64, f64),
-    normal: (f64, f64, f64),
-    up_hint: (f64, f64, f64),
-) -> ((f64, f64, f64), (f64, f64, f64)) {
-    // Project up_hint perpendicular to normal
-    let up_perp = v3_normalize(v3_sub(up_hint, v3_scale(normal, v3_dot(up_hint, normal))));
+    p1: Vector3<f64>,
+    p2: Vector3<f64>,
+    centroid: Vector3<f64>,
+    normal: Vector3<f64>,
+    up_hint: Vector3<f64>,
+) -> (Vector3<f64>, Vector3<f64>) {
+    let up_perp = (up_hint - normal * up_hint.dot(&normal))
+        .try_normalize(1e-12)
+        .unwrap_or(Vector3::zeros());
 
     // right = up_perp × normal  (when looking in +normal, right is clockwise)
-    let right = v3_cross(up_perp, normal);
+    let right = up_perp.cross(&normal);
 
-    let v1 = v3_sub(p1, centroid);
-    if v3_dot(v1, right) < 0.0 {
+    if (p1 - centroid).dot(&right) < 0.0 {
         (p1, p2) // p1 is to the left → counter_clock
     } else {
         (p2, p1) // p2 is to the left → counter_clock
     }
 }
 
-// ─── 3-D vector micro-utilities (tuple-based, no nalgebra dependency) ────────
-
-fn contour_centroid(c: &Contour) -> (f64, f64, f64) {
-    if let Some(cen) = c.centroid {
-        return cen;
+fn contour_centroid(c: &Contour) -> Vector3<f64> {
+    if let Some((x, y, z)) = c.centroid {
+        return Vector3::new(x, y, z);
     }
     let n = c.points.len() as f64;
-    let (sx, sy, sz) = c.points.iter().fold((0.0, 0.0, 0.0), |(sx, sy, sz), p| {
-        (sx + p.x, sy + p.y, sz + p.z)
-    });
-    (sx / n, sy / n, sz / n)
-}
-
-#[inline]
-fn v3_sub(a: (f64, f64, f64), b: (f64, f64, f64)) -> (f64, f64, f64) {
-    (a.0 - b.0, a.1 - b.1, a.2 - b.2)
-}
-#[inline]
-fn v3_scale(v: (f64, f64, f64), s: f64) -> (f64, f64, f64) {
-    (v.0 * s, v.1 * s, v.2 * s)
-}
-#[inline]
-fn v3_dot(a: (f64, f64, f64), b: (f64, f64, f64)) -> f64 {
-    a.0 * b.0 + a.1 * b.1 + a.2 * b.2
-}
-#[inline]
-fn v3_cross(a: (f64, f64, f64), b: (f64, f64, f64)) -> (f64, f64, f64) {
-    (
-        a.1 * b.2 - a.2 * b.1,
-        a.2 * b.0 - a.0 * b.2,
-        a.0 * b.1 - a.1 * b.0,
-    )
-}
-#[inline]
-fn v3_dist(a: (f64, f64, f64), b: (f64, f64, f64)) -> f64 {
-    let d = v3_sub(a, b);
-    (d.0 * d.0 + d.1 * d.1 + d.2 * d.2).sqrt()
-}
-#[inline]
-fn v3_normalize(v: (f64, f64, f64)) -> (f64, f64, f64) {
-    let len = (v.0 * v.0 + v.1 * v.1 + v.2 * v.2).sqrt();
-    if len > 1e-12 {
-        (v.0 / len, v.1 / len, v.2 / len)
-    } else {
-        (0.0, 0.0, 0.0)
-    }
+    let sum = c
+        .points
+        .iter()
+        .fold(Vector3::zeros(), |acc, p| acc + Vector3::new(p.x, p.y, p.z));
+    sum / n
 }

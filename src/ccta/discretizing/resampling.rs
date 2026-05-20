@@ -16,7 +16,7 @@ pub fn create_uniform_contours(contours: Vec<Contour>, n_points: usize) -> Vec<C
         .collect()
 }
 
-// Returns true when the contour's points cover all four 90-degree sectors around the centroid.
+/// Returns true when the contour's points cover all four 90-degree sectors around the centroid.
 fn has_full_angular_coverage(contour: &Contour) -> bool {
     if contour.points.len() < 4 {
         return false;
@@ -25,154 +25,187 @@ fn has_full_angular_coverage(contour: &Contour) -> bool {
         Some(c) => c,
         None => return false,
     };
-    let (u, v) = match local_basis(&contour.points, centroid) {
-        Some(b) => b,
+    let (axis_u, axis_v) = match local_basis(&contour.points, centroid) {
+        Some(basis) => basis,
         None => return false,
     };
-    let c = Vector3::new(centroid.0, centroid.1, centroid.2);
+    let centroid_v = Vector3::new(centroid.0, centroid.1, centroid.2);
     let mut quadrants = [false; 4];
     for p in &contour.points {
-        let pv = Vector3::new(p.x - c.x, p.y - c.y, p.z - c.z);
-        let qu = pv.dot(&u);
-        let qv = pv.dot(&v);
-        let idx = match (qu >= 0.0, qv >= 0.0) {
+        let offset = Vector3::new(p.x - centroid_v.x, p.y - centroid_v.y, p.z - centroid_v.z);
+        let proj_u = offset.dot(&axis_u);
+        let proj_v = offset.dot(&axis_v);
+        let quadrant = match (proj_u >= 0.0, proj_v >= 0.0) {
             (true, true) => 0,
             (false, true) => 1,
             (false, false) => 2,
             (true, false) => 3,
         };
-        quadrants[idx] = true;
+        quadrants[quadrant] = true;
     }
     quadrants.iter().all(|&q| q)
 }
 
-// Sort by angle in the local plane, fit a closed Catmull-Rom spline, resample to n_points.
+/// Angle-sort control points, fit a closed Catmull-Rom spline, resample to `n_points`.
 fn resample_spline(contour: Contour, n_points: usize) -> Option<Contour> {
     if n_points < 2 || contour.points.len() < 3 {
         return None;
     }
     let centroid = contour.centroid?;
-    let (u, v) = local_basis(&contour.points, centroid)?;
-    let c = Vector3::new(centroid.0, centroid.1, centroid.2);
+    let basis = local_basis(&contour.points, centroid)?;
 
-    // Sort control points by angle in the local 2D plane.
-    let mut angle_pts: Vec<(f64, Vector3<f64>)> = contour
-        .points
+    let ctrl = sort_by_angle(&contour.points, centroid, basis);
+    let curve = sample_closed_spline(&ctrl);
+    let arc_lengths = cumulative_arc_lengths(&curve);
+
+    let total_length = *arc_lengths.last().unwrap();
+    if total_length < 1e-10 {
+        return None;
+    }
+
+    let resampled = uniform_resample(&curve, &arc_lengths, total_length, n_points);
+    Some(build_output_contour(contour, resampled))
+}
+
+/// Sort contour points by angle in the local 2D plane spanned by `basis`.
+fn sort_by_angle(
+    points: &[ContourPoint],
+    centroid: (f64, f64, f64),
+    (axis_u, axis_v): (Vector3<f64>, Vector3<f64>),
+) -> Vec<Vector3<f64>> {
+    let centroid_v = Vector3::new(centroid.0, centroid.1, centroid.2);
+    let mut angle_pts: Vec<(f64, Vector3<f64>)> = points
         .iter()
         .map(|p| {
-            let d = Vector3::new(p.x - c.x, p.y - c.y, p.z - c.z);
-            let angle = d.dot(&v).atan2(d.dot(&u));
+            let offset = Vector3::new(p.x, p.y, p.z) - centroid_v;
+            let angle = offset.dot(&axis_v).atan2(offset.dot(&axis_u));
             (angle, Vector3::new(p.x, p.y, p.z))
         })
         .collect();
     angle_pts.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-    let ctrl: Vec<Vector3<f64>> = angle_pts.into_iter().map(|(_, p)| p).collect();
-    let n = ctrl.len();
+    angle_pts.into_iter().map(|(_, point)| point).collect()
+}
 
-    // Dense-sample the closed Catmull-Rom spline.
+/// Dense-sample a closed Catmull-Rom spline through `ctrl` (wraps around at the ends).
+fn sample_closed_spline(ctrl: &[Vector3<f64>]) -> Vec<Vector3<f64>> {
     const SAMPLES_PER_SEG: usize = 32;
-    let mut curve: Vec<Vector3<f64>> = Vec::with_capacity(n * SAMPLES_PER_SEG + 1);
-    for i in 0..n {
-        let p0 = ctrl[(i + n - 1) % n];
-        let p1 = ctrl[i];
-        let p2 = ctrl[(i + 1) % n];
-        let p3 = ctrl[(i + 2) % n];
-        for j in 0..SAMPLES_PER_SEG {
-            let t = j as f64 / SAMPLES_PER_SEG as f64;
-            curve.push(catmull_rom(p0, p1, p2, p3, t));
+    let ctrl_count = ctrl.len();
+    let mut curve = Vec::with_capacity(ctrl_count * SAMPLES_PER_SEG + 1);
+    for seg_idx in 0..ctrl_count {
+        let prev = ctrl[(seg_idx + ctrl_count - 1) % ctrl_count];
+        let curr = ctrl[seg_idx];
+        let next = ctrl[(seg_idx + 1) % ctrl_count];
+        let after = ctrl[(seg_idx + 2) % ctrl_count];
+        for sample_idx in 0..SAMPLES_PER_SEG {
+            let param = sample_idx as f64 / SAMPLES_PER_SEG as f64;
+            curve.push(catmull_rom(prev, curr, next, after, param));
         }
     }
-    curve.push(curve[0]); // close
+    curve.push(curve[0]); // close the loop
+    curve
+}
 
-    // Cumulative arc lengths.
-    let mut cum = vec![0.0f64];
-    for i in 1..curve.len() {
-        cum.push(cum[i - 1] + (curve[i] - curve[i - 1]).norm());
+/// Compute cumulative arc lengths along `curve`, starting at 0.
+fn cumulative_arc_lengths(curve: &[Vector3<f64>]) -> Vec<f64> {
+    let mut arc_lengths = vec![0.0_f64];
+    for idx in 1..curve.len() {
+        arc_lengths.push(arc_lengths[idx - 1] + (curve[idx] - curve[idx - 1]).norm());
     }
-    let total = *cum.last().unwrap();
-    if total < 1e-10 {
-        return None;
-    }
+    arc_lengths
+}
 
-    // Resample at n_points uniform arc-length positions (open, so last ≠ first).
-    let step = total / n_points as f64;
-    let new_pts: Vec<ContourPoint> = (0..n_points)
-        .map(|k| {
-            let target = k as f64 * step;
-            let seg = cum
+/// Resample `curve` at `n_points` uniformly-spaced arc-length positions.
+fn uniform_resample(
+    curve: &[Vector3<f64>],
+    arc_lengths: &[f64],
+    total_length: f64,
+    n_points: usize,
+) -> Vec<Vector3<f64>> {
+    let step = total_length / n_points as f64;
+    (0..n_points)
+        .map(|point_idx| {
+            let target = point_idx as f64 * step;
+            let seg = arc_lengths
                 .partition_point(|&s| s < target)
                 .saturating_sub(1)
                 .min(curve.len() - 2);
-            let s0 = cum[seg];
-            let s1 = cum[seg + 1];
-            let t = if (s1 - s0).abs() < 1e-12 {
+            let seg_start = arc_lengths[seg];
+            let seg_end = arc_lengths[seg + 1];
+            let frac = if (seg_end - seg_start).abs() < 1e-12 {
                 0.0
             } else {
-                (target - s0) / (s1 - s0)
+                (target - seg_start) / (seg_end - seg_start)
             };
-            let p = curve[seg] * (1.0 - t) + curve[seg + 1] * t;
-            ContourPoint {
-                frame_index: contour.id,
-                point_index: k as u32,
-                x: p.x,
-                y: p.y,
-                z: p.z,
-                aortic: false,
-            }
+            curve[seg] * (1.0 - frac) + curve[seg + 1] * frac
+        })
+        .collect()
+}
+
+/// Build the output `Contour` from the source metadata and resampled point positions.
+fn build_output_contour(source: Contour, points: Vec<Vector3<f64>>) -> Contour {
+    let new_pts = points
+        .into_iter()
+        .enumerate()
+        .map(|(point_idx, pos)| ContourPoint {
+            frame_index: source.id,
+            point_index: point_idx as u32,
+            x: pos.x,
+            y: pos.y,
+            z: pos.z,
+            aortic: false,
         })
         .collect();
-
-    Some(Contour {
-        id: contour.id,
-        original_frame: contour.original_frame,
-        centroid: contour.centroid,
+    Contour {
+        id: source.id,
+        original_frame: source.original_frame,
+        centroid: source.centroid,
         points: new_pts,
         aortic_thickness: None,
         pulmonary_thickness: None,
-        kind: contour.kind,
-    })
+        kind: source.kind,
+    }
 }
 
-// Derive two orthonormal basis vectors spanning the plane of `points` through `centroid`.
+/// Derive two orthonormal basis vectors spanning the plane of `points` through `centroid`.
 fn local_basis(
     points: &[ContourPoint],
     centroid: (f64, f64, f64),
 ) -> Option<(Vector3<f64>, Vector3<f64>)> {
-    let c = Vector3::new(centroid.0, centroid.1, centroid.2);
-    let mut u: Option<Vector3<f64>> = None;
+    let centroid_v = Vector3::new(centroid.0, centroid.1, centroid.2);
+    let mut axis_u: Option<Vector3<f64>> = None;
     for p in points {
-        let d = Vector3::new(p.x - c.x, p.y - c.y, p.z - c.z);
-        if d.norm() > 1e-10 {
-            u = Some(d.normalize());
+        let offset = Vector3::new(p.x - centroid_v.x, p.y - centroid_v.y, p.z - centroid_v.z);
+        if offset.norm() > 1e-10 {
+            axis_u = Some(offset.normalize());
             break;
         }
     }
-    let u = u?;
+    let axis_u = axis_u?;
     for p in points {
-        let d = Vector3::new(p.x - c.x, p.y - c.y, p.z - c.z);
-        let cross = u.cross(&d);
+        let offset = Vector3::new(p.x - centroid_v.x, p.y - centroid_v.y, p.z - centroid_v.z);
+        let cross = axis_u.cross(&offset);
         if cross.norm() > 1e-10 {
             let normal = cross.normalize();
-            let v = normal.cross(&u).normalize();
-            return Some((u, v));
+            let axis_v = normal.cross(&axis_u).normalize();
+            return Some((axis_u, axis_v));
         }
     }
     None
 }
 
 fn catmull_rom(
-    p0: Vector3<f64>,
-    p1: Vector3<f64>,
-    p2: Vector3<f64>,
-    p3: Vector3<f64>,
-    t: f64,
+    prev: Vector3<f64>,
+    curr: Vector3<f64>,
+    next: Vector3<f64>,
+    after: Vector3<f64>,
+    param: f64,
 ) -> Vector3<f64> {
-    let t2 = t * t;
-    let t3 = t2 * t;
-    0.5 * ((2.0 * p1)
-        + (-p0 + p2) * t
-        + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
-        + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3)
+    let param_sq = param * param;
+    let param_cu = param_sq * param;
+    0.5 * ((2.0 * curr)
+        + (-prev + next) * param
+        + (2.0 * prev - 5.0 * curr + 4.0 * next - after) * param_sq
+        + (-prev + 3.0 * curr - 3.0 * next + after) * param_cu)
 }
 
 #[cfg(test)]

@@ -10,8 +10,8 @@ use crate::ccta::adjust_mesh::scale_coronary::{
     centerline_based_diameter_optimization, centerline_based_wall_diameter_optimization,
     clean_up_non_section_points, find_points_by_cl_region_rs,
 };
-use crate::ccta::discretizing::data::DiscretizedVesselTree;
 use crate::ccta::discretizing::discretize_vessel_rs;
+use crate::ccta::discretizing::vessel_tree::DiscretizedVesselTree;
 use crate::intravascular::binding::classes::{PyCenterline, PyContour, PyFrame};
 use pyo3::prelude::*;
 
@@ -43,10 +43,10 @@ type RefTriplet = (Point3D, Point3D, Point3D);
 ///     ``(x, y, z)`` coordinate tuples.
 /// lca_references : list of tuple
 ///     Same structure for the LCA.
-/// index_ao_rca : int
-///     Index into ``discretized_aorta`` of the slice closest to the RCA ostium.
-/// index_ao_lca : int
-///     Index into ``discretized_aorta`` of the slice closest to the LCA ostium.
+/// ao_rca : tuple of float
+///     Centroid ``(x, y, z)`` of the aorta slice closest to the RCA ostium.
+/// ao_lca : tuple of float
+///     Centroid ``(x, y, z)`` of the aorta slice closest to the LCA ostium.
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyDiscretizedVesselTree {
@@ -65,9 +65,9 @@ pub struct PyDiscretizedVesselTree {
     #[pyo3(get)]
     pub lca_references: Vec<RefTriplet>,
     #[pyo3(get, set)]
-    pub index_ao_rca: usize,
+    pub ao_rca: Point3D,
     #[pyo3(get, set)]
-    pub index_ao_lca: usize,
+    pub ao_lca: Point3D,
 }
 
 #[pymethods]
@@ -112,8 +112,8 @@ impl From<DiscretizedVesselTree> for PyDiscretizedVesselTree {
                 .into_iter()
                 .map(|r| (r.main_ref, r.counter_clock_ref, r.clock_ref))
                 .collect(),
-            index_ao_rca: t.index_ao_rca,
-            index_ao_lca: t.index_ao_lca,
+            ao_rca: t.ao_rca,
+            ao_lca: t.ao_lca,
         }
     }
 }
