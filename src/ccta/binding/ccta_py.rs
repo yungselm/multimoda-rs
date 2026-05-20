@@ -10,12 +10,113 @@ use crate::ccta::adjust_mesh::scale_coronary::{
     centerline_based_diameter_optimization, centerline_based_wall_diameter_optimization,
     clean_up_non_section_points, find_points_by_cl_region_rs,
 };
+use crate::ccta::discretizing::data::DiscretizedVesselTree;
 use crate::ccta::discretizing::discretize_vessel_rs;
 use crate::intravascular::binding::classes::{PyCenterline, PyContour, PyFrame};
 use pyo3::prelude::*;
 
 type Point3D = (f64, f64, f64);
 type TriangleTuple = (Point3D, Point3D, Point3D);
+/// (main_ref, counter_clock_ref, clock_ref) — all three as plain xyz tuples.
+type RefTriplet = (Point3D, Point3D, Point3D);
+
+// ─── PyDiscretizedVesselTree ──────────────────────────────────────────────────
+
+/// Fully discretized coronary vessel tree (aorta + RCA + LCA + side branches).
+///
+/// Attributes
+/// ----------
+/// discretized_aorta : list of PyContour
+///     Cross-sectional contours along the aortic centerline.
+/// discretized_rca_main : list of PyContour
+///     Cross-sectional contours along the RCA main vessel.
+/// discretized_lca_main : list of PyContour
+///     Cross-sectional contours along the LCA main vessel.
+/// rca_branches : list of list of PyContour
+///     Per-side-branch contour lists for the RCA.  ``rca_branches[i]``
+///     corresponds to RCA branch_id ``i + 1``.
+/// lca_branches : list of list of PyContour
+///     Per-side-branch contour lists for the LCA.
+/// rca_references : list of tuple
+///     Orientation triplets ``(main_ref, counter_clock_ref, clock_ref)`` along
+///     the RCA, sorted proximal → distal.  Each element is a 3-tuple of
+///     ``(x, y, z)`` coordinate tuples.
+/// lca_references : list of tuple
+///     Same structure for the LCA.
+/// index_ao_rca : int
+///     Index into ``discretized_aorta`` of the slice closest to the RCA ostium.
+/// index_ao_lca : int
+///     Index into ``discretized_aorta`` of the slice closest to the LCA ostium.
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct PyDiscretizedVesselTree {
+    #[pyo3(get)]
+    pub discretized_aorta: Vec<PyContour>,
+    #[pyo3(get)]
+    pub discretized_rca_main: Vec<PyContour>,
+    #[pyo3(get)]
+    pub discretized_lca_main: Vec<PyContour>,
+    #[pyo3(get)]
+    pub rca_branches: Vec<Vec<PyContour>>,
+    #[pyo3(get)]
+    pub lca_branches: Vec<Vec<PyContour>>,
+    #[pyo3(get)]
+    pub rca_references: Vec<RefTriplet>,
+    #[pyo3(get)]
+    pub lca_references: Vec<RefTriplet>,
+    #[pyo3(get, set)]
+    pub index_ao_rca: usize,
+    #[pyo3(get, set)]
+    pub index_ao_lca: usize,
+}
+
+#[pymethods]
+impl PyDiscretizedVesselTree {
+    fn __repr__(&self) -> String {
+        format!(
+            "DiscretizedVesselTree(ao={}, rca_main={}, lca_main={}, rca_branches={}, lca_branches={}, rca_refs={}, lca_refs={})",
+            self.discretized_aorta.len(),
+            self.discretized_rca_main.len(),
+            self.discretized_lca_main.len(),
+            self.rca_branches.len(),
+            self.lca_branches.len(),
+            self.rca_references.len(),
+            self.lca_references.len(),
+        )
+    }
+}
+
+impl From<DiscretizedVesselTree> for PyDiscretizedVesselTree {
+    fn from(t: DiscretizedVesselTree) -> Self {
+        Self {
+            discretized_aorta: t.discretized_aorta.iter().map(PyContour::from).collect(),
+            discretized_rca_main: t.discretized_rca_main.iter().map(PyContour::from).collect(),
+            discretized_lca_main: t.discretized_lca_main.iter().map(PyContour::from).collect(),
+            rca_branches: t
+                .rca_branches
+                .iter()
+                .map(|b| b.iter().map(PyContour::from).collect())
+                .collect(),
+            lca_branches: t
+                .lca_branches
+                .iter()
+                .map(|b| b.iter().map(PyContour::from).collect())
+                .collect(),
+            rca_references: t
+                .rca_references
+                .into_iter()
+                .map(|r| (r.main_ref, r.counter_clock_ref, r.clock_ref))
+                .collect(),
+            lca_references: t
+                .lca_references
+                .into_iter()
+                .map(|r| (r.main_ref, r.counter_clock_ref, r.clock_ref))
+                .collect(),
+            index_ao_rca: t.index_ao_rca,
+            index_ao_lca: t.index_ao_lca,
+        }
+    }
+}
 
 /// Find points bounded by spheres along a coronary vessel centerline.
 ///
@@ -505,4 +606,102 @@ pub fn smooth_mesh_labels(
     }
 
     current_labels
+}
+
+/// Discretize the full coronary vessel tree and compute orientation references.
+///
+/// Runs :func:`discretize_vessel` for every branch (aorta, RCA main, LCA main,
+/// and each side branch), smoothes all centerlines with a Gaussian kernel
+/// (σ = 2.5 points) beforehand, and then computes orientation reference triplets
+/// at the ostium and every side-branch bifurcation.
+///
+/// Parameters
+/// ----------
+/// ao_cl : PyCenterline
+///     Aortic centerline (branch 0 only).
+/// rca_cl : PyCenterline
+///     RCA centerline with all branches calculated.
+/// lca_cl : PyCenterline
+///     LCA centerline with all branches calculated.
+/// points_ao : list of tuple of float
+///     Surface mesh points ``(x, y, z)`` of the aorta.
+/// points_rca_main : list of tuple of float
+///     Surface mesh points for the RCA main vessel.
+/// points_lca_main : list of tuple of float
+///     Surface mesh points for the LCA main vessel.
+/// side_branches_rca : list of list of tuple of float
+///     One point list per RCA side branch, ordered by branch_id
+///     (``side_branches_rca[0]`` → branch_id 1, etc.).
+///     Pass ``results["rca_points_side_1"]``, ``["rca_points_side_2"]``, … in order.
+/// side_branches_lca : list of list of tuple of float
+///     Same structure for LCA.
+/// branch_id_rca : int
+///     Branch ID of the RCA main vessel (almost always ``0``).
+/// branch_id_lca : int
+///     Branch ID of the LCA main vessel (almost always ``0``).
+/// step_size : float
+///     Arc-length step between cross-sections in mm.
+/// n_points : int
+///     Number of evenly-spaced points per output contour.
+///
+/// Returns
+/// -------
+/// PyDiscretizedVesselTree
+///     Fully populated vessel tree including orientation references.
+///
+/// Examples
+/// --------
+/// >>> import multimodars as mm
+/// >>> results = mm.label_branches(rca_cl, results)
+/// >>> results = mm.label_branches(lca_cl, results, results_key="lca_points")
+/// >>> side_rca = [results["rca_points_side_1"], results["rca_points_side_2"]]
+/// >>> side_lca = [results["lca_points_side_1"]]
+/// >>> tree = mm.discretize_vessel_tree(
+/// ...     ao_cl, rca_cl, lca_cl,
+/// ...     results["aorta_points"],
+/// ...     results["rca_points_main"],
+/// ...     results["lca_points_main"],
+/// ...     side_rca, side_lca,
+/// ...     branch_id_rca=0, branch_id_lca=0,
+/// ...     step_size=1.0, n_points=100,
+/// ... )
+#[pyfunction]
+#[pyo3(signature = (
+    ao_cl, rca_cl, lca_cl,
+    points_ao, points_rca_main, points_lca_main,
+    side_branches_rca, side_branches_lca,
+    branch_id_rca = 0, branch_id_lca = 0,
+    step_size = 1.0, n_points = 100
+))]
+pub fn discretize_vessel_tree(
+    ao_cl: PyCenterline,
+    rca_cl: PyCenterline,
+    lca_cl: PyCenterline,
+    points_ao: Vec<Point3D>,
+    points_rca_main: Vec<Point3D>,
+    points_lca_main: Vec<Point3D>,
+    side_branches_rca: Vec<Vec<Point3D>>,
+    side_branches_lca: Vec<Vec<Point3D>>,
+    branch_id_rca: u32,
+    branch_id_lca: u32,
+    step_size: f64,
+    n_points: usize,
+) -> PyResult<PyDiscretizedVesselTree> {
+    let tree = DiscretizedVesselTree::from_results_dict(
+        &ao_cl.to_rust_centerline(),
+        &rca_cl.to_rust_centerline(),
+        &lca_cl.to_rust_centerline(),
+        &points_ao,
+        &points_rca_main,
+        &points_lca_main,
+        side_branches_rca,
+        side_branches_lca,
+        branch_id_rca,
+        branch_id_lca,
+        step_size,
+        n_points,
+    )
+    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+    Ok(PyDiscretizedVesselTree::from(tree.calculate_ref_pts()))
 }

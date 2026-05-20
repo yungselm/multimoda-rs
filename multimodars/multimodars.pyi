@@ -795,3 +795,68 @@ def discretize_vessel(
     step_size: float = ...,
     n_points: int = ...,
 ) -> list[PyContour]: ...
+
+
+# (main_ref, counter_clock_ref, clock_ref) — each is an (x, y, z) tuple.
+_RefTriplet = tuple[
+    tuple[float, float, float],
+    tuple[float, float, float],
+    tuple[float, float, float],
+]
+
+
+class PyDiscretizedVesselTree:
+    """Fully discretized coronary vessel tree.
+
+    Attributes
+    ----------
+    discretized_aorta : list of PyContour
+        Cross-sectional contours along the aorta.
+    discretized_rca_main : list of PyContour
+        Cross-sectional contours along the RCA main vessel.
+    discretized_lca_main : list of PyContour
+        Cross-sectional contours along the LCA main vessel.
+    rca_branches : list of list of PyContour
+        Per-side-branch contours for the RCA.  ``rca_branches[i]`` →
+        branch_id ``i + 1``.
+    lca_branches : list of list of PyContour
+        Per-side-branch contours for the LCA.
+    rca_references : list of (main_ref, counter_clock_ref, clock_ref)
+        Orientation triplets along the RCA, sorted proximal → distal.
+        Each element is ``((x,y,z), (x,y,z), (x,y,z))``.
+        Index 0 is always the ostium reference.
+    lca_references : list of (main_ref, counter_clock_ref, clock_ref)
+        Same structure for the LCA.
+    index_ao_rca : int
+        Index into ``discretized_aorta`` of the slice closest to the RCA ostium.
+    index_ao_lca : int
+        Index into ``discretized_aorta`` of the slice closest to the LCA ostium.
+    """
+
+    discretized_aorta: list[PyContour]
+    discretized_rca_main: list[PyContour]
+    discretized_lca_main: list[PyContour]
+    rca_branches: list[list[PyContour]]
+    lca_branches: list[list[PyContour]]
+    rca_references: list[_RefTriplet]
+    lca_references: list[_RefTriplet]
+    index_ao_rca: int
+    index_ao_lca: int
+
+    def __repr__(self) -> str: ...
+
+
+def discretize_vessel_tree(
+    ao_cl: PyCenterline,
+    rca_cl: PyCenterline,
+    lca_cl: PyCenterline,
+    points_ao: list[tuple[float, float, float]],
+    points_rca_main: list[tuple[float, float, float]],
+    points_lca_main: list[tuple[float, float, float]],
+    side_branches_rca: list[list[tuple[float, float, float]]],
+    side_branches_lca: list[list[tuple[float, float, float]]],
+    branch_id_rca: int = ...,
+    branch_id_lca: int = ...,
+    step_size: float = ...,
+    n_points: int = ...,
+) -> PyDiscretizedVesselTree: ...

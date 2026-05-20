@@ -7,6 +7,7 @@ from .multimodars import (
     PyGeometryPair,
     PyInputData,
     PyCenterline,
+    PyDiscretizedVesselTree,  # noqa: F401 — re-exported for type annotations
     from_file_full as _from_file_full,
     from_file_doublepair as _from_file_doublepair,
     from_file_singlepair as _from_file_singlepair,
@@ -23,6 +24,7 @@ from .multimodars import (
     find_proximal_distal_scaling as _find_proximal_distal_scaling,
     build_adjacency_map as _build_adjacency_map,
     discretize_vessel as _discretize_vessel,
+    discretize_vessel_tree as _discretize_vessel_tree,
 )
 
 _AlignLog = list[tuple[int, int, float, float, float, float, float]]
@@ -1474,6 +1476,97 @@ def discretize_vessel(
         centerline,
         points,
         branch_id,
+        step_size,
+        n_points,
+    )
+
+
+def discretize_vessel_tree(
+    ao_cl: "PyCenterline",
+    rca_cl: "PyCenterline",
+    lca_cl: "PyCenterline",
+    points_ao: list[tuple[float, float, float]],
+    points_rca_main: list[tuple[float, float, float]],
+    points_lca_main: list[tuple[float, float, float]],
+    side_branches_rca: list[list[tuple[float, float, float]]],
+    side_branches_lca: list[list[tuple[float, float, float]]],
+    branch_id_rca: int = 0,
+    branch_id_lca: int = 0,
+    step_size: float = 1.0,
+    n_points: int = 100,
+) -> PyDiscretizedVesselTree:
+    """Discretize the full coronary vessel tree and compute orientation references.
+
+    Processes aorta, RCA, LCA, and all side branches in one call.  All
+    centerlines are Gaussian-smoothed (σ = 2.5 points) before discretization.
+    Orientation reference triplets are computed at the ostium and every
+    side-branch bifurcation and sorted proximal → distal.
+
+    Parameters
+    ----------
+    ao_cl : PyCenterline
+        Aortic centerline (branch 0).
+    rca_cl : PyCenterline
+        RCA centerline with branches already calculated
+        (call ``rca_cl.calculate_branches()`` first).
+    lca_cl : PyCenterline
+        LCA centerline with branches already calculated.
+    points_ao : list of (float, float, float)
+        Aortic surface mesh points.
+    points_rca_main : list of (float, float, float)
+        RCA main-vessel surface points (``results["rca_points_main"]``).
+    points_lca_main : list of (float, float, float)
+        LCA main-vessel surface points (``results["lca_points_main"]``).
+    side_branches_rca : list of list of (float, float, float)
+        One point list per RCA side branch, in branch_id order starting at 1.
+        Typically ``[results["rca_points_side_1"], results["rca_points_side_2"], …]``.
+    side_branches_lca : list of list of (float, float, float)
+        Same structure for the LCA.
+    branch_id_rca : int, optional
+        Branch ID of the RCA main vessel. Default ``0``.
+    branch_id_lca : int, optional
+        Branch ID of the LCA main vessel. Default ``0``.
+    step_size : float, optional
+        Arc-length step between cross-sections in mm. Default ``1.0``.
+    n_points : int, optional
+        Points per output contour. Default ``100``.
+
+    Returns
+    -------
+    PyDiscretizedVesselTree
+        Fully populated vessel tree with contours and orientation references.
+
+    Examples
+    --------
+    >>> import multimodars as mm
+    >>> results = mm.label_branches(rca_cl, results)
+    >>> results = mm.label_branches(lca_cl, results, results_key="lca_points")
+    >>> n_rca_branches = len(rca_cl.branch_start_indices) - 1
+    >>> n_lca_branches = len(lca_cl.branch_start_indices) - 1
+    >>> side_rca = [results[f"rca_points_side_{k+1}"] for k in range(n_rca_branches)]
+    >>> side_lca = [results[f"lca_points_side_{k+1}"] for k in range(n_lca_branches)]
+    >>> tree = mm.discretize_vessel_tree(
+    ...     ao_cl, rca_cl, lca_cl,
+    ...     results["aorta_points"],
+    ...     results["rca_points_main"],
+    ...     results["lca_points_main"],
+    ...     side_rca, side_lca,
+    ...     step_size=1.0, n_points=100,
+    ... )
+    >>> print(tree)
+    >>> print(tree.rca_references[0])  # ostium reference
+    """
+    return _discretize_vessel_tree(
+        ao_cl,
+        rca_cl,
+        lca_cl,
+        points_ao,
+        points_rca_main,
+        points_lca_main,
+        side_branches_rca,
+        side_branches_lca,
+        branch_id_rca,
+        branch_id_lca,
         step_size,
         n_points,
     )

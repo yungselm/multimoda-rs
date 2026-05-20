@@ -14,6 +14,7 @@ from .multimodars import (
     PyInputData,
     PyRecord,
     PyContourType,
+    PyDiscretizedVesselTree,
 )
 from ._processing import (
     from_file_full,
@@ -32,6 +33,7 @@ from ._processing import (
     find_proximal_distal_scaling,
     build_adjacency_map,
     discretize_vessel,
+    discretize_vessel_tree,
 )
 from ._converters import (
     to_array,
@@ -71,6 +73,7 @@ __all__ = [
     "PyInputData",
     "PyRecord",
     "PyContourType",
+    "PyDiscretizedVesselTree",
     # Converter functions
     "to_array",
     "numpy_to_geometry",
@@ -116,6 +119,7 @@ __all__ = [
     "manual_hole_fill",
     "plot_results_key",
     "discretize_vessel",
+    "discretize_vessel_tree",
     "label_branches",
 ]
 

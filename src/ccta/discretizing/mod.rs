@@ -1,5 +1,7 @@
 pub mod creating;
+pub mod data;
 pub mod projecting;
+mod utils;
 
 use crate::ccta::discretizing::creating::create_uniform_contours;
 use crate::ccta::discretizing::projecting::walk_centerline_slices;

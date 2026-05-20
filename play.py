@@ -164,3 +164,97 @@ print(contours[0].get_area())
 print(contours[0])
 print(contours[-1].get_area())
 print(contours[-1])
+
+n_rca = len(rca_cl.branch_start_indices) - 1
+side_rca = [results[f"rca_points_side_{k+1}"] for k in range(n_rca)]
+n_lca = len(lca_cl.branch_start_indices) - 1
+side_lca = [results[f"lca_points_side_{k+1}"] for k in range(n_lca)]
+
+tree = mm.discretize_vessel_tree(
+    ao_cl,
+    rca_cl,
+    lca_cl,
+    results["aorta_points"],
+    results["rca_points_main"],
+    results["lca_points_main"],
+    side_rca,
+    side_lca,
+)
+print(tree)
+
+fig = plt.figure(figsize=(12, 10))
+ax = fig.add_subplot(111, projection="3d")
+
+RCA_BRANCH_COLORS = ["#4fa3e0", "#7ec8e3", "#a8d8ea", "#b8dfed"]
+LCA_BRANCH_COLORS = ["#e07f4f", "#e3a87e", "#eac0a8", "#edd0b8"]
+all_tree_pts = []
+
+
+def _plot_contours(contours, color, alpha=0.6, lw=0.5):
+    for c in contours:
+        pts = [(p.x, p.y, p.z) for p in c.points]
+        if not pts:
+            continue
+        pts.append(pts[0])
+        xs, ys, zs = zip(*pts)
+        ax.plot(xs, ys, zs, color=color, linewidth=lw, alpha=alpha)
+        all_tree_pts.extend(pts)
+
+
+def _plot_centroids(contours):
+    for c in contours:
+        if c.centroid is not None:
+            cx, cy, cz = c.centroid
+            ax.scatter(cx, cy, cz, color="yellow", s=8, zorder=5, depthshade=False)
+
+
+def _plot_refs(refs):
+    for main_ref, cc_ref, clock_ref in refs:
+        ax.scatter(
+            *main_ref,
+            color="red",
+            marker="x",
+            s=60,
+            linewidths=1.5,
+            zorder=6,
+            depthshade=False,
+        )
+        ax.scatter(
+            *cc_ref, color="orange", marker="^", s=40, zorder=6, depthshade=False
+        )
+        ax.scatter(
+            *clock_ref, color="magenta", marker="v", s=40, zorder=6, depthshade=False
+        )
+
+
+_plot_contours(tree.discretized_aorta, "silver", alpha=0.4)
+_plot_centroids(tree.discretized_aorta)
+_plot_contours(tree.discretized_rca_main, "steelblue", alpha=0.7)
+_plot_centroids(tree.discretized_rca_main)
+for i, branch in enumerate(tree.rca_branches):
+    _plot_contours(branch, RCA_BRANCH_COLORS[i % len(RCA_BRANCH_COLORS)])
+    _plot_centroids(branch)
+_plot_contours(tree.discretized_lca_main, "coral", alpha=0.7)
+_plot_centroids(tree.discretized_lca_main)
+for i, branch in enumerate(tree.lca_branches):
+    _plot_contours(branch, LCA_BRANCH_COLORS[i % len(LCA_BRANCH_COLORS)])
+    _plot_centroids(branch)
+_plot_refs(tree.rca_references)
+_plot_refs(tree.lca_references)
+
+if all_tree_pts:
+    arr = np.array(all_tree_pts)
+    mid = arr.mean(axis=0)
+    half = (arr.max(axis=0) - arr.min(axis=0)).max() / 2.0
+    ax.set_xlim(mid[0] - half, mid[0] + half)
+    ax.set_ylim(mid[1] - half, mid[1] + half)
+    ax.set_zlim(mid[2] - half, mid[2] + half)
+
+ax.set_xlabel("X")
+ax.set_ylabel("Y")
+ax.set_zlabel("Z")
+ax.set_title("Discretized Vessel Tree")
+plt.tight_layout()
+plt.show()
+
+print(tree.rca_references[0])
