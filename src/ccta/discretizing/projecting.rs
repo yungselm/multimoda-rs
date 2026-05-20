@@ -31,14 +31,39 @@ pub fn walk_centerline_slices(
     let anchors: Vec<CenterlinePoint> = sample_positions
         .iter()
         .enumerate()
-        .map(|(k, &s)| interpolate_branch_at_s(&branch_pts, &cum, s, k))
+        .map(|(slice_idx, &arc_pos)| interpolate_branch_at_s(&branch_pts, &cum, arc_pos, slice_idx))
         .collect();
 
     if anchors.is_empty() {
         return vec![];
     }
 
-    // Voronoi: each mesh point goes to its geometrically closest anchor.
+    let buckets = voronoi_partition(&anchors, points);
+
+    anchors
+        .into_iter()
+        .zip(buckets)
+        .enumerate()
+        .map(|(k, (anchor, pts))| Contour {
+            id: k as u32,
+            original_frame: anchor.contour_point.frame_index,
+            centroid: Some((
+                anchor.contour_point.x,
+                anchor.contour_point.y,
+                anchor.contour_point.z,
+            )),
+            points: pts,
+            aortic_thickness: None,
+            pulmonary_thickness: None,
+            kind: ContourType::Lumen,
+        })
+        .collect()
+}
+
+fn voronoi_partition(
+    anchors: &[CenterlinePoint],
+    points: &[(f64, f64, f64)],
+) -> Vec<Vec<ContourPoint>> {
     let mut buckets: Vec<Vec<ContourPoint>> = vec![vec![]; anchors.len()];
     for &(px, py, pz) in points {
         let closest = anchors.iter().enumerate().min_by(|(_, a), (_, b)| {
@@ -73,25 +98,7 @@ pub fn walk_centerline_slices(
             });
         }
     }
-
-    anchors
-        .into_iter()
-        .zip(buckets)
-        .enumerate()
-        .map(|(k, (anchor, pts))| Contour {
-            id: k as u32,
-            original_frame: anchor.contour_point.frame_index,
-            centroid: Some((
-                anchor.contour_point.x,
-                anchor.contour_point.y,
-                anchor.contour_point.z,
-            )),
-            points: pts,
-            aortic_thickness: None,
-            pulmonary_thickness: None,
-            kind: ContourType::Lumen,
-        })
-        .collect()
+    buckets
 }
 
 // Projects a point onto the plane perpendicular to `anchor` at its position.
@@ -143,7 +150,9 @@ fn interpolate_branch_at_s(
     target_s: f64,
     idx_out: usize,
 ) -> CenterlinePoint {
-    let seg = match cum.binary_search_by(|v| v.partial_cmp(&target_s).unwrap()) {
+    let seg = match cum
+        .binary_search_by(|v| v.partial_cmp(&target_s).unwrap_or(std::cmp::Ordering::Less))
+    {
         Ok(i) => i,
         Err(0) => 0,
         Err(pos) => pos - 1,
