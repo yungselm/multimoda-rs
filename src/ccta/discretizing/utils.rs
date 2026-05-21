@@ -41,8 +41,12 @@ pub fn smooth_centerline(centerline: &Centerline, sigma: f64) -> Centerline {
         let radius = (3.0 * sigma).ceil() as usize;
 
         for (li, &gi) in indices.iter().enumerate() {
-            let j_start = li.saturating_sub(radius);
-            let j_end = (li + radius + 1).min(indices.len());
+            // Symmetric truncation: equal radius on both sides so that a
+            // linear trend is preserved exactly (weighted mean of symmetric
+            // neighbours always equals the centre value).
+            let sym_r = li.min(radius).min(indices.len() - 1 - li);
+            let j_start = li - sym_r;
+            let j_end = li + sym_r + 1;
             let (mut wx, mut wy, mut wz, mut wt) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
 
             for (k, &gi_j) in indices[j_start..j_end].iter().enumerate() {
