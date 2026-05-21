@@ -383,12 +383,20 @@ def find_aortic_wall_scaling(
 
 
 def _extract_wall_from_frames(frames) -> list[tuple[float, float, float]] | None:
-    """Extract reconstructed aortic wall points from intravascular imaging frames.
+    """Extract the straight-wall (coronary-side) points from intravascular frames.
 
-    Iterates over *frames* looking for those that carry ``aortic_thickness``
-    data.  From each such frame, a subset of the ``"Wall"`` extra contour points
-    is sampled (indices in the range ``[step, 2*step)`` where
-    ``step = n_points // 8``) to represent the aortic wall.
+    ``create_aortic_wall`` in ``wall.rs`` builds the ``"Wall"`` extra contour
+    in two halves:
+
+    * **Straight wall** - ``point_index`` 0 to ``n // 2`` (exclusive): the lumen
+      contour offset outward by 1 mm, following the true circular/elliptic vessel
+      geometry on the coronary side.
+    * **Aortic wall** - ``point_index`` ``n // 2`` to ``n``: the rectangular
+      aortic-thickness shape constructed from ``aortic_thickness``.
+
+    Only the straight-wall half is returned because it preserves the actual vessel
+    cross-section shape and is therefore a stable reference for radial scaling.
+    Assumes an even number of points per frame (the standard 500-point geometry).
 
     Parameters
     ----------
@@ -399,7 +407,7 @@ def _extract_wall_from_frames(frames) -> list[tuple[float, float, float]] | None
     Returns
     -------
     list of tuple
-        ``(x, y, z)`` tuples of wall sample points from the last eligible frame.
+        ``(x, y, z)`` tuples of straight-wall points from the last eligible frame.
         Returns ``None`` if no eligible frame is found.
 
     Raises
@@ -408,38 +416,29 @@ def _extract_wall_from_frames(frames) -> list[tuple[float, float, float]] | None
         If an eligible frame is missing the ``"Wall"`` extras entry or that
         entry is empty.
     """
-    # since geometries always have the same number of points per frame we can take one frame
     n_points = len(frames[0].lumen.points)
-    step = n_points // 8
-    lower_limit = step
-    upper_limit = step * 2
+    half = n_points // 2
 
     reference_points = None
 
-    # this extracts the recreated wall from aortic thickness if it exists.
     for frame in frames:
         if frame.lumen.aortic_thickness is None:
             continue
-        if "Wall" not in frame.extras or frame.extras["Wall"] is None:
+        wall = frame.extras.get("Wall")
+        if wall is None:
             raise ValueError(
                 f"No Wall extras found for frame {getattr(frame, 'frame', '?')}"
             )
-
-        walls = [frame.extras.get("Wall")]
-
-        if not walls:
+        if not wall.points:
             raise ValueError(
                 f"Empty Wall extras for frame {getattr(frame, 'frame', '?')}"
             )
 
-        all_points = [
-            (p.x, p.y, p.z)
-            for w in walls
-            for p in w.points
-            if lower_limit <= p.point_index <= upper_limit
+        # Straight wall: coronary-side offset lumen, point_index 0..half.
+        # Aortic wall:   rectangular aortic-thickness shape, point_index half..n_points.
+        reference_points = [
+            (p.x, p.y, p.z) for p in wall.points if p.point_index < half
         ]
-
-        reference_points = all_points
 
     return reference_points
 

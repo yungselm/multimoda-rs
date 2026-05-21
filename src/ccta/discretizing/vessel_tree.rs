@@ -200,9 +200,8 @@ impl DiscretizedVesselTree {
     }
 }
 
-// ─── private helpers ────────────────────────────────────────────────────────
-
-/// Build a sorted (proximal→distal) reference-triplet list for one vessel.
+/// Build a sorted (proximal→distal) reference-triplet list for one vessel by
+/// combining one ostium reference and one reference per side-branch bifurcation.
 fn vessel_references(
     ao_centroid: Vector3<f64>,
     main: &[Contour],
@@ -210,144 +209,179 @@ fn vessel_references(
 ) -> Vec<ReferenceTriplet> {
     let main_centroids: Vec<Vector3<f64>> = main.iter().map(contour_centroid).collect();
 
-    // "Up" hint: direction from aorta centroid to first main-vessel centroid,
-    // constant for the whole vessel to keep all refs in the same orientation frame.
+    // Constant "up" hint keeps all triplets in the same orientation frame.
     let up_hint = (main_centroids[0] - ao_centroid)
         .try_normalize(1e-12)
         .unwrap_or(Vector3::z());
 
-    // (sorting_key, ReferenceTriplet) – key = index in main contour list
     let mut tagged: Vec<(usize, ReferenceTriplet)> = Vec::new();
 
-    // ── 1. Ostium reference ──────────────────────────────────────────────────
-    if let Some(first) = main.first() {
-        if first.points.len() > 2 {
-            // Normal at the ostium: toward the second contour
-            let normal = if main.len() > 1 {
-                (main_centroids[1] - main_centroids[0])
-                    .try_normalize(1e-12)
-                    .unwrap_or(Vector3::z())
-            } else {
-                (main_centroids[0] - ao_centroid)
-                    .try_normalize(1e-12)
-                    .unwrap_or(Vector3::z())
-            };
-
-            // main_ref: minor-axis point closer to the aorta
-            let ((pa, pb), _) = first.find_closest_opposite_3d();
-            let pta = Vector3::new(pa.x, pa.y, pa.z);
-            let ptb = Vector3::new(pb.x, pb.y, pb.z);
-            let main_ref_v = if (pta - ao_centroid).norm() <= (ptb - ao_centroid).norm() {
-                pta
-            } else {
-                ptb
-            };
-
-            // counter_clock / clock: major-axis pair
-            let ((p1, p2), _) = first.find_farthest_points();
-            let (cc, cl) = assign_cc_clock(
-                Vector3::new(p1.x, p1.y, p1.z),
-                Vector3::new(p2.x, p2.y, p2.z),
-                main_centroids[0],
-                normal,
-                up_hint,
-            );
-
-            tagged.push((
-                0,
-                ReferenceTriplet {
-                    main_ref: (main_ref_v.x, main_ref_v.y, main_ref_v.z),
-                    counter_clock_ref: (cc.x, cc.y, cc.z),
-                    clock_ref: (cl.x, cl.y, cl.z),
-                },
-            ));
-        }
+    if let Some(entry) = ostium_reference(ao_centroid, main, &main_centroids, up_hint) {
+        tagged.push(entry);
     }
-
-    // ── 2. Side-branch bifurcation references ────────────────────────────────
     for branch_contours in side_branches {
-        if branch_contours.is_empty() {
-            continue;
+        if let Some(entry) =
+            sidebranch_reference(ao_centroid, main, &main_centroids, branch_contours, up_hint)
+        {
+            tagged.push(entry);
         }
-        let side_c0 = contour_centroid(&branch_contours[0]);
-
-        // Closest main-vessel contour by centroid distance
-        let (bifurc_idx, _) = main_centroids
-            .iter()
-            .enumerate()
-            .min_by(|(_, a), (_, b)| {
-                (*a - side_c0)
-                    .norm()
-                    .partial_cmp(&(*b - side_c0).norm())
-                    .unwrap()
-            })
-            .unwrap_or((0, &main_centroids[0]));
-
-        let bifurc_centroid = main_centroids[bifurc_idx];
-
-        // Local proximal→distal normal at the bifurcation
-        let normal = if bifurc_idx + 1 < main.len() {
-            (main_centroids[bifurc_idx + 1] - bifurc_centroid)
-                .try_normalize(1e-12)
-                .unwrap_or(Vector3::z())
-        } else if bifurc_idx > 0 {
-            (bifurc_centroid - main_centroids[bifurc_idx - 1])
-                .try_normalize(1e-12)
-                .unwrap_or(Vector3::z())
-        } else {
-            (bifurc_centroid - ao_centroid)
-                .try_normalize(1e-12)
-                .unwrap_or(Vector3::z())
-        };
-
-        let bifurc_contour = &main[bifurc_idx];
-        let n_pts = bifurc_contour.points.len();
-        if n_pts < 4 {
-            continue;
-        }
-
-        // Point on main contour closest to the side-branch centroid
-        let closest_idx = bifurc_contour
-            .points
-            .iter()
-            .enumerate()
-            .min_by(|(_, a), (_, b)| {
-                (Vector3::new(a.x, a.y, a.z) - side_c0)
-                    .norm()
-                    .partial_cmp(&(Vector3::new(b.x, b.y, b.z) - side_c0).norm())
-                    .unwrap()
-            })
-            .map(|(i, _)| i)
-            .unwrap_or(0);
-
-        // ±¼ around the contour ring
-        let quarter = n_pts / 4;
-        let idx_plus = (closest_idx + quarter) % n_pts;
-        let idx_minus = (closest_idx + n_pts - quarter) % n_pts;
-        let pp = &bifurc_contour.points[idx_plus];
-        let pm = &bifurc_contour.points[idx_minus];
-
-        let (cc, cl) = assign_cc_clock(
-            Vector3::new(pp.x, pp.y, pp.z),
-            Vector3::new(pm.x, pm.y, pm.z),
-            bifurc_centroid,
-            normal,
-            up_hint,
-        );
-
-        tagged.push((
-            bifurc_idx,
-            ReferenceTriplet {
-                main_ref: (side_c0.x, side_c0.y, side_c0.z),
-                counter_clock_ref: (cc.x, cc.y, cc.z),
-                clock_ref: (cl.x, cl.y, cl.z),
-            },
-        ));
     }
 
-    // Sort proximal → distal
     tagged.sort_by_key(|(k, _)| *k);
     tagged.into_iter().map(|(_, r)| r).collect()
+}
+
+/// Build the ostium reference triplet at the proximal end of the main vessel.
+///
+/// Returns `None` when the first contour has ≤ 2 points.
+///
+/// - `main_ref` — the minor-axis endpoint (`find_closest_opposite_3d`) that is
+///   closer to `ao_centroid`, representing the aorta-facing wall at the ostium.
+/// - `counter_clock_ref` / `clock_ref` — the major-axis pair
+///   (`find_farthest_points`), assigned left/right when viewing proximal→distal
+///   via `assign_cc_clock` using `up_hint` as the orientation anchor.
+///
+/// The local normal points from the first toward the second main-vessel centroid
+/// (falls back to the aorta→ostium direction for single-contour vessels).
+fn ostium_reference(
+    ao_centroid: Vector3<f64>,
+    main: &[Contour],
+    main_centroids: &[Vector3<f64>],
+    up_hint: Vector3<f64>,
+) -> Option<(usize, ReferenceTriplet)> {
+    let first = main.first()?;
+    if first.points.len() <= 2 {
+        return None;
+    }
+
+    let normal = if main.len() > 1 {
+        (main_centroids[1] - main_centroids[0])
+            .try_normalize(1e-12)
+            .unwrap_or(Vector3::z())
+    } else {
+        (main_centroids[0] - ao_centroid)
+            .try_normalize(1e-12)
+            .unwrap_or(Vector3::z())
+    };
+
+    let ((pa, pb), _) = first.find_closest_opposite_3d();
+    let pta = Vector3::new(pa.x, pa.y, pa.z);
+    let ptb = Vector3::new(pb.x, pb.y, pb.z);
+    let main_ref_v = if (pta - ao_centroid).norm() <= (ptb - ao_centroid).norm() {
+        pta
+    } else {
+        ptb
+    };
+
+    let ((p1, p2), _) = first.find_farthest_points();
+    let (cc, cl) = assign_cc_clock(
+        Vector3::new(p1.x, p1.y, p1.z),
+        Vector3::new(p2.x, p2.y, p2.z),
+        main_centroids[0],
+        normal,
+        up_hint,
+    );
+
+    Some((
+        0,
+        ReferenceTriplet {
+            main_ref: (main_ref_v.x, main_ref_v.y, main_ref_v.z),
+            counter_clock_ref: (cc.x, cc.y, cc.z),
+            clock_ref: (cl.x, cl.y, cl.z),
+        },
+    ))
+}
+
+/// Build a reference triplet at a side-branch bifurcation point.
+///
+/// Returns `None` when `branch_contours` is empty, the main-vessel centroid
+/// list is empty, or the bifurcation contour has < 4 points.
+///
+/// - `main_ref` — centroid of the side branch's first contour, which lies at
+///   the mouth of the bifurcation.
+/// - `counter_clock_ref` / `clock_ref` — the two points ±¼ of the contour ring
+///   away from the main-vessel contour point closest to the side-branch centroid,
+///   assigned left/right when viewing proximal→distal via `assign_cc_clock`.
+///
+/// The bifurcation site is the main-vessel contour whose centroid is closest to
+/// the side branch's first-contour centroid. The local normal is derived from
+/// adjacent main-vessel centroids (proximal neighbour as fallback, then
+/// aorta→bifurcation for degenerate single-contour vessels).
+fn sidebranch_reference(
+    ao_centroid: Vector3<f64>,
+    main: &[Contour],
+    main_centroids: &[Vector3<f64>],
+    branch_contours: &[Contour],
+    up_hint: Vector3<f64>,
+) -> Option<(usize, ReferenceTriplet)> {
+    if branch_contours.is_empty() {
+        return None;
+    }
+    let side_c0 = contour_centroid(&branch_contours[0]);
+
+    let (bifurc_idx, _) = main_centroids.iter().enumerate().min_by(|(_, a), (_, b)| {
+        (*a - side_c0)
+            .norm()
+            .partial_cmp(&(*b - side_c0).norm())
+            .unwrap()
+    })?;
+
+    let bifurc_centroid = main_centroids[bifurc_idx];
+
+    let normal = if bifurc_idx + 1 < main.len() {
+        (main_centroids[bifurc_idx + 1] - bifurc_centroid)
+            .try_normalize(1e-12)
+            .unwrap_or(Vector3::z())
+    } else if bifurc_idx > 0 {
+        (bifurc_centroid - main_centroids[bifurc_idx - 1])
+            .try_normalize(1e-12)
+            .unwrap_or(Vector3::z())
+    } else {
+        (bifurc_centroid - ao_centroid)
+            .try_normalize(1e-12)
+            .unwrap_or(Vector3::z())
+    };
+
+    let bifurc_contour = &main[bifurc_idx];
+    let n_pts = bifurc_contour.points.len();
+    if n_pts < 4 {
+        return None;
+    }
+
+    let closest_idx = bifurc_contour
+        .points
+        .iter()
+        .enumerate()
+        .min_by(|(_, a), (_, b)| {
+            (Vector3::new(a.x, a.y, a.z) - side_c0)
+                .norm()
+                .partial_cmp(&(Vector3::new(b.x, b.y, b.z) - side_c0).norm())
+                .unwrap()
+        })
+        .map(|(i, _)| i)?;
+
+    let quarter = n_pts / 4;
+    let idx_plus = (closest_idx + quarter) % n_pts;
+    let idx_minus = (closest_idx + n_pts - quarter) % n_pts;
+    let pp = &bifurc_contour.points[idx_plus];
+    let pm = &bifurc_contour.points[idx_minus];
+
+    let (cc, cl) = assign_cc_clock(
+        Vector3::new(pp.x, pp.y, pp.z),
+        Vector3::new(pm.x, pm.y, pm.z),
+        bifurc_centroid,
+        normal,
+        up_hint,
+    );
+
+    Some((
+        bifurc_idx,
+        ReferenceTriplet {
+            main_ref: (side_c0.x, side_c0.y, side_c0.z),
+            counter_clock_ref: (cc.x, cc.y, cc.z),
+            clock_ref: (cl.x, cl.y, cl.z),
+        },
+    ))
 }
 
 /// Assign the two points to (counter_clock, clock) when viewing proximal→distal.
