@@ -844,6 +844,7 @@ class PyDiscretizedVesselTree:
     ao_lca: tuple[float, float, float]
 
     def __repr__(self) -> str: ...
+    def calculate_ref_pts(self) -> None: ...
 
 
 def discretize_vessel_tree(
@@ -859,4 +860,5 @@ def discretize_vessel_tree(
     branch_id_lca: int = ...,
     step_size: float = ...,
     n_points: int = ...,
+    calculate_ref_pts: bool = ...,
 ) -> PyDiscretizedVesselTree: ...

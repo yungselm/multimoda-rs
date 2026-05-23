@@ -33,7 +33,6 @@ from ._processing import (
     find_proximal_distal_scaling,
     build_adjacency_map,
     discretize_vessel,
-    discretize_vessel_tree,
 )
 from ._converters import (
     to_array,
@@ -58,8 +57,12 @@ from .ccta.manipulating import (
     sync_results_to_mesh,
     stitch_ccta_to_intravascular,
 )
+from .ccta.discretization_map import (
+    prepare_centerlines,
+    discretize_vessel_tree,
+)
 from .ccta.fixing_functions import fix_and_remesh_stitched_mesh, manual_hole_fill
-from .ccta.debug_plots import plot_results_key
+from .ccta.debug_plots import plot_results_key, plot_centerline_edges
 
 __all__ = [
     # Core classes
@@ -118,7 +121,9 @@ __all__ = [
     "postprocess_stitched_mesh",
     "manual_hole_fill",
     "plot_results_key",
+    "plot_centerline_edges",
     "discretize_vessel",
+    "prepare_centerlines",
     "discretize_vessel_tree",
     "label_branches",
 ]
