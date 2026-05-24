@@ -17,7 +17,7 @@ use pyo3::prelude::*;
 
 type Point3D = (f64, f64, f64);
 type TriangleTuple = (Point3D, Point3D, Point3D);
-/// (main_ref, counter_clock_ref, clock_ref) — all three as plain xyz tuples.
+/// (main_ref, clock_ref, counter_clock_ref) — all three as plain xyz tuples.
 type RefTriplet = (Point3D, Point3D, Point3D);
 
 // ─── PyDiscretizedVesselTree ──────────────────────────────────────────────────
@@ -38,7 +38,7 @@ type RefTriplet = (Point3D, Point3D, Point3D);
 /// lca_branches : list of list of PyContour
 ///     Per-side-branch contour lists for the LCA.
 /// rca_references : list of tuple
-///     Orientation triplets ``(main_ref, counter_clock_ref, clock_ref)`` along
+///     Orientation triplets ``(main_ref, clock_ref, counter_clock_ref)`` along
 ///     the RCA, sorted proximal → distal.  Each element is a 3-tuple of
 ///     ``(x, y, z)`` coordinate tuples.
 /// lca_references : list of tuple
@@ -127,12 +127,12 @@ impl PyDiscretizedVesselTree {
         self.rca_references = updated
             .rca_references
             .into_iter()
-            .map(|r| (r.main_ref, r.counter_clock_ref, r.clock_ref))
+            .map(|r| (r.main_ref, r.clock_ref, r.counter_clock_ref))
             .collect();
         self.lca_references = updated
             .lca_references
             .into_iter()
-            .map(|r| (r.main_ref, r.counter_clock_ref, r.clock_ref))
+            .map(|r| (r.main_ref, r.clock_ref, r.counter_clock_ref))
             .collect();
         self.ao_rca = updated.ao_rca;
         self.ao_lca = updated.ao_lca;
@@ -160,12 +160,12 @@ impl From<DiscretizedVesselTree> for PyDiscretizedVesselTree {
             rca_references: t
                 .rca_references
                 .into_iter()
-                .map(|r| (r.main_ref, r.counter_clock_ref, r.clock_ref))
+                .map(|r| (r.main_ref, r.clock_ref, r.counter_clock_ref))
                 .collect(),
             lca_references: t
                 .lca_references
                 .into_iter()
-                .map(|r| (r.main_ref, r.counter_clock_ref, r.clock_ref))
+                .map(|r| (r.main_ref, r.clock_ref, r.counter_clock_ref))
                 .collect(),
             ao_rca: t.ao_rca,
             ao_lca: t.ao_lca,
