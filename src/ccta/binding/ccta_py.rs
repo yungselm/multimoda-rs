@@ -50,15 +50,15 @@ type RefTriplet = (Point3D, Point3D, Point3D);
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyDiscretizedVesselTree {
-    #[pyo3(get)]
+    #[pyo3(get, set)]
     pub discretized_aorta: Vec<PyContour>,
-    #[pyo3(get)]
+    #[pyo3(get, set)]
     pub discretized_rca_main: Vec<PyContour>,
-    #[pyo3(get)]
+    #[pyo3(get, set)]
     pub discretized_lca_main: Vec<PyContour>,
-    #[pyo3(get)]
+    #[pyo3(get, set)]
     pub rca_branches: Vec<Vec<PyContour>>,
-    #[pyo3(get)]
+    #[pyo3(get, set)]
     pub lca_branches: Vec<Vec<PyContour>>,
     #[pyo3(get)]
     pub rca_references: Vec<RefTriplet>,
@@ -83,6 +83,61 @@ impl PyDiscretizedVesselTree {
             self.rca_references.len(),
             self.lca_references.len(),
         )
+    }
+
+    /// Recompute orientation reference triplets and aortic ostium centroids
+    /// from the current contour data.
+    ///
+    /// Call this after replacing contours (e.g. with B-spline fits) so that
+    /// ``rca_references``, ``lca_references``, ``ao_rca``, and ``ao_lca``
+    /// reflect the updated geometry.
+    pub fn calculate_ref_pts(&mut self) -> PyResult<()> {
+        let convert =
+            |contours: &[PyContour]| -> PyResult<Vec<crate::intravascular::io::geometry::Contour>> {
+                contours.iter().map(|c| c.to_rust_contour()).collect()
+            };
+
+        let rust_aorta = convert(&self.discretized_aorta)?;
+        let rust_rca = convert(&self.discretized_rca_main)?;
+        let rust_lca = convert(&self.discretized_lca_main)?;
+        let rust_rca_branches: PyResult<Vec<Vec<_>>> =
+            self.rca_branches.iter().map(|b| convert(b)).collect();
+        let rust_lca_branches: PyResult<Vec<Vec<_>>> =
+            self.lca_branches.iter().map(|b| convert(b)).collect();
+
+        let tree = DiscretizedVesselTree {
+            discretized_aorta: rust_aorta,
+            discretized_rca_main: rust_rca,
+            discretized_lca_main: rust_lca,
+            rca_branches: rust_rca_branches?,
+            lca_branches: rust_lca_branches?,
+            spacing: 1.0,
+            rca_references: vec![],
+            lca_references: vec![],
+            ao_rca: (0.0, 0.0, 0.0),
+            ao_lca: (0.0, 0.0, 0.0),
+            pts_cusp_rcc: None,
+            pts_cusp_lcc: None,
+            pts_cusp_acc: None,
+            index_stj_slice: None,
+            index_aa: None,
+        };
+
+        let updated = tree.calculate_ref_pts();
+        self.rca_references = updated
+            .rca_references
+            .into_iter()
+            .map(|r| (r.main_ref, r.counter_clock_ref, r.clock_ref))
+            .collect();
+        self.lca_references = updated
+            .lca_references
+            .into_iter()
+            .map(|r| (r.main_ref, r.counter_clock_ref, r.clock_ref))
+            .collect();
+        self.ao_rca = updated.ao_rca;
+        self.ao_lca = updated.ao_lca;
+
+        Ok(())
     }
 }
 
@@ -671,7 +726,8 @@ pub fn smooth_mesh_labels(
     points_ao, points_rca_main, points_lca_main,
     side_branches_rca, side_branches_lca,
     branch_id_rca = 0, branch_id_lca = 0,
-    step_size = 1.0, n_points = 100
+    step_size = 1.0, n_points = 100,
+    calculate_ref_pts=true,
 ))]
 pub fn discretize_vessel_tree(
     ao_cl: PyCenterline,
@@ -686,8 +742,9 @@ pub fn discretize_vessel_tree(
     branch_id_lca: u32,
     step_size: f64,
     n_points: usize,
+    calculate_ref_pts: bool,
 ) -> PyResult<PyDiscretizedVesselTree> {
-    let tree = DiscretizedVesselTree::from_results_dict(
+    let mut tree = DiscretizedVesselTree::from_results_dict(
         &ao_cl.to_rust_centerline(),
         &rca_cl.to_rust_centerline(),
         &lca_cl.to_rust_centerline(),
@@ -703,5 +760,11 @@ pub fn discretize_vessel_tree(
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
-    Ok(PyDiscretizedVesselTree::from(tree.calculate_ref_pts()))
+    tree = if calculate_ref_pts {
+        tree.calculate_ref_pts()
+    } else {
+        tree
+    };
+
+    Ok(PyDiscretizedVesselTree::from(tree))
 }

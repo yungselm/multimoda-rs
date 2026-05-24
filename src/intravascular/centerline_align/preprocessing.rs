@@ -6,15 +6,28 @@ use crate::intravascular::io::input::{Centerline, CenterlinePoint, ContourPoint}
 /// Resample `centerline` along its arc-length so that adjacent points are spaced at the
 /// mean Euclidean distance between consecutive contour centroids in `ref_mesh`.
 ///
-/// Precondition (expected caller behavior):
-/// - `centerline` should be trimmed so the first point corresponds to the aortic start
-///   (you already call `remove_leading_points_cl` before this).
-/// - `centerline` should be in decreasing z-order if that matters (you call `ensure_descending_z`).
+/// Only branch-0 points are used for resampling — side branches (branch_id > 0) are
+/// stripped before processing so that `ensure_descending_z` and the arc-length
+/// calculation see only the main-vessel path.
 pub fn preprocess_centerline(
     centerline: Centerline,
     ref_mesh: &Geometry,
 ) -> Result<Centerline, &'static str> {
-    let mut cl = centerline;
+    // Strip side-branch points so they cannot corrupt ensure_descending_z or the
+    // cumulative arc-length (a side-branch tip with high z would trigger an erroneous
+    // reversal of the entire array, placing the main-vessel reference at the end).
+    let pts: Vec<CenterlinePoint> = centerline
+        .points
+        .into_iter()
+        .filter(|p| p.branch_id == 0)
+        .collect();
+    if pts.is_empty() {
+        return Err("Centerline has no branch-0 points");
+    }
+    let mut cl = Centerline {
+        points: pts,
+        branch_start_indices: vec![0],
+    };
     ensure_descending_z(&mut cl);
     let cl = resample_centerline_by_contours(&cl, ref_mesh)?;
     Ok(cl)

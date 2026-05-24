@@ -4,14 +4,33 @@ use nalgebra::Vector3;
 
 /// Filters and resamples raw projected slices from `walk_centerline_slices`:
 /// - Removes empty slices (CL was outside the vessel).
-/// - Removes slices whose points don't cover all four angular quadrants (partial entry slices).
+/// - Trims partial entry/exit slices from both ends (the angular-coverage test is applied
+///   only to locate the first and last fully-covered slice; every interior slice is kept
+///   so gaps are never introduced mid-vessel).
 /// - Fits a closed Catmull-Rom spline through the remaining points and resamples each to
 ///   exactly `n_points` evenly-spaced points along the spline.
 pub fn create_uniform_contours(contours: Vec<Contour>, n_points: usize) -> Vec<Contour> {
-    contours
+    let non_empty: Vec<Contour> = contours
         .into_iter()
         .filter(|c| !c.points.is_empty())
-        .filter(has_full_angular_coverage)
+        .collect();
+
+    // Trim partial entry/exit slices from both ends only.
+    // Interior slices with partial coverage are kept as-is: a slightly imperfect
+    // interior ring is far better than a hole in the vessel wall.
+    let start = non_empty
+        .iter()
+        .position(has_full_angular_coverage)
+        .unwrap_or(0);
+    let end = non_empty
+        .iter()
+        .rposition(has_full_angular_coverage)
+        .map(|i| i + 1)
+        .unwrap_or(non_empty.len());
+
+    non_empty[start..end]
+        .iter()
+        .cloned()
         .filter_map(|c| resample_spline(c, n_points))
         .collect()
 }
@@ -408,7 +427,9 @@ mod tests {
 
     #[test]
     fn test_multiple_contours_pipeline() {
-        // 3 full circles + 1 empty + 1 half-circle → 3 in output.
+        // 3 full circles + 1 empty + 1 interior half-circle → 4 in output.
+        // The empty slice is dropped; the half-circle is interior (between two full circles)
+        // so it is kept to avoid creating a hole in the vessel wall.
         let contours = vec![
             make_contour(0, circle_ring((0.0, 0.0, 0.0), 3.0, 16), (0.0, 0.0, 0.0)),
             make_contour(1, vec![], (0.0, 0.0, 1.0)),
@@ -417,7 +438,7 @@ mod tests {
             make_contour(4, circle_ring((0.0, 0.0, 4.0), 3.0, 16), (0.0, 0.0, 4.0)),
         ];
         let result = create_uniform_contours(contours, 100);
-        assert_eq!(result.len(), 3);
+        assert_eq!(result.len(), 4);
         for c in &result {
             assert_eq!(c.points.len(), 100);
         }

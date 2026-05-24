@@ -430,7 +430,7 @@ impl Centerline {
     ///
     /// The tree diameter (double BFS) then gives the longest vessel path = main
     /// branch.  Remaining connected components are side branches.  Tiny components
-    /// (< MIN_BRANCH_SIZE pts) are artefacts and are merged into branch 0.
+    /// (< MIN_BRANCH_SIZE pts) are artefacts and are discarded.
     pub fn calculate_branches(&mut self, spacing_tolerance: f64) {
         const MIN_BRANCH_SIZE: usize = 5;
 
@@ -459,7 +459,7 @@ impl Centerline {
 
         let (main_path, side_components) = self.identify_components_with_bfs(&adj_map, n_points);
 
-        // Tiny components are artefacts; merge into branch 0 instead of own branch.
+        // Tiny components are artefacts; discard instead of treating as own branch.
         let mut artefacts: Vec<Vec<usize>> = Vec::new();
         let mut real_branches: Vec<Vec<usize>> = Vec::new();
         for comp in side_components {
@@ -488,15 +488,10 @@ impl Centerline {
             global_idx += 1;
             new_points.push(pt);
         }
-        for artefact in &artefacts {
-            for idx in Self::order_chain(artefact, &adj_map) {
-                let mut pt = self.points[idx].clone();
-                pt.branch_id = 0;
-                pt.contour_point.point_index = global_idx;
-                global_idx += 1;
-                new_points.push(pt);
-            }
-        }
+        // Artefacts (< MIN_BRANCH_SIZE pts) are disconnected noise; drop them entirely
+        // rather than merging into branch 0, where they would corrupt arc-length
+        // calculations and z-based reversal in the alignment pipeline.
+        let _ = artefacts;
 
         for (i, branch) in ordered_real_branches.iter().enumerate() {
             branch_start_indices.push(new_points.len());

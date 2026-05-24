@@ -170,15 +170,21 @@ side_rca = [results[f"rca_points_side_{k+1}"] for k in range(n_rca)]
 n_lca = len(lca_cl.branch_start_indices) - 1
 side_lca = [results[f"lca_points_side_{k+1}"] for k in range(n_lca)]
 
+# tree = mm.discretize_vessel_tree(
+#     ao_cl,
+#     rca_cl,
+#     lca_cl,
+#     results["aorta_points"],
+#     results["rca_points_main"],
+#     results["lca_points_main"],
+#     side_rca,
+#     side_lca,
+# )
 tree = mm.discretize_vessel_tree(
     ao_cl,
     rca_cl,
     lca_cl,
-    results["aorta_points"],
-    results["rca_points_main"],
-    results["lca_points_main"],
-    side_rca,
-    side_lca,
+    results,
 )
 print(tree)
 
