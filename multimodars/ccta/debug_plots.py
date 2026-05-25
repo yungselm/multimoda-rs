@@ -233,24 +233,19 @@ def plot_vessel_tree(
     title: str = "Discretized Vessel Tree",
     pts_per_contour: int = 24,
 ) -> None:
-    """Show an interactive 3-D Plotly visualisation of a discretized vessel tree.
-
-    Each vessel segment is rendered as a stack of contour rings (subsampled to
-    ``pts_per_contour`` points for performance) plus centroid dots that trace
-    the vessel centre-line.  Orientation reference triplets are shown as
-    distinct marker symbols.
+    """Open an interactive trimesh scene of a discretized vessel tree.
 
     Colour coding
     -------------
-    * Silver         — aorta
+    * Silver         — aorta contour points
     * Steel-blue     — RCA main
     * Shades of blue — RCA side branches
     * Coral          — LCA main
     * Shades of orange — LCA side branches
-    * Yellow dots    — contour centroids
-    * Red ×          — main reference point
-    * Orange ▲       — counter-clockwise reference
-    * Magenta ▼      — clockwise reference
+    * Yellow         — contour centroids
+    * Red            — main reference point
+    * Orange         — counter-clockwise reference
+    * Magenta        — clockwise reference
 
     Parameters
     ----------
@@ -258,75 +253,62 @@ def plot_vessel_tree(
         Fully populated vessel tree (output of
         :func:`~multimodars.ccta.discretization_map.discretize_vessel_tree`).
     title:
-        Figure title.
+        Unused (kept for API compatibility).
     pts_per_contour:
         Number of evenly-spaced points sampled from each contour ring.
-        Lower values improve rendering speed; higher values show more detail.
     """
-    import plotly.graph_objects as go  # lazy import — plotly is optional
+    _RCA_BRANCH_COLORS = [
+        [79, 163, 224, 255],
+        [126, 200, 227, 255],
+        [168, 216, 234, 255],
+        [184, 223, 237, 255],
+    ]
+    _LCA_BRANCH_COLORS = [
+        [224, 127, 79, 255],
+        [227, 168, 126, 255],
+        [234, 192, 168, 255],
+        [237, 208, 184, 255],
+    ]
 
-    _RCA_BRANCH_COLORS = ["#4fa3e0", "#7ec8e3", "#a8d8ea", "#b8dfed"]
-    _LCA_BRANCH_COLORS = ["#e07f4f", "#e3a87e", "#eac0a8", "#edd0b8"]
+    scene_geoms = []
 
-    traces: list[go.BaseTraceType] = []
-
-    # ── helpers ──────────────────────────────────────────────────────────────
-
-    def _ring_xyz(contour, n: int):
-        """Subsample a contour ring and close it; return (xs, ys, zs) lists."""
-        pts = contour.points
-        m = len(pts)
-        if m == 0:
-            return [], [], []
-        step = max(1, m // n)
-        sampled = pts[::step]
-        xs = [p.x for p in sampled] + [sampled[0].x]
-        ys = [p.y for p in sampled] + [sampled[0].y]
-        zs = [p.z for p in sampled] + [sampled[0].z]
-        return xs, ys, zs
-
-    def _add_contours(contours, color: str, name: str, opacity: float = 0.7) -> None:
-        """One NaN-separated line trace for all rings + one marker trace for centroids."""
-        rx, ry, rz = [], [], []
-        cx, cy, cz = [], [], []
+    def _add_contours(contours, color: list[int]) -> None:
+        rx: list[float] = []
+        ry: list[float] = []
+        rz: list[float] = []
+        cx: list[float] = []
+        cy: list[float] = []
+        cz: list[float] = []
         for c in contours:
-            xs, ys, zs = _ring_xyz(c, pts_per_contour)
-            if not xs:
+            pts = c.points
+            m = len(pts)
+            if m == 0:
                 continue
-            rx += xs + [None]
-            ry += ys + [None]
-            rz += zs + [None]
+            step = max(1, m // pts_per_contour)
+            s = pts[::step]
+            rx.extend(p.x for p in s)
+            ry.extend(p.y for p in s)
+            rz.extend(p.z for p in s)
             if c.centroid:
                 cx.append(c.centroid[0])
                 cy.append(c.centroid[1])
                 cz.append(c.centroid[2])
-
+        color_arr = np.array(color, dtype=np.uint8)
         if rx:
-            traces.append(
-                go.Scatter3d(
-                    x=rx,
-                    y=ry,
-                    z=rz,
-                    mode="lines",
-                    name=name,
-                    line=dict(color=color, width=1),
-                    opacity=opacity,
-                )
-            )
+            arr = np.array([rx, ry, rz], dtype=np.float64).T
+            scene_geoms.append(PointCloud(arr, colors=np.tile(color_arr, (len(rx), 1))))
         if cx:
-            traces.append(
-                go.Scatter3d(
-                    x=cx,
-                    y=cy,
-                    z=cz,
-                    mode="markers",
-                    name=f"{name} centroids",
-                    marker=dict(color="yellow", size=2),
-                    showlegend=False,
+            arr = np.array([cx, cy, cz], dtype=np.float64).T
+            scene_geoms.append(
+                PointCloud(
+                    arr,
+                    colors=np.tile(
+                        np.array([255, 255, 0, 255], dtype=np.uint8), (len(cx), 1)
+                    ),
                 )
             )
 
-    def _add_refs(refs, label: str) -> None:
+    def _add_refs(refs) -> None:
         mx, my, mz = [], [], []
         ccx, ccy, ccz = [], [], []
         clx, cly, clz = [], [], []
@@ -340,73 +322,29 @@ def plot_vessel_tree(
             clx.append(clock_ref[0])
             cly.append(clock_ref[1])
             clz.append(clock_ref[2])
-        if not mx:
-            return
-        traces.append(
-            go.Scatter3d(
-                x=mx,
-                y=my,
-                z=mz,
-                mode="markers",
-                name=f"{label} main ref",
-                marker=dict(color="red", symbol="x", size=5),
-            )
-        )
-        traces.append(
-            go.Scatter3d(
-                x=ccx,
-                y=ccy,
-                z=ccz,
-                mode="markers",
-                name=f"{label} CCW ref",
-                marker=dict(color="orange", symbol="diamond", size=5),
-            )
-        )
-        traces.append(
-            go.Scatter3d(
-                x=clx,
-                y=cly,
-                z=clz,
-                mode="markers",
-                name=f"{label} CW ref",
-                marker=dict(color="magenta", symbol="square", size=5),
-            )
-        )
+        for xs, ys, zs, color in [
+            (mx, my, mz, [255, 0, 0, 255]),
+            (ccx, ccy, ccz, [255, 165, 0, 255]),
+            (clx, cly, clz, [255, 0, 255, 255]),
+        ]:
+            if xs:
+                arr = np.array([xs, ys, zs], dtype=np.float64).T
+                color_arr = np.array(color, dtype=np.uint8)
+                scene_geoms.append(
+                    PointCloud(arr, colors=np.tile(color_arr, (len(xs), 1)))
+                )
 
-    # ── build traces ─────────────────────────────────────────────────────────
-
-    _add_contours(tree.discretized_aorta, "silver", "Aorta", opacity=0.4)
-    _add_contours(tree.discretized_rca_main, "steelblue", "RCA main")
+    _add_contours(tree.discretized_aorta, [192, 192, 192, 100])
+    _add_contours(tree.discretized_rca_main, [70, 130, 180, 255])
     for i, branch in enumerate(tree.rca_branches):
-        _add_contours(
-            branch,
-            _RCA_BRANCH_COLORS[i % len(_RCA_BRANCH_COLORS)],
-            f"RCA branch {i + 1}",
-        )
-    _add_contours(tree.discretized_lca_main, "coral", "LCA main")
+        _add_contours(branch, _RCA_BRANCH_COLORS[i % len(_RCA_BRANCH_COLORS)])
+    _add_contours(tree.discretized_lca_main, [255, 127, 80, 255])
     for i, branch in enumerate(tree.lca_branches):
-        _add_contours(
-            branch,
-            _LCA_BRANCH_COLORS[i % len(_LCA_BRANCH_COLORS)],
-            f"LCA branch {i + 1}",
-        )
-    _add_refs(tree.rca_references, "RCA")
-    _add_refs(tree.lca_references, "LCA")
+        _add_contours(branch, _LCA_BRANCH_COLORS[i % len(_LCA_BRANCH_COLORS)])
+    _add_refs(tree.rca_references)
+    _add_refs(tree.lca_references)
 
-    # ── layout ───────────────────────────────────────────────────────────────
-
-    fig = go.Figure(data=traces)
-    fig.update_layout(
-        title=title,
-        scene=dict(
-            xaxis_title="X (mm)",
-            yaxis_title="Y (mm)",
-            zaxis_title="Z (mm)",
-            aspectmode="data",
-        ),
-        legend=dict(itemsizing="constant"),
-    )
-    fig.show()
+    trimesh.Scene(scene_geoms).show()
 
 
 def plot_centerline_branches(
@@ -415,18 +353,13 @@ def plot_centerline_branches(
     results_dict: dict | None = None,
     title: str = "Centerline Branch Assignment",
 ) -> None:
-    """Show an interactive 3-D Plotly visualisation of centerline branch assignments.
-
-    Each branch of the RCA and LCA is drawn as a separate trace so it gets its
-    own legend entry and can be toggled on/off.  Optionally overlays the
-    labelled surface-mesh points from *results_dict* so you can verify that
-    branch labels transferred correctly to the geometry.
+    """Open an interactive trimesh scene of centerline branch assignments.
 
     Colour coding
     -------------
-    * RCA branch 0 (main) — steel-blue; side branches in lighter blues.
-    * LCA branch 0 (main) — coral; side branches in lighter oranges.
-    * Surface mesh points — same palette, smaller markers.
+    * RCA main — steel-blue; side branches in lighter blues.
+    * LCA main — red; side branches in oranges/pinks.
+    * Surface mesh points — same palette, semi-transparent.
 
     Parameters
     ----------
@@ -436,98 +369,67 @@ def plot_centerline_branches(
     results_dict:
         Optional.  When provided, labelled surface points
         (``rca_points_main``, ``rca_points_side_N``, ``lca_points_main``,
-        ``lca_points_side_N``) are overlaid as small scatter markers.
+        ``lca_points_side_N``) are overlaid semi-transparently.
     title:
-        Figure title.
+        Unused (kept for API compatibility).
     """
-    import plotly.graph_objects as go  # lazy import — plotly is optional
+    from collections import defaultdict
 
-    # distinct hues per branch so each is visually separable
-    _RCA_COLORS = ["#1f77b4", "#17becf", "#9467bd", "#2ca02c", "#7f7f7f"]
-    _LCA_COLORS = ["#d62728", "#ff7f0e", "#e377c2", "#bcbd22", "#8c564b"]
+    _RCA_COLORS = [
+        [31, 119, 180, 255],
+        [23, 190, 207, 255],
+        [148, 103, 189, 255],
+        [44, 160, 44, 255],
+        [127, 127, 127, 255],
+    ]
+    _LCA_COLORS = [
+        [214, 39, 40, 255],
+        [255, 127, 14, 255],
+        [227, 119, 194, 255],
+        [188, 189, 34, 255],
+        [140, 86, 75, 255],
+    ]
 
-    traces: list[go.BaseTraceType] = []
+    scene_geoms = []
 
-    def _add_cl_branches(cl: PyCenterline, colors: list[str], vessel: str) -> None:
-        from collections import defaultdict
-
+    def _add_cl_branches(cl: PyCenterline, colors: list[list[int]]) -> None:
         by_branch: dict[int, list] = defaultdict(list)
         for p in cl.points:
             by_branch[p.branch_id].append(p.contour_point)
         for bid in sorted(by_branch):
             pts = by_branch[bid]
-            label = f"{vessel} branch {bid}" if bid > 0 else f"{vessel} main"
+            arr = np.array([(p.x, p.y, p.z) for p in pts], dtype=np.float64)
             color = colors[bid % len(colors)]
-            traces.append(
-                go.Scatter3d(
-                    x=[p.x for p in pts],
-                    y=[p.y for p in pts],
-                    z=[p.z for p in pts],
-                    mode="markers",
-                    name=label,
-                    marker=dict(color=color, size=3),
-                )
-            )
+            scene_geoms.append(PointCloud(arr, colors=np.tile(color, (len(pts), 1))))
 
-    def _add_surface_points(
-        results_dict: dict, key: str, color: str, label: str
-    ) -> None:
-        pts = results_dict.get(key, [])
+    def _add_surface_points(key: str, color: list[int]) -> None:
+        pts = results_dict.get(key, [])  # type: ignore[union-attr]
         if not pts:
             return
-        xs, ys, zs = zip(*pts)
-        traces.append(
-            go.Scatter3d(
-                x=xs,
-                y=ys,
-                z=zs,
-                mode="markers",
-                name=label,
-                marker=dict(color=color, size=1.5, opacity=0.4),
-            )
-        )
+        arr = np.array(pts, dtype=np.float64)
+        faded = color[:3] + [80]
+        scene_geoms.append(PointCloud(arr, colors=np.tile(faded, (len(pts), 1))))
 
-    _add_cl_branches(rca_cl, _RCA_COLORS, "RCA")
-    _add_cl_branches(lca_cl, _LCA_COLORS, "LCA")
+    _add_cl_branches(rca_cl, _RCA_COLORS)
+    _add_cl_branches(lca_cl, _LCA_COLORS)
 
     if results_dict is not None:
-        _add_surface_points(
-            results_dict, "rca_points_main", _RCA_COLORS[0], "RCA main pts"
-        )
+        _add_surface_points("rca_points_main", _RCA_COLORS[0])
         i = 1
         while f"rca_points_side_{i}" in results_dict:
             _add_surface_points(
-                results_dict,
-                f"rca_points_side_{i}",
-                _RCA_COLORS[i % len(_RCA_COLORS)],
-                f"RCA side {i} pts",
+                f"rca_points_side_{i}", _RCA_COLORS[i % len(_RCA_COLORS)]
             )
             i += 1
-        _add_surface_points(
-            results_dict, "lca_points_main", _LCA_COLORS[0], "LCA main pts"
-        )
+        _add_surface_points("lca_points_main", _LCA_COLORS[0])
         i = 1
         while f"lca_points_side_{i}" in results_dict:
             _add_surface_points(
-                results_dict,
-                f"lca_points_side_{i}",
-                _LCA_COLORS[i % len(_LCA_COLORS)],
-                f"LCA side {i} pts",
+                f"lca_points_side_{i}", _LCA_COLORS[i % len(_LCA_COLORS)]
             )
             i += 1
 
-    fig = go.Figure(data=traces)
-    fig.update_layout(
-        title=title,
-        scene=dict(
-            xaxis_title="X (mm)",
-            yaxis_title="Y (mm)",
-            zaxis_title="Z (mm)",
-            aspectmode="data",
-        ),
-        legend=dict(itemsizing="constant"),
-    )
-    fig.show()
+    trimesh.Scene(scene_geoms).show()
 
 
 def plot_centerline_edges(
@@ -535,12 +437,11 @@ def plot_centerline_edges(
     cos_threshold: float = 0.0,
     title: str = "Centerline Edges",
 ) -> None:
-    """Show a centerline coloured by branch with sharp-angle positions highlighted.
+    """Open an interactive trimesh scene of a centerline with sharp angles highlighted.
 
-    Each branch is drawn as a connected line + point cloud using a distinct colour
-    from a high-contrast qualitative palette.  Positions returned by
-    ``find_sharp_angles`` for every branch are overlaid as large red × markers so
-    they are easy to spot and decide whether a ``split_branch`` call is needed.
+    Each branch is shown as a coloured point cloud.  Positions flagged by
+    ``find_sharp_angles`` are overlaid as red points so they are easy to spot
+    and decide whether a ``split_branch`` call is needed.
 
     Parameters
     ----------
@@ -548,30 +449,27 @@ def plot_centerline_edges(
         Centerline after ``calculate_branches`` (and optionally
         ``check_centerline``).
     cos_threshold:
-        Cosine threshold forwarded to ``cl.find_sharp_angles``.  Angles whose
-        cosine exceeds this value are *not* flagged.  ``0.0`` flags all angles
-        ≥ 90 °; negative values flag increasingly obtuse bends.
+        Cosine threshold forwarded to ``cl.find_sharp_angles``.  ``0.0`` flags
+        all angles ≥ 90 °; negative values flag increasingly obtuse bends.
     title:
-        Figure title.
+        Unused (kept for API compatibility).
     """
-    import plotly.graph_objects as go
     from collections import defaultdict
 
-    # Plotly default qualitative palette — 10 maximally distinct hues
     _PALETTE = [
-        "#1f77b4",
-        "#ff7f0e",
-        "#2ca02c",
-        "#d62728",
-        "#9467bd",
-        "#8c564b",
-        "#e377c2",
-        "#7f7f7f",
-        "#bcbd22",
-        "#17becf",
+        [31, 119, 180, 255],
+        [255, 127, 14, 255],
+        [44, 160, 44, 255],
+        [214, 39, 40, 255],
+        [148, 103, 189, 255],
+        [140, 86, 75, 255],
+        [227, 119, 194, 255],
+        [127, 127, 127, 255],
+        [188, 189, 34, 255],
+        [23, 190, 207, 255],
     ]
 
-    traces: list[go.BaseTraceType] = []
+    scene_geoms = []
 
     by_branch: dict[int, list] = defaultdict(list)
     for p in cl.points:
@@ -580,43 +478,20 @@ def plot_centerline_edges(
     for bid in sorted(by_branch):
         pts = by_branch[bid]
         color = _PALETTE[bid % len(_PALETTE)]
-        label = "main" if bid == 0 else f"branch {bid}"
-
-        traces.append(
-            go.Scatter3d(
-                x=[p.x for p in pts],
-                y=[p.y for p in pts],
-                z=[p.z for p in pts],
-                mode="lines+markers",
-                name=label,
-                line=dict(color=color, width=2),
-                marker=dict(color=color, size=3),
-            )
-        )
+        arr = np.array([(p.x, p.y, p.z) for p in pts], dtype=np.float64)
+        scene_geoms.append(PointCloud(arr, colors=np.tile(color, (len(pts), 1))))
 
         sharp_pos = cl.find_sharp_angles(bid, cos_threshold)
         if sharp_pos:
             sharp_pts = [pts[i] for i in sharp_pos if i < len(pts)]
-            traces.append(
-                go.Scatter3d(
-                    x=[p.x for p in sharp_pts],
-                    y=[p.y for p in sharp_pts],
-                    z=[p.z for p in sharp_pts],
-                    mode="markers",
-                    name=f"{label} sharp angles",
-                    marker=dict(color="red", size=8, symbol="x"),
+            if sharp_pts:
+                sharp_arr = np.array(
+                    [(p.x, p.y, p.z) for p in sharp_pts], dtype=np.float64
                 )
-            )
+                scene_geoms.append(
+                    PointCloud(
+                        sharp_arr, colors=np.tile([255, 0, 0, 255], (len(sharp_pts), 1))
+                    )
+                )
 
-    fig = go.Figure(data=traces)
-    fig.update_layout(
-        title=title,
-        scene=dict(
-            xaxis_title="X (mm)",
-            yaxis_title="Y (mm)",
-            zaxis_title="Z (mm)",
-            aspectmode="data",
-        ),
-        legend=dict(itemsizing="constant"),
-    )
-    fig.show()
+    trimesh.Scene(scene_geoms).show()

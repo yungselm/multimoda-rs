@@ -120,11 +120,17 @@ Distributed under the MIT License. See [LICENSE](LICENSE) for details.
 Please kindly cite the following paper if you use this repository.
 
 ```
-@article{stark2025multimodars,
-  title     = {multimodars: A Rust-powered toolkit for multi-modality cardiac image fusion and registration},
-  author    = {Stark, Anselm W. and Ilic, Marc and Mokhtari, Ali and Mohammadi Kazaj, Pooya and Graeni, Christoph and Shiri, Isaac},
-  journal   = {arXiv preprint arXiv:2510.06241},
-  year      = {2025}
+@article{Stark2026, 
+  doi = {10.21105/joss.10131}, 
+  url = {https://doi.org/10.21105/joss.10131}, 
+  year = {2026}, 
+  publisher = {The Open Journal}, 
+  volume = {11}, 
+  number = {121}, 
+  pages = {10131}, 
+  author = {Stark, Anselm W. and Ilic, Marc and Mokhtari, Ali and Kazaj, Pooya Mohammadi and Gräni, Christoph and Shiri, Isaac}, 
+  title = {multimodars: A Rust-powered toolkit for multi-modality cardiac image fusion and registration}, 
+  journal = {Journal of Open Source Software} 
 }
 ```
 
