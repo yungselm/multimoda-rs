@@ -68,9 +68,9 @@ impl Processable for Geometry {
 pub fn align_three_point_rs<T: Processable>(
     centerline: Centerline,
     mut target: T,
-    aortic_ref_pt: (f64, f64, f64),
-    upper_ref_pt: (f64, f64, f64),
-    lower_ref_pt: (f64, f64, f64),
+    main_ref_pt: (f64, f64, f64),
+    counterclockwise_ref_pt: (f64, f64, f64),
+    clockwise_ref_pt: (f64, f64, f64),
     angle_step: f64,
     write: bool,
     watertight: bool,
@@ -91,20 +91,20 @@ pub fn align_three_point_rs<T: Processable>(
         .reference_point
         .as_ref()
         .ok_or_else(|| anyhow!("missing reference point"))?;
-    let cl_ref_idx = resampled_centerline.find_reference_cl_point_idx(&aortic_ref_pt);
+    let cl_ref_idx = resampled_centerline.find_reference_cl_point_idx(&main_ref_pt);
 
     let best_rot = best_rotation_three_point(
         &target.primary_geometry().frames[ref_idx].lumen,
         ref_point,
-        aortic_ref_pt,
-        upper_ref_pt,
-        lower_ref_pt,
+        main_ref_pt,
+        counterclockwise_ref_pt,
+        clockwise_ref_pt,
         angle_step,
         &resampled_centerline.points[cl_ref_idx],
     );
 
     target = rotate_by_best_rotation(target, best_rot);
-    target = apply_transformations(target, &resampled_centerline, &aortic_ref_pt);
+    target = apply_transformations(target, &resampled_centerline, &main_ref_pt);
 
     if align_wall_anomalous {
         target = align_walls(target, true);
@@ -171,9 +171,9 @@ pub fn align_manual_rs<T: Processable>(
 pub fn align_combined_rs<T: Processable>(
     centerline: Centerline,
     target: T,
-    aortic_ref_pt: (f64, f64, f64),
-    upper_ref_pt: (f64, f64, f64),
-    lower_ref_pt: (f64, f64, f64),
+    main_ref_pt: (f64, f64, f64),
+    counterclockwise_ref_pt: (f64, f64, f64),
+    clockwise_ref_pt: (f64, f64, f64),
     points: &[(f64, f64, f64)],
     angle_step: f64,
     refine_angle_range: f64,
@@ -204,14 +204,14 @@ pub fn align_combined_rs<T: Processable>(
         .as_ref()
         .ok_or_else(|| anyhow!("missing reference point"))?;
 
-    let initial_cl_ref_idx = resampled_centerline.find_reference_cl_point_idx(&aortic_ref_pt);
+    let initial_cl_ref_idx = resampled_centerline.find_reference_cl_point_idx(&main_ref_pt);
 
     let initial_rotation = best_rotation_three_point(
         &original.primary_geometry().frames[ref_idx].lumen,
         ref_point,
-        aortic_ref_pt,
-        upper_ref_pt,
-        lower_ref_pt,
+        main_ref_pt,
+        counterclockwise_ref_pt,
+        clockwise_ref_pt,
         angle_step,
         &resampled_centerline.points[initial_cl_ref_idx],
     );
@@ -219,7 +219,7 @@ pub fn align_combined_rs<T: Processable>(
     let aligned = apply_transformations(
         rotate_by_best_rotation(original, initial_rotation),
         &resampled_centerline,
-        &aortic_ref_pt,
+        &main_ref_pt,
     );
 
     let mutated_points = transfrom_tuples_to_contourpoints(points);
@@ -288,9 +288,9 @@ pub fn align_combined_rs<T: Processable>(
 // pub fn align_combined_simple_rs(
 //     centerline: Centerline,
 //     geom_pair: GeometryPair,
-//     aortic_ref_pt: (f64, f64, f64),
-//     upper_ref_pt: (f64, f64, f64),
-//     lower_ref_pt: (f64, f64, f64),
+//     main_ref_pt: (f64, f64, f64),
+//     counterclockwise_ref_pt: (f64, f64, f64),
+//     clockwise_ref_pt: (f64, f64, f64),
 //     points: &[(f64, f64, f64)],
 //     angle_step: f64,
 //     refine_angle_range: f64,
@@ -316,21 +316,21 @@ pub fn align_combined_rs<T: Processable>(
 //         .as_ref()
 //         .ok_or_else(|| anyhow!("missing reference point"))?;
 //
-//     let initial_cl_ref_idx = resampled_centerline.find_reference_cl_point_idx(&aortic_ref_pt);
+//     let initial_cl_ref_idx = resampled_centerline.find_reference_cl_point_idx(&main_ref_pt);
 //
 //     let initial_rotation = best_rotation_three_point(
 //         &geom_pair.geom_a.frames[ref_idx].lumen,
 //         ref_point,
-//         aortic_ref_pt,
-//         upper_ref_pt,
-//         lower_ref_pt,
+//         main_ref_pt,
+//         counterclockwise_ref_pt,
+//         clockwise_ref_pt,
 //         angle_step,
 //         &resampled_centerline.points[initial_cl_ref_idx],
 //     );
 //
 //     // Apply the initial rotation
 //     let mut aligned_geom_pair = rotate_by_best_rotation(geom_pair, initial_rotation);
-//     aligned_geom_pair = apply_transformations(aligned_geom_pair, &resampled_centerline, &aortic_ref_pt);
+//     aligned_geom_pair = apply_transformations(aligned_geom_pair, &resampled_centerline, &main_ref_pt);
 //
 //     // Refine with Hausdorff
 //     let mutated_points = transfrom_tuples_to_contourpoints(points);

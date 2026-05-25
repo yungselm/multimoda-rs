@@ -1009,9 +1009,9 @@ def from_array_single(
 def align_three_point(
     centerline: PyCenterline,
     geometry: PyGeometryPair | PyGeometry,
-    aortic_ref_pt: tuple[float, float, float],
-    upper_ref_pt: tuple[float, float, float],
-    lower_ref_pt: tuple[float, float, float],
+    main_ref_pt: tuple[float, float, float],
+    counterclockwise_ref_pt: tuple[float, float, float],
+    clockwise_ref_pt: tuple[float, float, float],
     angle_step_deg: float = 1.0,
     write: bool = False,
     watertight: bool = True,
@@ -1024,8 +1024,8 @@ def align_three_point(
     """Align a geometry (or geometry pair) to the centerline using three reference points.
 
     Creates centerline-aligned meshes based on three anatomical reference points
-    (aorta, upper section, lower section).  Only works for elliptic vessels such
-    as coronary artery anomalies.
+    (main ostium, counterclockwise side, clockwise side).  Only works for elliptic
+    vessels such as coronary artery anomalies.
 
     Parameters
     ----------
@@ -1033,12 +1033,12 @@ def align_three_point(
         Centerline of the vessel.
     geometry : PyGeometryPair or PyGeometry
         Single geometry or diastolic/systolic geometry pair to align.
-    aortic_ref_pt : tuple of float
+    main_ref_pt : tuple of float
         ``(x, y, z)`` reference point at the aortic ostium.
-    upper_ref_pt : tuple of float
-        ``(x, y, z)`` upper section reference point.
-    lower_ref_pt : tuple of float
-        ``(x, y, z)`` lower section reference point.
+    counterclockwise_ref_pt : tuple of float
+        ``(x, y, z)`` counterclockwise reference point (viewed proximal → distal).
+    clockwise_ref_pt : tuple of float
+        ``(x, y, z)`` clockwise reference point (viewed proximal → distal).
     angle_step_deg : float, optional
         Step size in degrees for the rotation search.  Default is ``1.0``.
     write : bool, optional
@@ -1083,9 +1083,9 @@ def align_three_point(
     return _align_three_point(
         centerline,
         geometry,
-        aortic_ref_pt,
-        upper_ref_pt,
-        lower_ref_pt,
+        main_ref_pt,
+        counterclockwise_ref_pt,
+        clockwise_ref_pt,
         angle_step_deg,
         write,
         watertight,
@@ -1179,9 +1179,9 @@ def align_manual(
 def align_combined(
     centerline: PyCenterline,
     geometry: PyGeometryPair | PyGeometry,
-    aortic_ref_pt: tuple[float, float, float],
-    upper_ref_pt: tuple[float, float, float],
-    lower_ref_pt: tuple[float, float, float],
+    main_ref_pt: tuple[float, float, float],
+    counterclockwise_ref_pt: tuple[float, float, float],
+    clockwise_ref_pt: tuple[float, float, float],
     points: list[tuple[float, float, float]],
     angle_step_deg: float = 1.0,
     angle_range_deg: float = 15.0,
@@ -1206,12 +1206,12 @@ def align_combined(
         Centerline of the vessel.
     geometry : PyGeometryPair or PyGeometry
         Single geometry or diastolic/systolic geometry pair to align.
-    aortic_ref_pt : tuple of float
+    main_ref_pt : tuple of float
         ``(x, y, z)`` reference point at the aortic ostium.
-    upper_ref_pt : tuple of float
-        ``(x, y, z)`` upper section reference point.
-    lower_ref_pt : tuple of float
-        ``(x, y, z)`` lower section reference point.
+    counterclockwise_ref_pt : tuple of float
+        ``(x, y, z)`` counterclockwise reference point (viewed proximal → distal).
+    clockwise_ref_pt : tuple of float
+        ``(x, y, z)`` clockwise reference point (viewed proximal → distal).
     points : list of tuple of float
         Point cloud used for Hausdorff distance calculation during rotation
         refinement.
@@ -1265,9 +1265,9 @@ def align_combined(
     return _align_combined(
         centerline,
         geometry,
-        aortic_ref_pt,
-        upper_ref_pt,
-        lower_ref_pt,
+        main_ref_pt,
+        counterclockwise_ref_pt,
+        clockwise_ref_pt,
         points,
         angle_step_deg,
         angle_range_deg,
