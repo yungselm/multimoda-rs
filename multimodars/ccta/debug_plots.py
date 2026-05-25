@@ -495,3 +495,82 @@ def plot_centerline_edges(
                 )
 
     trimesh.Scene(scene_geoms).show()
+
+
+def plot_sharp_angles(
+    cl: PyCenterline,
+    branch_id: int,
+    sharp_positions: list[int],
+    context_pts: int = 3,
+    title: str = "Sharp Angles",
+) -> None:
+    """Open an interactive trimesh scene highlighting each sharp-angle position.
+
+    The full centerline is shown dimmed in gray. Each flagged position is
+    overlaid in a distinct colour together with *context_pts* neighbours on
+    each side so individual angles are easy to count and locate.
+
+    Colour coding
+    -------------
+    * Gray (dim) — all centerline points (background).
+    * Distinct colours per index — each sharp-angle position and its local context.
+
+    Parameters
+    ----------
+    cl:
+        Centerline after ``calculate_branches``.
+    branch_id:
+        Branch that was inspected (0 = main vessel).
+    sharp_positions:
+        Local positions within the branch as returned by
+        :func:`find_sharp_angles` or ``cl.find_sharp_angles``.
+    context_pts:
+        Number of neighbouring points shown on each side of each position.
+    title:
+        Unused (kept for API compatibility).
+    """
+    from collections import defaultdict
+
+    _PALETTE = [
+        [255, 127, 14, 255],
+        [44, 160, 44, 255],
+        [148, 103, 189, 255],
+        [23, 190, 207, 255],
+        [188, 189, 34, 255],
+        [227, 119, 194, 255],
+        [140, 86, 75, 255],
+        [214, 39, 40, 255],
+        [31, 119, 180, 255],
+        [255, 215, 0, 255],
+    ]
+
+    by_branch: dict[int, list] = defaultdict(list)
+    for p in cl.points:
+        by_branch[p.branch_id].append(p.contour_point)
+
+    scene_geoms = []
+
+    for pts in by_branch.values():
+        arr = np.array([(p.x, p.y, p.z) for p in pts], dtype=np.float64)
+        scene_geoms.append(
+            PointCloud(
+                arr,
+                colors=np.tile(
+                    np.array([150, 150, 150, 80], dtype=np.uint8), (len(pts), 1)
+                ),
+            )
+        )
+
+    branch_pts = by_branch.get(branch_id, [])
+    n = len(branch_pts)
+    for i, pos in enumerate(sharp_positions):
+        color = np.array(_PALETTE[i % len(_PALETTE)], dtype=np.uint8)
+        lo = max(0, pos - context_pts)
+        hi = min(n, pos + context_pts + 1)
+        segment = branch_pts[lo:hi]
+        if not segment:
+            continue
+        arr = np.array([(p.x, p.y, p.z) for p in segment], dtype=np.float64)
+        scene_geoms.append(PointCloud(arr, colors=np.tile(color, (len(segment), 1))))
+
+    trimesh.Scene(scene_geoms).show()

@@ -286,3 +286,46 @@ def prepare_centerlines(
         plot_centerline_branches(rca_cl, lca_cl, results_dict)
 
     return rca_cl, lca_cl, results_dict
+
+
+def find_sharp_angles(
+    cl: PyCenterline,
+    branch_id: int,
+    cos_threshold: float = 0.0,
+    control_plot: bool = False,
+) -> list[int]:
+    """Find sharp angles in a centerline branch and optionally plot them.
+
+    A thin wrapper around ``cl.find_sharp_angles`` that adds an optional
+    debug visualisation where each flagged position is shown in a distinct
+    colour so they can be counted and identified before deciding whether to
+    call ``split_branch`` / ``merge_branches``.
+
+    Parameters
+    ----------
+    cl:
+        Centerline after ``calculate_branches`` (and optionally
+        ``check_centerline``).
+    branch_id:
+        Branch to inspect (0 = main vessel).
+    cos_threshold:
+        Cosine above which an angle is considered sharp.
+        Use ``0.0`` for < 90°, ``0.5`` for < 60°, ``0.866`` for < 30°.
+    control_plot:
+        When ``True`` opens an interactive 3-D scene with each sharp-angle
+        position highlighted in a distinct colour.
+
+    Returns
+    -------
+    list[int]
+        0-indexed positions within the branch (suitable for ``split_branch``).
+    """
+    positions = cl.find_sharp_angles(branch_id, cos_threshold)
+    print(
+        f"Branch {branch_id}: {len(positions)} sharp angle(s) at positions {positions}"
+    )
+    if control_plot:
+        from .debug_plots import plot_sharp_angles
+
+        plot_sharp_angles(cl, branch_id, positions)
+    return positions

@@ -41,7 +41,9 @@ rca_cl, lca_cl, results = mm.prepare_centerlines(
     control_plot=True,
 )
 
-list_edges = lca_cl.find_sharp_angles(branch_id=0, cos_threshold=0.0)
+list_edges = mm.find_sharp_angles(
+    lca_cl, branch_id=0, cos_threshold=0.0, control_plot=True
+)
 lca_cl = lca_cl.split_branch(0, list_edges[4])
 lca_cl = lca_cl.merge_branches(0, 4)
 lca_cl = lca_cl.check_centerline()

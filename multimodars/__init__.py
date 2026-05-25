@@ -60,9 +60,10 @@ from .ccta.manipulating import (
 from .ccta.discretization_map import (
     prepare_centerlines,
     discretize_vessel_tree,
+    find_sharp_angles,
 )
 from .ccta.fixing_functions import fix_and_remesh_stitched_mesh, manual_hole_fill
-from .ccta.debug_plots import plot_results_key, plot_centerline_edges
+from .ccta.debug_plots import plot_results_key, plot_centerline_edges, plot_sharp_angles
 
 __all__ = [
     # Core classes
@@ -122,9 +123,11 @@ __all__ = [
     "manual_hole_fill",
     "plot_results_key",
     "plot_centerline_edges",
+    "plot_sharp_angles",
     "discretize_vessel",
     "prepare_centerlines",
     "discretize_vessel_tree",
+    "find_sharp_angles",
     "label_branches",
 ]
 
