@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
@@ -9,6 +10,25 @@ from trimesh.visual import ColorVisuals
 
 if TYPE_CHECKING:
     from ..multimodars import PyCenterline, PyDiscretizedVesselTree
+
+
+def _make_point_cloud(arr: np.ndarray, color: list[int]) -> PointCloud:
+    c = np.array(color, dtype=np.uint8)
+    return PointCloud(arr, colors=np.tile(c, (len(arr), 1)))
+
+
+def _get_cl_arry(cl: PyCenterline) -> np.ndarray:
+    return np.array(
+        [(p.contour_point.x, p.contour_point.y, p.contour_point.z) for p in cl.points],
+        dtype=np.float64,
+    )
+
+
+def _group_by_branch(cl: PyCenterline) -> dict[int, list]:
+    by_branch: dict[int, list] = defaultdict(list)
+    for p in cl.points:
+        by_branch[p.branch_id].append(p.contour_point)
+    return by_branch
 
 
 def plot_results_key(
@@ -90,8 +110,7 @@ def plot_results_key(
         )
         if enabled and pts:
             arr = np.array(pts, dtype=np.float64)
-            colors = np.tile(color, (len(pts), 1))
-            scene_geoms.append(PointCloud(arr, colors=colors))
+            scene_geoms.append(_make_point_cloud(arr, color))
 
     if not scene_geoms:
         print("Nothing to show - all regions are disabled or empty.")
@@ -102,25 +121,15 @@ def plot_results_key(
     scene_geoms.append(mesh_visual)
 
     if cl_rca:
-        rca = _get_cl_arry(cl_rca)
-        scene_geoms.append(PointCloud(rca, colors=[0, 100, 200, 255]))
+        scene_geoms.append(_make_point_cloud(_get_cl_arry(cl_rca), [0, 100, 200, 255]))
     if cl_lca:
-        lca = _get_cl_arry(cl_lca)
-        scene_geoms.append(PointCloud(lca, colors=[0, 150, 0, 255]))
+        scene_geoms.append(_make_point_cloud(_get_cl_arry(cl_lca), [0, 150, 0, 255]))
     if cl_aorta:
-        ao = _get_cl_arry(cl_aorta)
-        scene_geoms.append(PointCloud(ao, colors=[200, 200, 0, 255]))
+        scene_geoms.append(
+            _make_point_cloud(_get_cl_arry(cl_aorta), [200, 200, 0, 255])
+        )
 
-    scene = trimesh.Scene(scene_geoms)
-    scene.show()
-
-
-def _get_cl_arry(cl: PyCenterline) -> np.ndarray:
-    arr = np.array(
-        [(p.contour_point.x, p.contour_point.y, p.contour_point.z) for p in cl.points],
-        dtype=np.float64,
-    )
-    return arr
+    trimesh.Scene(scene_geoms).show()
 
 
 def compare_centerline_scaling(
@@ -151,78 +160,40 @@ def compare_centerline_scaling(
     """
     print("\n=== CENTERLINE SCALING COMPARISON ===")
 
-    region_array = np.array(region_points, dtype=np.float64)
-    region_colors = np.tile([255, 0, 0, 255], (len(region_points), 1))  # Red
-
-    # Scene 1: Original mesh with region highlighted
-    scene1 = trimesh.Scene(
-        [original_mesh, PointCloud(region_array, colors=region_colors)]
+    region_cloud = _make_point_cloud(
+        np.array(region_points, dtype=np.float64), [255, 0, 0, 255]
     )
-    cast(ColorVisuals, original_mesh.visual).face_colors = [
-        200,
-        200,
-        200,
-        100,
-    ]  # Semi-transparent
 
-    centerline_points = None
-    centerline_colors = None
+    cast(ColorVisuals, original_mesh.visual).face_colors = [200, 200, 200, 100]
+    scene1 = trimesh.Scene([original_mesh, region_cloud])
+
+    cl_arr: np.ndarray | None = None
     if centerline is not None:
-        centerline_points = np.array(
-            [
-                (p.contour_point.x, p.contour_point.y, p.contour_point.z)
-                for p in centerline.points
-            ],
-            dtype=np.float64,
-        )
-        centerline_colors = np.tile(
-            [0, 255, 255, 255], (len(centerline_points), 1)
-        )  # Cyan
-        scene1.add_geometry(PointCloud(centerline_points, colors=centerline_colors))
+        cl_arr = _get_cl_arry(centerline)
+        scene1.add_geometry(_make_point_cloud(cl_arr, [0, 255, 255, 255]))
 
     print("Showing Scene 1: Original mesh with RCA region (red) and centerline (cyan)")
     scene1.show()
 
-    # Scene 2: Scaled mesh with region highlighted
-    scene2 = trimesh.Scene(
-        [scaled_mesh, PointCloud(region_array, colors=region_colors)]
-    )
-    cast(ColorVisuals, scaled_mesh.visual).face_colors = [
-        200,
-        200,
-        200,
-        100,
-    ]  # Semi-transparent
-
-    if centerline_points is not None:
-        scene2.add_geometry(PointCloud(centerline_points, colors=centerline_colors))
-
+    cast(ColorVisuals, scaled_mesh.visual).face_colors = [200, 200, 200, 100]
+    scene2 = trimesh.Scene([scaled_mesh, region_cloud])
+    if cl_arr is not None:
+        scene2.add_geometry(_make_point_cloud(cl_arr, [0, 255, 255, 255]))
     print("Showing Scene 2: Scaled mesh with RCA region (red) and centerline (cyan)")
     scene2.show()
 
-    # Scene 3: Side-by-side comparison
     scaled_mesh_shifted = scaled_mesh.copy()
-    shift_amount = np.array([150, 0, 0])  # Adjust based on your mesh size
+    shift_amount = np.array([150, 0, 0])
     scaled_mesh_shifted.apply_translation(shift_amount)
 
+    cast(ColorVisuals, original_mesh.visual).face_colors = [0, 100, 200, 100]
+    cast(ColorVisuals, scaled_mesh_shifted.visual).face_colors = [200, 100, 0, 100]
+
     scene3 = trimesh.Scene([original_mesh, scaled_mesh_shifted])
-
-    cast(ColorVisuals, original_mesh.visual).face_colors = [
-        0,
-        100,
-        200,
-        100,
-    ]  # Blue-ish
-    cast(ColorVisuals, scaled_mesh_shifted.visual).face_colors = [
-        200,
-        100,
-        0,
-        100,
-    ]  # Orange-ish
-
-    if centerline_points is not None:
-        centerline_shifted = centerline_points + shift_amount
-        scene3.add_geometry(PointCloud(centerline_shifted, colors=centerline_colors))
+    if cl_arr is not None:
+        scene3.add_geometry(
+            _make_point_cloud(cl_arr + shift_amount, [0, 255, 255, 255])
+        )
 
     print("Showing Scene 3: Side-by-side comparison (Blue=Original, Orange=Scaled)")
     scene3.show()
@@ -230,7 +201,6 @@ def compare_centerline_scaling(
 
 def plot_vessel_tree(
     tree: PyDiscretizedVesselTree,
-    title: str = "Discretized Vessel Tree",
     pts_per_contour: int = 24,
 ) -> None:
     """Open an interactive trimesh scene of a discretized vessel tree.
@@ -252,8 +222,6 @@ def plot_vessel_tree(
     tree:
         Fully populated vessel tree (output of
         :func:`~multimodars.ccta.discretization_map.discretize_vessel_tree`).
-    title:
-        Unused (kept for API compatibility).
     pts_per_contour:
         Number of evenly-spaced points sampled from each contour ring.
     """
@@ -293,20 +261,12 @@ def plot_vessel_tree(
                 cx.append(c.centroid[0])
                 cy.append(c.centroid[1])
                 cz.append(c.centroid[2])
-        color_arr = np.array(color, dtype=np.uint8)
         if rx:
             arr = np.array([rx, ry, rz], dtype=np.float64).T
-            scene_geoms.append(PointCloud(arr, colors=np.tile(color_arr, (len(rx), 1))))
+            scene_geoms.append(_make_point_cloud(arr, color))
         if cx:
             arr = np.array([cx, cy, cz], dtype=np.float64).T
-            scene_geoms.append(
-                PointCloud(
-                    arr,
-                    colors=np.tile(
-                        np.array([255, 255, 0, 255], dtype=np.uint8), (len(cx), 1)
-                    ),
-                )
-            )
+            scene_geoms.append(_make_point_cloud(arr, [255, 255, 0, 255]))
 
     def _add_refs(refs) -> None:
         mx, my, mz = [], [], []
@@ -329,10 +289,7 @@ def plot_vessel_tree(
         ]:
             if xs:
                 arr = np.array([xs, ys, zs], dtype=np.float64).T
-                color_arr = np.array(color, dtype=np.uint8)
-                scene_geoms.append(
-                    PointCloud(arr, colors=np.tile(color_arr, (len(xs), 1)))
-                )
+                scene_geoms.append(_make_point_cloud(arr, color))
 
     _add_contours(tree.discretized_aorta, [192, 192, 192, 100])
     _add_contours(tree.discretized_rca_main, [70, 130, 180, 255])
@@ -351,7 +308,6 @@ def plot_centerline_branches(
     rca_cl: PyCenterline,
     lca_cl: PyCenterline,
     results_dict: dict | None = None,
-    title: str = "Centerline Branch Assignment",
 ) -> None:
     """Open an interactive trimesh scene of centerline branch assignments.
 
@@ -370,11 +326,7 @@ def plot_centerline_branches(
         Optional.  When provided, labelled surface points
         (``rca_points_main``, ``rca_points_side_N``, ``lca_points_main``,
         ``lca_points_side_N``) are overlaid semi-transparently.
-    title:
-        Unused (kept for API compatibility).
     """
-    from collections import defaultdict
-
     _RCA_COLORS = [
         [31, 119, 180, 255],
         [23, 190, 207, 255],
@@ -393,22 +345,18 @@ def plot_centerline_branches(
     scene_geoms = []
 
     def _add_cl_branches(cl: PyCenterline, colors: list[list[int]]) -> None:
-        by_branch: dict[int, list] = defaultdict(list)
-        for p in cl.points:
-            by_branch[p.branch_id].append(p.contour_point)
+        by_branch = _group_by_branch(cl)
         for bid in sorted(by_branch):
             pts = by_branch[bid]
             arr = np.array([(p.x, p.y, p.z) for p in pts], dtype=np.float64)
-            color = colors[bid % len(colors)]
-            scene_geoms.append(PointCloud(arr, colors=np.tile(color, (len(pts), 1))))
+            scene_geoms.append(_make_point_cloud(arr, colors[bid % len(colors)]))
 
     def _add_surface_points(key: str, color: list[int]) -> None:
         pts = results_dict.get(key, [])  # type: ignore[union-attr]
         if not pts:
             return
         arr = np.array(pts, dtype=np.float64)
-        faded = color[:3] + [80]
-        scene_geoms.append(PointCloud(arr, colors=np.tile(faded, (len(pts), 1))))
+        scene_geoms.append(_make_point_cloud(arr, color[:3] + [80]))
 
     _add_cl_branches(rca_cl, _RCA_COLORS)
     _add_cl_branches(lca_cl, _LCA_COLORS)
@@ -435,7 +383,6 @@ def plot_centerline_branches(
 def plot_centerline_edges(
     cl: PyCenterline,
     cos_threshold: float = 0.0,
-    title: str = "Centerline Edges",
 ) -> None:
     """Open an interactive trimesh scene of a centerline with sharp angles highlighted.
 
@@ -451,11 +398,7 @@ def plot_centerline_edges(
     cos_threshold:
         Cosine threshold forwarded to ``cl.find_sharp_angles``.  ``0.0`` flags
         all angles ≥ 90 °; negative values flag increasingly obtuse bends.
-    title:
-        Unused (kept for API compatibility).
     """
-    from collections import defaultdict
-
     _PALETTE = [
         [31, 119, 180, 255],
         [255, 127, 14, 255],
@@ -470,16 +413,12 @@ def plot_centerline_edges(
     ]
 
     scene_geoms = []
-
-    by_branch: dict[int, list] = defaultdict(list)
-    for p in cl.points:
-        by_branch[p.branch_id].append(p.contour_point)
+    by_branch = _group_by_branch(cl)
 
     for bid in sorted(by_branch):
         pts = by_branch[bid]
-        color = _PALETTE[bid % len(_PALETTE)]
         arr = np.array([(p.x, p.y, p.z) for p in pts], dtype=np.float64)
-        scene_geoms.append(PointCloud(arr, colors=np.tile(color, (len(pts), 1))))
+        scene_geoms.append(_make_point_cloud(arr, _PALETTE[bid % len(_PALETTE)]))
 
         sharp_pos = cl.find_sharp_angles(bid, cos_threshold)
         if sharp_pos:
@@ -488,11 +427,7 @@ def plot_centerline_edges(
                 sharp_arr = np.array(
                     [(p.x, p.y, p.z) for p in sharp_pts], dtype=np.float64
                 )
-                scene_geoms.append(
-                    PointCloud(
-                        sharp_arr, colors=np.tile([255, 0, 0, 255], (len(sharp_pts), 1))
-                    )
-                )
+                scene_geoms.append(_make_point_cloud(sharp_arr, [255, 0, 0, 255]))
 
     trimesh.Scene(scene_geoms).show()
 
@@ -502,7 +437,6 @@ def plot_sharp_angles(
     branch_id: int,
     sharp_positions: list[int],
     context_pts: int = 3,
-    title: str = "Sharp Angles",
 ) -> None:
     """Open an interactive trimesh scene highlighting each sharp-angle position.
 
@@ -526,11 +460,7 @@ def plot_sharp_angles(
         :func:`find_sharp_angles` or ``cl.find_sharp_angles``.
     context_pts:
         Number of neighbouring points shown on each side of each position.
-    title:
-        Unused (kept for API compatibility).
     """
-    from collections import defaultdict
-
     _PALETTE = [
         [255, 127, 14, 255],
         [44, 160, 44, 255],
@@ -544,33 +474,22 @@ def plot_sharp_angles(
         [255, 215, 0, 255],
     ]
 
-    by_branch: dict[int, list] = defaultdict(list)
-    for p in cl.points:
-        by_branch[p.branch_id].append(p.contour_point)
-
+    by_branch = _group_by_branch(cl)
     scene_geoms = []
 
     for pts in by_branch.values():
         arr = np.array([(p.x, p.y, p.z) for p in pts], dtype=np.float64)
-        scene_geoms.append(
-            PointCloud(
-                arr,
-                colors=np.tile(
-                    np.array([150, 150, 150, 80], dtype=np.uint8), (len(pts), 1)
-                ),
-            )
-        )
+        scene_geoms.append(_make_point_cloud(arr, [150, 150, 150, 80]))
 
     branch_pts = by_branch.get(branch_id, [])
     n = len(branch_pts)
     for i, pos in enumerate(sharp_positions):
-        color = np.array(_PALETTE[i % len(_PALETTE)], dtype=np.uint8)
         lo = max(0, pos - context_pts)
         hi = min(n, pos + context_pts + 1)
         segment = branch_pts[lo:hi]
         if not segment:
             continue
         arr = np.array([(p.x, p.y, p.z) for p in segment], dtype=np.float64)
-        scene_geoms.append(PointCloud(arr, colors=np.tile(color, (len(segment), 1))))
+        scene_geoms.append(_make_point_cloud(arr, _PALETTE[i % len(_PALETTE)]))
 
     trimesh.Scene(scene_geoms).show()

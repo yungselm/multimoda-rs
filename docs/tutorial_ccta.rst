@@ -11,14 +11,15 @@ Tutorial - CCTA Module
 This step-by-step tutorial demonstrates how to:
 
 1. Read in and label a CCTA geometry from an STL file and centerline CSV files
-2. Load an intravascular geometry and fine-align it to the CCTA point cloud
-3. Label the anomalous (intramural) region within the CCTA mesh
-4. Compute radial scaling factors for the proximal, distal, and aortic regions
-5. Morph the CCTA mesh to match the intravascular geometry
-6. Remove the intramural region and stitch the CCTA to the intravascular geometry
-7. Remesh and smooth the stitched geometry
-8. Visualise labeled regions and export section STL files
-9. Re-label the final stitched geometry
+2. Prepare centerlines, detect branches, and discretize the vessel tree
+3. Load an intravascular geometry and fine-align it to the CCTA point cloud
+4. Label the anomalous (intramural) region within the CCTA mesh
+5. Compute radial scaling factors for the proximal, distal, and aortic regions
+6. Morph the CCTA mesh to match the intravascular geometry
+7. Remove the intramural region and stitch the CCTA to the intravascular geometry
+8. Remesh and smooth the stitched geometry
+9. Visualise labeled regions and export section STL files
+10. Re-label the final stitched geometry
 
 The goal of this module is to replace a section on the CCTA geometry with an intravascular geometry.
 
@@ -132,7 +133,121 @@ They can be converted to :class:`multimodars.PyCenterline` objects with normals 
     lca_cl   = mm.numpy_to_centerline(lca_cl_raw)
     aorta_cl = mm.numpy_to_centerline(aorta_cl_raw)
 
-2. Load and align intravascular geometry
+2. Prepare centerlines, detect branches, and discretize the vessel tree
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Before discretizing the vessel geometry, both coronary centerlines must have their branches
+detected and the surface-mesh points labeled by branch.  :func:`multimodars.prepare_centerlines`
+handles all of this in a single call: it runs ``calculate_branches`` and ``check_centerline``
+on each centerline, then calls :func:`multimodars.label_branches` so the ``results`` dictionary
+gains keys ``rca_points_main``, ``rca_points_side_1``, …, ``lca_points_main``,
+``lca_points_side_1``, …:
+
+.. code-block:: python
+
+    rca_cl, lca_cl, results = mm.prepare_centerlines(
+        rca_cl, lca_cl, results,
+        branch_sigma=2.0,
+        control_plot=False,   # True opens a trimesh scene of the branch assignment
+    )
+
+**Parameter reference:**
+
+- ``branch_sigma``: Gaussian smoothing radius (mm) applied during branch detection.  Increase
+  if the algorithm over-segments a noisy centerline; decrease to preserve fine anatomical detail.
+- ``control_plot``: opens an interactive trimesh scene coloured by branch ID and showing the
+  labelled surface points, so you can verify the assignment before discretizing.
+
+Inspecting and correcting sharp angles
+"""""""""""""""""""""""""""""""""""""""
+
+Noisy centerlines sometimes contain kinks that cause branch detection to misfire.
+:func:`multimodars.find_sharp_angles` scans a branch for positions where the local tangent
+reverses by more than the supplied cosine threshold and opens an optional debug scene with each
+flagged position highlighted in a distinct colour:
+
+.. code-block:: python
+
+    # Inspect: red × marks every position that may need a correction
+    mm.plot_centerline_edges(lca_cl, cos_threshold=0.0)
+
+    # Find flagged positions (returns a list of 0-based indices within the branch)
+    positions = mm.find_sharp_angles(lca_cl, branch_id=0, cos_threshold=0.0,
+                                     control_plot=True)
+
+Once you know which positions need fixing, use ``split_branch`` to break a spurious loop and
+``merge_branches`` to re-attach the tail back onto the main vessel, then re-validate and
+re-label. After splitting and merging it is assured that the longest centerline section will always be at position 0:
+
+.. code-block:: python
+
+    # Example: the 5th flagged position creates a loop — split there, then re-merge
+    lca_cl = lca_cl.split_branch(0, positions[4])
+    lca_cl = lca_cl.merge_branches(0, 4)
+    lca_cl = lca_cl.check_centerline()
+    results = mm.label_branches(lca_cl, results, results_key="lca_points")
+
+.. note::
+
+    :func:`~multimodars.prepare_centerlines` cannot automate the ``split_branch`` /
+    ``merge_branches`` step because the right corrections are case-specific.  Inspect the
+    ``control_plot`` output first, then call those methods manually before proceeding.
+
+Discretizing the vessel tree
+"""""""""""""""""""""""""""""
+
+:func:`multimodars.discretize_vessel_tree` slices each vessel along its centerline at fixed
+arc-length intervals and samples ``n_points`` evenly-spaced points from each cross-sectional
+contour.  It also computes an orientation reference triplet (main, counter-clockwise, and
+clockwise reference points) at the ostium and at every side-branch bifurcation.  These
+triplets are stored in ``tree.rca_references`` and ``tree.lca_references`` and are later
+used to initialize the three-point alignment in step 3:
+
+.. code-block:: python
+
+    tree = mm.discretize_vessel_tree(
+        ao_cl, rca_cl, lca_cl,
+        results,
+        step_size=1.0,      # arc-length spacing between cross-sections in mm
+        n_points=100,       # points per output contour ring
+        b_spline=True,      # replace each contour with a closed B-spline fit
+        bspline_smoothing=5.0,
+        control_plot=False, # True opens a trimesh scene of the full tree
+    )
+
+    # Inspect the result interactively
+    mm.plot_vessel_tree(tree)
+
+.. figure:: ./figures/discretization.jpg
+   :name: fig-discretization
+   :alt: Discretization Tree
+   :align: center
+   :width: 800px
+
+   The original 3-D model of the CCTA is discretized with a predefined step size (here 1 mm). This allows to easily detected reference points, and additionally perform measurements for different positions, since all slices are stored as ``PyContours``.
+
+**Parameter reference:**
+
+- ``step_size``: arc-length distance between consecutive cross-sections in mm.  Smaller
+  values give finer sampling but increase memory use.
+- ``n_points``: number of evenly-spaced points per output contour ring.  100 is a good
+  default; reduce to 50 for a lightweight preview.
+- ``b_spline``: when ``True``, each discretized contour is replaced with a closed periodic
+  B-spline fit before the reference points are computed.  Useful when raw contours are noisy.
+- ``bspline_smoothing``: smoothing condition ``s`` for ``splprep``.  ``0`` = exact
+  interpolation; ``≈ n_points`` = gentle smoothing; ``≈ 5 x n_points`` = strong smoothing.
+  Tune empirically based on how irregular the raw contours appear.
+- ``bspline_degree``: B-spline polynomial degree (default 3, cubic).
+
+The discretized tree exposes the following attributes:
+
+- ``tree.discretized_aorta`` — list of :class:`~multimodars.PyContour` for the aorta.
+- ``tree.discretized_rca_main`` / ``tree.discretized_lca_main`` — main-vessel contours.
+- ``tree.rca_branches`` / ``tree.lca_branches`` — list of lists, one per side branch.
+- ``tree.rca_references`` / ``tree.lca_references`` — list of ``(main_ref, ccw_ref, cw_ref)``
+  triplets, one per bifurcation site.
+
+3. Load and align intravascular geometry
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Load the intravascular segmentation with :func:`multimodars.from_file_singlepair` (see the
@@ -148,18 +263,23 @@ Load the intravascular segmentation with :func:`multimodars.from_file_singlepair
 
 Once the intravascular geometry is loaded, align it to the CCTA centerline and point cloud
 with :func:`multimodars.align_combined`.  This function first performs a coarse three-point
-alignment using anatomical landmarks (aortic reference, superior, and inferior points — see
-the intravascular tutorial for landmark placement guidance), and then refines the rotation by
-minimising Hausdorff distances between the CCTA point cloud and the intravascular contours:
+alignment using the reference triplet computed in step 2, and then refines the rotation by
+minimising Hausdorff distances between the CCTA point cloud and the intravascular contours.
+
+The reference triplet ``(main_ref_pt, counterclockwise_ref_pt, clockwise_ref_pt)`` at the
+RCA ostium is available directly from the discretized tree:
 
 .. code-block:: python
 
+    ref_points = tree.rca_references[0]   # triplet at the ostium (index 0)
+    rca_cl_main = rca_cl.get_branch(0)    # alignment needs a single-branch centerline
+
     aligned, resampled_cl = mm.align_combined(
-        rca_cl,
+        rca_cl_main,
         rest,
-        (12.2605, -201.3643, 1751.0554),   # aortic reference point
-        (11.7567, -202.1920, 1754.7975),   # superior reference point
-        (15.6605, -202.1920, 1749.9655),   # inferior reference point
+        ref_points[0],                     # main reference point
+        ref_points[1],                     # counter-clockwise reference point
+        ref_points[2],                     # clockwise reference point
         results['rca_points'],             # CCTA point cloud for Hausdorff refinement
         angle_range_deg=10.0,
         write=True,
@@ -175,7 +295,7 @@ minimising Hausdorff distances between the CCTA point cloud and the intravascula
 - ``write`` / ``watertight`` / ``output_dir``: when ``write=True``, OBJ meshes are exported
   to ``output_dir``; ``watertight=True`` closes the ends with cap vertices.
 
-3. Label the anomalous region
+4. Label the anomalous region
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 After alignment, :func:`multimodars.label_anomalous_region` subdivides the RCA points into
@@ -206,7 +326,7 @@ are assigned — useful when the boundary appears misplaced.
    :align: center
    :width: 400px
 
-4. Compute scaling factors
+5. Compute scaling factors
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Before morphing the mesh, the optimal scaling factor for each region must be computed.
@@ -279,7 +399,7 @@ is used to minimize distance between the intravascular wall and the ``removed_rc
 
    R-AAOCA with aligned intravascular mesh, scaled distal coronary and scaled aorta to match the ``Wall`` in ``PyGeometry``. Left: 3-D view; right: schematic illustration.
 
-5. Morph CCTA to intravascular geometry
+6. Morph CCTA to intravascular geometry
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Each region is morphed independently with :func:`multimodars.scale_region_centerline_morphing`.
@@ -328,7 +448,7 @@ keep the coordinate lists in ``results`` consistent with the updated vertex posi
     :func:`~multimodars.sync_results_to_mesh` updates all point lists to reflect the current
     mesh state.  Always sync before passing ``results['mesh']`` to the next morphing call.
 
-6. Remove intramural region and stitch geometries
+7. Remove intramural region and stitch geometries
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Before stitching, remove the anomalous and proximal regions from the CCTA mesh.  This opens
@@ -391,7 +511,7 @@ Export the raw stitched mesh before remeshing to allow inspection:
 
     stitched['mesh'].export("prefixed_mesh.stl")
 
-7. Remesh and smooth
+8. Remesh and smooth
 ^^^^^^^^^^^^^^^^^^^^^
 
 The stitched mesh typically contains boundary artefacts and irregular triangulation where
@@ -433,7 +553,7 @@ shape:
     trimesh.smoothing.filter_taubin(remeshed['mesh'], lamb=0.6)
     remeshed['mesh'].export("fixed_mesh.stl")
 
-8. Visualise and export sections
+9. Visualise and export sections
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Inspect the labeled regions of the stitched result with :func:`multimodars.plot_results_key`.
@@ -508,7 +628,7 @@ To extract a sub-mesh programmatically (e.g. to pass to a downstream analysis), 
 
     aorta_mesh = mm.keep_labeled_points_from_mesh(stitched, "aorta_points")
 
-9. Re-label the final geometry
+10. Re-label the final geometry
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 After remeshing and smoothing, the vertex coordinates have changed and the stored point

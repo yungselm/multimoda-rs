@@ -42,9 +42,10 @@ def _fit_bspline_contour(
     if n < degree + 1:
         return contour
 
-    xs = np.array([p.x for p in pts], dtype=np.float64)
-    ys = np.array([p.y for p in pts], dtype=np.float64)
-    zs = np.array([p.z for p in pts], dtype=np.float64)
+    arr = np.array([(p.x, p.y, p.z) for p in pts], dtype=np.float64)
+    xs = arr[:, 0]
+    ys = arr[:, 1]
+    zs = arr[:, 2]
 
     try:
         tck, _ = splprep([xs, ys, zs], s=smoothing, k=degree, per=True)
@@ -181,40 +182,24 @@ def discretize_vessel_tree(
     side_rca = _extract_side_branches(results_dict, "rca_points")
     side_lca = _extract_side_branches(results_dict, "lca_points")
 
+    tree = _discretize_vessel_tree(
+        ao_cl,
+        rca_cl,
+        lca_cl,
+        points_ao,
+        points_rca_main,
+        points_lca_main,
+        side_rca,
+        side_lca,
+        branch_id_rca=branch_id_rca,
+        branch_id_lca=branch_id_lca,
+        step_size=step_size,
+        n_points=n_points,
+        calculate_ref_pts=not b_spline,
+    )
     if b_spline:
-        tree = _discretize_vessel_tree(
-            ao_cl,
-            rca_cl,
-            lca_cl,
-            points_ao,
-            points_rca_main,
-            points_lca_main,
-            side_rca,
-            side_lca,
-            branch_id_rca=branch_id_rca,
-            branch_id_lca=branch_id_lca,
-            step_size=step_size,
-            n_points=n_points,
-            calculate_ref_pts=False,
-        )
         tree = _replace_contours_with_bsplines(tree, bspline_smoothing, bspline_degree)
         tree.calculate_ref_pts()
-    else:
-        tree = _discretize_vessel_tree(
-            ao_cl,
-            rca_cl,
-            lca_cl,
-            points_ao,
-            points_rca_main,
-            points_lca_main,
-            side_rca,
-            side_lca,
-            branch_id_rca=branch_id_rca,
-            branch_id_lca=branch_id_lca,
-            step_size=step_size,
-            n_points=n_points,
-            calculate_ref_pts=True,
-        )
 
     if control_plot:
         from .debug_plots import plot_vessel_tree
