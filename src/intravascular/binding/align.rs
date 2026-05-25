@@ -35,6 +35,10 @@ use pyo3::prelude::*;
 ///     Output directory for aligned meshes.  Default is ``"output/aligned"``.
 /// case_name : str, optional
 ///     Case name used as a filename prefix.  Default is ``"None"``.
+/// align_wall_anomalous : bool, optional
+///     When ``True``, rotate the Wall contour in every frame (from frame 2 onward)
+///     so its aortic straight portion aligns to the plane defined by frames 0 and 1.
+///     Only meaningful for anomalous vessels.  Default is ``False``.
 ///
 /// Returns
 /// -------
@@ -68,6 +72,7 @@ use pyo3::prelude::*;
         output_dir="output/aligned",
         contour_types=vec![PyContourType::Lumen, PyContourType::Catheter, PyContourType::Wall],
         case_name="None",
+        align_wall_anomalous=false,
     )
 )]
 pub fn align_three_point(
@@ -84,6 +89,7 @@ pub fn align_three_point(
     output_dir: &str,
     contour_types: Vec<PyContourType>,
     case_name: &str,
+    align_wall_anomalous: bool,
 ) -> PyResult<(Py<PyAny>, PyCenterline)> {
     let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
@@ -104,6 +110,7 @@ pub fn align_three_point(
             output_dir,
             rust_contour_types,
             case_name,
+            align_wall_anomalous,
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         let py_result: PyGeometryPair = result_rs.into();
@@ -122,6 +129,7 @@ pub fn align_three_point(
             output_dir,
             rust_contour_types,
             case_name,
+            align_wall_anomalous,
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         let py_result: PyGeometry = result_rs.into();
@@ -160,6 +168,10 @@ pub fn align_three_point(
 ///     Output directory for aligned meshes.  Default is ``"output/aligned"``.
 /// case_name : str, optional
 ///     Case name used as a filename prefix.  Default is ``"None"``.
+/// align_wall_anomalous : bool, optional
+///     When ``True``, rotate the Wall contour in every frame (from frame 2 onward)
+///     so its aortic straight portion aligns to the plane defined by frames 0 and 1.
+///     Only meaningful for anomalous vessels.  Default is ``False``.
 ///
 /// Returns
 /// -------
@@ -187,6 +199,7 @@ pub fn align_three_point(
         output_dir="output/aligned",
         contour_types=vec![PyContourType::Lumen, PyContourType::Catheter, PyContourType::Wall],
         case_name="None",
+        align_wall_anomalous=false,
     )
 )]
 pub fn align_manual(
@@ -201,6 +214,7 @@ pub fn align_manual(
     output_dir: &str,
     contour_types: Vec<PyContourType>,
     case_name: &str,
+    align_wall_anomalous: bool,
 ) -> PyResult<(Py<PyAny>, PyCenterline)> {
     let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
@@ -218,6 +232,7 @@ pub fn align_manual(
             output_dir,
             rust_contour_types,
             case_name,
+            align_wall_anomalous,
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         let py_result: PyGeometryPair = result_rs.into();
@@ -234,6 +249,7 @@ pub fn align_manual(
             output_dir,
             rust_contour_types,
             case_name,
+            align_wall_anomalous,
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         let py_result: PyGeometry = result_rs.into();
@@ -284,6 +300,10 @@ pub fn align_manual(
 ///     Output directory for aligned meshes.  Default is ``"output/aligned"``.
 /// case_name : str, optional
 ///     Case name used as a filename prefix.  Default is ``"None"``.
+/// align_wall_anomalous : bool, optional
+///     When ``True``, rotate the Wall contour in every frame (from frame 2 onward)
+///     so its aortic straight portion aligns to the plane defined by frames 0 and 1.
+///     Only meaningful for anomalous vessels.  Default is ``False``.
 ///
 /// Returns
 /// -------
@@ -321,6 +341,7 @@ pub fn align_manual(
         output_dir="output/aligned",
         contour_types=vec![PyContourType::Lumen, PyContourType::Catheter, PyContourType::Wall],
         case_name="None",
+        align_wall_anomalous=false,
     )
 )]
 pub fn align_combined(
@@ -340,6 +361,7 @@ pub fn align_combined(
     output_dir: &str,
     contour_types: Vec<PyContourType>,
     case_name: &str,
+    align_wall_anomalous: bool,
 ) -> PyResult<(Py<PyAny>, PyCenterline)> {
     let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
@@ -364,6 +386,7 @@ pub fn align_combined(
             output_dir,
             rust_contour_types,
             case_name,
+            align_wall_anomalous,
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         let py_result: PyGeometryPair = result_rs.into();
@@ -385,6 +408,7 @@ pub fn align_combined(
             output_dir,
             rust_contour_types,
             case_name,
+            align_wall_anomalous,
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         let py_result: PyGeometry = result_rs.into();

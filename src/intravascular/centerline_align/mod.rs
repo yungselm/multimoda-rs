@@ -3,11 +3,12 @@ pub mod preprocessing;
 
 use crate::intravascular::io::input::ContourPoint;
 use crate::intravascular::io::{
-    geometry::{ContourType, Geometry},
+    geometry::{Contour, ContourType, Frame, Geometry},
     input::Centerline,
 };
 use crate::intravascular::processing::align_between::GeometryPair;
 use anyhow::anyhow;
+use nalgebra::{Point3, Rotation3, Unit, Vector3};
 
 use crate::intravascular::to_object::{process_case, write_single_geometry};
 use align_algorithms::{
@@ -77,6 +78,7 @@ pub fn align_three_point_rs<T: Processable>(
     output_dir: &str,
     contour_types: Vec<ContourType>,
     case_name: &str,
+    align_wall_anomalous: bool,
 ) -> anyhow::Result<(T, Centerline)> {
     let resampled_centerline = preprocess_centerline(centerline, target.primary_geometry())
         .map_err(|e| anyhow!("Couldn't resample the centerline: {e}"))?;
@@ -103,6 +105,10 @@ pub fn align_three_point_rs<T: Processable>(
 
     target = rotate_by_best_rotation(target, best_rot);
     target = apply_transformations(target, &resampled_centerline, &aortic_ref_pt);
+
+    if align_wall_anomalous {
+        target = align_walls(target, true);
+    }
 
     target = if write {
         target
@@ -132,12 +138,17 @@ pub fn align_manual_rs<T: Processable>(
     output_dir: &str,
     contour_types: Vec<ContourType>,
     case_name: &str,
+    align_wall_anomalous: bool,
 ) -> anyhow::Result<(T, Centerline)> {
     let resampled_centerline = preprocess_centerline(centerline, target.primary_geometry())
         .map_err(|e| anyhow!("Couldn't resample the centerline: {e}"))?;
 
     target = rotate_by_best_rotation(target, rotation_angle_deg.to_radians());
     target = apply_transformations(target, &resampled_centerline, &ref_pt);
+
+    if align_wall_anomalous {
+        target = align_walls(target, true);
+    }
 
     target = if write {
         target
@@ -173,6 +184,7 @@ pub fn align_combined_rs<T: Processable>(
     output_dir: &str,
     contour_types: Vec<ContourType>,
     case_name: &str,
+    align_wall_anomalous: bool,
 ) -> anyhow::Result<(T, Centerline)> {
     let original = target.clone();
 
@@ -250,6 +262,10 @@ pub fn align_combined_rs<T: Processable>(
         &resampled_centerline,
         &refined_ref_pt,
     );
+
+    if align_wall_anomalous {
+        final_target = align_walls(final_target, true);
+    }
 
     final_target = if write {
         final_target
@@ -361,6 +377,222 @@ pub fn align_combined_rs<T: Processable>(
 //
 //     Ok((final_geom_pair, resampled_centerline))
 // }
+
+/// Direction from `frame_centroid` to the centroid of aortic-flagged wall points.
+///
+/// Unambiguous (always points toward the aortic side). Returns `None` when no
+/// points carry the `aortic` flag.
+fn aortic_centroid_direction(
+    wall: &Contour,
+    frame_centroid: (f64, f64, f64),
+) -> Option<Vector3<f64>> {
+    let pts: Vec<_> = wall.points.iter().filter(|p| p.aortic).collect();
+    if pts.is_empty() {
+        return None;
+    }
+    let n = pts.len() as f64;
+    let cx = pts.iter().map(|p| p.x).sum::<f64>() / n;
+    let cy = pts.iter().map(|p| p.y).sum::<f64>() / n;
+    let cz = pts.iter().map(|p| p.z).sum::<f64>() / n;
+    let dir = Vector3::new(
+        cx - frame_centroid.0,
+        cy - frame_centroid.1,
+        cz - frame_centroid.2,
+    );
+    if dir.norm() < 1e-9 {
+        None
+    } else {
+        Some(dir)
+    }
+}
+
+/// Direction of a wall contour's major axis (farthest-point pair). Ambiguous in sign.
+fn wall_major_axis(wall: &Contour) -> Option<Vector3<f64>> {
+    let pts = &wall.points;
+    if pts.len() < 2 {
+        return None;
+    }
+    let mut max_dist_sq = 0.0_f64;
+    let mut fa = &pts[0];
+    let mut fb = &pts[0];
+    for i in 0..pts.len() {
+        for j in i + 1..pts.len() {
+            let dx = pts[i].x - pts[j].x;
+            let dy = pts[i].y - pts[j].y;
+            let dz = pts[i].z - pts[j].z;
+            let d2 = dx * dx + dy * dy + dz * dz;
+            if d2 > max_dist_sq {
+                max_dist_sq = d2;
+                fa = &pts[i];
+                fb = &pts[j];
+            }
+        }
+    }
+    let dir = Vector3::new(fb.x - fa.x, fb.y - fa.y, fb.z - fa.z);
+    if dir.norm() < 1e-9 {
+        None
+    } else {
+        Some(dir)
+    }
+}
+
+/// Lumen plane normal for `frame` via Newell's method.
+fn lumen_normal(frame: &Frame) -> Vector3<f64> {
+    let c = frame.centroid;
+    let pts = &frame.lumen.points;
+    if pts.len() < 3 {
+        return Vector3::new(0.0, 0.0, 1.0);
+    }
+    let n = pts.len();
+    let mut normal = Vector3::<f64>::zeros();
+    for i in 0..n {
+        let curr = &pts[i];
+        let next = &pts[(i + 1) % n];
+        normal.x += (curr.y - c.1) * (next.z - c.2) - (curr.z - c.2) * (next.y - c.1);
+        normal.y += (curr.z - c.2) * (next.x - c.0) - (curr.x - c.0) * (next.z - c.2);
+        normal.z += (curr.x - c.0) * (next.y - c.1) - (curr.y - c.1) * (next.x - c.0);
+    }
+    let norm = normal.norm();
+    if norm > 1e-12 {
+        normal / norm
+    } else {
+        Vector3::new(0.0, 0.0, 1.0)
+    }
+}
+
+/// Projects `v` onto the plane perpendicular to `tangent` and returns the normalised result.
+/// Returns `None` when the projection is degenerate (v nearly parallel to tangent).
+fn project_onto_plane_normalized(v: Vector3<f64>, tangent: Vector3<f64>) -> Option<Vector3<f64>> {
+    let proj = v - tangent * v.dot(&tangent);
+    if proj.norm() < 1e-9 {
+        None
+    } else {
+        Some(proj.normalize())
+    }
+}
+
+/// Parallel-transports `v` from the frame with tangent `t_from` into the frame with tangent
+/// `t_to` using the minimum (geodesic) rotation.
+fn parallel_transport(v: Vector3<f64>, t_from: Vector3<f64>, t_to: Vector3<f64>) -> Vector3<f64> {
+    let angle = t_from.angle(&t_to);
+    if angle < 1e-9 {
+        return v;
+    }
+    let axis = t_from.cross(&t_to);
+    if axis.norm() < 1e-9 {
+        // Anti-parallel tangents: rotate 180° around any axis perpendicular to t_from.
+        let perp = if t_from.x.abs() < 0.9 {
+            (Vector3::new(1.0, 0.0, 0.0) - t_from * t_from.x).normalize()
+        } else {
+            (Vector3::new(0.0, 1.0, 0.0) - t_from * t_from.y).normalize()
+        };
+        return Rotation3::from_axis_angle(&Unit::new_normalize(perp), std::f64::consts::PI) * v;
+    }
+    Rotation3::from_axis_angle(&Unit::new_normalize(axis), angle) * v
+}
+
+/// Signed angle (in radians) to rotate `from` towards `to` around `axis` (right-hand rule).
+fn signed_angle_around_axis(from: Vector3<f64>, to: Vector3<f64>, axis: Vector3<f64>) -> f64 {
+    from.cross(&to).dot(&axis).atan2(from.dot(&to))
+}
+
+/// Rotates only the `Wall` extra contour in every frame so its major axis tracks the
+/// parallel-transported reference direction established at frame 0.
+///
+/// When aortic-flagged points are present their centroid provides an unambiguous
+/// direction (no 180° flip risk). Otherwise the major axis is used with a
+/// min-magnitude disambiguation fallback.
+///
+/// All other contours (lumen, catheter, …) are left untouched.
+fn align_walls_on_geometry(geom: &mut Geometry) {
+    let frame0 = &geom.frames[0];
+    let t0 = lumen_normal(frame0);
+
+    // Initialize the reference direction from frame 0's wall.
+    let wall0 = match frame0.extras.get(&ContourType::Wall) {
+        Some(w) => w.clone(),
+        None => return,
+    };
+    let dir0 =
+        aortic_centroid_direction(&wall0, frame0.centroid).or_else(|| wall_major_axis(&wall0));
+    let mut u = match dir0.and_then(|d| project_onto_plane_normalized(d, t0)) {
+        Some(v) => v,
+        None => return,
+    };
+
+    for i in 1..geom.frames.len() {
+        let t_prev = lumen_normal(&geom.frames[i - 1]);
+        let t_curr = lumen_normal(&geom.frames[i]);
+
+        // Parallel-transport the reference direction into the current tangent plane.
+        u = parallel_transport(u, t_prev, t_curr);
+        u = match project_onto_plane_normalized(u, t_curr) {
+            Some(v) => v,
+            None => continue,
+        };
+
+        let center = geom.frames[i].centroid;
+
+        // Prefer unambiguous aortic centroid; fall back to major axis.
+        let (wall_dir, has_aortic) = match geom.frames[i].extras.get(&ContourType::Wall) {
+            Some(w) => match aortic_centroid_direction(w, center) {
+                Some(d) => (d, true),
+                None => match wall_major_axis(w) {
+                    Some(d) => (d, false),
+                    None => continue,
+                },
+            },
+            None => continue,
+        };
+
+        let v = match project_onto_plane_normalized(wall_dir, t_curr) {
+            Some(v) => v,
+            None => continue,
+        };
+
+        let angle = if has_aortic {
+            // Aortic centroid is unambiguous — compute angle directly.
+            signed_angle_around_axis(v, u, t_curr)
+        } else {
+            // Major axis is ambiguous in sign — pick the rotation with smaller magnitude.
+            let a1 = signed_angle_around_axis(v, u, t_curr);
+            let a2 = signed_angle_around_axis(-v, u, t_curr);
+            if a1.abs() <= a2.abs() {
+                a1
+            } else {
+                a2
+            }
+        };
+
+        if angle.abs() < 1e-6 {
+            continue;
+        }
+
+        let rotation = Rotation3::from_axis_angle(&Unit::new_normalize(t_curr), angle);
+        let pivot = Point3::new(center.0, center.1, center.2);
+
+        if let Some(wall) = geom.frames[i].extras.get_mut(&ContourType::Wall) {
+            for pt in &mut wall.points {
+                let p = Point3::new(pt.x, pt.y, pt.z);
+                let rotated = pivot + rotation * (p - pivot);
+                pt.x = rotated.x;
+                pt.y = rotated.y;
+                pt.z = rotated.z;
+            }
+        }
+    }
+}
+
+/// Compensates each frame's `Wall` contour for centerline twist via parallel transport.
+/// Lumen and all other extras are left unchanged.
+/// Does nothing when `anomalous` is `false` or fewer than 2 frames exist.
+pub fn align_walls<T: AlignTarget>(mut target: T, anomalous: bool) -> T {
+    if !anomalous || target.primary_geometry().frames.len() < 2 {
+        return target;
+    }
+    target.for_each_geometry_mut(align_walls_on_geometry);
+    target
+}
 
 fn transfrom_tuples_to_contourpoints(points: &[(f64, f64, f64)]) -> Vec<ContourPoint> {
     let mut contour_points = Vec::with_capacity(points.len());

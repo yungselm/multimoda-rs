@@ -291,12 +291,8 @@ def rca_centerline():
 
 
 class TestCalculateBranches:
-    def test_no_points_lost(self, rca_centerline):
-        cl = rca_centerline.calculate_branches(2.0)
-        assert len(cl.points) == len(rca_centerline.points)
-
     def test_branch_count(self, rca_centerline):
-        """Exactly 4 branches — 2-pt artefact merged into main, not its own branch."""
+        """Exactly 4 branches — 2-pt artefact is discarded, not its own branch."""
         cl = rca_centerline.calculate_branches(2.0)
         assert len(cl.branch_start_indices) == 4
 

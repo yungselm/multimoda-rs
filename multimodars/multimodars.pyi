@@ -657,6 +657,7 @@ def align_three_point(
     output_dir: str = ...,
     contour_types: list[PyContourType] | None = ...,
     case_name: str = ...,
+    align_wall_anomalous: bool = ...,
 ) -> tuple[PyGeometryPair | PyGeometry, PyCenterline]: ...
 
 
@@ -671,6 +672,7 @@ def align_manual(
     output_dir: str = ...,
     contour_types: list[PyContourType] | None = ...,
     case_name: str = ...,
+    align_wall_anomalous: bool = ...,
 ) -> tuple[PyGeometryPair | PyGeometry, PyCenterline]: ...
 
 
@@ -690,6 +692,7 @@ def align_combined(
     output_dir: str = ...,
     contour_types: list[PyContourType] | None = ...,
     case_name: str = ...,
+    align_wall_anomalous: bool = ...,
 ) -> tuple[PyGeometryPair | PyGeometry, PyCenterline]: ...
 
 

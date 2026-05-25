@@ -1019,6 +1019,7 @@ def align_three_point(
     output_dir: str = "output/aligned",
     contour_types: list[PyContourType] | None = None,
     case_name: str = "None",
+    align_wall_anomalous: bool = False,
 ) -> tuple[PyGeometryPair | PyGeometry, PyCenterline]:
     """Align a geometry (or geometry pair) to the centerline using three reference points.
 
@@ -1054,6 +1055,10 @@ def align_three_point(
         ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
     case_name : str, optional
         Case name used as a filename prefix.  Default is ``"None"``.
+    align_wall_anomalous : bool, optional
+        When ``True``, rotate the Wall contour in every frame (from frame 2 onward)
+        so its aortic straight portion aligns to the plane defined by frames 0 and 1.
+        Only meaningful for anomalous vessels.  Default is ``False``.
 
     Returns
     -------
@@ -1088,6 +1093,7 @@ def align_three_point(
         output_dir,
         contour_types,
         case_name,
+        align_wall_anomalous,
     )
 
 
@@ -1102,6 +1108,7 @@ def align_manual(
     output_dir: str = "output/aligned",
     contour_types: list[PyContourType] | None = None,
     case_name: str = "None",
+    align_wall_anomalous: bool = False,
 ) -> tuple[PyGeometryPair | PyGeometry, PyCenterline]:
     """Align a geometry (or geometry pair) to the centerline using a manual rotation angle.
 
@@ -1133,6 +1140,10 @@ def align_manual(
         ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
     case_name : str, optional
         Case name used as a filename prefix.  Default is ``"None"``.
+    align_wall_anomalous : bool, optional
+        When ``True``, rotate the Wall contour in every frame (from frame 2 onward)
+        so its aortic straight portion aligns to the plane defined by frames 0 and 1.
+        Only meaningful for anomalous vessels.  Default is ``False``.
 
     Returns
     -------
@@ -1161,6 +1172,7 @@ def align_manual(
         output_dir,
         contour_types,
         case_name,
+        align_wall_anomalous,
     )
 
 
@@ -1180,6 +1192,7 @@ def align_combined(
     output_dir: str = "output/aligned",
     contour_types: list[PyContourType] | None = None,
     case_name: str = "None",
+    align_wall_anomalous: bool = False,
 ) -> tuple[PyGeometryPair | PyGeometry, PyCenterline]:
     """Align a geometry (or geometry pair) using three reference points and Hausdorff refinement.
 
@@ -1223,6 +1236,10 @@ def align_combined(
         ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
     case_name : str, optional
         Case name used as a filename prefix.  Default is ``"None"``.
+    align_wall_anomalous : bool, optional
+        When ``True``, rotate the Wall contour in every frame (from frame 2 onward)
+        so its aortic straight portion aligns to the plane defined by frames 0 and 1.
+        Only meaningful for anomalous vessels.  Default is ``False``.
 
     Returns
     -------
@@ -1261,6 +1278,7 @@ def align_combined(
         output_dir,
         contour_types,
         case_name,
+        align_wall_anomalous,
     )
 
 

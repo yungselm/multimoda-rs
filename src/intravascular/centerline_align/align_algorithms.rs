@@ -11,6 +11,8 @@ use nalgebra::{Point3, Rotation3, Unit, Vector3};
 pub trait AlignTarget: Sized + Clone {
     /// Returns the primary geometry used as the reference for computing transformations.
     fn primary_geometry(&self) -> &Geometry;
+    /// Applies a closure mutably to every geometry contained in this target.
+    fn for_each_geometry_mut<F: FnMut(&mut Geometry)>(&mut self, f: F);
     /// Applies frame transformations to all contained geometries.
     fn apply_frame_transforms(self, transformations: &[FrameTransformation]) -> Self;
     /// Rotates all contained geometries by `angle` radians around each frame's normal.
@@ -20,6 +22,10 @@ pub trait AlignTarget: Sized + Clone {
 impl AlignTarget for Geometry {
     fn primary_geometry(&self) -> &Geometry {
         self
+    }
+
+    fn for_each_geometry_mut<F: FnMut(&mut Geometry)>(&mut self, mut f: F) {
+        f(self);
     }
 
     fn apply_frame_transforms(mut self, transformations: &[FrameTransformation]) -> Self {
@@ -36,6 +42,11 @@ impl AlignTarget for Geometry {
 impl AlignTarget for GeometryPair {
     fn primary_geometry(&self) -> &Geometry {
         &self.geom_a
+    }
+
+    fn for_each_geometry_mut<F: FnMut(&mut Geometry)>(&mut self, mut f: F) {
+        f(&mut self.geom_a);
+        f(&mut self.geom_b);
     }
 
     fn apply_frame_transforms(mut self, transformations: &[FrameTransformation]) -> Self {
@@ -98,7 +109,7 @@ pub fn get_transformations(
         // Calculate which centerline point corresponds to this geometry frame
         // We start from the reference centerline point and move through the centerline
         // based on the geometry frame's position relative to the reference frame
-        let cl_index = ref_idx_cl as isize + (i as isize); // or - i depending on your coordinate system direction
+        let cl_index = ref_idx_cl as isize + (i as isize);
 
         if cl_index >= 0 && cl_index < centerline.points.len() as isize {
             let cl_point = &centerline.points[cl_index as usize];
