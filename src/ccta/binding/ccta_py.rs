@@ -47,7 +47,7 @@ type RefTriplet = (Point3D, Point3D, Point3D);
 ///     Centroid ``(x, y, z)`` of the aorta slice closest to the RCA ostium.
 /// ao_lca : tuple of float
 ///     Centroid ``(x, y, z)`` of the aorta slice closest to the LCA ostium.
-#[pyclass]
+#[pyclass(skip_from_py_object)]
 #[derive(Debug, Clone)]
 pub struct PyDiscretizedVesselTree {
     #[pyo3(get, set)]

@@ -45,7 +45,7 @@ use std::convert::TryFrom;
 /// ...     diastole=True,
 /// ...     lablel="Pat00_diastole_rest"
 /// ... )
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Debug, Clone)]
 pub struct PyInputData {
     #[pyo3(get, set)]
@@ -123,7 +123,7 @@ impl TryFrom<&PyInputData> for InputData {
                             e
                         )
                     })?;
-                    acc.extend(rust_contour.points.into_iter());
+                    acc.extend(rust_contour.points);
                 }
                 Ok(Some(acc))
             } else {
@@ -141,7 +141,7 @@ impl TryFrom<&PyInputData> for InputData {
                     e
                 )
             })?;
-            lumen_points.extend(rust_contour.points.into_iter());
+            lumen_points.extend(rust_contour.points);
         }
 
         let eem_points = flatten(&py_in.eem)?;
@@ -292,7 +292,7 @@ impl From<InputData> for PyInputData {
 /// ...     z=7.89,
 /// ...     aortic=True
 /// ... )
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Debug, Clone)]
 pub struct PyContourPoint {
     #[pyo3(get, set)]
@@ -417,7 +417,7 @@ impl From<&&ContourPoint> for PyContourPoint {
 /// ...     points=[point1, point2, ...],
 /// ...     centroid=(1.0, 1.0, 1.0)
 /// ... )
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Debug, Clone)]
 pub struct PyContour {
     #[pyo3(get, set)]
@@ -695,7 +695,7 @@ impl PyContour {
 /// >>> contour_type = PyContourType.Lumen
 /// >>> contour_type.name
 /// 'Lumen'
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PyContourType {
     Lumen,
@@ -821,7 +821,7 @@ impl From<&PyContourType> for ContourType {
 /// ...     extras={"Eem": eem_contour},
 /// ...     reference_point=ref_point
 /// ... )
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Debug, Clone)]
 pub struct PyFrame {
     #[pyo3(get, set)]
@@ -982,7 +982,7 @@ impl PyFrame {
 /// ...     frames=[frame1, frame2, ...],
 /// ...     label="Pat00_diastole"
 /// ... )
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Debug, Clone)]
 pub struct PyGeometry {
     #[pyo3(get, set)]
@@ -1431,7 +1431,7 @@ impl PyGeometry {
 /// ...     geom_b=systole,
 /// ...     label="Pat00_rest"
 /// ... )
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Debug, Clone)]
 pub struct PyGeometryPair {
     #[pyo3(get, set)]
@@ -1640,7 +1640,7 @@ impl PyGeometryPair {
 /// ...     contour_point=point,
 /// ...     normal=(0.0, 1.0, 0.0)
 /// ... )
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Debug, Clone)]
 pub struct PyCenterlinePoint {
     #[pyo3(get, set)]
@@ -1709,7 +1709,7 @@ impl From<&PyCenterlinePoint> for CenterlinePoint {
 /// Examples
 /// --------
 /// >>> centerline = PyCenterline(points=[p1, p2, p3])
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Debug, Clone)]
 pub struct PyCenterline {
     #[pyo3(get, set)]
@@ -2009,7 +2009,7 @@ impl From<Centerline> for PyCenterline {
 /// ...     measurement_1=1.4,
 /// ...     measurement_2=2.1
 /// ... )
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Debug, Clone)]
 pub struct PyRecord {
     #[pyo3(get, set)]

@@ -237,7 +237,7 @@ pub fn find_centerline_bounded_points(
             } else {
                 points_inside
                     .into_iter()
-                    .zip(dists.into_iter())
+                    .zip(dists)
                     .filter(|(_p, d)| (d - mean).abs() <= 2.0 * std)
                     .map(|(p, _d)| p)
                     .collect()
