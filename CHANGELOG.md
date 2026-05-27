@@ -66,6 +66,10 @@ documentation (`tutorial_intravascular.rst`), and the CCTA notebook.
 
 - `PyDiscretizedVesselTree.rca_references` / `lca_references` now store triplets as
   `(main_ref, counterclockwise_ref, clockwise_ref)` matching the new parameter order.
+- `PyCenterline` struct gains a new read-only field `branch_start_indices : list[int]`
+  (index into `points` where each branch begins; `branch_start_indices[0]` is always 0).
+  The constructor signature is unchanged — `PyCenterline(points=[...])` populates the field
+  automatically.  **Note:** objects pickled with 0.3.x cannot be unpickled under 0.4.x.
 - CCTA tutorial (`docs/tutorial_ccta.rst`) updated with new section 2 covering
   `prepare_centerlines`, sharp-angle inspection/correction, and `discretize_vessel_tree`.
 - CCTA notebook (`docs/notebooks/ccta_notebook.ipynb`) updated: section 2 added, section 3
