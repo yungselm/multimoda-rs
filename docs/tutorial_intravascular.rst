@@ -331,9 +331,9 @@ and the spacing is adjusted to match the z-spacing of the :class:`PyGeometry`.
     aligned_geometry, resampled_cl = mm.align_three_point(
         centerline=centerline,
         geometry_pair=rest,
-        aortic_ref_pt=(12.2605, -201.3643, 1751.0554),
-        upper_ref_pt=(11.7567, -202.1920, 1754.7975),
-        lower_ref_pt=(15.6605, -202.1920, 1749.9655),
+        main_ref_pt=(12.2605, -201.3643, 1751.0554),
+        counterclockwise_ref_pt=(11.7567, -202.1920, 1754.7975),
+        clockwise_ref_pt=(15.6605, -202.1920, 1749.9655),
         write=True,
         watertight=False,
         interpolation_steps=0,

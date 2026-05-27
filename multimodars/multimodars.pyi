@@ -282,6 +282,7 @@ class PyCenterlinePoint:
 
     contour_point: PyContourPoint
     normal: tuple[float, float, float]
+    branch_id: int
 
     def __init__(
         self,
@@ -299,9 +300,13 @@ class PyCenterline:
     ----------
     points : list of PyCenterlinePoint
         Ordered list of centerline points.
+    branch_start_indices : list of int
+        Index into ``points`` where each branch begins.
+        ``branch_start_indices[0]`` is always 0 (main vessel).
     """
 
     points: list[PyCenterlinePoint]
+    branch_start_indices: list[int]
 
     def __init__(self, points: list[PyCenterlinePoint]) -> None: ...
     def __len__(self) -> int: ...
@@ -310,6 +315,82 @@ class PyCenterline:
     @staticmethod
     def from_contour_points(contour_points: list[PyContourPoint]) -> PyCenterline: ...
     def points_as_tuples(self) -> list[tuple[float, float, float]]: ...
+    def calculate_branches(self, spacing_tolerance: float = 1.0) -> PyCenterline: ...
+    def find_sharp_angles(self, branch_id: int, cos_threshold: float) -> list[int]:
+        """Return local positions within the branch where the opening angle is sharp.
+
+        Parameters
+        ----------
+        branch_id : int
+            Branch to inspect (0 = main vessel).
+        cos_threshold : float
+            Cosine above which an angle is considered sharp.
+            Use ``0.0`` for < 90°, ``0.5`` for < 60°, ``0.866`` for < 30°.
+
+        Returns
+        -------
+        list[int]
+            0-indexed positions within the branch (suitable for ``split_branch``).
+        """
+        ...
+    def split_branch(self, branch_id: int, local_pos: int) -> PyCenterline:
+        """Split a branch at a local position and return the updated centerline.
+
+        Both resulting segments share the split point. When splitting the main
+        branch (``branch_id=0``) the longer segment stays as branch 0.
+
+        Parameters
+        ----------
+        branch_id : int
+        local_pos : int
+            0-indexed position within the branch (as returned by
+            ``find_sharp_angles``).
+        """
+        ...
+    def merge_branches(self, branch_id_a: int, branch_id_b: int) -> PyCenterline:
+        """Merge two branches into one and return the updated centerline.
+
+        Segments are joined at the closest endpoint pair.
+        If either branch is branch 0, the merged result becomes branch 0.
+
+        Parameters
+        ----------
+        branch_id_a : int
+        branch_id_b : int
+        """
+        ...
+
+    def get_branch(self, branch_id: int) -> PyCenterline:
+        """Return a new centerline containing only the points of one branch.
+
+        All retained points are reassigned to branch_id=0 and
+        branch_start_indices is reset to [0].
+
+        Parameters
+        ----------
+        branch_id : int
+            Branch to extract.
+
+        Raises
+        ------
+        ValueError
+            If branch_id does not exist in this centerline.
+        """
+        ...
+
+    def check_centerline(self) -> PyCenterline:
+        """Normalise branch ordering and return the corrected centerline.
+
+        For branch 0, the point with the highest z-coordinate is placed at
+        index 0 (reversed if necessary).  For every side branch, the endpoint
+        closest to branch 0 is placed at index 0.
+
+        Returns
+        -------
+        PyCenterline
+            A new centerline with corrected branch ordering.
+        """
+        ...
 
 
 class PyInputData:
@@ -566,9 +647,9 @@ def from_array_single(
 def align_three_point(
     centerline: PyCenterline,
     geometry: PyGeometryPair | PyGeometry,
-    aortic_ref_pt: tuple[float, float, float],
-    upper_ref_pt: tuple[float, float, float],
-    lower_ref_pt: tuple[float, float, float],
+    main_ref_pt: tuple[float, float, float],
+    counterclockwise_ref_pt: tuple[float, float, float],
+    clockwise_ref_pt: tuple[float, float, float],
     angle_step_deg: float = ...,
     write: bool = ...,
     watertight: bool = ...,
@@ -576,6 +657,7 @@ def align_three_point(
     output_dir: str = ...,
     contour_types: list[PyContourType] | None = ...,
     case_name: str = ...,
+    align_wall_anomalous: bool = ...,
 ) -> tuple[PyGeometryPair | PyGeometry, PyCenterline]: ...
 
 
@@ -590,15 +672,16 @@ def align_manual(
     output_dir: str = ...,
     contour_types: list[PyContourType] | None = ...,
     case_name: str = ...,
+    align_wall_anomalous: bool = ...,
 ) -> tuple[PyGeometryPair | PyGeometry, PyCenterline]: ...
 
 
 def align_combined(
     centerline: PyCenterline,
     geometry: PyGeometryPair | PyGeometry,
-    aortic_ref_pt: tuple[float, float, float],
-    upper_ref_pt: tuple[float, float, float],
-    lower_ref_pt: tuple[float, float, float],
+    main_ref_pt: tuple[float, float, float],
+    counterclockwise_ref_pt: tuple[float, float, float],
+    clockwise_ref_pt: tuple[float, float, float],
     points: list[tuple[float, float, float]],
     angle_step_deg: float = ...,
     angle_range_deg: float = ...,
@@ -609,6 +692,7 @@ def align_combined(
     output_dir: str = ...,
     contour_types: list[PyContourType] | None = ...,
     case_name: str = ...,
+    align_wall_anomalous: bool = ...,
 ) -> tuple[PyGeometryPair | PyGeometry, PyCenterline]: ...
 
 
@@ -705,3 +789,79 @@ def smooth_mesh_labels(
     adjacency_map: dict[int, set[int]],
     iterations: int,
 ) -> list[int]: ...
+
+
+def discretize_vessel(
+    centerline: PyCenterline,
+    points: list[tuple[float, float, float]],
+    branch_id: int = ...,
+    step_size: float = ...,
+    n_points: int = ...,
+) -> list[PyContour]: ...
+
+
+# (main_ref, counter_clock_ref, clock_ref) — each is an (x, y, z) tuple.
+_RefTriplet = tuple[
+    tuple[float, float, float],
+    tuple[float, float, float],
+    tuple[float, float, float],
+]
+
+
+class PyDiscretizedVesselTree:
+    """Fully discretized coronary vessel tree.
+
+    Attributes
+    ----------
+    discretized_aorta : list of PyContour
+        Cross-sectional contours along the aorta.
+    discretized_rca_main : list of PyContour
+        Cross-sectional contours along the RCA main vessel.
+    discretized_lca_main : list of PyContour
+        Cross-sectional contours along the LCA main vessel.
+    rca_branches : list of list of PyContour
+        Per-side-branch contours for the RCA.  ``rca_branches[i]`` →
+        branch_id ``i + 1``.
+    lca_branches : list of list of PyContour
+        Per-side-branch contours for the LCA.
+    rca_references : list of (main_ref, counter_clock_ref, clock_ref)
+        Orientation triplets along the RCA, sorted proximal → distal.
+        Each element is ``((x,y,z), (x,y,z), (x,y,z))``.
+        Index 0 is always the ostium reference.
+    lca_references : list of (main_ref, counter_clock_ref, clock_ref)
+        Same structure for the LCA.
+    ao_rca : tuple[float, float, float]
+        Centroid ``(x, y, z)`` of the aorta slice closest to the RCA ostium.
+    ao_lca : tuple[float, float, float]
+        Centroid ``(x, y, z)`` of the aorta slice closest to the LCA ostium.
+    """
+
+    discretized_aorta: list[PyContour]
+    discretized_rca_main: list[PyContour]
+    discretized_lca_main: list[PyContour]
+    rca_branches: list[list[PyContour]]
+    lca_branches: list[list[PyContour]]
+    rca_references: list[_RefTriplet]
+    lca_references: list[_RefTriplet]
+    ao_rca: tuple[float, float, float]
+    ao_lca: tuple[float, float, float]
+
+    def __repr__(self) -> str: ...
+    def calculate_ref_pts(self) -> None: ...
+
+
+def discretize_vessel_tree(
+    ao_cl: PyCenterline,
+    rca_cl: PyCenterline,
+    lca_cl: PyCenterline,
+    points_ao: list[tuple[float, float, float]],
+    points_rca_main: list[tuple[float, float, float]],
+    points_lca_main: list[tuple[float, float, float]],
+    side_branches_rca: list[list[tuple[float, float, float]]],
+    side_branches_lca: list[list[tuple[float, float, float]]],
+    branch_id_rca: int = ...,
+    branch_id_lca: int = ...,
+    step_size: float = ...,
+    n_points: int = ...,
+    calculate_ref_pts: bool = ...,
+) -> PyDiscretizedVesselTree: ...

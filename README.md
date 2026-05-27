@@ -77,9 +77,9 @@ cl_raw = np.genfromtxt("examples/data/centerline_raw.csv", delimiter=",")
 centerline = mm.numpy_to_centerline(cl_raw)
 aligned_pair, cl_resampled = mm.align_three_point(
     centerline, rest,
-    aortic_ref_pt=(12.2605, -201.3643, 1751.0554),
-    upper_ref_pt=(11.7567, -202.1920, 1754.7975),
-    lower_ref_pt=(15.6605, -202.1920, 1749.9655),
+    main_ref_pt=(12.2605, -201.3643, 1751.0554),
+    counterclockwise_ref_pt=(11.7567, -202.1920, 1754.7975),
+    clockwise_ref_pt=(15.6605, -202.1920, 1749.9655),
     write=True,
     output_dir="output/aligned",
 )
@@ -120,12 +120,18 @@ Distributed under the MIT License. See [LICENSE](LICENSE) for details.
 Please kindly cite the following paper if you use this repository.
 
 ```
-@article{stark2025multimodars,
-  title     = {multimodars: A Rust-powered toolkit for multi-modality cardiac image fusion and registration},
-  author    = {Stark, Anselm W. and Ilic, Marc and Mokhtari, Ali and Mohammadi Kazaj, Pooya and Graeni, Christoph and Shiri, Isaac},
-  journal   = {arXiv preprint arXiv:2510.06241},
-  year      = {2025}
+@article{Stark2026, 
+  doi = {10.21105/joss.10131}, 
+  url = {https://doi.org/10.21105/joss.10131}, 
+  year = {2026}, 
+  publisher = {The Open Journal}, 
+  volume = {11}, 
+  number = {121}, 
+  pages = {10131}, 
+  author = {Stark, Anselm W. and Ilic, Marc and Mokhtari, Ali and Kazaj, Pooya Mohammadi and Gräni, Christoph and Shiri, Isaac}, 
+  title = {multimodars: A Rust-powered toolkit for multi-modality cardiac image fusion and registration}, 
+  journal = {Journal of Open Source Software} 
 }
 ```
 
-Stark, Anselm W., Marc Ilic, Ali Mokhtari, Pooya Mohammadi Kazaj, Christoph Graeni, and Isaac Shiri. "multimodars: A Rust-powered toolkit for multi-modality cardiac image fusion and registration." arXiv preprint arXiv:2510.06241 (2025).
+Stark et al., (2026). multimodars: A Rust-powered toolkit for multi-modality cardiac image fusion and registration. Journal of Open Source Software, 11(121), 10131, https://doi.org/10.21105/joss.10131.

@@ -7,8 +7,8 @@ use pyo3::prelude::*;
 /// Align a geometry (or geometry pair) to the centerline using three reference points.
 ///
 /// Creates centerline-aligned meshes based on three anatomical reference points
-/// (aorta, upper section, lower section).  Only works for elliptic vessels such
-/// as coronary artery anomalies.
+/// (main ostium, counterclockwise side, clockwise side).  Only works for elliptic
+/// vessels such as coronary artery anomalies.
 ///
 /// Parameters
 /// ----------
@@ -16,12 +16,12 @@ use pyo3::prelude::*;
 ///     Centerline of the vessel.
 /// geometry : PyGeometry or PyGeometryPair
 ///     Single geometry or diastolic/systolic geometry pair to align.
-/// aortic_ref_pt : tuple of float
+/// main_ref_pt : tuple of float
 ///     ``(x, y, z)`` reference point at the aortic ostium.
-/// upper_ref_pt : tuple of float
-///     ``(x, y, z)`` upper section reference point.
-/// lower_ref_pt : tuple of float
-///     ``(x, y, z)`` lower section reference point.
+/// counterclockwise_ref_pt : tuple of float
+///     ``(x, y, z)`` counterclockwise reference point (viewed proximal → distal).
+/// clockwise_ref_pt : tuple of float
+///     ``(x, y, z)`` clockwise reference point (viewed proximal → distal).
 /// angle_step_deg : float, optional
 ///     Step size in degrees for the rotation search.  Default is ``1.0``.
 /// write : bool, optional
@@ -35,6 +35,10 @@ use pyo3::prelude::*;
 ///     Output directory for aligned meshes.  Default is ``"output/aligned"``.
 /// case_name : str, optional
 ///     Case name used as a filename prefix.  Default is ``"None"``.
+/// align_wall_anomalous : bool, optional
+///     When ``True``, rotate the Wall contour in every frame (from frame 2 onward)
+///     so its aortic straight portion aligns to the plane defined by frames 0 and 1.
+///     Only meaningful for anomalous vessels.  Default is ``False``.
 ///
 /// Returns
 /// -------
@@ -58,9 +62,9 @@ use pyo3::prelude::*;
     signature = (
         centerline,
         geometry,
-        aortic_ref_pt,
-        upper_ref_pt,
-        lower_ref_pt,
+        main_ref_pt,
+        counterclockwise_ref_pt,
+        clockwise_ref_pt,
         angle_step_deg=1.0,
         write=false,
         watertight=true,
@@ -68,15 +72,16 @@ use pyo3::prelude::*;
         output_dir="output/aligned",
         contour_types=vec![PyContourType::Lumen, PyContourType::Catheter, PyContourType::Wall],
         case_name="None",
+        align_wall_anomalous=false,
     )
 )]
 pub fn align_three_point(
     py: Python<'_>,
     centerline: PyCenterline,
     geometry: Bound<'_, PyAny>,
-    aortic_ref_pt: (f64, f64, f64),
-    upper_ref_pt: (f64, f64, f64),
-    lower_ref_pt: (f64, f64, f64),
+    main_ref_pt: (f64, f64, f64),
+    counterclockwise_ref_pt: (f64, f64, f64),
+    clockwise_ref_pt: (f64, f64, f64),
     angle_step_deg: f64,
     write: bool,
     watertight: bool,
@@ -84,6 +89,7 @@ pub fn align_three_point(
     output_dir: &str,
     contour_types: Vec<PyContourType>,
     case_name: &str,
+    align_wall_anomalous: bool,
 ) -> PyResult<(Py<PyAny>, PyCenterline)> {
     let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
@@ -94,9 +100,9 @@ pub fn align_three_point(
         let (result_rs, cl) = align_three_point_rs(
             cl_rs,
             geom_pair.to_rust_geometry_pair(),
-            aortic_ref_pt,
-            upper_ref_pt,
-            lower_ref_pt,
+            main_ref_pt,
+            counterclockwise_ref_pt,
+            clockwise_ref_pt,
             angle_step,
             write,
             watertight,
@@ -104,6 +110,7 @@ pub fn align_three_point(
             output_dir,
             rust_contour_types,
             case_name,
+            align_wall_anomalous,
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         let py_result: PyGeometryPair = result_rs.into();
@@ -112,9 +119,9 @@ pub fn align_three_point(
         let (result_rs, cl) = align_three_point_rs(
             cl_rs,
             geom.to_rust_geometry()?,
-            aortic_ref_pt,
-            upper_ref_pt,
-            lower_ref_pt,
+            main_ref_pt,
+            counterclockwise_ref_pt,
+            clockwise_ref_pt,
             angle_step,
             write,
             watertight,
@@ -122,6 +129,7 @@ pub fn align_three_point(
             output_dir,
             rust_contour_types,
             case_name,
+            align_wall_anomalous,
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         let py_result: PyGeometry = result_rs.into();
@@ -160,6 +168,10 @@ pub fn align_three_point(
 ///     Output directory for aligned meshes.  Default is ``"output/aligned"``.
 /// case_name : str, optional
 ///     Case name used as a filename prefix.  Default is ``"None"``.
+/// align_wall_anomalous : bool, optional
+///     When ``True``, rotate the Wall contour in every frame (from frame 2 onward)
+///     so its aortic straight portion aligns to the plane defined by frames 0 and 1.
+///     Only meaningful for anomalous vessels.  Default is ``False``.
 ///
 /// Returns
 /// -------
@@ -187,6 +199,7 @@ pub fn align_three_point(
         output_dir="output/aligned",
         contour_types=vec![PyContourType::Lumen, PyContourType::Catheter, PyContourType::Wall],
         case_name="None",
+        align_wall_anomalous=false,
     )
 )]
 pub fn align_manual(
@@ -201,6 +214,7 @@ pub fn align_manual(
     output_dir: &str,
     contour_types: Vec<PyContourType>,
     case_name: &str,
+    align_wall_anomalous: bool,
 ) -> PyResult<(Py<PyAny>, PyCenterline)> {
     let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
@@ -218,6 +232,7 @@ pub fn align_manual(
             output_dir,
             rust_contour_types,
             case_name,
+            align_wall_anomalous,
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         let py_result: PyGeometryPair = result_rs.into();
@@ -234,6 +249,7 @@ pub fn align_manual(
             output_dir,
             rust_contour_types,
             case_name,
+            align_wall_anomalous,
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         let py_result: PyGeometry = result_rs.into();
@@ -257,12 +273,12 @@ pub fn align_manual(
 ///     Centerline of the vessel.
 /// geometry : PyGeometry or PyGeometryPair
 ///     Single geometry or diastolic/systolic geometry pair to align.
-/// aortic_ref_pt : tuple of float
+/// main_ref_pt : tuple of float
 ///     ``(x, y, z)`` reference point at the aortic ostium.
-/// upper_ref_pt : tuple of float
-///     ``(x, y, z)`` upper section reference point.
-/// lower_ref_pt : tuple of float
-///     ``(x, y, z)`` lower section reference point.
+/// counterclockwise_ref_pt : tuple of float
+///     ``(x, y, z)`` counterclockwise reference point (viewed proximal → distal).
+/// clockwise_ref_pt : tuple of float
+///     ``(x, y, z)`` clockwise reference point (viewed proximal → distal).
 /// points : list of tuple of float
 ///     Point cloud used for Hausdorff distance calculation during rotation
 ///     refinement.
@@ -284,6 +300,10 @@ pub fn align_manual(
 ///     Output directory for aligned meshes.  Default is ``"output/aligned"``.
 /// case_name : str, optional
 ///     Case name used as a filename prefix.  Default is ``"None"``.
+/// align_wall_anomalous : bool, optional
+///     When ``True``, rotate the Wall contour in every frame (from frame 2 onward)
+///     so its aortic straight portion aligns to the plane defined by frames 0 and 1.
+///     Only meaningful for anomalous vessels.  Default is ``False``.
 ///
 /// Returns
 /// -------
@@ -308,9 +328,9 @@ pub fn align_manual(
     signature = (
         centerline,
         geometry,
-        aortic_ref_pt,
-        upper_ref_pt,
-        lower_ref_pt,
+        main_ref_pt,
+        counterclockwise_ref_pt,
+        clockwise_ref_pt,
         points,
         angle_step_deg=1.0,
         angle_range_deg=15.0,
@@ -321,15 +341,16 @@ pub fn align_manual(
         output_dir="output/aligned",
         contour_types=vec![PyContourType::Lumen, PyContourType::Catheter, PyContourType::Wall],
         case_name="None",
+        align_wall_anomalous=false,
     )
 )]
 pub fn align_combined(
     py: Python<'_>,
     centerline: PyCenterline,
     geometry: Bound<'_, PyAny>,
-    aortic_ref_pt: (f64, f64, f64),
-    upper_ref_pt: (f64, f64, f64),
-    lower_ref_pt: (f64, f64, f64),
+    main_ref_pt: (f64, f64, f64),
+    counterclockwise_ref_pt: (f64, f64, f64),
+    clockwise_ref_pt: (f64, f64, f64),
     points: Vec<(f64, f64, f64)>,
     angle_step_deg: f64,
     angle_range_deg: f64,
@@ -340,6 +361,7 @@ pub fn align_combined(
     output_dir: &str,
     contour_types: Vec<PyContourType>,
     case_name: &str,
+    align_wall_anomalous: bool,
 ) -> PyResult<(Py<PyAny>, PyCenterline)> {
     let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
@@ -351,9 +373,9 @@ pub fn align_combined(
         let (result_rs, cl) = align_combined_rs(
             cl_rs,
             geom_pair.to_rust_geometry_pair(),
-            aortic_ref_pt,
-            upper_ref_pt,
-            lower_ref_pt,
+            main_ref_pt,
+            counterclockwise_ref_pt,
+            clockwise_ref_pt,
             points.as_ref(),
             angle_step,
             angle_range,
@@ -364,6 +386,7 @@ pub fn align_combined(
             output_dir,
             rust_contour_types,
             case_name,
+            align_wall_anomalous,
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         let py_result: PyGeometryPair = result_rs.into();
@@ -372,9 +395,9 @@ pub fn align_combined(
         let (result_rs, cl) = align_combined_rs(
             cl_rs,
             geom.to_rust_geometry()?,
-            aortic_ref_pt,
-            upper_ref_pt,
-            lower_ref_pt,
+            main_ref_pt,
+            counterclockwise_ref_pt,
+            clockwise_ref_pt,
             points.as_ref(),
             angle_step,
             angle_range,
@@ -385,6 +408,7 @@ pub fn align_combined(
             output_dir,
             rust_contour_types,
             case_name,
+            align_wall_anomalous,
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         let py_result: PyGeometry = result_rs.into();

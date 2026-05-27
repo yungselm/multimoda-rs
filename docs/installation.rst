@@ -77,9 +77,11 @@ Clone the repo and install with the ``dev`` dependency group, which includes tes
     pip install maturin
     maturin develop
 
-    # Install Python dev dependencies (requires pip >= 25.0 or uv)
+    # Upgrade pip to >= 25.0 (required for --group support)
+    pip install --upgrade pip
     pip install --group dev
-    # or: uv sync --group dev
+    # Alternatively, use uv (no version constraint):
+    # uv sync --group dev
 
 Optional extras::
 
@@ -97,5 +99,5 @@ Optional extras::
 
 .. code-block:: bash
 
-    pip install --group docs          # install doc dependencies
+    pip install --upgrade pip && pip install --group docs   # install doc dependencies
     cd docs && make html              # output: docs/_build/html/index.html

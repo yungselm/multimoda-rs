@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from .multimodars import (
+    PyContour,
     PyContourType,
     PyGeometry,
     PyGeometryPair,
     PyInputData,
     PyCenterline,
+    PyDiscretizedVesselTree,  # noqa: F401 — re-exported for type annotations
     from_file_full as _from_file_full,
     from_file_doublepair as _from_file_doublepair,
     from_file_singlepair as _from_file_singlepair,
@@ -21,6 +23,7 @@ from .multimodars import (
     find_centerline_bounded_points_simple as _find_centerline_bounded_points_simple,
     find_proximal_distal_scaling as _find_proximal_distal_scaling,
     build_adjacency_map as _build_adjacency_map,
+    discretize_vessel as _discretize_vessel,
 )
 
 _AlignLog = list[tuple[int, int, float, float, float, float, float]]
@@ -1006,9 +1009,9 @@ def from_array_single(
 def align_three_point(
     centerline: PyCenterline,
     geometry: PyGeometryPair | PyGeometry,
-    aortic_ref_pt: tuple[float, float, float],
-    upper_ref_pt: tuple[float, float, float],
-    lower_ref_pt: tuple[float, float, float],
+    main_ref_pt: tuple[float, float, float],
+    counterclockwise_ref_pt: tuple[float, float, float],
+    clockwise_ref_pt: tuple[float, float, float],
     angle_step_deg: float = 1.0,
     write: bool = False,
     watertight: bool = True,
@@ -1016,12 +1019,13 @@ def align_three_point(
     output_dir: str = "output/aligned",
     contour_types: list[PyContourType] | None = None,
     case_name: str = "None",
+    align_wall_anomalous: bool = False,
 ) -> tuple[PyGeometryPair | PyGeometry, PyCenterline]:
     """Align a geometry (or geometry pair) to the centerline using three reference points.
 
     Creates centerline-aligned meshes based on three anatomical reference points
-    (aorta, upper section, lower section).  Only works for elliptic vessels such
-    as coronary artery anomalies.
+    (main ostium, counterclockwise side, clockwise side).  Only works for elliptic
+    vessels such as coronary artery anomalies.
 
     Parameters
     ----------
@@ -1029,12 +1033,12 @@ def align_three_point(
         Centerline of the vessel.
     geometry : PyGeometryPair or PyGeometry
         Single geometry or diastolic/systolic geometry pair to align.
-    aortic_ref_pt : tuple of float
+    main_ref_pt : tuple of float
         ``(x, y, z)`` reference point at the aortic ostium.
-    upper_ref_pt : tuple of float
-        ``(x, y, z)`` upper section reference point.
-    lower_ref_pt : tuple of float
-        ``(x, y, z)`` lower section reference point.
+    counterclockwise_ref_pt : tuple of float
+        ``(x, y, z)`` counterclockwise reference point (viewed proximal → distal).
+    clockwise_ref_pt : tuple of float
+        ``(x, y, z)`` clockwise reference point (viewed proximal → distal).
     angle_step_deg : float, optional
         Step size in degrees for the rotation search.  Default is ``1.0``.
     write : bool, optional
@@ -1051,6 +1055,10 @@ def align_three_point(
         ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
     case_name : str, optional
         Case name used as a filename prefix.  Default is ``"None"``.
+    align_wall_anomalous : bool, optional
+        When ``True``, rotate the Wall contour in every frame (from frame 2 onward)
+        so its aortic straight portion aligns to the plane defined by frames 0 and 1.
+        Only meaningful for anomalous vessels.  Default is ``False``.
 
     Returns
     -------
@@ -1075,9 +1083,9 @@ def align_three_point(
     return _align_three_point(
         centerline,
         geometry,
-        aortic_ref_pt,
-        upper_ref_pt,
-        lower_ref_pt,
+        main_ref_pt,
+        counterclockwise_ref_pt,
+        clockwise_ref_pt,
         angle_step_deg,
         write,
         watertight,
@@ -1085,6 +1093,7 @@ def align_three_point(
         output_dir,
         contour_types,
         case_name,
+        align_wall_anomalous,
     )
 
 
@@ -1099,6 +1108,7 @@ def align_manual(
     output_dir: str = "output/aligned",
     contour_types: list[PyContourType] | None = None,
     case_name: str = "None",
+    align_wall_anomalous: bool = False,
 ) -> tuple[PyGeometryPair | PyGeometry, PyCenterline]:
     """Align a geometry (or geometry pair) to the centerline using a manual rotation angle.
 
@@ -1130,6 +1140,10 @@ def align_manual(
         ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
     case_name : str, optional
         Case name used as a filename prefix.  Default is ``"None"``.
+    align_wall_anomalous : bool, optional
+        When ``True``, rotate the Wall contour in every frame (from frame 2 onward)
+        so its aortic straight portion aligns to the plane defined by frames 0 and 1.
+        Only meaningful for anomalous vessels.  Default is ``False``.
 
     Returns
     -------
@@ -1158,15 +1172,16 @@ def align_manual(
         output_dir,
         contour_types,
         case_name,
+        align_wall_anomalous,
     )
 
 
 def align_combined(
     centerline: PyCenterline,
     geometry: PyGeometryPair | PyGeometry,
-    aortic_ref_pt: tuple[float, float, float],
-    upper_ref_pt: tuple[float, float, float],
-    lower_ref_pt: tuple[float, float, float],
+    main_ref_pt: tuple[float, float, float],
+    counterclockwise_ref_pt: tuple[float, float, float],
+    clockwise_ref_pt: tuple[float, float, float],
     points: list[tuple[float, float, float]],
     angle_step_deg: float = 1.0,
     angle_range_deg: float = 15.0,
@@ -1177,6 +1192,7 @@ def align_combined(
     output_dir: str = "output/aligned",
     contour_types: list[PyContourType] | None = None,
     case_name: str = "None",
+    align_wall_anomalous: bool = False,
 ) -> tuple[PyGeometryPair | PyGeometry, PyCenterline]:
     """Align a geometry (or geometry pair) using three reference points and Hausdorff refinement.
 
@@ -1190,12 +1206,12 @@ def align_combined(
         Centerline of the vessel.
     geometry : PyGeometryPair or PyGeometry
         Single geometry or diastolic/systolic geometry pair to align.
-    aortic_ref_pt : tuple of float
+    main_ref_pt : tuple of float
         ``(x, y, z)`` reference point at the aortic ostium.
-    upper_ref_pt : tuple of float
-        ``(x, y, z)`` upper section reference point.
-    lower_ref_pt : tuple of float
-        ``(x, y, z)`` lower section reference point.
+    counterclockwise_ref_pt : tuple of float
+        ``(x, y, z)`` counterclockwise reference point (viewed proximal → distal).
+    clockwise_ref_pt : tuple of float
+        ``(x, y, z)`` clockwise reference point (viewed proximal → distal).
     points : list of tuple of float
         Point cloud used for Hausdorff distance calculation during rotation
         refinement.
@@ -1220,6 +1236,10 @@ def align_combined(
         ``[PyContourType.Lumen, PyContourType.Catheter, PyContourType.Wall]``.
     case_name : str, optional
         Case name used as a filename prefix.  Default is ``"None"``.
+    align_wall_anomalous : bool, optional
+        When ``True``, rotate the Wall contour in every frame (from frame 2 onward)
+        so its aortic straight portion aligns to the plane defined by frames 0 and 1.
+        Only meaningful for anomalous vessels.  Default is ``False``.
 
     Returns
     -------
@@ -1245,9 +1265,9 @@ def align_combined(
     return _align_combined(
         centerline,
         geometry,
-        aortic_ref_pt,
-        upper_ref_pt,
-        lower_ref_pt,
+        main_ref_pt,
+        counterclockwise_ref_pt,
+        clockwise_ref_pt,
         points,
         angle_step_deg,
         angle_range_deg,
@@ -1258,6 +1278,7 @@ def align_combined(
         output_dir,
         contour_types,
         case_name,
+        align_wall_anomalous,
     )
 
 
@@ -1423,4 +1444,55 @@ def build_adjacency_map(
     >>> print(adj[1])  # {0, 2, 3}"""
     return _build_adjacency_map(
         faces,
+    )
+
+
+def discretize_vessel(
+    centerline: "PyCenterline",
+    points: list[tuple[float, float, float]],
+    branch_id: int = 0,
+    step_size: float = 0.5,
+    n_points: int = 200,
+) -> list[PyContour]:
+    """Discretize a vessel surface mesh along a centerline branch into uniform cross-sections.
+
+    Walks the specified centerline branch at uniform arc-length intervals of ``step_size``,
+    projects the supplied mesh points onto each perpendicular cross-sectional plane, discards
+    incomplete slices (empty or not covering all four angular quadrants), and resamples the
+    remaining contours to exactly ``n_points`` evenly-spaced points via a closed Catmull-Rom
+    spline.
+
+    Parameters
+    ----------
+    centerline : PyCenterline
+        Centerline object containing one or more branches.
+    points : list of tuple of (float, float, float)
+        3-D surface mesh points ``(x, y, z)`` to project onto each cross-section.
+    branch_id : int, optional
+        Index of the centerline branch to walk. Default is ``0``.
+    step_size : float, optional
+        Arc-length distance between consecutive cross-sections in the same units as
+        ``centerline`` and ``points``. Default is ``0.5``.
+    n_points : int, optional
+        Number of evenly-spaced points per output contour. Default is ``200``.
+
+    Returns
+    -------
+    contours : list of PyContour
+        One contour per surviving cross-section, each containing exactly ``n_points``
+        uniformly distributed points lying on a Catmull-Rom spline fit to the projected
+        surface points.
+
+    Examples
+    --------
+    >>> import multimodars as mm
+    >>>
+    >>> contours = mm.discretize_vessel(centerline, mesh_points, branch_id=0, step_size=0.5)
+    >>> print(len(contours))"""
+    return _discretize_vessel(
+        centerline,
+        points,
+        branch_id,
+        step_size,
+        n_points,
     )

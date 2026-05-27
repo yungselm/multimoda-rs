@@ -269,7 +269,11 @@ fn check_centerline(centerline: Centerline) -> Centerline {
 
     points.sort_by(|a, b| b.contour_point.z.partial_cmp(&a.contour_point.z).unwrap());
 
-    Centerline { points }
+    let branch_start_indices = if points.is_empty() { vec![] } else { vec![0] };
+    Centerline {
+        points,
+        branch_start_indices,
+    }
 }
 
 fn create_bounding_sphere(cl_point: &CenterlinePoint, radius: f64) -> BoundingSphere {

@@ -3,6 +3,78 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-05-25
+This version introduces backwards compatibility breaking changes.
+
+### Added
+
+**Vessel-tree discretization pipeline**
+
+- `prepare_centerlines(rca_cl, lca_cl, results_dict, branch_sigma, control_plot)`: one-call
+  wrapper that runs `calculate_branches`, `check_centerline`, and `label_branches` on both
+  coronary centerlines.  Returns updated centerlines and a `results` dict extended with
+  `rca_points_main`, `rca_points_side_N`, `lca_points_main`, `lca_points_side_N` keys.
+- `discretize_vessel_tree(ao_cl, rca_cl, lca_cl, results_dict, ...)`: slices each vessel along
+  its centerline at fixed arc-length intervals (`step_size`) and samples `n_points` evenly-spaced
+  points from each cross-sectional contour.  Returns a `PyDiscretizedVesselTree` whose
+  `rca_references` / `lca_references` attributes hold orientation reference triplets at the
+  ostium and every side-branch bifurcation.
+- `b_spline` / `bspline_smoothing` / `bspline_degree` parameters in `discretize_vessel_tree`:
+  when `b_spline=True`, each discretized contour is replaced with a closed periodic B-spline fit
+  (via `scipy.interpolate.splprep`) before reference points are computed.  Smoothing strength is
+  controlled by `bspline_smoothing` (0 = exact interpolation; ≈ n_points = gentle;
+  ≈ 5 x n_points = strong).
+- `find_sharp_angles(cl, branch_id, cos_threshold, control_plot)`: Python wrapper around the
+  Rust-bound `PyCenterline.find_sharp_angles` that prints a summary and, when `control_plot=True`,
+  opens a trimesh scene highlighting each flagged position in a distinct colour.
+
+**Debug visualisations (trimesh-based)**
+
+All debug plots now use `trimesh.Scene().show()` (native OpenGL) instead of Plotly, matching
+the style of `label_geometry`'s control plot and working correctly in all environments
+(VS Code, terminal, Jupyter).
+
+- `plot_vessel_tree(tree, pts_per_contour)`: renders discretized contour rings, yellow centroid
+  traces, and the full orientation reference triplet for RCA and LCA.  Color coding: silver =
+  aorta; steel-blue = RCA main; coral = LCA main; shades of blue/orange = side branches;
+  red/orange/magenta = main/CCW/CW reference points.
+- `plot_centerline_branches(rca_cl, lca_cl, results_dict)`: shows each centerline branch in a
+  distinct colour; optionally overlays the labeled surface-mesh points semi-transparently.
+- `plot_centerline_edges(cl, cos_threshold)`: shows all branches with red dots at positions
+  flagged by `find_sharp_angles` — useful for deciding where to call `split_branch`.
+- `plot_sharp_angles(cl, branch_id, sharp_positions, context_pts)`: shows the full centerline
+  dimmed in gray with each flagged position and its neighbours highlighted in a distinct colour.
+- `plot_results_key`, `compare_centerline_scaling`: migrated from Plotly to trimesh.
+
+### Changed
+
+**Alignment reference point naming** (`align_three_point`, `align_combined`, `align_manual`)
+
+The three landmark parameters have been renamed for anatomical clarity:
+
+| Old name | New name |
+|---|---|
+| `aortic_ref_pt` | `main_ref_pt` |
+| `upper_ref_pt` | `counterclockwise_ref_pt` |
+| `lower_ref_pt` | `clockwise_ref_pt` |
+
+The new names reflect the geometric meaning of each landmark (view from proximal to distal:
+the CCW reference lies counter-clockwise of the vessel centre, the CW reference lies clockwise).
+Updated across: Rust binding (`src/intravascular/binding/align.rs`), alignment algorithms
+(`centerline_align/`), Python wrappers (`_processing.py`), type stubs (`multimodars.pyi`),
+documentation (`tutorial_intravascular.rst`), and the CCTA notebook.
+
+- `PyDiscretizedVesselTree.rca_references` / `lca_references` now store triplets as
+  `(main_ref, counterclockwise_ref, clockwise_ref)` matching the new parameter order.
+- `PyCenterline` struct gains a new read-only field `branch_start_indices : list[int]`
+  (index into `points` where each branch begins; `branch_start_indices[0]` is always 0).
+  The constructor signature is unchanged — `PyCenterline(points=[...])` populates the field
+  automatically.  **Note:** objects pickled with 0.3.x cannot be unpickled under 0.4.x.
+- CCTA tutorial (`docs/tutorial_ccta.rst`) updated with new section 2 covering
+  `prepare_centerlines`, sharp-angle inspection/correction, and `discretize_vessel_tree`.
+- CCTA notebook (`docs/notebooks/ccta_notebook.ipynb`) updated: section 2 added, section 3
+  uses `tree.rca_references[0]` and `rca_cl.get_branch(0)` for alignment.
+
 ## [0.3.5] - 2026-05-15
 
 ### Added

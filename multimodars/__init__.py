@@ -14,6 +14,7 @@ from .multimodars import (
     PyInputData,
     PyRecord,
     PyContourType,
+    PyDiscretizedVesselTree,
 )
 from ._processing import (
     from_file_full,
@@ -31,6 +32,7 @@ from ._processing import (
     find_centerline_bounded_points_simple,
     find_proximal_distal_scaling,
     build_adjacency_map,
+    discretize_vessel,
 )
 from ._converters import (
     to_array,
@@ -43,6 +45,7 @@ from .ccta import label, scale, stitch, export_section_stl, create_wall_mesh
 from .ccta.labeling import (
     label_geometry,
     label_anomalous_region,
+    label_branches,
 )
 from .ccta.manipulating import (
     scale_region_centerline_morphing,
@@ -54,8 +57,13 @@ from .ccta.manipulating import (
     sync_results_to_mesh,
     stitch_ccta_to_intravascular,
 )
+from .ccta.discretization_map import (
+    prepare_centerlines,
+    discretize_vessel_tree,
+    find_sharp_angles,
+)
 from .ccta.fixing_functions import fix_and_remesh_stitched_mesh, manual_hole_fill
-from .ccta.debug_plots import plot_results_key
+from .ccta.debug_plots import plot_results_key, plot_centerline_edges, plot_sharp_angles
 
 __all__ = [
     # Core classes
@@ -69,6 +77,7 @@ __all__ = [
     "PyInputData",
     "PyRecord",
     "PyContourType",
+    "PyDiscretizedVesselTree",
     # Converter functions
     "to_array",
     "numpy_to_geometry",
@@ -113,6 +122,13 @@ __all__ = [
     "postprocess_stitched_mesh",
     "manual_hole_fill",
     "plot_results_key",
+    "plot_centerline_edges",
+    "plot_sharp_angles",
+    "discretize_vessel",
+    "prepare_centerlines",
+    "discretize_vessel_tree",
+    "find_sharp_angles",
+    "label_branches",
 ]
 
 # def _print_banner():

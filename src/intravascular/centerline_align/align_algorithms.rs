@@ -11,6 +11,8 @@ use nalgebra::{Point3, Rotation3, Unit, Vector3};
 pub trait AlignTarget: Sized + Clone {
     /// Returns the primary geometry used as the reference for computing transformations.
     fn primary_geometry(&self) -> &Geometry;
+    /// Applies a closure mutably to every geometry contained in this target.
+    fn for_each_geometry_mut<F: FnMut(&mut Geometry)>(&mut self, f: F);
     /// Applies frame transformations to all contained geometries.
     fn apply_frame_transforms(self, transformations: &[FrameTransformation]) -> Self;
     /// Rotates all contained geometries by `angle` radians around each frame's normal.
@@ -20,6 +22,10 @@ pub trait AlignTarget: Sized + Clone {
 impl AlignTarget for Geometry {
     fn primary_geometry(&self) -> &Geometry {
         self
+    }
+
+    fn for_each_geometry_mut<F: FnMut(&mut Geometry)>(&mut self, mut f: F) {
+        f(self);
     }
 
     fn apply_frame_transforms(mut self, transformations: &[FrameTransformation]) -> Self {
@@ -36,6 +42,11 @@ impl AlignTarget for Geometry {
 impl AlignTarget for GeometryPair {
     fn primary_geometry(&self) -> &Geometry {
         &self.geom_a
+    }
+
+    fn for_each_geometry_mut<F: FnMut(&mut Geometry)>(&mut self, mut f: F) {
+        f(&mut self.geom_a);
+        f(&mut self.geom_b);
     }
 
     fn apply_frame_transforms(mut self, transformations: &[FrameTransformation]) -> Self {
@@ -98,7 +109,7 @@ pub fn get_transformations(
         // Calculate which centerline point corresponds to this geometry frame
         // We start from the reference centerline point and move through the centerline
         // based on the geometry frame's position relative to the reference frame
-        let cl_index = ref_idx_cl as isize + (i as isize); // or - i depending on your coordinate system direction
+        let cl_index = ref_idx_cl as isize + (i as isize);
 
         if cl_index >= 0 && cl_index < centerline.points.len() as isize {
             let cl_point = &centerline.points[cl_index as usize];
@@ -252,16 +263,17 @@ fn rotate_contour_around_centroid(contour: &mut Contour, angle: f64) {
 pub fn best_rotation_three_point(
     contour: &Contour,
     reference_point: &ContourPoint,
-    aortic_ref_pt: (f64, f64, f64),
-    upper_ref_pt: (f64, f64, f64),
-    lower_ref_pt: (f64, f64, f64),
+    main_ref_pt: (f64, f64, f64),
+    counterclockwise_ref_pt: (f64, f64, f64),
+    clockwise_ref_pt: (f64, f64, f64),
     angle_step: f64,
     centerline_point: &CenterlinePoint,
 ) -> f64 {
     let index_reference = reference_point.point_index;
 
-    let [target_aortic, target_upper, target_lower]: [Point3<f64>; 3] =
-        [aortic_ref_pt, upper_ref_pt, lower_ref_pt].map(|(x, y, z)| Point3::new(x, y, z));
+    let [target_main, target_ccw, target_cw]: [Point3<f64>; 3] =
+        [main_ref_pt, counterclockwise_ref_pt, clockwise_ref_pt]
+            .map(|(x, y, z)| Point3::new(x, y, z));
 
     let mut best_angle = 0.0;
     let mut min_total_error = f64::MAX;
@@ -286,33 +298,32 @@ pub fn best_rotation_three_point(
 
         let n_points = temp_points.len() as u32;
 
-        let p_aortic = temp_points
+        let p_main = temp_points
             .iter()
             .find(|p| p.point_index == index_reference)
             .unwrap();
-        let cont_p_upper = temp_points.iter().find(|p| p.point_index == 0).unwrap();
-        let cont_p_lower = temp_points
+        // point_index == 0 is the highest-Y point → counterclockwise side (viewed proximal → distal)
+        let cont_p_ccw = temp_points.iter().find(|p| p.point_index == 0).unwrap();
+        // point_index == n/2 is the diametrically opposite point → clockwise side
+        let cont_p_cw = temp_points
             .iter()
             .find(|p| p.point_index == (n_points / 2))
             .unwrap();
 
-        let d_aortic = nalgebra::distance(
-            &Point3::new(p_aortic.x, p_aortic.y, p_aortic.z),
-            &target_aortic,
+        let d_main = nalgebra::distance(&Point3::new(p_main.x, p_main.y, p_main.z), &target_main);
+
+        let d_ccw = nalgebra::distance(
+            &Point3::new(cont_p_ccw.x, cont_p_ccw.y, cont_p_ccw.z),
+            &target_ccw,
         );
 
-        let d_upper = nalgebra::distance(
-            &Point3::new(cont_p_upper.x, cont_p_upper.y, cont_p_upper.z),
-            &target_upper,
-        );
-
-        let d_lower = nalgebra::distance(
-            &Point3::new(cont_p_lower.x, cont_p_lower.y, cont_p_lower.z),
-            &target_lower,
+        let d_cw = nalgebra::distance(
+            &Point3::new(cont_p_cw.x, cont_p_cw.y, cont_p_cw.z),
+            &target_cw,
         );
 
         // Calculate sum of squared errors
-        let total_error = d_aortic.powi(2) + d_upper.powi(2) + d_lower.powi(2);
+        let total_error = d_main.powi(2) + d_ccw.powi(2) + d_cw.powi(2);
 
         if total_error < min_total_error {
             min_total_error = total_error;
@@ -358,6 +369,7 @@ pub fn refine_alignment_hausdorff<T: AlignTarget>(
         let cl_end_idx = current_cl_ref_idx + len_frames;
         let cl_segment = Centerline {
             points: centerline.points[current_cl_ref_idx..cl_end_idx].to_vec(),
+            branch_start_indices: vec![0],
         };
 
         let mut angle = initial_rotation - angle_search_range;
@@ -539,6 +551,7 @@ mod align_algorithms_tests {
                 aortic: false,
             },
             normal: Vector3::new(0.0, 0.0, 1.0), // Default normal pointing up
+            branch_id: 0,
         }
     }
 
@@ -842,6 +855,7 @@ mod align_algorithms_tests {
 
         let centerline = Centerline {
             points: centerline_points,
+            branch_start_indices: vec![0],
         };
         let ref_pt = (10.0, 10.0, 10.0);
 
@@ -882,9 +896,9 @@ mod align_algorithms_tests {
         };
 
         // Set targets to match the current positions (so best rotation should be 0)
-        let aortic_ref_pt = (1.0, 0.0, 0.0);
-        let upper_ref_pt = (0.0, 1.0, 0.0);
-        let lower_ref_pt = (-1.0, 0.0, 0.0);
+        let main_ref_pt = (1.0, 0.0, 0.0);
+        let counterclockwise_ref_pt = (0.0, 1.0, 0.0);
+        let clockwise_ref_pt = (-1.0, 0.0, 0.0);
         let angle_step = std::f64::consts::FRAC_PI_8; // 22.5 degree steps
 
         let centerline_point = create_test_centerline_point(0.0, 0.0, 0.0, 0);
@@ -892,9 +906,9 @@ mod align_algorithms_tests {
         let best_angle = best_rotation_three_point(
             &contour,
             &reference_point,
-            aortic_ref_pt,
-            upper_ref_pt,
-            lower_ref_pt,
+            main_ref_pt,
+            counterclockwise_ref_pt,
+            clockwise_ref_pt,
             angle_step,
             &centerline_point,
         );

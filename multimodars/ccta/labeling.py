@@ -569,3 +569,78 @@ def label_anomalous_region(
         )
 
     return results
+
+
+def label_branches(
+    centerline,
+    results: dict,
+    results_key: str = "rca_points",
+    branch_id: int | list[int] = 0,
+    bounding_sphere_radius_mm: float = 3.0,
+) -> dict:
+    """Partition a coronary region into main branch and per-side-branch point sets.
+
+    Parameters
+    ----------
+    centerline : PyCenterline
+        Centerline of the coronary vessel of interest.
+    results : dict
+        Labelled results dictionary (e.g. from :func:`label_geometry`).
+        Must contain the key specified by *results_key*.
+    results_key : str, optional
+        Key in *results* whose point list is partitioned.
+        Default is ``"rca_points"``.
+    branch_id : int or list of int, optional
+        Branch index or list of branch indices whose combined points form the
+        main branch (e.g. ``[0, 1]`` for LAD + LCx).  Default is ``0``.
+    bounding_sphere_radius_mm : float, optional
+        Radius of the rolling sphere used to collect candidate vertices.
+        Default is ``3.0``.
+
+    Returns
+    -------
+    dict
+        The input *results* dictionary extended with:
+
+        * ``"{results_key}_main"`` - vertices along the main branch(es).
+        * ``"{results_key}_side"`` - all remaining vertices (aggregate).
+        * ``"{results_key}_side_{k}"`` - vertices near side branch *k*, one
+          key per side branch discovered in *centerline*.  A point may appear
+          in more than one side-branch set when it sits near a bifurcation;
+          the Voronoi inside :func:`discretize_vessel` resolves the assignment.
+    """
+    branch_ids = [branch_id] if isinstance(branch_id, int) else list(branch_id)
+    main_id_set = set(branch_ids)
+
+    # Collect main-branch points.
+    main_set: set = set()
+    for bid in branch_ids:
+        branch = centerline.get_branch(bid)
+        points_found = find_centerline_bounded_points_simple(
+            branch, results[results_key], bounding_sphere_radius_mm
+        )
+        main_set.update(points_found)
+
+    main_points = [p for p in results[results_key] if p in main_set]
+    side_points = [p for p in results[results_key] if p not in main_set]
+
+    results[f"{results_key}_main"] = main_points
+    results[f"{results_key}_side"] = side_points
+
+    # Split side points per individual side branch.
+    n_branches = len(centerline.branch_start_indices)
+    side_branch_ids = [k for k in range(n_branches) if k not in main_id_set]
+
+    print(f"\nBranch labeling for '{results_key}' (branch_ids={branch_ids}):")
+    print(f"  {results_key}_main: {len(main_points)}")
+    print(f"  {results_key}_side: {len(side_points)}")
+
+    for k in side_branch_ids:
+        branch_k = centerline.get_branch(k)
+        branch_k_points = find_centerline_bounded_points_simple(
+            branch_k, side_points, bounding_sphere_radius_mm
+        )
+        results[f"{results_key}_side_{k}"] = branch_k_points
+        print(f"  {results_key}_side_{k}: {len(branch_k_points)}")
+
+    return results
