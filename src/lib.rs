@@ -9,7 +9,7 @@ use crate::ccta::binding::ccta_py;
 use crate::ccta::binding::ccta_py::PyDiscretizedVesselTree;
 use crate::intravascular::binding;
 use crate::intravascular::binding::align;
-use crate::intravascular::binding::classes::*;
+use crate::types::binding::*;
 
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;

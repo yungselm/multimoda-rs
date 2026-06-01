@@ -7,6 +7,7 @@ Classes
 
    PyContourPoint
    PyContour
+   PyContourType
    PyFrame
    PyGeometry
    PyGeometryPair
@@ -14,3 +15,4 @@ Classes
    PyInputData
    PyCenterlinePoint
    PyCenterline
+   PyDiscretizedVesselTree
