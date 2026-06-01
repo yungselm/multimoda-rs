@@ -1,7 +1,7 @@
-use crate::intravascular::{
-    binding::classes::{PyCenterline, PyContourType, PyGeometry, PyGeometryPair},
-    centerline_align::{align_combined_rs, align_manual_rs, align_three_point_rs},
+use crate::intravascular::centerline_align::{
+    align_combined_rs, align_manual_rs, align_three_point_rs,
 };
+use crate::types::binding::{PyCenterline, PyContourType, PyGeometry, PyGeometryPair};
 use pyo3::prelude::*;
 
 /// Align a geometry (or geometry pair) to the centerline using three reference points.

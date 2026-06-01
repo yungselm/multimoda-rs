@@ -1,7 +1,7 @@
-use super::classes::{PyContourType, PyGeometry, PyGeometryPair, PyInputData};
 use super::entry::*;
 use crate::intravascular::io::{input::InputData, output::write_obj_mesh_without_uv};
 use crate::intravascular::processing::align_within::AlignLog;
+use crate::types::binding::{PyContourType, PyGeometry, PyGeometryPair, PyInputData};
 use pyo3::prelude::*;
 use std::path::Path;
 
