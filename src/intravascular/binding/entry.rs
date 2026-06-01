@@ -6,12 +6,15 @@ use std::path::Path;
 
 use crate::intravascular::io::geometry::{Contour, ContourType, Geometry};
 use crate::intravascular::io::input::InputData;
-use crate::intravascular::io::output::write_obj_mesh_without_uv;
-use crate::intravascular::processing::align_between::{align_between_geometries, GeometryPair};
-use crate::intravascular::processing::align_within::{align_frames_in_geometry, AlignLog};
-use crate::intravascular::processing::postprocessing::postprocess_geom_pair;
-use crate::intravascular::processing::preprocessing::{prepare_n_geometries, ProcessingOptions};
-use crate::intravascular::to_object::process_case;
+use crate::intravascular::io::output;
+use crate::intravascular::processing::align_between;
+use crate::intravascular::processing::align_between::GeometryPair;
+use crate::intravascular::processing::align_within;
+use crate::intravascular::processing::align_within::AlignLog;
+use crate::intravascular::processing::postprocessing as postprocess;
+use crate::intravascular::processing::preprocessing;
+use crate::intravascular::processing::preprocessing::ProcessingOptions;
+use crate::intravascular::to_object;
 
 // tolerance of distance between frames [mm], that counts as 0
 const TOLERANCE: f64 = 0.03;
@@ -57,7 +60,7 @@ fn maybe_postprocess(
     postprocessing: bool,
 ) -> anyhow::Result<GeometryPair> {
     if postprocessing {
-        postprocess_geom_pair(pair, tolerance, anomalous)
+        postprocess::postprocess_geom_pair(pair, tolerance, anomalous)
             .with_context(|| format!("Failed postprocessing of {}", pair.label))
     } else {
         Ok(pair.clone())
@@ -90,7 +93,7 @@ pub fn full_processing_rs(
     sample_size: usize,
     postprocessing: bool,
 ) -> Result<FullProcessResult> {
-    let mut geometries = prepare_n_geometries(
+    let mut geometries = preprocessing::prepare_n_geometries(
         &labels,
         image_center,
         radius,
@@ -135,7 +138,7 @@ pub fn full_processing_rs(
         bool_d,
     ) = thread::scope(|s| -> Result<AlignedGeoms4> {
         let geom_a_handle = s.spawn(|_| -> anyhow::Result<_> {
-            let (geom, logs, anomalous_bool) = align_frames_in_geometry(
+            let (geom, logs, anomalous_bool) = align_within::align_frames_in_geometry(
                 &mut geom_a,
                 step_deg,
                 range_deg,
@@ -148,7 +151,7 @@ pub fn full_processing_rs(
         });
 
         let geom_b_handle = s.spawn(|_| -> anyhow::Result<_> {
-            let (geom, logs, anomalous_bool) = align_frames_in_geometry(
+            let (geom, logs, anomalous_bool) = align_within::align_frames_in_geometry(
                 &mut geom_b,
                 step_deg,
                 range_deg,
@@ -161,7 +164,7 @@ pub fn full_processing_rs(
         });
 
         let geom_c_handle = s.spawn(|_| -> anyhow::Result<_> {
-            let (geom, logs, anomalous_bool) = align_frames_in_geometry(
+            let (geom, logs, anomalous_bool) = align_within::align_frames_in_geometry(
                 &mut geom_c,
                 step_deg,
                 range_deg,
@@ -174,7 +177,7 @@ pub fn full_processing_rs(
         });
 
         let geom_d_handle = s.spawn(|_| -> anyhow::Result<_> {
-            let (geom, logs, anomalous_bool) = align_frames_in_geometry(
+            let (geom, logs, anomalous_bool) = align_within::align_frames_in_geometry(
                 &mut geom_d,
                 step_deg,
                 range_deg,
@@ -201,19 +204,31 @@ pub fn full_processing_rs(
     // First parallel batch: AB and CD (independent pairs)
     let (geom_pair_ab, geom_pair_cd) = thread::scope(|s| -> Result<(GeometryPair, GeometryPair)> {
         let geompair_ab_handle = s.spawn(|_| -> anyhow::Result<_> {
-            align_between_geometries(&mut geom_a, &mut geom_b, range_deg, step_deg, sample_size)
-                .context(format!(
-                    "Failed to align frames between geometry {} and {}",
-                    geom_a.label, geom_b.label
-                ))
+            align_between::align_between_geometries(
+                &mut geom_a,
+                &mut geom_b,
+                range_deg,
+                step_deg,
+                sample_size,
+            )
+            .context(format!(
+                "Failed to align frames between geometry {} and {}",
+                geom_a.label, geom_b.label
+            ))
         });
 
         let geompair_cd_handle = s.spawn(|_| -> anyhow::Result<_> {
-            align_between_geometries(&mut geom_c, &mut geom_d, range_deg, step_deg, sample_size)
-                .context(format!(
-                    "Failed to align frames between geometry {} and {}",
-                    geom_c.label, geom_d.label
-                ))
+            align_between::align_between_geometries(
+                &mut geom_c,
+                &mut geom_d,
+                range_deg,
+                step_deg,
+                sample_size,
+            )
+            .context(format!(
+                "Failed to align frames between geometry {} and {}",
+                geom_c.label, geom_d.label
+            ))
         });
 
         let geom_pair_ab = geompair_ab_handle.join().unwrap()?;
@@ -226,19 +241,31 @@ pub fn full_processing_rs(
     // Second parallel batch: AC and BD (independent pairs)
     let (geom_pair_ac, geom_pair_bd) = thread::scope(|s| -> Result<(GeometryPair, GeometryPair)> {
         let geompair_ac_handle = s.spawn(|_| -> anyhow::Result<_> {
-            align_between_geometries(&mut geom_a, &mut geom_c, range_deg, step_deg, sample_size)
-                .context(format!(
-                    "Failed to align frames between geometry {} and {}",
-                    geom_a.label, geom_c.label
-                ))
+            align_between::align_between_geometries(
+                &mut geom_a,
+                &mut geom_c,
+                range_deg,
+                step_deg,
+                sample_size,
+            )
+            .context(format!(
+                "Failed to align frames between geometry {} and {}",
+                geom_a.label, geom_c.label
+            ))
         });
 
         let geompair_bd_handle = s.spawn(|_| -> anyhow::Result<_> {
-            align_between_geometries(&mut geom_b, &mut geom_d, range_deg, step_deg, sample_size)
-                .context(format!(
-                    "Failed to align frames between geometry {} and {}",
-                    geom_b.label, geom_d.label
-                ))
+            align_between::align_between_geometries(
+                &mut geom_b,
+                &mut geom_d,
+                range_deg,
+                step_deg,
+                sample_size,
+            )
+            .context(format!(
+                "Failed to align frames between geometry {} and {}",
+                geom_b.label, geom_d.label
+            ))
         });
 
         let geom_pair_ac = geompair_ac_handle.join().unwrap()?;
@@ -262,7 +289,7 @@ pub fn full_processing_rs(
 
     let ab_label = geom_ab_postprocessed.label.clone();
     let geom_ab_final = if write_obj {
-        process_case(
+        to_object::process_case(
             &ab_label,
             geom_ab_postprocessed,
             output_path_a,
@@ -277,7 +304,7 @@ pub fn full_processing_rs(
 
     let cd_label = geom_cd_postprocessed.label.clone();
     let geom_cd_final = if write_obj {
-        process_case(
+        to_object::process_case(
             &cd_label,
             geom_cd_postprocessed,
             output_path_b,
@@ -292,7 +319,7 @@ pub fn full_processing_rs(
 
     let ac_label = geom_ac_postprocessed.label.clone();
     let geom_ac_final = if write_obj {
-        process_case(
+        to_object::process_case(
             &ac_label,
             geom_ac_postprocessed,
             output_path_c,
@@ -307,7 +334,7 @@ pub fn full_processing_rs(
 
     let bd_label = geom_bd_postprocessed.label.clone();
     let geom_bd_final = if write_obj {
-        process_case(
+        to_object::process_case(
             &bd_label,
             geom_bd_postprocessed,
             output_path_d,
@@ -356,7 +383,7 @@ pub fn double_pair_processing_rs(
     sample_size: usize,
     postprocessing: bool,
 ) -> Result<DoublePairProcessResult> {
-    let mut geometries = prepare_n_geometries(
+    let mut geometries = preprocessing::prepare_n_geometries(
         &labels,
         image_center,
         radius,
@@ -401,7 +428,7 @@ pub fn double_pair_processing_rs(
         bool_d,
     ) = thread::scope(|s| -> Result<AlignedGeoms4> {
         let geom_a_handle = s.spawn(|_| -> anyhow::Result<_> {
-            let (geom, logs, anomalous_bool) = align_frames_in_geometry(
+            let (geom, logs, anomalous_bool) = align_within::align_frames_in_geometry(
                 &mut geom_a,
                 step_deg,
                 range_deg,
@@ -414,7 +441,7 @@ pub fn double_pair_processing_rs(
         });
 
         let geom_b_handle = s.spawn(|_| -> anyhow::Result<_> {
-            let (geom, logs, anomalous_bool) = align_frames_in_geometry(
+            let (geom, logs, anomalous_bool) = align_within::align_frames_in_geometry(
                 &mut geom_b,
                 step_deg,
                 range_deg,
@@ -427,7 +454,7 @@ pub fn double_pair_processing_rs(
         });
 
         let geom_c_handle = s.spawn(|_| -> anyhow::Result<_> {
-            let (geom, logs, anomalous_bool) = align_frames_in_geometry(
+            let (geom, logs, anomalous_bool) = align_within::align_frames_in_geometry(
                 &mut geom_c,
                 step_deg,
                 range_deg,
@@ -440,7 +467,7 @@ pub fn double_pair_processing_rs(
         });
 
         let geom_d_handle = s.spawn(|_| -> anyhow::Result<_> {
-            let (geom, logs, anomalous_bool) = align_frames_in_geometry(
+            let (geom, logs, anomalous_bool) = align_within::align_frames_in_geometry(
                 &mut geom_d,
                 step_deg,
                 range_deg,
@@ -467,19 +494,31 @@ pub fn double_pair_processing_rs(
     // First parallel batch: AB and CD (independent pairs)
     let (geom_pair_ab, geom_pair_cd) = thread::scope(|s| -> Result<(GeometryPair, GeometryPair)> {
         let geompair_ab_handle = s.spawn(|_| -> anyhow::Result<_> {
-            align_between_geometries(&mut geom_a, &mut geom_b, range_deg, step_deg, sample_size)
-                .context(format!(
-                    "Failed to align frames between geometry {} and {}",
-                    geom_a.label, geom_b.label
-                ))
+            align_between::align_between_geometries(
+                &mut geom_a,
+                &mut geom_b,
+                range_deg,
+                step_deg,
+                sample_size,
+            )
+            .context(format!(
+                "Failed to align frames between geometry {} and {}",
+                geom_a.label, geom_b.label
+            ))
         });
 
         let geompair_cd_handle = s.spawn(|_| -> anyhow::Result<_> {
-            align_between_geometries(&mut geom_c, &mut geom_d, range_deg, step_deg, sample_size)
-                .context(format!(
-                    "Failed to align frames between geometry {} and {}",
-                    geom_c.label, geom_d.label
-                ))
+            align_between::align_between_geometries(
+                &mut geom_c,
+                &mut geom_d,
+                range_deg,
+                step_deg,
+                sample_size,
+            )
+            .context(format!(
+                "Failed to align frames between geometry {} and {}",
+                geom_c.label, geom_d.label
+            ))
         });
 
         let geom_pair_ab = geompair_ab_handle.join().unwrap()?;
@@ -498,7 +537,7 @@ pub fn double_pair_processing_rs(
 
     let ab_label = geom_ab_postprocessed.label.clone();
     let geom_ab_final = if write_obj {
-        process_case(
+        to_object::process_case(
             &ab_label,
             geom_ab_postprocessed,
             output_path_a,
@@ -513,7 +552,7 @@ pub fn double_pair_processing_rs(
 
     let cd_label = geom_cd_postprocessed.label.clone();
     let geom_cd_final = if write_obj {
-        process_case(
+        to_object::process_case(
             &cd_label,
             geom_cd_postprocessed,
             output_path_b,
@@ -549,7 +588,7 @@ pub fn pair_processing_rs(
     sample_size: usize,
     postprocessing: bool,
 ) -> Result<(GeometryPair, Vec<AlignLog>, Vec<AlignLog>)> {
-    let mut geometries = prepare_n_geometries(
+    let mut geometries = preprocessing::prepare_n_geometries(
         &labels,
         image_center,
         radius,
@@ -580,7 +619,7 @@ pub fn pair_processing_rs(
     let (mut geom_a, mut geom_b, logs_a, logs_b, bool_a, bool_b) =
         thread::scope(|s| -> Result<AlignedGeoms2> {
             let geom_a_handle = s.spawn(|_| -> anyhow::Result<_> {
-                let (geom, logs, anomalous_bool) = align_frames_in_geometry(
+                let (geom, logs, anomalous_bool) = align_within::align_frames_in_geometry(
                     &mut geom_a,
                     step_deg,
                     range_deg,
@@ -593,7 +632,7 @@ pub fn pair_processing_rs(
             });
 
             let geom_b_handle = s.spawn(|_| -> anyhow::Result<_> {
-                let (geom, logs, anomalous_bool) = align_frames_in_geometry(
+                let (geom, logs, anomalous_bool) = align_within::align_frames_in_geometry(
                     &mut geom_b,
                     step_deg,
                     range_deg,
@@ -612,13 +651,18 @@ pub fn pair_processing_rs(
         })
         .map_err(|e| anyhow!("Thread execution failed: {e:?}"))??;
 
-    let geom_pair =
-        align_between_geometries(&mut geom_a, &mut geom_b, range_deg, step_deg, sample_size)
-            .context(format!(
-                "Failed to align frames between geometry {} and {}",
-                geom_a.label, geom_b.label
-            ))
-            .context("Failed to align geom_a and geom_b")?;
+    let geom_pair = align_between::align_between_geometries(
+        &mut geom_a,
+        &mut geom_b,
+        range_deg,
+        step_deg,
+        sample_size,
+    )
+    .context(format!(
+        "Failed to align frames between geometry {} and {}",
+        geom_a.label, geom_b.label
+    ))
+    .context("Failed to align geom_a and geom_b")?;
 
     let anomalous = bool_a || bool_b;
 
@@ -627,7 +671,7 @@ pub fn pair_processing_rs(
 
     let pair_label = geom_pair_postprocessed.label.clone();
     let geom_pair_final = if write_obj {
-        process_case(
+        to_object::process_case(
             &pair_label,
             geom_pair_postprocessed,
             output_path,
@@ -661,7 +705,7 @@ pub fn single_processing_rs(
     bruteforce: bool,
     sample_size: usize,
 ) -> Result<(Geometry, Vec<AlignLog>)> {
-    let mut geom = prepare_n_geometries(
+    let mut geom = preprocessing::prepare_n_geometries(
         &labels,
         image_center,
         radius,
@@ -681,7 +725,7 @@ pub fn single_processing_rs(
         ));
     }
 
-    let (geom, logs, _) = align_frames_in_geometry(
+    let (geom, logs, _) = align_within::align_frames_in_geometry(
         &mut geom[0],
         step_deg,
         range_deg,
@@ -716,7 +760,7 @@ pub fn single_processing_rs(
             create_mtl_for_contour_type(*contour_type, &mtl_path, &obj_filename)?;
 
             // Write OBJ without UV coordinates
-            write_obj_mesh_without_uv(
+            output::write_obj_mesh_without_uv(
                 &contours,
                 obj_path.to_str().unwrap(),
                 mtl_path.to_str().unwrap(),

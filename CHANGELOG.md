@@ -3,11 +3,17 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.4.1]
+
+### Changed
+- Rust `use` declarations now follow the idiomatic convention of importing the parent module for
+  functions (e.g. `use crate::ccta::discretizing;` -> `discretizing::discretize_vessel_rs(...)`)
+  and importing types/structs/enums directly.  No behaviour change; purely internal style cleanup
+  across 14 source files.
+
 ## [0.4.0] - 2026-05-25
-This version introduces backwards compatibility breaking changes.
 
 ### Added
-
 **Vessel-tree discretization pipeline**
 
 - `prepare_centerlines(rca_cl, lca_cl, results_dict, branch_sigma, control_plot)`: one-call
@@ -47,7 +53,6 @@ the style of `label_geometry`'s control plot and working correctly in all enviro
 - `plot_results_key`, `compare_centerline_scaling`: migrated from Plotly to trimesh.
 
 ### Changed
-
 **Alignment reference point naming** (`align_three_point`, `align_combined`, `align_manual`)
 
 The three landmark parameters have been renamed for anatomical clarity:

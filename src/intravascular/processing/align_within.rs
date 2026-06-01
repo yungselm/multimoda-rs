@@ -2,7 +2,7 @@ use anyhow::anyhow;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::sync::{Arc, Mutex};
 
-use super::wall::create_wall_frames;
+use super::wall;
 use crate::intravascular::io::geometry::{Contour, ContourType, Frame, Geometry};
 use crate::intravascular::io::input::ContourPoint;
 use crate::intravascular::processing::process_utils::{
@@ -142,7 +142,7 @@ pub fn align_frames_in_geometry(
         geometry.clone()
     };
 
-    let wall_frames = create_wall_frames(&final_geometry.frames, anomalous_bool, false);
+    let wall_frames = wall::create_wall_frames(&final_geometry.frames, anomalous_bool, false);
     final_geometry = Geometry {
         frames: wall_frames,
         label: final_geometry.label,
@@ -857,10 +857,10 @@ mod align_within_tests {
 
     #[test]
     fn test_idealized_geometry() -> anyhow::Result<()> {
-        use crate::intravascular::io::build_geometry_from_inputdata;
+        use crate::intravascular::io;
         use std::path::Path;
 
-        let mut geometry = build_geometry_from_inputdata(
+        let mut geometry = io::build_geometry_from_inputdata(
             None,
             Some(Path::new("data/fixtures/idealized_geometry")),
             "stress",

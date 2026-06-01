@@ -1,4 +1,3 @@
-use super::calculate_squared_distance;
 use crate::intravascular::io::input::{Centerline, CenterlinePoint};
 use rayon::prelude::*;
 use std::collections::HashSet;
@@ -178,9 +177,9 @@ pub fn remove_occluded_points_ray_triangle_rust(
 }
 
 fn point_to_triangle_distance(point: &(f64, f64, f64), triangle: &Triangle) -> f64 {
-    let dist_v0 = calculate_squared_distance(point, &triangle.v0);
-    let dist_v1 = calculate_squared_distance(point, &triangle.v1);
-    let dist_v2 = calculate_squared_distance(point, &triangle.v2);
+    let dist_v0 = super::calculate_squared_distance(point, &triangle.v0);
+    let dist_v1 = super::calculate_squared_distance(point, &triangle.v1);
+    let dist_v2 = super::calculate_squared_distance(point, &triangle.v2);
 
     dist_v0.min(dist_v1).min(dist_v2)
 }

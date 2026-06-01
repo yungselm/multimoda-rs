@@ -1,9 +1,9 @@
 use anyhow::Context;
 
 use super::align_between::GeometryPair;
+use super::wall;
 use crate::intravascular::io::geometry::{Contour, ContourType, Frame, Geometry};
 use crate::intravascular::io::input::ContourPoint;
-use crate::intravascular::processing::wall::create_wall_frames;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
@@ -448,8 +448,8 @@ fn adjust_walls_anomalous_geom_pair(geom_pair: &GeometryPair) -> GeometryPair {
     }
 
     // Use create_wall_frames to generate walls for both geometries (only for anomalous so aortic = True)
-    let frames_with_walls_a = create_wall_frames(&adjusted_frames_a, true, false);
-    let frames_with_walls_b = create_wall_frames(&adjusted_frames_b, true, false);
+    let frames_with_walls_a = wall::create_wall_frames(&adjusted_frames_a, true, false);
+    let frames_with_walls_b = wall::create_wall_frames(&adjusted_frames_b, true, false);
 
     GeometryPair {
         geom_a: Geometry {

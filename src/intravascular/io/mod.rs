@@ -5,7 +5,6 @@ pub mod output;
 
 use geometry::{Contour, ContourType, Frame, Geometry};
 use input::{ContourPoint, InputData};
-use integrity_check::check_geometry_integrity;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -199,7 +198,7 @@ pub fn build_geometry_from_inputdata(
         frame.set_value(Some(id), None, None, None);
     }
 
-    check_geometry_integrity(&geometry)?;
+    integrity_check::check_geometry_integrity(&geometry)?;
 
     let from_path = path.is_some();
     print_success_message(print_input_data, from_path);
