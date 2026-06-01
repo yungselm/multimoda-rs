@@ -3,8 +3,6 @@ pub mod resampling;
 mod utils;
 pub mod vessel_tree;
 
-use crate::ccta::discretizing::projecting::walk_centerline_slices;
-use crate::ccta::discretizing::resampling::create_uniform_contours;
 use crate::intravascular::io::geometry::Contour;
 use crate::intravascular::io::input::Centerline;
 
@@ -21,6 +19,6 @@ pub fn discretize_vessel_rs(
     const SMOOTH_SIGMA: f64 = 2.5;
 
     let cl_smooth = utils::smooth_centerline(centerline, SMOOTH_SIGMA);
-    let raw = walk_centerline_slices(&cl_smooth, points, branch_id, step_size);
-    create_uniform_contours(raw, n_points)
+    let raw = projecting::walk_centerline_slices(&cl_smooth, points, branch_id, step_size);
+    resampling::create_uniform_contours(raw, n_points)
 }

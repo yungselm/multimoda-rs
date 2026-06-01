@@ -1,16 +1,10 @@
 // src/ccta/binding/label_py.rs
 use std::collections::{HashMap, HashSet};
 
-use crate::ccta::adjust_mesh::label_coronary::find_centerline_bounded_points;
-use crate::ccta::adjust_mesh::label_coronary::{
-    remove_occluded_points_ray_triangle_rust, Triangle,
-};
-use crate::ccta::adjust_mesh::scale_coronary::{
-    centerline_based_aortic_diameter_optimization, centerline_based_diameter_morphing,
-    centerline_based_diameter_optimization, centerline_based_wall_diameter_optimization,
-    clean_up_non_section_points, find_points_by_cl_region_rs,
-};
-use crate::ccta::discretizing::discretize_vessel_rs;
+use crate::ccta::adjust_mesh::label_coronary;
+use crate::ccta::adjust_mesh::label_coronary::Triangle;
+use crate::ccta::adjust_mesh::scale_coronary;
+use crate::ccta::discretizing;
 use crate::ccta::discretizing::vessel_tree::DiscretizedVesselTree;
 use crate::intravascular::binding::classes::{PyCenterline, PyContour, PyFrame};
 use pyo3::prelude::*;
@@ -211,7 +205,8 @@ pub fn find_centerline_bounded_points_simple(
     let rust_centerline = centerline.to_rust_centerline();
 
     // Call Rust function directly - no complex conversions needed
-    let result_points = find_centerline_bounded_points(rust_centerline, &points, radius);
+    let result_points =
+        label_coronary::find_centerline_bounded_points(rust_centerline, &points, radius);
 
     Ok(result_points)
 }
@@ -257,7 +252,7 @@ pub fn remove_occluded_points_ray_triangle(
         .map(|(v0, v1, v2)| Triangle::new(v0, v1, v2))
         .collect();
 
-    let result = remove_occluded_points_ray_triangle_rust(
+    let result = label_coronary::remove_occluded_points_ray_triangle_rust(
         &rust_centerline_coronary,
         &rust_centerline_aorta,
         range_coronary,
@@ -291,8 +286,11 @@ pub fn adjust_diameter_centerline_morphing_simple(
 ) -> PyResult<Vec<Point3D>> {
     let rust_centerline = centerline.to_rust_centerline();
 
-    let result_points =
-        centerline_based_diameter_morphing(&rust_centerline, &points, diameter_adjustment_mm);
+    let result_points = scale_coronary::centerline_based_diameter_morphing(
+        &rust_centerline,
+        &points,
+        diameter_adjustment_mm,
+    );
 
     Ok(result_points)
 }
@@ -332,7 +330,8 @@ pub fn find_points_by_cl_region(
         .map(|f| f.to_rust_frame())
         .collect::<Result<_, _>>()?;
 
-    let result_points = find_points_by_cl_region_rs(&rust_centerline, &rust_frames, &points);
+    let result_points =
+        scale_coronary::find_points_by_cl_region_rs(&rust_centerline, &rust_frames, &points);
 
     Ok(result_points)
 }
@@ -367,7 +366,7 @@ pub fn clean_outlier_points(
     neighborhood_radius: f64,
     min_neigbor_ratio: f64,
 ) -> PyResult<(Vec<Point3D>, Vec<Point3D>)> {
-    let result_points = clean_up_non_section_points(
+    let result_points = scale_coronary::clean_up_non_section_points(
         points_to_cleanup,
         reference_points,
         neighborhood_radius,
@@ -414,7 +413,7 @@ pub fn find_proximal_distal_scaling(
     distal_reference: Vec<Point3D>,
 ) -> PyResult<(f64, f64)> {
     let rust_centerline = centerline.to_rust_centerline();
-    let (prox_dist, distal_dist) = centerline_based_diameter_optimization(
+    let (prox_dist, distal_dist) = scale_coronary::centerline_based_diameter_optimization(
         &anomalous_points,
         n_proximal,
         n_distal,
@@ -451,7 +450,7 @@ pub fn find_aortic_scaling(
     centerline: PyCenterline,
 ) -> PyResult<f64> {
     let rust_centerline = centerline.to_rust_centerline();
-    let dist = centerline_based_aortic_diameter_optimization(
+    let dist = scale_coronary::centerline_based_aortic_diameter_optimization(
         &intramural_points,
         &reference_points,
         &rust_centerline,
@@ -490,7 +489,7 @@ pub fn find_aortic_wall_scaling(
     aortic_pts: Vec<Point3D>,
 ) -> PyResult<f64> {
     let rust_centerline = cl_aorta.to_rust_centerline();
-    let dist = centerline_based_wall_diameter_optimization(
+    let dist = scale_coronary::centerline_based_wall_diameter_optimization(
         &rust_centerline,
         &ref_pt_coronary,
         &aortic_pts,
@@ -586,7 +585,13 @@ pub fn discretize_vessel(
     n_points: usize,
 ) -> PyResult<Vec<PyContour>> {
     let rust_centerline = centerline.to_rust_centerline();
-    let contours = discretize_vessel_rs(&rust_centerline, &points, branch_id, step_size, n_points);
+    let contours = discretizing::discretize_vessel_rs(
+        &rust_centerline,
+        &points,
+        branch_id,
+        step_size,
+        n_points,
+    );
     Ok(contours.iter().map(PyContour::from).collect())
 }
 

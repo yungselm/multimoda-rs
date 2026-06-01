@@ -3,7 +3,7 @@ use crate::intravascular::io::input::{
     Centerline, CenterlinePoint, ContourPoint, InputData, Record,
 };
 use crate::intravascular::processing::align_between::GeometryPair;
-use crate::intravascular::processing::process_utils::downsample_contour_points;
+use crate::intravascular::processing::process_utils;
 use anyhow::{anyhow, Result};
 use nalgebra::Vector3;
 use pyo3::prelude::*;
@@ -1361,7 +1361,7 @@ impl PyGeometry {
         let downsample_contour = |contour: &PyContour| -> PyContour {
             let rust_points: Vec<ContourPoint> =
                 contour.points.iter().map(ContourPoint::from).collect();
-            let downsampled = downsample_contour_points(&rust_points, n_points);
+            let downsampled = process_utils::downsample_contour_points(&rust_points, n_points);
             PyContour {
                 points: downsampled.iter().map(PyContourPoint::from).collect(),
                 ..contour.clone()

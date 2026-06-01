@@ -1,4 +1,3 @@
-use super::calculate_squared_distance;
 use crate::intravascular::io::geometry::Frame;
 use crate::intravascular::io::input::{Centerline, CenterlinePoint};
 use rayon::prelude::*;
@@ -17,8 +16,8 @@ pub fn centerline_based_wall_diameter_optimization(
 
     // find closest centerline point
     let closest_cl = match centerline.points.iter().min_by(|a, b| {
-        let dist_a = calculate_squared_distance(*a, ref_point_coronary);
-        let dist_b = calculate_squared_distance(*b, ref_point_coronary);
+        let dist_a = super::calculate_squared_distance(*a, ref_point_coronary);
+        let dist_b = super::calculate_squared_distance(*b, ref_point_coronary);
         dist_a
             .partial_cmp(&dist_b)
             .unwrap_or(std::cmp::Ordering::Equal)
@@ -28,8 +27,8 @@ pub fn centerline_based_wall_diameter_optimization(
     };
 
     let closest_aortic: &Point3D = match aortic_points.iter().min_by(|a, b| {
-        let dist_a = calculate_squared_distance(*a, ref_point_coronary);
-        let dist_b = calculate_squared_distance(*b, ref_point_coronary);
+        let dist_a = super::calculate_squared_distance(*a, ref_point_coronary);
+        let dist_b = super::calculate_squared_distance(*b, ref_point_coronary);
         dist_a
             .partial_cmp(&dist_b)
             .unwrap_or(std::cmp::Ordering::Equal)
@@ -150,7 +149,7 @@ fn find_region_points(
         .map(|(i, a_pt)| {
             let min_sq = reference_points
                 .iter()
-                .map(|r_pt| calculate_squared_distance(a_pt, r_pt))
+                .map(|r_pt| super::calculate_squared_distance(a_pt, r_pt))
                 .fold(f64::INFINITY, |m, v| if v < m { v } else { m });
             (i, min_sq)
         })
@@ -199,7 +198,7 @@ fn symmetric_nn_distance(a: &[Point3D], b: &[Point3D]) -> f64 {
         .par_iter()
         .map(|pa| {
             b.iter()
-                .map(|pb| calculate_squared_distance(pa, pb))
+                .map(|pb| super::calculate_squared_distance(pa, pb))
                 .fold(f64::INFINITY, |m, v| if v < m { v } else { m })
         })
         .sum();
@@ -210,7 +209,7 @@ fn symmetric_nn_distance(a: &[Point3D], b: &[Point3D]) -> f64 {
         .par_iter()
         .map(|pb| {
             a.iter()
-                .map(|pa| calculate_squared_distance(pb, pa))
+                .map(|pa| super::calculate_squared_distance(pb, pa))
                 .fold(f64::INFINITY, |m, v| if v < m { v } else { m })
         })
         .sum();
@@ -265,7 +264,7 @@ fn find_closest_centerline_point_optimized(
     let mut closest_point = &centerline.points[0];
 
     for centerline_point in &centerline.points {
-        let distance_squared = calculate_squared_distance(&point, centerline_point);
+        let distance_squared = super::calculate_squared_distance(&point, centerline_point);
         if distance_squared < min_distance_squared {
             min_distance_squared = distance_squared;
             closest_point = centerline_point;

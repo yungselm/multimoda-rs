@@ -1,7 +1,7 @@
 use anyhow::Context;
 use std::path::Path;
 
-use crate::intravascular::io::build_geometry_from_inputdata;
+use crate::intravascular::io;
 use crate::intravascular::io::geometry::Geometry;
 use crate::intravascular::io::input::InputData;
 
@@ -43,7 +43,7 @@ pub fn prepare_n_geometries(
                     let input = inputs.remove(0);
                     let diastole = input.diastole;
                     let label_str = input.label.as_str().to_string();
-                    let geom = build_geometry_from_inputdata(
+                    let geom = io::build_geometry_from_inputdata(
                         Some(input),
                         None,
                         &label_str,
@@ -68,7 +68,7 @@ pub fn prepare_n_geometries(
                 path_basename(path)
             };
 
-            let geom = build_geometry_from_inputdata(
+            let geom = io::build_geometry_from_inputdata(
                 None,
                 Some(path),
                 &label,
@@ -90,7 +90,7 @@ pub fn prepare_n_geometries(
                         let input = inputs.remove(0);
                         let diastole = input.diastole;
                         let label_str = input.label.as_str().to_string();
-                        let geom = build_geometry_from_inputdata(
+                        let geom = io::build_geometry_from_inputdata(
                             Some(input),
                             None,
                             &label_str,
@@ -120,7 +120,7 @@ pub fn prepare_n_geometries(
                 } else {
                     basename.clone()
                 };
-                let geom = build_geometry_from_inputdata(
+                let geom = io::build_geometry_from_inputdata(
                     None,
                     Some(path),
                     &label,
@@ -146,7 +146,7 @@ pub fn prepare_n_geometries(
                         let input = inputs.remove(0);
                         let diastole = input.diastole;
                         let label_str = input.label.as_str().to_string();
-                        let geom = build_geometry_from_inputdata(
+                        let geom = io::build_geometry_from_inputdata(
                             Some(input),
                             None,
                             &label_str,
@@ -179,7 +179,7 @@ pub fn prepare_n_geometries(
                     } else {
                         basename.clone()
                     };
-                    let geom = build_geometry_from_inputdata(
+                    let geom = io::build_geometry_from_inputdata(
                         None,
                         Some(path),
                         &label,

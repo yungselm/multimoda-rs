@@ -3,8 +3,6 @@ use crate::intravascular::io::input::Centerline;
 use anyhow::{Ok, Result};
 use nalgebra::Vector3;
 
-use super::discretize_vessel_rs;
-
 pub struct ReferenceTriplet {
     pub main_ref: (f64, f64, f64),
     pub counter_clock_ref: (f64, f64, f64), // view from proximal to distal, former upper_ref
@@ -97,23 +95,38 @@ impl DiscretizedVesselTree {
         step_size: f64,
         n_points: usize,
     ) -> Result<DiscretizedVesselTree> {
-        let discretized_aorta = discretize_vessel_rs(ao_cl, points_ao, 0, step_size, n_points);
-        let discretized_rca_main =
-            discretize_vessel_rs(rca_cl, points_rca_main, branch_id_rca, step_size, n_points);
-        let discretized_lca_main =
-            discretize_vessel_rs(lca_cl, points_lca_main, branch_id_lca, step_size, n_points);
+        let discretized_aorta =
+            super::discretize_vessel_rs(ao_cl, points_ao, 0, step_size, n_points);
+        let discretized_rca_main = super::discretize_vessel_rs(
+            rca_cl,
+            points_rca_main,
+            branch_id_rca,
+            step_size,
+            n_points,
+        );
+        let discretized_lca_main = super::discretize_vessel_rs(
+            lca_cl,
+            points_lca_main,
+            branch_id_lca,
+            step_size,
+            n_points,
+        );
 
         // side_branches_rca[i] carries the surface points for branch_id i+1.
         let rca_branches: Vec<Vec<Contour>> = side_branches_rca
             .iter()
             .enumerate()
-            .map(|(i, pts)| discretize_vessel_rs(rca_cl, pts, (i + 1) as u32, step_size, n_points))
+            .map(|(i, pts)| {
+                super::discretize_vessel_rs(rca_cl, pts, (i + 1) as u32, step_size, n_points)
+            })
             .collect();
 
         let lca_branches: Vec<Vec<Contour>> = side_branches_lca
             .iter()
             .enumerate()
-            .map(|(i, pts)| discretize_vessel_rs(lca_cl, pts, (i + 1) as u32, step_size, n_points))
+            .map(|(i, pts)| {
+                super::discretize_vessel_rs(lca_cl, pts, (i + 1) as u32, step_size, n_points)
+            })
             .collect();
 
         Ok(DiscretizedVesselTree {

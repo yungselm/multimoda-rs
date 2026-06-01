@@ -10,12 +10,11 @@ use crate::intravascular::processing::align_between::GeometryPair;
 use anyhow::anyhow;
 use nalgebra::{Point3, Rotation3, Unit, Vector3};
 
-use crate::intravascular::to_object::{process_case, write_single_geometry};
+use crate::intravascular::to_object;
 use align_algorithms::{
     apply_transformations, best_rotation_three_point, refine_alignment_hausdorff,
     rotate_by_best_rotation, AlignTarget,
 };
-use preprocessing::preprocess_centerline;
 
 /// Extends [`AlignTarget`] with the ability to write the processed case to disk.
 ///
@@ -41,7 +40,7 @@ impl Processable for GeometryPair {
         watertight: bool,
         contour_types: &[ContourType],
     ) -> anyhow::Result<Self> {
-        process_case(
+        to_object::process_case(
             case_name,
             self,
             output_dir,
@@ -61,7 +60,7 @@ impl Processable for Geometry {
         watertight: bool,
         contour_types: &[ContourType],
     ) -> anyhow::Result<Self> {
-        write_single_geometry(case_name, self, output_dir, watertight, contour_types)
+        to_object::write_single_geometry(case_name, self, output_dir, watertight, contour_types)
     }
 }
 
@@ -80,8 +79,9 @@ pub fn align_three_point_rs<T: Processable>(
     case_name: &str,
     align_wall_anomalous: bool,
 ) -> anyhow::Result<(T, Centerline)> {
-    let resampled_centerline = preprocess_centerline(centerline, target.primary_geometry())
-        .map_err(|e| anyhow!("Couldn't resample the centerline: {e}"))?;
+    let resampled_centerline =
+        preprocessing::preprocess_centerline(centerline, target.primary_geometry())
+            .map_err(|e| anyhow!("Couldn't resample the centerline: {e}"))?;
 
     let ref_idx = target
         .primary_geometry()
@@ -140,8 +140,9 @@ pub fn align_manual_rs<T: Processable>(
     case_name: &str,
     align_wall_anomalous: bool,
 ) -> anyhow::Result<(T, Centerline)> {
-    let resampled_centerline = preprocess_centerline(centerline, target.primary_geometry())
-        .map_err(|e| anyhow!("Couldn't resample the centerline: {e}"))?;
+    let resampled_centerline =
+        preprocessing::preprocess_centerline(centerline, target.primary_geometry())
+            .map_err(|e| anyhow!("Couldn't resample the centerline: {e}"))?;
 
     target = rotate_by_best_rotation(target, rotation_angle_deg.to_radians());
     target = apply_transformations(target, &resampled_centerline, &ref_pt);
@@ -191,7 +192,7 @@ pub fn align_combined_rs<T: Processable>(
     println!("\nStep 1: Finding initial rotation via three-point method");
 
     let resampled_centerline =
-        preprocess_centerline(centerline.clone(), original.primary_geometry())
+        preprocessing::preprocess_centerline(centerline.clone(), original.primary_geometry())
             .map_err(|e| anyhow!("Couldn't resample the centerline: {e}"))?;
 
     let ref_idx = original
@@ -303,7 +304,7 @@ pub fn align_combined_rs<T: Processable>(
 //     case_name: &str,
 // ) -> anyhow::Result<(GeometryPair, Centerline)> {
 //     // Get the initial rotation from three-point alignment
-//     let resampled_centerline = preprocess_centerline(centerline, &geom_pair.geom_a)
+//     let resampled_centerline = preprocessing::preprocess_centerline(centerline, &geom_pair.geom_a)
 //         .map_err(|e| anyhow!("Couldn't resample the centerline: {}", e))?;
 //
 //     let ref_idx = geom_pair
@@ -362,7 +363,7 @@ pub fn align_combined_rs<T: Processable>(
 //
 //     // Write if requested
 //     let final_geom_pair = if write {
-//         process_case(
+//         to_object::process_case(
 //             case_name,
 //             aligned_geom_pair,
 //             output_dir,

@@ -3,7 +3,7 @@ mod texture;
 pub mod write_mtl;
 
 use crate::intravascular::io::geometry::{ContourType, Geometry};
-use crate::intravascular::io::output::{write_geometry_vec_to_obj, write_obj_mesh_without_uv};
+use crate::intravascular::io::output;
 use crate::intravascular::processing::align_between::GeometryPair;
 use std::io::Write;
 use std::path::Path;
@@ -43,7 +43,7 @@ pub fn process_case(
     println!("\nSaving files for '{}' to '{}'", &case_name, &output_dir);
     for contour_type in contour_types {
         if let Some(uv_coords) = uv_coords_map.get(contour_type) {
-            write_geometry_vec_to_obj(
+            output::write_geometry_vec_to_obj(
                 *contour_type,
                 case_name,
                 output_dir,
@@ -110,7 +110,7 @@ pub fn write_single_geometry(
             }
         }
 
-        write_obj_mesh_without_uv(
+        output::write_obj_mesh_without_uv(
             &contours,
             obj_path.to_str().unwrap(),
             mtl_path.to_str().unwrap(),
