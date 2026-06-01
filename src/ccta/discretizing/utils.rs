@@ -1,4 +1,4 @@
-use crate::intravascular::io::input::{Centerline, CenterlinePoint, ContourPoint};
+use crate::types::native::{Centerline, CenterlinePoint, ContourPoint};
 use nalgebra::Vector3;
 
 /// Smooths centerline positions with a Gaussian kernel (per branch) and recomputes normals.
@@ -149,7 +149,7 @@ pub fn smooth_centerline(centerline: &Centerline, sigma: f64) -> Centerline {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::intravascular::io::input::ContourPoint;
+    use crate::types::native::ContourPoint;
 
     fn make_centerline(pts: &[(f64, f64, f64)]) -> Centerline {
         let contour_pts: Vec<ContourPoint> = pts

@@ -1,5 +1,4 @@
-use crate::intravascular::io::geometry::Contour;
-use crate::intravascular::io::input::Centerline;
+use crate::types::native::{Centerline, Contour};
 use anyhow::{Ok, Result};
 use nalgebra::Vector3;
 

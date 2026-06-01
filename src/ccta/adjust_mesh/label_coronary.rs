@@ -1,4 +1,4 @@
-use crate::intravascular::io::input::{Centerline, CenterlinePoint};
+use crate::types::native::{Centerline, CenterlinePoint};
 use rayon::prelude::*;
 use std::collections::HashSet;
 
@@ -298,7 +298,7 @@ fn find_points_inside_of_sphere(sphere: &BoundingSphere, point: &(f64, f64, f64)
 #[cfg(test)]
 mod test_find_cl_bounded_points {
     use super::*;
-    use crate::intravascular::io::input::ContourPoint;
+    use crate::types::native::ContourPoint;
 
     #[test]
     fn test_find_points_simple_geometry() {

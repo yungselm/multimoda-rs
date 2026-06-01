@@ -1,6 +1,6 @@
 pub mod label_coronary;
 pub mod scale_coronary;
-use crate::intravascular::io::input::CenterlinePoint;
+use crate::types::native::CenterlinePoint;
 
 trait Point3D {
     fn x(&self) -> f64;

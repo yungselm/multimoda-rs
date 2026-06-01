@@ -3,6 +3,7 @@
 
 mod ccta;
 mod intravascular;
+pub mod types;
 
 use crate::ccta::binding::ccta_py;
 use crate::ccta::binding::ccta_py::PyDiscretizedVesselTree;

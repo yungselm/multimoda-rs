@@ -1,5 +1,4 @@
-use crate::intravascular::io::geometry::Frame;
-use crate::intravascular::io::input::{Centerline, CenterlinePoint};
+use crate::types::native::{Centerline, CenterlinePoint, Frame};
 use rayon::prelude::*;
 use std::collections::HashSet;
 
@@ -418,7 +417,7 @@ pub fn clean_up_non_section_points(
 
 #[cfg(test)]
 mod tests {
-    use crate::intravascular::io::input::{CenterlinePoint, ContourPoint};
+    use crate::types::native::{CenterlinePoint, ContourPoint};
     use nalgebra::Vector3;
 
     use super::*;

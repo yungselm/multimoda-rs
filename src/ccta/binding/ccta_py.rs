@@ -6,7 +6,7 @@ use crate::ccta::adjust_mesh::label_coronary::Triangle;
 use crate::ccta::adjust_mesh::scale_coronary;
 use crate::ccta::discretizing;
 use crate::ccta::discretizing::vessel_tree::DiscretizedVesselTree;
-use crate::intravascular::binding::classes::{PyCenterline, PyContour, PyFrame};
+use crate::types::binding::{PyCenterline, PyContour, PyFrame};
 use pyo3::prelude::*;
 
 type Point3D = (f64, f64, f64);
