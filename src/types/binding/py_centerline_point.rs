@@ -13,6 +13,9 @@ use pyo3::prelude::*;
 ///     Position of the centerline point in 3D space.
 /// normal : tuple of float
 ///     Normal vector ``(nx, ny, nz)`` at this centerline position.
+/// branch_id : int
+///     Branch identifier.  ``0`` = main vessel; ``1+`` = side branches
+///     ordered by descending length.
 ///
 /// Examples
 /// --------

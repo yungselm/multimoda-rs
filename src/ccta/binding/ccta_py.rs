@@ -1,4 +1,4 @@
-// src/ccta/binding/label_py.rs
+// src/ccta/binding/ccta_py.rs
 use std::collections::{HashMap, HashSet};
 
 use crate::ccta::adjust_mesh::label_coronary;
