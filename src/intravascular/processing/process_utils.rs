@@ -29,6 +29,7 @@ pub fn get_contour_type_name(contour_type: ContourType) -> &'static str {
     }
 }
 
+
 pub fn search_range<F>(
     cost_fn: F,
     step_deg: f64,
