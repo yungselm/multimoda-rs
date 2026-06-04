@@ -6,7 +6,6 @@ mod intravascular;
 pub mod types;
 
 use crate::ccta::binding::ccta_py;
-use crate::ccta::binding::ccta_py::PyDiscretizedVesselTree;
 use crate::intravascular::binding;
 use crate::intravascular::binding::align;
 use crate::types::binding::*;

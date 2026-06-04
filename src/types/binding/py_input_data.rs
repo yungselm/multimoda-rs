@@ -1,6 +1,6 @@
 use super::py_contour::PyContour;
 use super::py_contour_point::PyContourPoint;
-use super::record::PyRecord;
+use super::py_record::PyRecord;
 use crate::types::native::{ContourPoint, InputData, Record};
 use anyhow::{anyhow, Result};
 use pyo3::prelude::*;
