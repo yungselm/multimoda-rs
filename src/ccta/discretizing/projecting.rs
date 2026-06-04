@@ -1,5 +1,4 @@
-use crate::intravascular::io::geometry::{Contour, ContourType};
-use crate::intravascular::io::input::{Centerline, CenterlinePoint, ContourPoint};
+use crate::types::native::{Centerline, CenterlinePoint, Contour, ContourPoint, ContourType};
 use nalgebra::Vector3;
 
 /// Walks branch `branch_id` at uniform arc-length steps of `step_size`, assigns each mesh point
@@ -206,7 +205,7 @@ fn interpolate_branch_at_s(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::intravascular::io::input::{Centerline, CenterlinePoint, ContourPoint};
+    use crate::types::native::{Centerline, CenterlinePoint, ContourPoint};
     use nalgebra::Vector3;
 
     fn cp(idx: u32, x: f64, y: f64, z: f64) -> ContourPoint {

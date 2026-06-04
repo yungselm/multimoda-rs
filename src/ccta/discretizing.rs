@@ -3,8 +3,7 @@ pub mod resampling;
 mod utils;
 pub mod vessel_tree;
 
-use crate::intravascular::io::geometry::Contour;
-use crate::intravascular::io::input::Centerline;
+use crate::types::native::{Centerline, Contour};
 
 /// Walk `branch_id` of `centerline` at uniform `step_size` intervals, project the supplied
 /// mesh `points` onto each perpendicular cross-section, filter incomplete slices, and

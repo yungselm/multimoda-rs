@@ -1,5 +1,4 @@
-use crate::intravascular::io::geometry::Contour;
-use crate::intravascular::io::input::ContourPoint;
+use crate::types::native::{Contour, ContourPoint};
 use nalgebra::Vector3;
 
 /// Filters and resamples raw projected slices from `walk_centerline_slices`:
@@ -230,8 +229,7 @@ fn catmull_rom(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::intravascular::io::geometry::{Contour, ContourType};
-    use crate::intravascular::io::input::ContourPoint;
+    use crate::types::native::{Contour, ContourPoint, ContourType};
 
     fn make_point(x: f64, y: f64, z: f64) -> ContourPoint {
         ContourPoint {
