@@ -5,9 +5,8 @@ use std::sync::{Arc, Mutex};
 use super::wall;
 use crate::intravascular::io::geometry::{Contour, ContourType, Frame, Geometry};
 use crate::intravascular::io::input::ContourPoint;
-use crate::intravascular::processing::process_utils::{
-    downsample_contour_points, hausdorff_distance, search_range,
-};
+use crate::intravascular::processing::process_utils::{hausdorff_distance, search_range};
+use crate::types::native;
 
 #[derive(Debug)]
 pub struct AlignLog {
@@ -170,10 +169,11 @@ fn catheter_lumen_vec_from_frames(
     sample_size_lumen: usize,
     sample_size_catheter: Option<usize>,
 ) -> Vec<ContourPoint> {
-    let mut lumen_points = downsample_contour_points(&frame.lumen.points, sample_size_lumen);
+    let mut lumen_points =
+        native::downsample_contour_points(&frame.lumen.points, sample_size_lumen);
     let mut catheter_points = if let Some(sample_size_catheter) = sample_size_catheter {
         if let Some(catheter_contour) = frame.extras.get(&ContourType::Catheter) {
-            downsample_contour_points(&catheter_contour.points, sample_size_catheter)
+            native::downsample_contour_points(&catheter_contour.points, sample_size_catheter)
         } else {
             Vec::new()
         }

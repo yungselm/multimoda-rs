@@ -3,9 +3,8 @@ use rayon::prelude::*;
 
 use crate::intravascular::io::geometry::Geometry;
 use crate::intravascular::io::input::ContourPoint;
-use crate::intravascular::processing::process_utils::{
-    downsample_contour_points, hausdorff_distance, search_range,
-};
+use crate::intravascular::processing::process_utils::{hausdorff_distance, search_range};
+use crate::types::native;
 
 pub use crate::types::native::GeometryPair;
 
@@ -163,7 +162,8 @@ fn extract_geometry_points_with_frame_info(
     let mut all_points = Vec::new();
     for frame in &geometry.frames {
         let frame_sample_size = (frame.lumen.points.len() as f64 * sample_ratio).ceil() as usize;
-        let sampled = downsample_contour_points(&frame.lumen.points, frame_sample_size.max(1));
+        let sampled =
+            native::downsample_contour_points(&frame.lumen.points, frame_sample_size.max(1));
 
         for point in sampled {
             all_points.push(PointWithFrameInfo {

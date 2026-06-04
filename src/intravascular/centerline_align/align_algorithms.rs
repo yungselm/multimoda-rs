@@ -2,9 +2,8 @@ use crate::intravascular::io::geometry::{Contour, Geometry};
 use crate::intravascular::io::input::ContourPoint;
 use crate::intravascular::io::input::{Centerline, CenterlinePoint};
 use crate::intravascular::processing::align_between::GeometryPair;
-use crate::intravascular::processing::process_utils::{
-    downsample_contour_points, hausdorff_distance,
-};
+use crate::intravascular::processing::process_utils::hausdorff_distance;
+use crate::types::native;
 use nalgebra::{Point3, Rotation3, Unit, Vector3};
 
 /// Allows alignment algorithms to operate on either a single [`Geometry`] or a [`GeometryPair`].
@@ -408,7 +407,8 @@ pub fn refine_alignment_hausdorff<T: AlignTarget>(
 
             for frame in frames.iter() {
                 if n_downsample < n_points_per_frame {
-                    let downsampled = downsample_contour_points(&frame.lumen.points, n_downsample);
+                    let downsampled =
+                        native::downsample_contour_points(&frame.lumen.points, n_downsample);
                     nested.push(downsampled);
                 } else {
                     nested.push(frame.lumen.points.clone());

@@ -2,19 +2,6 @@ use crate::intravascular::io::input::ContourPoint;
 use rayon::prelude::*;
 use std::f64::consts::PI;
 
-pub fn downsample_contour_points(points: &[ContourPoint], n: usize) -> Vec<ContourPoint> {
-    if points.len() <= n {
-        return points.to_vec();
-    }
-    let step = points.len() as f64 / n as f64;
-    (0..n)
-        .map(|i| {
-            let index = (i as f64 * step) as usize;
-            points[index]
-        })
-        .collect()
-}
-
 pub fn search_range<F>(
     cost_fn: F,
     step_deg: f64,
@@ -110,71 +97,7 @@ fn directed_hausdorff(contour_a: &[ContourPoint], contour_b: &[ContourPoint]) ->
 #[cfg(test)]
 mod process_utils_tests {
     use super::*;
-    use crate::intravascular::utils::test_utils::dummy_geometry;
     use approx::assert_relative_eq;
-
-    #[test]
-    fn test_downsample_geometry() {
-        let dummy = dummy_geometry();
-        let cont_points = dummy.frames[0].lumen.points.clone();
-        let downsampled_contour = downsample_contour_points(&cont_points, 3);
-
-        assert_eq!(downsampled_contour.len(), 3);
-        assert_eq!(downsampled_contour[0].point_index, 0);
-        assert_eq!(downsampled_contour[1].point_index, 2);
-
-        let downsampled_contour = downsample_contour_points(&cont_points, 6);
-
-        assert_eq!(downsampled_contour.len(), 6);
-        assert_eq!(downsampled_contour[0].point_index, 0);
-        assert_eq!(downsampled_contour[1].point_index, 1);
-
-        let downsampled_contour = downsample_contour_points(&cont_points, 5);
-        let n = downsampled_contour.len();
-        assert_eq!(downsampled_contour[n - 1].point_index, 4);
-    }
-
-    // tests from here are AI generated!!
-    #[test]
-    fn test_downsample_edge_cases() {
-        let points = vec![
-            ContourPoint {
-                frame_index: 1,
-                point_index: 0,
-                x: 1.0,
-                y: 2.0,
-                z: 0.0,
-                aortic: false,
-            },
-            ContourPoint {
-                frame_index: 1,
-                point_index: 1,
-                x: 3.0,
-                y: 4.0,
-                z: 0.0,
-                aortic: false,
-            },
-        ];
-
-        // Test n > points.len()
-        let result = downsample_contour_points(&points, 5);
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0].point_index, 0);
-        assert_eq!(result[1].point_index, 1);
-
-        // Test n == points.len()
-        let result = downsample_contour_points(&points, 2);
-        assert_eq!(result.len(), 2);
-
-        // Test n == 0
-        let result = downsample_contour_points(&points, 0);
-        assert_eq!(result.len(), 0);
-
-        // Test empty input
-        let empty: Vec<ContourPoint> = Vec::new();
-        let result = downsample_contour_points(&empty, 3);
-        assert_eq!(result.len(), 0);
-    }
 
     #[test]
     fn test_search_range_quadratic_function() {
