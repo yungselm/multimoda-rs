@@ -226,7 +226,7 @@ fn new_frames_by_sample_rate(geometry: &Geometry, mut z_coords: Vec<f64>) -> Geo
         let t = (z_coord - lower.centroid.2) / (upper.centroid.2 - lower.centroid.2);
 
         // Interpolate lumen contour
-        let new_lumen = interpolate_contour(&lower.lumen, &upper.lumen, t);
+        let new_lumen = blend_contour(&lower.lumen, &upper.lumen, t);
 
         // Interpolate extra contours
         let mut new_extras = HashMap::new();
@@ -241,7 +241,7 @@ fn new_frames_by_sample_rate(geometry: &Geometry, mut z_coords: Vec<f64>) -> Geo
         {
             if let (Some(l_extra), Some(u_extra)) = (lower.extras.get(kind), upper.extras.get(kind))
             {
-                new_extras.insert(*kind, interpolate_contour(l_extra, u_extra, t));
+                new_extras.insert(*kind, blend_contour(l_extra, u_extra, t));
             }
         }
 
@@ -297,7 +297,7 @@ fn new_frames_by_sample_rate(geometry: &Geometry, mut z_coords: Vec<f64>) -> Geo
     }
 }
 
-fn interpolate_contour(c1: &Contour, c2: &Contour, t: f64) -> Contour {
+fn blend_contour(c1: &Contour, c2: &Contour, t: f64) -> Contour {
     let new_points: Vec<ContourPoint> = c1
         .points
         .iter()
@@ -716,7 +716,7 @@ mod tests {
     }
 
     #[test]
-    fn test_interpolate_contour() {
+    fn test_blend_contour() {
         let contour1 = create_test_contour(0, 0.0, None, ContourType::Lumen);
         let mut contour2 = create_test_contour(1, 2.0, None, ContourType::Lumen);
 
@@ -726,7 +726,7 @@ mod tests {
         contour2.points[1].x = 7.0;
         contour2.points[1].y = 8.0;
 
-        let interpolated = interpolate_contour(&contour1, &contour2, 0.5);
+        let interpolated = blend_contour(&contour1, &contour2, 0.5);
 
         // Points should be interpolated - using the correct calculation
         // p1.x = 1.0, p2.x = 5.0, t=0.5 → 1.0 + 0.5*(5.0-1.0) = 3.0

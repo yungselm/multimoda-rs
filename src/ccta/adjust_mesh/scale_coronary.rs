@@ -2,12 +2,12 @@ use crate::types::native::{Centerline, CenterlinePoint, Frame};
 use rayon::prelude::*;
 use std::collections::HashSet;
 
-type Point3D = (f64, f64, f64);
+type Coords3 = (f64, f64, f64);
 
 pub fn centerline_based_wall_diameter_optimization(
     centerline: &Centerline,
-    ref_point_coronary: &Point3D,
-    aortic_points: &[Point3D],
+    ref_point_coronary: &Coords3,
+    aortic_points: &[Coords3],
 ) -> f64 {
     if centerline.points.is_empty() || aortic_points.is_empty() {
         return 0.0;
@@ -25,7 +25,7 @@ pub fn centerline_based_wall_diameter_optimization(
         None => return 0.0,
     };
 
-    let closest_aortic: &Point3D = match aortic_points.iter().min_by(|a, b| {
+    let closest_aortic: &Coords3 = match aortic_points.iter().min_by(|a, b| {
         let dist_a = super::calculate_squared_distance(*a, ref_point_coronary);
         let dist_b = super::calculate_squared_distance(*b, ref_point_coronary);
         dist_a
@@ -66,8 +66,8 @@ pub fn centerline_based_wall_diameter_optimization(
 }
 
 pub fn centerline_based_aortic_diameter_optimization(
-    intramural_points: &[Point3D],
-    reference_points: &[Point3D],
+    intramural_points: &[Coords3],
+    reference_points: &[Coords3],
     centerline: &Centerline,
 ) -> f64 {
     let start = -2.0f64;
@@ -91,12 +91,12 @@ pub fn centerline_based_aortic_diameter_optimization(
 }
 
 pub fn centerline_based_diameter_optimization(
-    anomalous_points: &[Point3D],
+    anomalous_points: &[Coords3],
     n_proximal: usize,
     n_distal: usize,
     centerline: &Centerline,
-    proximal_reference: &[Point3D],
-    distal_reference: &[Point3D],
+    proximal_reference: &[Coords3],
+    distal_reference: &[Coords3],
 ) -> (f64, f64) {
     let (proximal_points, anomalous_points_new) =
         find_region_points(anomalous_points, proximal_reference, n_proximal);
@@ -134,10 +134,10 @@ pub fn centerline_based_diameter_optimization(
 }
 
 fn find_region_points(
-    anomalous_points: &[Point3D],
-    reference_points: &[Point3D],
+    anomalous_points: &[Coords3],
+    reference_points: &[Coords3],
     n_points: usize,
-) -> (Vec<Point3D>, Vec<Point3D>) {
+) -> (Vec<Coords3>, Vec<Coords3>) {
     if anomalous_points.is_empty() || reference_points.is_empty() || n_points == 0 {
         return (Vec::new(), anomalous_points.to_vec());
     }
@@ -165,12 +165,12 @@ fn find_region_points(
 
     let selected_indices: HashSet<usize> = selected_slice.iter().map(|(i, _)| *i).collect();
 
-    let selected_points: Vec<Point3D> = selected_slice
+    let selected_points: Vec<Coords3> = selected_slice
         .iter()
         .map(|(i, _)| anomalous_points[*i])
         .collect();
 
-    let remaining_points: Vec<Point3D> = anomalous_points
+    let remaining_points: Vec<Coords3> = anomalous_points
         .iter()
         .enumerate()
         .filter_map(|(i, pt)| {
@@ -188,7 +188,7 @@ fn find_region_points(
 /// Symmetric average nearest-neighbor distance between two point sets.
 /// Returns sqrt of average squared distance for readability (i.e., RMS of nearest neighbor distances).
 /// If either set is empty returns f64::INFINITY.
-fn symmetric_nn_distance(a: &[Point3D], b: &[Point3D]) -> f64 {
+fn symmetric_nn_distance(a: &[Coords3], b: &[Coords3]) -> f64 {
     if a.is_empty() || b.is_empty() {
         return f64::INFINITY;
     }
@@ -220,9 +220,9 @@ fn symmetric_nn_distance(a: &[Point3D], b: &[Point3D]) -> f64 {
 
 pub fn centerline_based_diameter_morphing(
     centerline: &Centerline,
-    points: &[Point3D],
+    points: &[Coords3],
     diameter_adjustment_mm: f64,
-) -> Vec<Point3D> {
+) -> Vec<Coords3> {
     points
         .par_iter()
         .map(|point| {
@@ -257,7 +257,7 @@ pub fn centerline_based_diameter_morphing(
 
 fn find_closest_centerline_point_optimized(
     centerline: &Centerline,
-    point: Point3D,
+    point: Coords3,
 ) -> &CenterlinePoint {
     let mut min_distance_squared = f64::MAX;
     let mut closest_point = &centerline.points[0];
@@ -276,24 +276,24 @@ fn find_closest_centerline_point_optimized(
 pub fn find_points_by_cl_region_rs(
     centerline: &Centerline,
     frames: &[Frame],
-    points: &[Point3D],
-) -> (Vec<Point3D>, Vec<Point3D>, Vec<Point3D>) {
+    points: &[Coords3],
+) -> (Vec<Coords3>, Vec<Coords3>, Vec<Coords3>) {
     let mut cumulative_z_dist_frames = 0.0;
     for i in 1..frames.len() {
         cumulative_z_dist_frames += (frames[i].centroid.2 - frames[i - 1].centroid.2).abs();
     }
     cumulative_z_dist_frames /= (frames.len() - 1) as f64;
 
-    let centroids_to_match = frames.iter().map(|f| f.centroid).collect::<Vec<Point3D>>();
+    let centroids_to_match = frames.iter().map(|f| f.centroid).collect::<Vec<Coords3>>();
     let cl_points_indices: Vec<usize> =
         find_cl_points_in_range(centerline, &centroids_to_match, cumulative_z_dist_frames);
 
     // needed for proximal/distal classification
     let dist_ref = centroids_to_match[centroids_to_match.len() - 1];
 
-    let mut proximal_points: Vec<Point3D> = Vec::new();
-    let mut distal_points: Vec<Point3D> = Vec::new();
-    let mut points_between: Vec<Point3D> = Vec::new();
+    let mut proximal_points: Vec<Coords3> = Vec::new();
+    let mut distal_points: Vec<Coords3> = Vec::new();
+    let mut points_between: Vec<Coords3> = Vec::new();
 
     let mut remaining_points = points.to_vec();
 
@@ -327,7 +327,7 @@ pub fn find_points_by_cl_region_rs(
 
 fn find_cl_points_in_range(
     centerline: &Centerline,
-    points: &[Point3D],
+    points: &[Coords3],
     search_radius: f64,
 ) -> Vec<usize> {
     let mut selected_points = Vec::new();
@@ -355,11 +355,11 @@ fn find_cl_points_in_range(
 }
 
 pub fn clean_up_non_section_points(
-    points_to_cleanup: Vec<Point3D>,
-    reference_points: Vec<Point3D>,
+    points_to_cleanup: Vec<Coords3>,
+    reference_points: Vec<Coords3>,
     neighborhood_radius: f64,
     min_neigbor_ratio: f64,
-) -> (Vec<Point3D>, Vec<Point3D>) {
+) -> (Vec<Coords3>, Vec<Coords3>) {
     let neighborhood_radius_sq = neighborhood_radius * neighborhood_radius;
 
     let mut cleaned_points = Vec::new();

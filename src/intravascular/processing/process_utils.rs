@@ -1,6 +1,33 @@
+use crate::intravascular::io::geometry::{Contour, ContourType, Geometry};
 use crate::intravascular::io::input::ContourPoint;
 use rayon::prelude::*;
 use std::f64::consts::PI;
+
+pub fn extract_contours_by_type(geometry: &Geometry, contour_type: ContourType) -> Vec<Contour> {
+    match contour_type {
+        ContourType::Lumen => geometry
+            .frames
+            .iter()
+            .map(|frame| frame.lumen.clone())
+            .collect(),
+        _ => geometry
+            .frames
+            .iter()
+            .filter_map(|frame| frame.extras.get(&contour_type).cloned())
+            .collect(),
+    }
+}
+
+pub fn get_contour_type_name(contour_type: ContourType) -> &'static str {
+    match contour_type {
+        ContourType::Lumen => "lumen",
+        ContourType::Eem => "eem",
+        ContourType::Calcification => "calcification",
+        ContourType::Sidebranch => "sidebranch",
+        ContourType::Catheter => "catheter",
+        ContourType::Wall => "wall",
+    }
+}
 
 pub fn search_range<F>(
     cost_fn: F,

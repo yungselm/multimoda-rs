@@ -562,13 +562,7 @@ fn interp_point(
     }
 }
 
-fn interpolate_contour(
-    c1: &Contour,
-    c2: &Contour,
-    t: f64,
-    id: u32,
-    original_frame: u32,
-) -> Contour {
+fn fill_frame_gap(c1: &Contour, c2: &Contour, t: f64, id: u32, original_frame: u32) -> Contour {
     let len = c1.points.len().min(c2.points.len());
     let points: Vec<ContourPoint> = (0..len)
         .map(|i| interp_point(&c1.points[i], &c2.points[i], t, original_frame, i as u32))
@@ -601,7 +595,7 @@ fn create_interpolated_frame(frame_1: &Frame, frame_2: &Frame, t: f64) -> Frame 
         frame_1.centroid.2 + (frame_2.centroid.2 - frame_1.centroid.2) * t,
     );
 
-    let lumen = interpolate_contour(
+    let lumen = fill_frame_gap(
         &frame_1.lumen,
         &frame_2.lumen,
         t,
@@ -616,10 +610,7 @@ fn create_interpolated_frame(frame_1: &Frame, frame_2: &Frame, t: f64) -> Frame 
         }
         match (frame_1.extras.get(key), frame_2.extras.get(key)) {
             (Some(c1), Some(c2)) => {
-                extras.insert(
-                    *key,
-                    interpolate_contour(c1, c2, t, c2.id, c2.original_frame),
-                );
+                extras.insert(*key, fill_frame_gap(c1, c2, t, c2.id, c2.original_frame));
             }
             (Some(c1), None) => {
                 extras.insert(*key, c1.clone());
