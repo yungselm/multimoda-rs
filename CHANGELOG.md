@@ -3,7 +3,16 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [0.4.1]
+## [0.4.2] - 2026-06-04
+Large internal refactor to improve readability and decouple modules. No behaviour change.
+
+### Changed
+- All native types and Python bindings extracted from scattered files into a unified `src/types/native/` and
+  `src/types/binding/` module. 
+- Several large files split into focused submodules (`binding/classes.rs` removed, `io/geometry.rs`, `centerline_align.rs`, `to_object.rs` split).
+- `Point3D` trait added and shared across `ContourPoint`, `CenterlinePoint`, and `(f64, f64, f64)`, simplified some functions with this. 
+
+## [0.4.1] - 2026-06-02
 
 ### Changed
 - Rust `use` declarations now follow the idiomatic convention of importing the parent module for

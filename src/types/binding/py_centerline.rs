@@ -9,6 +9,10 @@ use pyo3::prelude::*;
 /// ----------
 /// points : list of PyCenterlinePoint
 ///     Ordered list of centerline points.
+/// branch_start_indices : list of int
+///     Index into ``points`` where each branch begins.  Entry 0 is always 0
+///     (the main vessel); subsequent entries mark the start of side branches.
+///     Read-only — recomputed by ``calculate_branches``.
 ///
 /// Examples
 /// --------
@@ -87,13 +91,7 @@ impl PyCenterline {
         let mut total: f64 = 0.0;
         let mut count: usize = 0;
         for pair in self.points.windows(2) {
-            let a = &pair[0].contour_point;
-            let b = &pair[1].contour_point;
-
-            let dx = a.x - b.x;
-            let dy = a.y - b.y;
-            let dz = a.z - b.z;
-            total += (dx * dx + dy * dy + dz * dz).sqrt();
+            total += pair[0].contour_point.distance(&pair[1].contour_point);
             count += 1;
         }
 
