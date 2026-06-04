@@ -5,6 +5,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
+/// Shared accessor trait for any 3-D point type.
 /// Implement this for a type to make it work with generic geometry utilities
 /// (e.g. `calculate_squared_distance`).
 pub trait Point3D {
@@ -136,12 +137,29 @@ impl ContourPoint {
         Ok(point)
     }
 
-    /// Computes the Euclidean distance between two contour points.
+    /// Computes the Euclidean 3-D distance between two contour points.
     pub fn distance_to(&self, other: &ContourPoint) -> f64 {
         let dx = self.x - other.x;
         let dy = self.y - other.y;
         let dz = self.z - other.z;
         (dx * dx + dy * dy + dz * dz).sqrt()
+    }
+
+    /// Computes the 2-D (XY-plane) distance between two contour points.
+    pub fn distance_2d_to(&self, other: &ContourPoint) -> f64 {
+        let dx = self.x - other.x;
+        let dy = self.y - other.y;
+        (dx * dx + dy * dy).sqrt()
+    }
+
+    /// Returns a new point translated by `(dx, dy, dz)`.
+    pub fn translate(&self, dx: f64, dy: f64, dz: f64) -> Self {
+        ContourPoint {
+            x: self.x + dx,
+            y: self.y + dy,
+            z: self.z + dz,
+            ..*self
+        }
     }
 
     /// Rotates a single point about a given center (cx, cy) by a specified angle (in radians).
