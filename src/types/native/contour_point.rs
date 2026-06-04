@@ -5,6 +5,38 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
+/// Implement this for a type to make it work with generic geometry utilities
+/// (e.g. `calculate_squared_distance`).
+pub trait Point3D {
+    fn x(&self) -> f64;
+    fn y(&self) -> f64;
+    fn z(&self) -> f64;
+}
+
+impl Point3D for ContourPoint {
+    fn x(&self) -> f64 {
+        self.x
+    }
+    fn y(&self) -> f64 {
+        self.y
+    }
+    fn z(&self) -> f64 {
+        self.z
+    }
+}
+
+impl Point3D for (f64, f64, f64) {
+    fn x(&self) -> f64 {
+        self.0
+    }
+    fn y(&self) -> f64 {
+        self.1
+    }
+    fn z(&self) -> f64 {
+        self.2
+    }
+}
+
 /// Utility: detect whether the file uses comma or tab as delimiter.
 pub(crate) fn detect_delimiter<P: AsRef<Path>>(path: P) -> Result<u8> {
     let file = File::open(&path).with_context(|| {
