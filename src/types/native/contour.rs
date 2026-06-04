@@ -196,10 +196,7 @@ impl Contour {
 
         for i in 0..self.points.len() {
             for j in i + 1..self.points.len() {
-                let dx = self.points[i].x - self.points[j].x;
-                let dy = self.points[i].y - self.points[j].y;
-                let dz = self.points[i].z - self.points[j].z;
-                let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+                let dist = self.points[i].distance_to(&self.points[j]);
                 if dist > max_dist {
                     max_dist = dist;
                     farthest_pair = (&self.points[i], &self.points[j]);
@@ -267,9 +264,7 @@ impl Contour {
             // 4) Compute chord length between i and best_j
             let pi = &self.points[i];
             let pj = &self.points[best_j];
-            let dx = pi.x - pj.x;
-            let dy = pi.y - pj.y;
-            let dist = (dx * dx + dy * dy).sqrt();
+            let dist = pi.distance_2d_to(pj);
             if dist < min_dist {
                 min_dist = dist;
                 best_pair = (pi, pj);
@@ -293,10 +288,7 @@ impl Contour {
             let j = (i + half) % n;
             let pi = &self.points[i];
             let pj = &self.points[j];
-            let dx = pi.x - pj.x;
-            let dy = pi.y - pj.y;
-            let dz = pi.z - pj.z;
-            let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+            let dist = pi.distance_to(pj);
             if dist < min_dist {
                 min_dist = dist;
                 best_pair = (pi, pj);
@@ -400,24 +392,15 @@ impl Contour {
         self.compute_centroid();
         let (cx, cy, _) = self.centroid.unwrap();
 
-        // Rotate each point around the centroid
         for point in self.points.iter_mut() {
-            let x = point.x - cx;
-            let y = point.y - cy;
-            let cos_a = angle.cos();
-            let sin_a = angle.sin();
-
-            point.x = x * cos_a - y * sin_a + cx;
-            point.y = x * sin_a + y * cos_a + cy;
+            *point = point.rotate_point(angle, (cx, cy));
         }
     }
 
     pub fn translate_contour(&mut self, translation: (f64, f64, f64)) {
         let (dx, dy, dz) = translation;
         for p in self.points.iter_mut() {
-            p.x += dx;
-            p.y += dy;
-            p.z += dz;
+            *p = p.translate(dx, dy, dz);
         }
     }
 }
