@@ -12,7 +12,7 @@ pub mod record;
 pub use centerline::Centerline;
 pub use centerline_point::CenterlinePoint;
 pub use contour::{Contour, ContourType};
-pub use contour_point::{ContourPoint, Point3D};
+pub use contour_point::{downsample_contour_points, ContourPoint, Point3D};
 pub use discretized_tree::{DiscretizedVesselTree, ReferenceTriplet};
 pub use frame::Frame;
 pub use geometry::Geometry;

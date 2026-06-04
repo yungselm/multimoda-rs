@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
-use crate::intravascular::io::geometry::{Contour, ContourType, Geometry};
+use crate::intravascular::io::geometry::{ContourType, Geometry};
 use crate::intravascular::io::input::InputData;
 use crate::intravascular::io::output;
 use crate::intravascular::processing::align_between;
@@ -778,33 +778,9 @@ pub fn single_processing_rs(
     Ok((geom, logs))
 }
 
-/// Helper function to extract contours of a specific type from a geometry
-pub fn extract_contours_by_type(geometry: &Geometry, contour_type: ContourType) -> Vec<Contour> {
-    match contour_type {
-        ContourType::Lumen => geometry
-            .frames
-            .iter()
-            .map(|frame| frame.lumen.clone())
-            .collect(),
-        _ => geometry
-            .frames
-            .iter()
-            .filter_map(|frame| frame.extras.get(&contour_type).cloned())
-            .collect(),
-    }
-}
-
-/// Helper function to get contour type name for file naming
-pub fn get_contour_type_name(contour_type: ContourType) -> &'static str {
-    match contour_type {
-        ContourType::Lumen => "lumen",
-        ContourType::Eem => "eem",
-        ContourType::Calcification => "calcification",
-        ContourType::Sidebranch => "sidebranch",
-        ContourType::Catheter => "catheter",
-        ContourType::Wall => "wall",
-    }
-}
+pub use crate::intravascular::processing::process_utils::{
+    extract_contours_by_type, get_contour_type_name,
+};
 
 /// Helper function to create appropriate MTL file for each contour type
 pub fn create_mtl_for_contour_type(

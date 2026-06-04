@@ -1,8 +1,7 @@
 use super::py_contour::{PyContour, PyContourType};
 use super::py_contour_point::PyContourPoint;
 use super::py_frame::PyFrame;
-use crate::intravascular::processing::process_utils;
-use crate::types::native::{ContourPoint, ContourType, Geometry};
+use crate::types::native::{self as native, ContourPoint, ContourType, Geometry};
 use pyo3::prelude::*;
 
 type GeomSummary = (f64, f64, f64);
@@ -400,7 +399,7 @@ impl PyGeometry {
         let downsample_contour = |contour: &PyContour| -> PyContour {
             let rust_points: Vec<ContourPoint> =
                 contour.points.iter().map(ContourPoint::from).collect();
-            let downsampled = process_utils::downsample_contour_points(&rust_points, n_points);
+            let downsampled = native::downsample_contour_points(&rust_points, n_points);
             PyContour {
                 points: downsampled.iter().map(PyContourPoint::from).collect(),
                 ..contour.clone()

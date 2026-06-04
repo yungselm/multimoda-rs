@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.4.3] - 2026-06-04
+Small refactor based on cargo modules analysis (https://github.com/regexident/cargo-modules)
+
+### Changed
+- Moved downsample points to top layer module `types`
+- Renamed duplicate functions and names
+
 ## [0.4.2] - 2026-06-04
 Large internal refactor to improve readability and decouple modules. No behaviour change.
 

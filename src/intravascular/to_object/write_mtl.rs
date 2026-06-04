@@ -3,6 +3,9 @@ use super::texture::{
     create_displacement_texture, create_transparent_texture,
 };
 use crate::intravascular::io::geometry::{Contour, ContourType, Geometry};
+use crate::intravascular::processing::process_utils::{
+    extract_contours_by_type, get_contour_type_name,
+};
 use ::std::fs::File;
 use ::std::io::Write;
 use std::collections::HashMap;
@@ -246,22 +249,6 @@ fn write_transparent_texture(
     uv_coords
 }
 
-/// Extracts contours of a specific type from a geometry
-fn extract_contours_by_type(geometry: &Geometry, contour_type: ContourType) -> Vec<Contour> {
-    match contour_type {
-        ContourType::Lumen => geometry
-            .frames
-            .iter()
-            .map(|frame| frame.lumen.clone())
-            .collect(),
-        _ => geometry
-            .frames
-            .iter()
-            .filter_map(|frame| frame.extras.get(&contour_type).cloned())
-            .collect(),
-    }
-}
-
 /// Computes displacements between two sets of contours (alternative implementation)
 /// This is used for max displacement calculation since the texture.rs version only works on Geometry
 fn compute_displacements_for_contours(reference: &[Contour], target: &[Contour]) -> Vec<f64> {
@@ -282,16 +269,4 @@ fn compute_displacements_for_contours(reference: &[Contour], target: &[Contour])
                 .collect::<Vec<f64>>()
         })
         .collect()
-}
-
-/// Gets the string name for a contour type for file naming
-fn get_contour_type_name(contour_type: ContourType) -> &'static str {
-    match contour_type {
-        ContourType::Lumen => "lumen",
-        ContourType::Eem => "eem",
-        ContourType::Calcification => "calcification",
-        ContourType::Sidebranch => "sidebranch",
-        ContourType::Catheter => "catheter",
-        ContourType::Wall => "wall",
-    }
 }
