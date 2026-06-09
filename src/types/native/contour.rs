@@ -42,6 +42,20 @@ pub struct Contour {
     pub kind: ContourType,
 }
 
+/// Returns up to `n` evenly-strided samples from `points`, preserving order.
+pub fn downsample_contour_points(points: &[ContourPoint], n: usize) -> Vec<ContourPoint> {
+    if points.len() <= n {
+        return points.to_vec();
+    }
+    let step = points.len() as f64 / n as f64;
+    (0..n)
+        .map(|i| {
+            let index = (i as f64 * step) as usize;
+            points[index]
+        })
+        .collect()
+}
+
 impl Contour {
     pub fn new(
         id: u32,
@@ -408,6 +422,7 @@ impl Contour {
 #[cfg(test)]
 mod contour_tests {
     use super::*;
+    use crate::intravascular::utils::test_utils::dummy_geometry;
     use crate::types::native::record::Record;
 
     #[test]
@@ -528,6 +543,64 @@ mod contour_tests {
         assert_eq!(c.pulmonary_thickness, None);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_downsample_geometry() {
+        let dummy = dummy_geometry();
+        let cont_points = dummy.frames[0].lumen.points.clone();
+        let downsampled_contour = downsample_contour_points(&cont_points, 3);
+
+        assert_eq!(downsampled_contour.len(), 3);
+        assert_eq!(downsampled_contour[0].point_index, 0);
+        assert_eq!(downsampled_contour[1].point_index, 2);
+
+        let downsampled_contour = downsample_contour_points(&cont_points, 6);
+
+        assert_eq!(downsampled_contour.len(), 6);
+        assert_eq!(downsampled_contour[0].point_index, 0);
+        assert_eq!(downsampled_contour[1].point_index, 1);
+
+        let downsampled_contour = downsample_contour_points(&cont_points, 5);
+        let n = downsampled_contour.len();
+        assert_eq!(downsampled_contour[n - 1].point_index, 4);
+    }
+
+    #[test]
+    fn test_downsample_edge_cases() {
+        let points = vec![
+            ContourPoint {
+                frame_index: 1,
+                point_index: 0,
+                x: 1.0,
+                y: 2.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 1,
+                point_index: 1,
+                x: 3.0,
+                y: 4.0,
+                z: 0.0,
+                aortic: false,
+            },
+        ];
+
+        let result = downsample_contour_points(&points, 5);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].point_index, 0);
+        assert_eq!(result[1].point_index, 1);
+
+        let result = downsample_contour_points(&points, 2);
+        assert_eq!(result.len(), 2);
+
+        let result = downsample_contour_points(&points, 0);
+        assert_eq!(result.len(), 0);
+
+        let empty: Vec<ContourPoint> = Vec::new();
+        let result = downsample_contour_points(&empty, 3);
+        assert_eq!(result.len(), 0);
     }
 
     #[test]
