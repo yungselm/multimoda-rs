@@ -1,5 +1,5 @@
 use super::py_contour_point::PyContourPoint;
-use crate::types::native::{Contour, ContourPoint, ContourType};
+use crate::types::native::{Contour, ContourPoint, ContourType, Transform};
 use pyo3::prelude::*;
 
 /// Python representation of a 3D contour.
@@ -216,7 +216,9 @@ impl PyContour {
     pub fn rotate(&self, angle_deg: f64) -> PyResult<PyContour> {
         let angle_rad = angle_deg.to_radians();
         let mut rust_contour = self.to_rust_contour()?;
-        rust_contour.rotate_contour(angle_rad);
+        rust_contour.compute_centroid();
+        let (cx, cy, _) = rust_contour.centroid.unwrap_or((0.0, 0.0, 0.0));
+        rust_contour.rotate_mut(angle_rad, (cx, cy));
 
         Ok(PyContour::from(&rust_contour))
     }
@@ -242,8 +244,7 @@ impl PyContour {
     /// >>> contour = contour.translate((0.0, 1.0, 2.0))
     #[pyo3(signature = (dx, dy, dz))]
     pub fn translate(&self, dx: f64, dy: f64, dz: f64) -> PyResult<PyContour> {
-        let mut rust_contour = self.to_rust_contour()?;
-        rust_contour.translate_contour((dx, dy, dz));
+        let rust_contour = self.to_rust_contour()?.translate(dx, dy, dz);
 
         Ok(PyContour::from(&rust_contour))
     }

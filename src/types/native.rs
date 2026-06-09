@@ -26,7 +26,14 @@ pub trait Point3D {
     fn z(&self) -> f64;
 }
 
-pub trait Transform {
-    fn rotation(self) -> Self;
-    fn translation(self) -> Self;
+pub trait Transform: Sized + Clone {
+    fn translate(self, dx: f64, dy: f64, dz: f64) -> Self;
+    fn rotate(self, angle: f64, center: (f64, f64)) -> Self;
+
+    fn translate_mut(&mut self, dx: f64, dy: f64, dz: f64) {
+        *self = self.clone().translate(dx, dy, dz);
+    }
+    fn rotate_mut(&mut self, angle: f64, center: (f64, f64)) {
+        *self = self.clone().rotate(angle, center);
+    }
 }

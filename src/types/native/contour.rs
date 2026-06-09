@@ -1,5 +1,6 @@
 use super::contour_point::ContourPoint;
 use super::record::Record;
+use super::Transform;
 use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::fmt;
@@ -54,6 +55,25 @@ pub fn downsample_contour_points(points: &[ContourPoint], n: usize) -> Vec<Conto
             points[index]
         })
         .collect()
+}
+
+impl Transform for Contour {
+    fn translate(mut self, dx: f64, dy: f64, dz: f64) -> Self {
+        for p in &mut self.points {
+            p.translate_mut(dx, dy, dz);
+        }
+        self
+    }
+
+    fn rotate(mut self, angle: f64, center: (f64, f64)) -> Self {
+        if angle == 0.0 {
+            return self;
+        }
+        for p in &mut self.points {
+            p.rotate_mut(angle, center);
+        }
+        self
+    }
 }
 
 impl Contour {
@@ -394,27 +414,6 @@ impl Contour {
         self.points.rotate_left(shift % n);
         for (i, pt) in self.points.iter_mut().enumerate() {
             pt.point_index = i as u32;
-        }
-    }
-
-    /// Rotates a contour around its centroid by the specified angle (in radians)
-    pub fn rotate_contour(&mut self, angle: f64) {
-        if angle == 0.0 {
-            return;
-        }
-        // Get centroid or compute if not present
-        self.compute_centroid();
-        let (cx, cy, _) = self.centroid.unwrap();
-
-        for point in self.points.iter_mut() {
-            *point = point.rotate_point(angle, (cx, cy));
-        }
-    }
-
-    pub fn translate_contour(&mut self, translation: (f64, f64, f64)) {
-        let (dx, dy, dz) = translation;
-        for p in self.points.iter_mut() {
-            *p = p.translate(dx, dy, dz);
         }
     }
 }

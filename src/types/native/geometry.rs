@@ -2,12 +2,36 @@ use super::contour::{Contour, ContourType};
 use super::contour_point::ContourPoint;
 use super::frame::Frame;
 use super::record::Record;
+use super::Transform;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
 pub struct Geometry {
     pub frames: Vec<Frame>,
     pub label: String,
+}
+
+impl Transform for Geometry {
+    fn translate(mut self, dx: f64, dy: f64, dz: f64) -> Self {
+        self.frames = self
+            .frames
+            .into_iter()
+            .map(|f| f.translate(dx, dy, dz))
+            .collect();
+        self
+    }
+
+    fn rotate(mut self, angle: f64, center: (f64, f64)) -> Self {
+        if angle == 0.0 {
+            return self;
+        }
+        self.frames = self
+            .frames
+            .into_iter()
+            .map(|f| f.rotate(angle, center))
+            .collect();
+        self
+    }
 }
 
 impl Geometry {
@@ -219,7 +243,8 @@ impl Geometry {
             return;
         }
         for frame in self.frames.iter_mut() {
-            frame.rotate_frame(angle_rad);
+            let center = (frame.centroid.0, frame.centroid.1);
+            frame.rotate_mut(angle_rad, center);
             frame.sort_frame_points();
         }
     }
@@ -251,8 +276,9 @@ impl Geometry {
     }
 
     pub fn translate_geometry(&mut self, translation: (f64, f64, f64)) {
+        let (dx, dy, dz) = translation;
         for frame in self.frames.iter_mut() {
-            frame.translate_frame(translation);
+            frame.translate_mut(dx, dy, dz);
         }
     }
 
@@ -403,7 +429,8 @@ impl Geometry {
                 0.0,
             );
 
-            current_frame.translate_frame(translation);
+            let (dx, dy, dz) = translation;
+            current_frame.translate_mut(dx, dy, dz);
 
             reference_centroid = (
                 reference_centroid.0,
@@ -434,20 +461,29 @@ mod geometry_tests {
             geometry_rotate.frames[0].lumen.points[0]
         );
 
-        geometry_rotate.frames[0].rotate_frame(rotation_deg.to_radians());
-        geometry_rotate.frames[0].rotate_frame(-rotation_deg.to_radians());
+        let center = (
+            geometry_rotate.frames[0].centroid.0,
+            geometry_rotate.frames[0].centroid.1,
+        );
+        geometry_rotate.frames[0].rotate_mut(rotation_deg.to_radians(), center);
+        geometry_rotate.frames[0].rotate_mut(-rotation_deg.to_radians(), center);
 
         assert_eq!(
             geometry.frames[0].lumen.points[0],
             geometry_rotate.frames[0].lumen.points[0]
         );
 
+        geometry_rotate.frames[0].lumen.compute_centroid();
+        let lumen_center = {
+            let (cx, cy, _) = geometry_rotate.frames[0].lumen.centroid.unwrap();
+            (cx, cy)
+        };
         geometry_rotate.frames[0]
             .lumen
-            .rotate_contour(rotation_deg.to_radians());
+            .rotate_mut(rotation_deg.to_radians(), lumen_center);
         geometry_rotate.frames[0]
             .lumen
-            .rotate_contour(-rotation_deg.to_radians());
+            .rotate_mut(-rotation_deg.to_radians(), lumen_center);
 
         assert_eq!(
             geometry.frames[0].lumen.points[0],
@@ -456,9 +492,9 @@ mod geometry_tests {
 
         let center = geometry_rotate.frames[0].centroid;
         geometry_rotate.frames[0].lumen.points[0]
-            .rotate_point(rotation_deg.to_radians(), (center.0, center.1));
+            .rotate_mut(rotation_deg.to_radians(), (center.0, center.1));
         geometry_rotate.frames[0].lumen.points[0]
-            .rotate_point(-rotation_deg.to_radians(), (center.0, center.1));
+            .rotate_mut(-rotation_deg.to_radians(), (center.0, center.1));
 
         assert_eq!(
             geometry.frames[0].lumen.points[0],

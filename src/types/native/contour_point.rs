@@ -1,4 +1,4 @@
-use super::Point3D;
+use super::{Point3D, Transform};
 use anyhow::{anyhow, Context, Result};
 use csv::ReaderBuilder;
 use serde::Deserialize;
@@ -27,6 +27,33 @@ impl Point3D for (f64, f64, f64) {
     }
     fn z(&self) -> f64 {
         self.2
+    }
+}
+
+impl Transform for ContourPoint {
+    fn translate(self, dx: f64, dy: f64, dz: f64) -> Self {
+        ContourPoint {
+            x: self.x + dx,
+            y: self.y + dy,
+            z: self.z + dz,
+            ..self
+        }
+    }
+
+    fn rotate(self, angle: f64, center: (f64, f64)) -> Self {
+        if angle == 0.0 {
+            return self;
+        }
+        let (cx, cy) = center;
+        let x = self.x - cx;
+        let y = self.y - cy;
+        let cos_a = angle.cos();
+        let sin_a = angle.sin();
+        ContourPoint {
+            x: x * cos_a - y * sin_a + cx,
+            y: x * sin_a + y * cos_a + cy,
+            ..self
+        }
     }
 }
 
@@ -143,36 +170,6 @@ impl ContourPoint {
         let dy = self.y - other.y;
         (dx * dx + dy * dy).sqrt()
     }
-
-    /// Returns a new point translated by `(dx, dy, dz)`.
-    pub fn translate(&self, dx: f64, dy: f64, dz: f64) -> Self {
-        ContourPoint {
-            x: self.x + dx,
-            y: self.y + dy,
-            z: self.z + dz,
-            ..*self
-        }
-    }
-
-    /// Rotates a single point about a given center (cx, cy) by a specified angle (in radians).
-    pub fn rotate_point(&self, angle: f64, center: (f64, f64)) -> ContourPoint {
-        if angle == 0.0 {
-            return *self;
-        }
-        let (cx, cy) = center;
-        let x = self.x - cx;
-        let y = self.y - cy;
-        let cos_a = angle.cos();
-        let sin_a = angle.sin();
-        ContourPoint {
-            frame_index: self.frame_index,
-            point_index: self.point_index,
-            x: x * cos_a - y * sin_a + cx,
-            y: x * sin_a + y * cos_a + cy,
-            z: self.z,
-            aortic: self.aortic,
-        }
-    }
 }
 
 #[cfg(test)]
@@ -211,7 +208,7 @@ mod contour_point_tests {
             z: 0.0,
             aortic: false,
         };
-        let rotated = p.rotate_point(PI / 2.0, (0.0, 0.0));
+        let rotated = p.rotate(PI / 2.0, (0.0, 0.0));
         assert!((rotated.x - 0.0).abs() < 1e-6);
         assert!((rotated.y - 1.0).abs() < 1e-6);
     }

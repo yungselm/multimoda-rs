@@ -1,6 +1,6 @@
 use super::py_contour::PyContour;
 use super::py_contour_point::PyContourPoint;
-use crate::types::native::{ContourPoint, ContourType, Frame};
+use crate::types::native::{ContourPoint, ContourType, Frame, Transform};
 use pyo3::prelude::*;
 use std::collections::HashMap;
 
@@ -88,8 +88,9 @@ impl PyFrame {
     ///     New frame with all contours rotated.
     #[pyo3(signature = (angle_deg))]
     pub fn rotate(&self, angle_deg: f64) -> PyResult<PyFrame> {
-        let mut rust_frame = self.to_rust_frame()?;
-        rust_frame.rotate_frame(angle_deg.to_radians());
+        let rust_frame = self.to_rust_frame()?;
+        let center = (rust_frame.centroid.0, rust_frame.centroid.1);
+        let rust_frame = rust_frame.rotate(angle_deg.to_radians(), center);
         Ok(PyFrame::from(&rust_frame))
     }
 
@@ -110,8 +111,7 @@ impl PyFrame {
     ///     New frame with all contours translated.
     #[pyo3(signature = (dx, dy, dz))]
     pub fn translate(&self, dx: f64, dy: f64, dz: f64) -> PyResult<PyFrame> {
-        let mut rust_frame = self.to_rust_frame()?;
-        rust_frame.translate_frame((dx, dy, dz));
+        let rust_frame = self.to_rust_frame()?.translate(dx, dy, dz);
         Ok(PyFrame::from(&rust_frame))
     }
 

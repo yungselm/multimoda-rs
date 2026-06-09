@@ -7,6 +7,7 @@ use crate::intravascular::io::geometry::{Contour, ContourType, Frame, Geometry};
 use crate::intravascular::io::input::ContourPoint;
 use crate::intravascular::processing::process_utils::{hausdorff_distance, search_range};
 use crate::types::native;
+use crate::types::native::Transform;
 
 #[derive(Debug)]
 pub struct AlignLog {
@@ -74,7 +75,8 @@ pub fn align_frames_in_geometry(
         pb.inc(1);
 
         if cumulative_rotation != 0.0 {
-            current.rotate_frame(cumulative_rotation);
+            let center = (current.centroid.0, current.centroid.1);
+            current.rotate_mut(cumulative_rotation, center);
         }
 
         let translation = (
@@ -82,7 +84,8 @@ pub fn align_frames_in_geometry(
             prev_frame.centroid.1 - current.centroid.1,
             0.0,
         );
-        current.translate_frame(translation);
+        let (dx, dy, dz) = translation;
+        current.translate_mut(dx, dy, dz);
 
         let testing_points =
             catheter_lumen_vec_from_frames(current, sample_size, sample_size_catheter);
@@ -94,7 +97,7 @@ pub fn align_frames_in_geometry(
                 |angle: f64| {
                     let rotated: Vec<ContourPoint> = testing_points
                         .iter()
-                        .map(|p| p.rotate_point(angle, (current.centroid.0, current.centroid.1)))
+                        .map(|p| p.rotate(angle, (current.centroid.0, current.centroid.1)))
                         .collect();
                     hausdorff_distance(&reference_points, &rotated)
                 },
@@ -113,7 +116,8 @@ pub fn align_frames_in_geometry(
             )
         };
 
-        current.rotate_frame(best_rotation);
+        let center = (current.centroid.0, current.centroid.1);
+        current.rotate_mut(best_rotation, center);
         cumulative_rotation += best_rotation;
 
         let new_log = AlignLog {
@@ -194,7 +198,7 @@ pub fn find_best_rotation(
     let cost_fn = |angle: f64| -> f64 {
         let rotated: Vec<ContourPoint> = target
             .iter()
-            .map(|p| p.rotate_point(angle, (centroid.0, centroid.1)))
+            .map(|p| p.rotate(angle, (centroid.0, centroid.1)))
             .collect();
         hausdorff_distance(reference, &rotated)
     };
@@ -883,7 +887,7 @@ mod align_within_tests {
     #[test]
     fn test_detect_holes_and_fill_one_frame() -> anyhow::Result<()> {
         let mut geometry = dummy_geometry_aligned_long();
-        geometry.frames[5].translate_frame((0.0, 0.0, 1.0));
+        geometry.frames[5].translate_mut(0.0, 0.0, 1.0);
 
         let (bool_hole, avg_dist) = detect_holes(&geometry);
 
@@ -915,7 +919,7 @@ mod align_within_tests {
     #[test]
     fn test_detect_holes_and_fill_two_frame() -> anyhow::Result<()> {
         let mut geometry = dummy_geometry_aligned_long();
-        geometry.frames[5].translate_frame((0.0, 0.0, 2.0));
+        geometry.frames[5].translate_mut(0.0, 0.0, 2.0);
 
         let new_geom = fill_holes(&mut geometry)?;
 

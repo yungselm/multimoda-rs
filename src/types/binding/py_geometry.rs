@@ -114,9 +114,7 @@ impl PyGeometry {
     #[pyo3(signature = (angle_deg))]
     pub fn rotate(&self, angle_deg: f64) -> PyResult<PyGeometry> {
         let mut rust_geometry = self.to_rust_geometry()?;
-        for frame in &mut rust_geometry.frames {
-            frame.rotate_frame(angle_deg.to_radians());
-        }
+        rust_geometry.rotate_geometry(angle_deg.to_radians());
         Ok(PyGeometry::from(&rust_geometry))
     }
 
@@ -138,9 +136,7 @@ impl PyGeometry {
     #[pyo3(signature = (dx, dy, dz))]
     pub fn translate(&self, dx: f64, dy: f64, dz: f64) -> PyResult<PyGeometry> {
         let mut rust_geometry = self.to_rust_geometry()?;
-        for frame in &mut rust_geometry.frames {
-            frame.translate_frame((dx, dy, dz));
-        }
+        rust_geometry.translate_geometry((dx, dy, dz));
         Ok(PyGeometry::from(&rust_geometry))
     }
 

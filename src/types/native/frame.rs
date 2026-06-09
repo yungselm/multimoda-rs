@@ -1,5 +1,6 @@
 use super::contour::{Contour, ContourType};
 use super::contour_point::ContourPoint;
+use super::Transform;
 use std::collections::HashMap;
 use std::f64::consts::PI;
 
@@ -11,6 +12,55 @@ pub struct Frame {
     pub lumen: Contour,
     pub extras: HashMap<ContourType, Contour>,
     pub reference_point: Option<ContourPoint>,
+}
+
+impl Transform for Frame {
+    fn translate(mut self, dx: f64, dy: f64, dz: f64) -> Self {
+        self.lumen = self.lumen.translate(dx, dy, dz);
+        self.lumen.compute_centroid();
+
+        self.extras = self
+            .extras
+            .into_iter()
+            .map(|(k, mut v)| {
+                v = v.translate(dx, dy, dz);
+                v.compute_centroid();
+                (k, v)
+            })
+            .collect();
+
+        self.reference_point = self.reference_point.map(|p| p.translate(dx, dy, dz));
+
+        self.centroid.0 += dx;
+        self.centroid.1 += dy;
+        self.centroid.2 += dz;
+        self
+    }
+
+    fn rotate(mut self, angle: f64, center: (f64, f64)) -> Self {
+        if angle == 0.0 {
+            return self;
+        }
+
+        self.lumen = self.lumen.rotate(angle, center);
+
+        self.extras = self
+            .extras
+            .into_iter()
+            .map(|(k, v)| (k, v.rotate(angle, center)))
+            .collect();
+
+        self.reference_point = self.reference_point.map(|p| p.rotate(angle, center));
+
+        let (cx, cy) = center;
+        let x = self.centroid.0 - cx;
+        let y = self.centroid.1 - cy;
+        let cos_a = angle.cos();
+        let sin_a = angle.sin();
+        self.centroid.0 = x * cos_a - y * sin_a + cx;
+        self.centroid.1 = x * sin_a + y * cos_a + cy;
+        self
+    }
 }
 
 impl Frame {
@@ -68,64 +118,6 @@ impl Frame {
 
             self.centroid.2 = z_value;
         }
-    }
-
-    pub fn rotate_frame(&mut self, angle: f64) {
-        if angle == 0.0 {
-            return;
-        }
-        let center = (self.centroid.0, self.centroid.1);
-
-        self.lumen.points = self
-            .lumen
-            .points
-            .iter()
-            .map(|p| p.rotate_point(angle, center))
-            .collect();
-
-        for contour in self.extras.values_mut() {
-            contour.points = contour
-                .points
-                .iter()
-                .map(|p| p.rotate_point(angle, center))
-                .collect();
-        }
-
-        if let Some(ref_point) = &mut self.reference_point {
-            *ref_point = ref_point.rotate_point(angle, center);
-        }
-    }
-
-    pub fn translate_frame(&mut self, translation: (f64, f64, f64)) {
-        let (dx, dy, dz) = translation;
-
-        for p in self.lumen.points.iter_mut() {
-            p.x += dx;
-            p.y += dy;
-            p.z += dz;
-        }
-
-        self.lumen.compute_centroid();
-
-        for contour in self.extras.values_mut() {
-            for p in contour.points.iter_mut() {
-                p.x += dx;
-                p.y += dy;
-                p.z += dz;
-            }
-
-            contour.compute_centroid();
-        }
-
-        if let Some(ref_point) = &mut self.reference_point {
-            ref_point.x += dx;
-            ref_point.y += dy;
-            ref_point.z += dz;
-        }
-
-        self.centroid.0 += dx;
-        self.centroid.1 += dy;
-        self.centroid.2 += dz;
     }
 
     pub fn sort_frame_points(&mut self) {
@@ -338,7 +330,8 @@ mod frame_tests {
         let original_ref = frame.reference_point.map(|rp| (rp.x, rp.y));
 
         // Rotate by 90 degrees (pi/2) about frame.centroid (1.0,1.0)
-        frame.rotate_frame(PI / 2.0);
+        let center = (frame.centroid.0, frame.centroid.1);
+        frame = frame.rotate(PI / 2.0, center);
 
         // Expected lumen points after rotation around (1,1):
         let expected_lumen = [(0.0, 0.0), (-2.0, 2.0), (0.0, 4.0), (2.0, 2.0)];
@@ -398,7 +391,8 @@ mod frame_tests {
         }
 
         // --- rotate back by -90 degrees and check we return to originals ---
-        frame.rotate_frame(-(PI / 2.0));
+        let center = (frame.centroid.0, frame.centroid.1);
+        frame = frame.rotate(-(PI / 2.0), center);
 
         // Check lumen returned to original positions
         for (i, p) in frame.lumen.points.iter().enumerate() {
@@ -661,7 +655,7 @@ mod frame_tests {
             }),
         };
 
-        frame.translate_frame((1.0, 2.0, 3.0));
+        frame = frame.translate(1.0, 2.0, 3.0);
         assert_eq!(frame.centroid, (2.0, 3.0, 3.0));
 
         let expected_lumen = [

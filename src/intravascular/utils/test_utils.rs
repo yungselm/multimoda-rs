@@ -1,5 +1,6 @@
 use crate::intravascular::io::geometry::{Contour, ContourType, Frame, Geometry};
 use crate::intravascular::io::input::ContourPoint;
+use crate::types::native::Transform;
 use std::collections::HashMap;
 
 pub fn dummy_geometry_custom(z_spacing: f64, n_frames: usize) -> Geometry {
@@ -285,12 +286,14 @@ pub fn dummy_geometry() -> Geometry {
     };
     let rotation: f64 = 15.0;
     contour_a.compute_centroid();
+    contour_b.translate_mut(1.0, 1.0, 0.0);
     contour_b.compute_centroid();
+    let (cx_b, cy_b, _) = contour_b.centroid.unwrap();
+    contour_b.rotate_mut(rotation.to_radians(), (cx_b, cy_b));
+    contour_c.translate_mut(2.0, 2.0, 0.0);
     contour_c.compute_centroid();
-    contour_b.translate_contour((1.0, 1.0, 0.0));
-    contour_b.rotate_contour(rotation.to_radians());
-    contour_c.translate_contour((2.0, 2.0, 0.0));
-    contour_c.rotate_contour(rotation.to_radians() * 2.0);
+    let (cx_c, cy_c, _) = contour_c.centroid.unwrap();
+    contour_c.rotate_mut(rotation.to_radians() * 2.0, (cx_c, cy_c));
 
     let ref_point = ContourPoint {
         frame_index: 1,
@@ -335,10 +338,12 @@ pub fn dummy_geometry_aligned_short() -> Geometry {
 
     let rotation_deg: f64 = -15.0;
 
-    geometry.frames[1].translate_frame((-1.0, -1.0, 0.0));
-    geometry.frames[2].translate_frame((-2.0, -2.0, 0.0));
-    geometry.frames[1].rotate_frame(rotation_deg.to_radians());
-    geometry.frames[2].rotate_frame(rotation_deg.to_radians() * 2.0);
+    geometry.frames[1].translate_mut(-1.0, -1.0, 0.0);
+    geometry.frames[2].translate_mut(-2.0, -2.0, 0.0);
+    let center1 = (geometry.frames[1].centroid.0, geometry.frames[1].centroid.1);
+    geometry.frames[1].rotate_mut(rotation_deg.to_radians(), center1);
+    let center2 = (geometry.frames[2].centroid.0, geometry.frames[2].centroid.1);
+    geometry.frames[2].rotate_mut(rotation_deg.to_radians() * 2.0, center2);
 
     geometry
 }
@@ -348,17 +353,19 @@ pub fn dummy_geometry_aligned_long() -> Geometry {
 
     let rotation_deg: f64 = -15.0;
 
-    g1.frames[1].translate_frame((-1.0, -1.0, 0.0));
-    g1.frames[2].translate_frame((-2.0, -2.0, 0.0));
-    g1.frames[1].rotate_frame(rotation_deg.to_radians());
-    g1.frames[2].rotate_frame(rotation_deg.to_radians() * 2.0);
+    g1.frames[1].translate_mut(-1.0, -1.0, 0.0);
+    g1.frames[2].translate_mut(-2.0, -2.0, 0.0);
+    let center1 = (g1.frames[1].centroid.0, g1.frames[1].centroid.1);
+    g1.frames[1].rotate_mut(rotation_deg.to_radians(), center1);
+    let center2 = (g1.frames[2].centroid.0, g1.frames[2].centroid.1);
+    g1.frames[2].rotate_mut(rotation_deg.to_radians() * 2.0, center2);
 
     let mut g2 = g1.clone();
     let translation = (0.0, 0.0, 4.0);
     for (i, frame) in g2.frames.iter_mut().enumerate() {
         let idx = i as u32 + 3;
-        frame.translate_frame(translation);
-        frame.lumen.compute_centroid();
+        let (dx, dy, dz) = translation;
+        frame.translate_mut(dx, dy, dz);
         frame.set_value(Some(idx), None, frame.lumen.centroid, Some(idx as f64));
     }
 
@@ -380,8 +387,8 @@ pub fn dummy_geometry_center_reference() -> Geometry {
     let translation = (0.0, 0.0, 4.0);
     for (i, frame) in g2.frames.iter_mut().enumerate() {
         let idx = i as u32 + 3;
-        frame.translate_frame(translation);
-        frame.lumen.compute_centroid();
+        let (dx, dy, dz) = translation;
+        frame.translate_mut(dx, dy, dz);
         frame.set_value(Some(idx), None, frame.lumen.centroid, Some(idx as f64));
     }
 
@@ -420,10 +427,12 @@ mod test_utils_tests {
 
         let rotation_deg: f64 = -15.0;
 
-        geometry.frames[1].translate_frame((-1.0, -1.0, 0.0));
-        geometry.frames[2].translate_frame((-2.0, -2.0, 0.0));
-        geometry.frames[1].rotate_frame(rotation_deg.to_radians());
-        geometry.frames[2].rotate_frame(rotation_deg.to_radians() * 2.0);
+        geometry.frames[1].translate_mut(-1.0, -1.0, 0.0);
+        geometry.frames[2].translate_mut(-2.0, -2.0, 0.0);
+        let center1 = (geometry.frames[1].centroid.0, geometry.frames[1].centroid.1);
+        geometry.frames[1].rotate_mut(rotation_deg.to_radians(), center1);
+        let center2 = (geometry.frames[2].centroid.0, geometry.frames[2].centroid.1);
+        geometry.frames[2].rotate_mut(rotation_deg.to_radians() * 2.0, center2);
 
         assert_relative_eq!(geometry.frames[1].lumen.points[0].x, 1.0, epsilon = 1e-6);
         assert_relative_eq!(geometry.frames[1].lumen.points[0].y, 3.0, epsilon = 1e-6);
