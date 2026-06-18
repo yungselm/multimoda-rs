@@ -1,9 +1,10 @@
-use crate::intravascular::io::geometry::{Contour, Geometry};
 use crate::intravascular::io::input::ContourPoint;
 use crate::intravascular::io::input::{Centerline, CenterlinePoint};
 use crate::intravascular::processing::align_between::GeometryPair;
 use crate::intravascular::processing::process_utils::hausdorff_distance;
 use crate::types::native;
+use crate::types::native::contour::Contour;
+use crate::types::native::geometry::Geometry;
 use nalgebra::{Point3, Rotation3, Unit, Vector3};
 
 /// Allows alignment algorithms to operate on either a single [`Geometry`] or a [`GeometryPair`].
@@ -525,7 +526,9 @@ fn apply_transforms_to_geometry(geometry: &mut Geometry, transformations: &[Fram
 #[cfg(test)]
 mod align_algorithms_tests {
     use super::*;
-    use crate::intravascular::io::geometry::{ContourType, Frame, Geometry};
+    use crate::types::native::contour::ContourType;
+    use crate::types::native::frame::Frame;
+    use crate::types::native::geometry::Geometry;
     use std::collections::HashMap;
 
     fn create_test_contour(id: u32, original_frame: u32, points: Vec<ContourPoint>) -> Contour {

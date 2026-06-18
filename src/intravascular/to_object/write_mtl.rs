@@ -2,10 +2,11 @@ use super::texture::{
     compute_displacements, compute_uv_coordinates, create_black_texture,
     create_displacement_texture, create_transparent_texture,
 };
-use crate::intravascular::io::geometry::{Contour, ContourType, Geometry};
 use crate::intravascular::processing::process_utils::{
     extract_contours_by_type, get_contour_type_name,
 };
+use crate::types::native::contour::{Contour, ContourType};
+use crate::types::native::geometry::Geometry;
 use ::std::fs::File;
 use ::std::io::Write;
 use std::collections::HashMap;

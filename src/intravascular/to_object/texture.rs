@@ -1,4 +1,5 @@
-use crate::intravascular::io::geometry::{Contour, Geometry};
+use crate::types::native::contour::Contour;
+use crate::types::native::geometry::Geometry;
 use image::{ImageBuffer, Rgb, Rgba};
 use std::error::Error;
 

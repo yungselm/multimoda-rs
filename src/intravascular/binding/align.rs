@@ -91,7 +91,7 @@ pub fn align_three_point(
     case_name: &str,
     align_wall_anomalous: bool,
 ) -> PyResult<(Py<PyAny>, PyCenterline)> {
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+    let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
     let cl_rs = centerline.to_rust_centerline();
     let angle_step = angle_step_deg.to_radians();
@@ -216,7 +216,7 @@ pub fn align_manual(
     case_name: &str,
     align_wall_anomalous: bool,
 ) -> PyResult<(Py<PyAny>, PyCenterline)> {
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+    let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
     let cl_rs = centerline.to_rust_centerline();
 
@@ -363,7 +363,7 @@ pub fn align_combined(
     case_name: &str,
     align_wall_anomalous: bool,
 ) -> PyResult<(Py<PyAny>, PyCenterline)> {
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+    let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
     let cl_rs = centerline.to_rust_centerline();
     let angle_step = angle_step_deg.to_radians();

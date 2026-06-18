@@ -1,7 +1,7 @@
 use nalgebra::Vector3;
 
-use crate::intravascular::io::geometry::Geometry;
 use crate::intravascular::io::input::{Centerline, CenterlinePoint, ContourPoint};
+use crate::types::native::geometry::Geometry;
 
 /// Resample `centerline` along its arc-length so that adjacent points are spaced at the
 /// mean Euclidean distance between consecutive contour centroids in `ref_mesh`.
@@ -343,8 +343,10 @@ mod cl_preprocessing_tests {
 
     #[test]
     fn test_calculate_mean_spacing() {
-        use crate::intravascular::io::geometry::{Contour, ContourType, Frame, Geometry};
         use crate::intravascular::io::input::ContourPoint;
+        use crate::types::native::contour::{Contour, ContourType};
+        use crate::types::native::frame::Frame;
+        use crate::types::native::geometry::Geometry;
         use std::collections::HashMap;
 
         // Case 1: multiple frames → valid mean spacing

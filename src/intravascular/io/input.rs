@@ -256,6 +256,18 @@ pub fn read_records<P: AsRef<Path>>(path: P) -> anyhow::Result<Vec<Record>> {
     Ok(records)
 }
 
+// pub fn read_centerline_vtp<P: AsRef<Path>>(path: P) -> anyhow::Result<Centerline> {
+//     let file = File::open(path)?;
+//     let reader = BufReader::new(file);
+//     let points = Vec::new();
+//     let branch_start_indices = Vec::new();
+
+//     for line in reader.line() {
+
+//     }
+//     todo!()
+// }
+
 #[cfg(test)]
 mod input_tests {
     use super::*;

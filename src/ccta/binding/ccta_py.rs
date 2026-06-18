@@ -170,7 +170,7 @@ pub fn find_points_by_cl_region(
     points: Vec<Point3D>,
 ) -> PyResult<(Vec<Point3D>, Vec<Point3D>, Vec<Point3D>)> {
     let rust_centerline = centerline.to_rust_centerline();
-    let rust_frames: Vec<crate::intravascular::io::geometry::Frame> = frames
+    let rust_frames: Vec<crate::types::native::frame::Frame> = frames
         .into_iter()
         .map(|f| f.to_rust_frame())
         .collect::<Result<_, _>>()?;

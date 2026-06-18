@@ -187,7 +187,7 @@ pub fn from_file_full(
     smooth: bool,
     postprocessing: bool,
 ) -> PyResult<FullResult> {
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+    let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
     let (
@@ -370,7 +370,7 @@ pub fn from_file_doublepair(
     smooth: bool,
     postprocessing: bool,
 ) -> PyResult<DoublePairResult> {
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+    let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
     let (geom_ab_final, geom_cd_final, logs_a, logs_b, logs_c, logs_d) = double_pair_processing_rs(
@@ -532,7 +532,7 @@ pub fn from_file_singlepair(
     smooth: bool,
     postprocessing: bool,
 ) -> PyResult<PairResult> {
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+    let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
     let (geom_pair_final, logs_a, logs_b) = pair_processing_rs(
@@ -670,7 +670,7 @@ pub fn from_file_single(
     bruteforce: bool,
     smooth: bool,
 ) -> PyResult<(PyGeometry, Vec<AlignLogTuple>)> {
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+    let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
     let (geom, logs) = single_processing_rs(
@@ -849,7 +849,7 @@ pub fn from_array_full(
 ) -> PyResult<FullResult> {
     let labels: Vec<String> = vec![]; // InputData carries its own labels
 
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+    let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
     let input_data_a_rust: InputData = input_data_a.try_into().map_err(|e| {
@@ -1056,7 +1056,7 @@ pub fn from_array_doublepair(
 ) -> PyResult<DoublePairResult> {
     let labels: Vec<String> = vec![]; // InputData carries its own labels
 
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+    let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
     let input_data_a_rust: InputData = input_data_a.try_into().map_err(|e| {
@@ -1227,7 +1227,7 @@ pub fn from_array_singlepair(
 ) -> PyResult<PairResult> {
     let labels: Vec<String> = vec![]; // InputData carries its own labels
 
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+    let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
     let input_data_a_rust: InputData = input_data_a.try_into().map_err(|e| {
@@ -1364,7 +1364,7 @@ pub fn from_array_single(
 ) -> PyResult<(PyGeometry, Vec<AlignLogTuple>)> {
     let labels: Vec<String> = vec![]; // InputData carries its own labels
 
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+    let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
     let input_data_rust: InputData = input_data.try_into().map_err(|e| {
@@ -1504,8 +1504,8 @@ pub fn to_obj(
 #[cfg(test)]
 mod tests {
     use crate::intravascular::binding::entry::full_processing_rs;
-    use crate::intravascular::io::geometry::ContourType;
     use crate::intravascular::io::input::InputData;
+    use crate::types::native::contour::ContourType;
     use std::collections::HashMap;
 
     const REST: &str = "data/fixtures/ivus_rest";

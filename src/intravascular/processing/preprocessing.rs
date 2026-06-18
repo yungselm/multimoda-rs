@@ -2,8 +2,8 @@ use anyhow::Context;
 use std::path::Path;
 
 use crate::intravascular::io;
-use crate::intravascular::io::geometry::Geometry;
 use crate::intravascular::io::input::InputData;
+use crate::types::native::geometry::Geometry;
 
 #[derive(Debug, Clone, Copy)]
 pub enum ProcessingOptions {
