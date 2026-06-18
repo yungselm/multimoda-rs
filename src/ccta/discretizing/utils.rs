@@ -85,12 +85,12 @@ pub fn smooth_centerline(centerline: &Centerline, sigma: f64) -> Centerline {
                 z: sz[i],
                 ..p.contour_point
             },
-            normal: p.normal,
+            tangent: p.tangent,
             branch_id: p.branch_id,
         })
         .collect();
 
-    // Recompute normals from smoothed positions per branch.
+    // Recompute tangents from smoothed positions per branch.
     for branch_id in 0..=max_branch {
         let indices: Vec<usize> = new_points
             .iter()
@@ -103,8 +103,8 @@ pub fn smooth_centerline(centerline: &Centerline, sigma: f64) -> Centerline {
             continue;
         }
 
-        // Compute forward-difference normals; last point is handled separately.
-        let branch_normals: Vec<Vector3<f64>> = indices
+        // Compute forward-difference tangents; last point is handled separately.
+        let branch_tangents: Vec<Vector3<f64>> = indices
             .iter()
             .enumerate()
             .map(|(li, &gi)| {
@@ -117,7 +117,7 @@ pub fn smooth_centerline(centerline: &Centerline, sigma: f64) -> Centerline {
                     if norm > 1e-12 {
                         v / norm
                     } else {
-                        new_points[gi].normal
+                        new_points[gi].tangent
                     }
                 } else {
                     Vector3::zeros() // placeholder; filled below from the previous entry
@@ -125,17 +125,17 @@ pub fn smooth_centerline(centerline: &Centerline, sigma: f64) -> Centerline {
             })
             .collect();
 
-        let last_normal = if indices.len() >= 2 {
-            branch_normals[indices.len() - 2]
+        let last_tangent = if indices.len() >= 2 {
+            branch_tangents[indices.len() - 2]
         } else {
-            new_points[indices[0]].normal
+            new_points[indices[0]].tangent
         };
 
         for (li, &gi) in indices.iter().enumerate() {
-            new_points[gi].normal = if li + 1 < indices.len() {
-                branch_normals[li]
+            new_points[gi].tangent = if li + 1 < indices.len() {
+                branch_tangents[li]
             } else {
-                last_normal
+                last_tangent
             };
         }
     }
@@ -206,10 +206,10 @@ mod tests {
         let smoothed = smooth_centerline(&cl, 2.0);
 
         for p in &smoothed.points {
-            let len = p.normal.norm();
+            let len = p.tangent.norm();
             assert!(
                 (len - 1.0).abs() < 1e-10 || len < 1e-12,
-                "normal not unit: {len}"
+                "tangent not unit: {len}"
             );
         }
     }

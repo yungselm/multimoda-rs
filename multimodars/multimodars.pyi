@@ -276,18 +276,18 @@ class PyCenterlinePoint:
     ----------
     contour_point : PyContourPoint
         Position of the centerline point in 3-D space.
-    normal : tuple of float
-        Normal vector ``(nx, ny, nz)`` at this centerline position.
+    tangent : tuple of float
+        Tangent vector ``(tx, ty, tz)`` at this centerline position.
     """
 
     contour_point: PyContourPoint
-    normal: tuple[float, float, float]
+    tangent: tuple[float, float, float]
     branch_id: int
 
     def __init__(
         self,
         contour_point: PyContourPoint,
-        normal: tuple[float, float, float],
+        tangent: tuple[float, float, float],
     ) -> None: ...
     def __repr__(self) -> str: ...
     def __str__(self) -> str: ...

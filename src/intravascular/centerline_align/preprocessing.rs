@@ -169,7 +169,7 @@ fn interpolate_centerline_at_s(
     // if at the very end, return last point
     if idx >= centerline.points.len().saturating_sub(1) {
         let last_pt = &centerline.points.last().unwrap().contour_point;
-        let normal = centerline.points.last().unwrap().normal;
+        let tangent = centerline.points.last().unwrap().tangent;
         return CenterlinePoint {
             contour_point: ContourPoint {
                 frame_index: sample_index as u32,
@@ -179,7 +179,7 @@ fn interpolate_centerline_at_s(
                 z: last_pt.z,
                 aortic: false,
             },
-            normal,
+            tangent,
             branch_id: 0,
         };
     }
@@ -200,17 +200,17 @@ fn interpolate_centerline_at_s(
     let y = p0.y + t * (p1.y - p0.y);
     let z = p0.z + t * (p1.z - p0.z);
 
-    // interpolate normal if available, else zeros
-    let n0 = centerline.points[idx].normal;
-    let n1 = centerline.points[idx + 1].normal;
-    let mut normal = Vector3::zeros();
-    if n0.norm() > 0.0 || n1.norm() > 0.0 {
-        normal = n0 * (1.0 - t) + n1 * t;
-        let n_norm = normal.norm();
-        if n_norm > 1e-12 {
-            normal /= n_norm;
+    // interpolate tangent if available, else zeros
+    let t0 = centerline.points[idx].tangent;
+    let t1 = centerline.points[idx + 1].tangent;
+    let mut tangent = Vector3::zeros();
+    if t0.norm() > 0.0 || t1.norm() > 0.0 {
+        tangent = t0 * (1.0 - t) + t1 * t;
+        let t_norm = tangent.norm();
+        if t_norm > 1e-12 {
+            tangent /= t_norm;
         } else {
-            normal = Vector3::zeros();
+            tangent = Vector3::zeros();
         }
     }
 
@@ -223,7 +223,7 @@ fn interpolate_centerline_at_s(
             z,
             aortic: false,
         },
-        normal,
+        tangent,
         branch_id: 0,
     }
 }
@@ -285,7 +285,7 @@ mod cl_preprocessing_tests {
                         z: 1.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(0.0, 0.0, -1.0),
+                    tangent: Vector3::new(0.0, 0.0, -1.0),
                     branch_id: 0,
                 },
                 CenterlinePoint {
@@ -297,7 +297,7 @@ mod cl_preprocessing_tests {
                         z: 0.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(0.0, 0.0, -1.0),
+                    tangent: Vector3::new(0.0, 0.0, -1.0),
                     branch_id: 0,
                 },
             ],
@@ -318,7 +318,7 @@ mod cl_preprocessing_tests {
                         z: 0.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(0.0, 0.0, -1.0),
+                    tangent: Vector3::new(0.0, 0.0, -1.0),
                     branch_id: 0,
                 },
                 CenterlinePoint {
@@ -330,7 +330,7 @@ mod cl_preprocessing_tests {
                         z: 1.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(0.0, 0.0, -1.0),
+                    tangent: Vector3::new(0.0, 0.0, -1.0),
                     branch_id: 0,
                 },
             ],
@@ -454,7 +454,7 @@ mod cl_preprocessing_tests {
                         z: 0.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    tangent: Vector3::new(0.0, 0.0, 1.0),
                     branch_id: 0,
                 },
                 CenterlinePoint {
@@ -466,7 +466,7 @@ mod cl_preprocessing_tests {
                         z: 1.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    tangent: Vector3::new(0.0, 0.0, 1.0),
                     branch_id: 0,
                 },
                 CenterlinePoint {
@@ -478,7 +478,7 @@ mod cl_preprocessing_tests {
                         z: 2.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    tangent: Vector3::new(0.0, 0.0, 1.0),
                     branch_id: 0,
                 },
                 CenterlinePoint {
@@ -490,7 +490,7 @@ mod cl_preprocessing_tests {
                         z: 3.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    tangent: Vector3::new(0.0, 0.0, 1.0),
                     branch_id: 0,
                 },
             ],
@@ -520,7 +520,7 @@ mod cl_preprocessing_tests {
                         z: 0.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    tangent: Vector3::new(0.0, 0.0, 1.0),
                     branch_id: 0,
                 },
                 CenterlinePoint {
@@ -532,7 +532,7 @@ mod cl_preprocessing_tests {
                         z: 1.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    tangent: Vector3::new(0.0, 0.0, 1.0),
                     branch_id: 0,
                 },
                 CenterlinePoint {
@@ -544,7 +544,7 @@ mod cl_preprocessing_tests {
                         z: 2.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    tangent: Vector3::new(0.0, 0.0, 1.0),
                     branch_id: 0,
                 },
                 CenterlinePoint {
@@ -556,7 +556,7 @@ mod cl_preprocessing_tests {
                         z: 3.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    tangent: Vector3::new(0.0, 0.0, 1.0),
                     branch_id: 0,
                 },
             ],
@@ -570,7 +570,7 @@ mod cl_preprocessing_tests {
         // interpolate at s = 1.5 (should be z = 1.5)
         let pt = interpolate_centerline_at_s(&cl, &cum, 1.5, 0);
         assert_relative_eq!(pt.contour_point.z, 1.5, epsilon = 1e-12);
-        // normal should be normalized and in z direction
-        assert_relative_eq!(pt.normal.z, 1.0, epsilon = 1e-12);
+        // tangent should be normalized and in z direction
+        assert_relative_eq!(pt.tangent.z, 1.0, epsilon = 1e-12);
     }
 }

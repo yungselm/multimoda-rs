@@ -142,7 +142,7 @@ fn align_frame(frame: &Contour, cl_point: &CenterlinePoint) -> FrameTransformati
 
     // === Rotation Step ===
     let current_normal = calculate_normal(&frame.points, &centroid);
-    let desired_normal = cl_point.normal;
+    let desired_normal = cl_point.tangent;
     let angle = current_normal.angle(&desired_normal);
     let rotation: Rotation3<f64> = if angle.abs() < 1e-6 {
         Rotation3::identity()
@@ -550,7 +550,7 @@ mod align_algorithms_tests {
                 z,
                 aortic: false,
             },
-            normal: Vector3::new(0.0, 0.0, 1.0), // Default normal pointing up
+            tangent: Vector3::new(0.0, 0.0, 1.0), // Default tangent pointing up
             branch_id: 0,
         }
     }

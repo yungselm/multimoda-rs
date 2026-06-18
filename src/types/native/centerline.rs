@@ -16,18 +16,18 @@ impl Centerline {
         // Calculate normals for all but the last point.
         for i in 0..contour_points.len() {
             let current = &contour_points[i];
-            let normal = if i < contour_points.len() - 1 {
+            let tangent = if i < contour_points.len() - 1 {
                 let next = &contour_points[i + 1];
                 Vector3::new(next.x - current.x, next.y - current.y, next.z - current.z).normalize()
             } else if !contour_points.is_empty() {
-                points[i - 1].normal
+                points[i - 1].tangent
             } else {
                 Vector3::zeros()
             };
 
             points.push(CenterlinePoint {
                 contour_point: *current,
-                normal,
+                tangent,
                 branch_id: 0,
             });
         }
@@ -158,7 +158,7 @@ impl Centerline {
 
         self.points = new_points;
         self.branch_start_indices = branch_start_indices;
-        self.recompute_normals();
+        self.recompute_tangents();
     }
 
     /// Build a sparse tree adjacency map. Within the segment and then between segments
@@ -349,19 +349,19 @@ impl Centerline {
     ///
     /// Normals are not computed across branch boundaries so each branch's
     /// last point inherits the direction of its penultimate point.
-    fn recompute_normals(&mut self) {
+    fn recompute_tangents(&mut self) {
         let n = self.points.len();
         for i in 0..n {
-            let normal = if i + 1 < n && self.points[i].branch_id == self.points[i + 1].branch_id {
+            let tangent = if i + 1 < n && self.points[i].branch_id == self.points[i + 1].branch_id {
                 let a = &self.points[i].contour_point;
                 let b = &self.points[i + 1].contour_point;
                 Vector3::new(b.x - a.x, b.y - a.y, b.z - a.z).normalize()
             } else if i > 0 && self.points[i - 1].branch_id == self.points[i].branch_id {
-                self.points[i - 1].normal
+                self.points[i - 1].tangent
             } else {
                 Vector3::zeros()
             };
-            self.points[i].normal = normal;
+            self.points[i].tangent = tangent;
         }
     }
 
@@ -401,7 +401,7 @@ impl Centerline {
 
         self.points = new_points;
         self.branch_start_indices = branch_start_indices;
-        self.recompute_normals();
+        self.recompute_tangents();
     }
 
     /// Return local positions (0-indexed within the branch) of interior points
@@ -694,7 +694,7 @@ mod centerline_tests {
     }
 
     #[test]
-    fn test_centerline_normals() {
+    fn test_centerline_tangents() {
         let points = vec![
             ContourPoint {
                 frame_index: 1,
@@ -722,9 +722,9 @@ mod centerline_tests {
             },
         ];
         let centerline = Centerline::from_contour_points(points);
-        assert_eq!(centerline.points[0].normal, Vector3::new(1.0, 0.0, 0.0));
-        assert_eq!(centerline.points[1].normal, Vector3::new(1.0, 0.0, 0.0));
-        assert_eq!(centerline.points[2].normal, Vector3::new(1.0, 0.0, 0.0));
+        assert_eq!(centerline.points[0].tangent, Vector3::new(1.0, 0.0, 0.0));
+        assert_eq!(centerline.points[1].tangent, Vector3::new(1.0, 0.0, 0.0));
+        assert_eq!(centerline.points[2].tangent, Vector3::new(1.0, 0.0, 0.0));
     }
 
     #[test]
