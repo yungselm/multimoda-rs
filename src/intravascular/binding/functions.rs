@@ -1,7 +1,7 @@
 use super::entry::*;
 use crate::intravascular::io::{input::InputData, output::write_obj_mesh_without_uv};
 use crate::intravascular::processing::align_within::AlignLog;
-use crate::types::binding::{PyContourType, PyGeometry, PyGeometryPair, PyInputData};
+use crate::types::binding::{PyCenterline, PyContourType, PyGeometry, PyGeometryPair, PyInputData};
 use pyo3::prelude::*;
 use std::path::Path;
 
@@ -1499,6 +1499,50 @@ pub fn to_obj(
     }
 
     Ok(())
+}
+
+/// Read an ASCII-format VTP centerline file and return a ``PyCenterline``.
+///
+/// Parses VTK PolyData XML (``.vtp``) files exported with ``DataType="ASCII"``.
+/// Binary or appended-binary VTP files are rejected with a descriptive error.
+///
+/// Branch identification follows VTK Lines topology: each polyline in the
+/// ``<Lines>`` section becomes one branch.  The longest branch is assigned
+/// ``branch_id = 0``; shorter branches are numbered in descending length order.
+///
+/// Tangent vectors are computed by forward difference (``next - current``,
+/// normalised); the last point of each branch copies its predecessor's tangent.
+/// Per-point radius is read from ``PointData/MaximumInscribedSphereRadius``
+/// when present, otherwise defaults to ``0.0``.
+///
+/// Parameters
+/// ----------
+/// path : str
+///     Path to an ASCII-format ``.vtp`` file.
+///
+/// Returns
+/// -------
+/// centerline : PyCenterline
+///     Parsed centerline with branches identified; branch 0 is the longest.
+///
+/// Raises
+/// ------
+/// RuntimeError
+///     If the file cannot be opened, is not valid UTF-8, uses binary encoding,
+///     or contains malformed VTP topology.
+///
+/// Examples
+/// --------
+/// >>> import multimodars as mm
+/// >>> cl = mm.read_centerline_vtp("data/rca_cl.vtp")
+/// >>> print(cl.branch_ids())
+///
+#[pyfunction]
+#[pyo3(signature = (path))]
+pub fn read_centerline_vtp(path: &str) -> PyResult<PyCenterline> {
+    let cl = crate::intravascular::io::input::read_centerline_vtp(path)
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))?;
+    Ok(PyCenterline::from(&cl))
 }
 
 #[cfg(test)]

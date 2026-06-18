@@ -31,11 +31,11 @@ def centerline_to_obj(cl, filename: str) -> None:
         has_normals = any(
             math.isfinite(nx) and math.isfinite(ny) and math.isfinite(nz)
             for pt in good_pts
-            for nx, ny, nz in [pt.normal]
+            for nx, ny, nz in [pt.tangent]
         )
         if has_normals:
             for pt in good_pts:
-                nx, ny, nz = pt.normal
+                nx, ny, nz = pt.tangent
                 if math.isfinite(nx) and math.isfinite(ny) and math.isfinite(nz):
                     f.write(f"vn {nx:.6f} {ny:.6f} {nz:.6f}\n")
                 else:

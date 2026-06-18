@@ -38,6 +38,7 @@ fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<(
     m.add_function(wrap_pyfunction!(binding::from_array_singlepair, m.clone())?)?;
     m.add_function(wrap_pyfunction!(binding::from_array_single, m.clone())?)?;
     m.add_function(wrap_pyfunction!(binding::to_obj, m.clone())?)?;
+    m.add_function(wrap_pyfunction!(binding::read_centerline_vtp, m.clone())?)?;
     m.add_function(wrap_pyfunction!(
         ccta_py::find_centerline_bounded_points_simple,
         m.clone()
