@@ -555,6 +555,7 @@ mod align_algorithms_tests {
             },
             tangent: Vector3::new(0.0, 0.0, 1.0), // Default tangent pointing up
             branch_id: 0,
+            radius: 0.0,
         }
     }
 

@@ -262,7 +262,7 @@ pub fn read_records<P: AsRef<Path>>(path: P) -> anyhow::Result<Vec<Record>> {
 //     let points = Vec::new();
 //     let branch_start_indices = Vec::new();
 
-//     for line in reader.line() {
+//     for line in reader.deserialize() {
 
 //     }
 //     todo!()

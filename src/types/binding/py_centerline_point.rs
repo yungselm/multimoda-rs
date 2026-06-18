@@ -32,6 +32,8 @@ pub struct PyCenterlinePoint {
     pub tangent: (f64, f64, f64),
     #[pyo3(get, set)]
     pub branch_id: u32,
+    #[pyo3(get, set)]
+    pub radius: f64,
 }
 
 #[pymethods]
@@ -43,17 +45,19 @@ impl PyCenterlinePoint {
             contour_point,
             tangent,
             branch_id,
+            radius: 0.0,
         }
     }
 
     fn __repr__(&self) -> String {
         format!(
-            "CenterlinePoint(point={}, tangent=({:.3}, {:.3}, {:.3}), branch={})",
+            "CenterlinePoint(point={}, tangent=({:.3}, {:.3}, {:.3}), branch={}, radius={:.3})",
             self.contour_point.__repr__(),
             self.tangent.0,
             self.tangent.1,
             self.tangent.2,
             self.branch_id,
+            self.radius
         )
     }
 
@@ -68,6 +72,7 @@ impl From<&CenterlinePoint> for PyCenterlinePoint {
             contour_point: PyContourPoint::from(&p.contour_point),
             tangent: (p.tangent[0], p.tangent[1], p.tangent[2]),
             branch_id: p.branch_id,
+            radius: p.radius,
         }
     }
 }
@@ -78,6 +83,7 @@ impl From<&PyCenterlinePoint> for CenterlinePoint {
             contour_point: ContourPoint::from(&p.contour_point),
             tangent: Vector3::new(p.tangent.0, p.tangent.1, p.tangent.2),
             branch_id: p.branch_id,
+            radius: p.radius,
         }
     }
 }

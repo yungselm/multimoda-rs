@@ -167,6 +167,7 @@ fn interpolate_branch_at_s(
             },
             tangent: last.tangent,
             branch_id: last.branch_id,
+            radius: last.radius,
         };
     }
 
@@ -199,6 +200,7 @@ fn interpolate_branch_at_s(
         },
         tangent,
         branch_id: pts[seg].branch_id,
+        radius: pts[seg].radius,
     }
 }
 
@@ -224,6 +226,7 @@ mod tests {
             contour_point: cp(frame_idx, x, y, z),
             tangent: Vector3::new(nx, ny, nz).normalize(),
             branch_id: 0,
+            radius: 0.0,
         }
     }
 

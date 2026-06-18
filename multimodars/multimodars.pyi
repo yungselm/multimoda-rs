@@ -278,11 +278,16 @@ class PyCenterlinePoint:
         Position of the centerline point in 3-D space.
     tangent : tuple of float
         Tangent vector ``(tx, ty, tz)`` at this centerline position.
+    branch_id : int
+        Branch identifier (0 for main vessel, 1+ for side branches).
+    radius : float
+        Local vessel radius at this centerline point, if available.
     """
 
     contour_point: PyContourPoint
     tangent: tuple[float, float, float]
     branch_id: int
+    radius: float
 
     def __init__(
         self,

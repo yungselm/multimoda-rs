@@ -5,6 +5,7 @@ use nalgebra::Vector3;
 pub struct CenterlinePoint {
     pub contour_point: contour_point::ContourPoint,
     pub tangent: Vector3<f64>,
+    pub radius: f64,
     /// 0 = main vessel, 1+ = side branches ordered by descending length.
     pub branch_id: u32,
 }

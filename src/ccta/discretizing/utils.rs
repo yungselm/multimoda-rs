@@ -87,6 +87,7 @@ pub fn smooth_centerline(centerline: &Centerline, sigma: f64) -> Centerline {
             },
             tangent: p.tangent,
             branch_id: p.branch_id,
+            radius: p.radius,
         })
         .collect();
 

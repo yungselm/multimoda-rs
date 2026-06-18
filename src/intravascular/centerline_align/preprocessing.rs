@@ -170,6 +170,7 @@ fn interpolate_centerline_at_s(
     if idx >= centerline.points.len().saturating_sub(1) {
         let last_pt = &centerline.points.last().unwrap().contour_point;
         let tangent = centerline.points.last().unwrap().tangent;
+        let radius = centerline.points.last().unwrap().radius;
         return CenterlinePoint {
             contour_point: ContourPoint {
                 frame_index: sample_index as u32,
@@ -181,6 +182,7 @@ fn interpolate_centerline_at_s(
             },
             tangent,
             branch_id: 0,
+            radius,
         };
     }
 
@@ -214,6 +216,10 @@ fn interpolate_centerline_at_s(
         }
     }
 
+    let radius0 = centerline.points[idx].radius;
+    let radius1 = centerline.points[idx + 1].radius;
+    let radius = radius0 * (1.0 - t) + radius1 * t;
+
     CenterlinePoint {
         contour_point: ContourPoint {
             frame_index: sample_index as u32,
@@ -225,6 +231,7 @@ fn interpolate_centerline_at_s(
         },
         tangent,
         branch_id: 0,
+        radius,
     }
 }
 
@@ -287,6 +294,7 @@ mod cl_preprocessing_tests {
                     },
                     tangent: Vector3::new(0.0, 0.0, -1.0),
                     branch_id: 0,
+                    radius: 0.0,
                 },
                 CenterlinePoint {
                     contour_point: ContourPoint {
@@ -299,6 +307,7 @@ mod cl_preprocessing_tests {
                     },
                     tangent: Vector3::new(0.0, 0.0, -1.0),
                     branch_id: 0,
+                    radius: 0.0,
                 },
             ],
             branch_start_indices: vec![0],
@@ -320,6 +329,7 @@ mod cl_preprocessing_tests {
                     },
                     tangent: Vector3::new(0.0, 0.0, -1.0),
                     branch_id: 0,
+                    radius: 0.0,
                 },
                 CenterlinePoint {
                     contour_point: ContourPoint {
@@ -332,6 +342,7 @@ mod cl_preprocessing_tests {
                     },
                     tangent: Vector3::new(0.0, 0.0, -1.0),
                     branch_id: 0,
+                    radius: 0.0,
                 },
             ],
             branch_start_indices: vec![0],
@@ -458,6 +469,7 @@ mod cl_preprocessing_tests {
                     },
                     tangent: Vector3::new(0.0, 0.0, 1.0),
                     branch_id: 0,
+                    radius: 0.0,
                 },
                 CenterlinePoint {
                     contour_point: ContourPoint {
@@ -470,6 +482,7 @@ mod cl_preprocessing_tests {
                     },
                     tangent: Vector3::new(0.0, 0.0, 1.0),
                     branch_id: 0,
+                    radius: 0.0,
                 },
                 CenterlinePoint {
                     contour_point: ContourPoint {
@@ -482,6 +495,7 @@ mod cl_preprocessing_tests {
                     },
                     tangent: Vector3::new(0.0, 0.0, 1.0),
                     branch_id: 0,
+                    radius: 0.0,
                 },
                 CenterlinePoint {
                     contour_point: ContourPoint {
@@ -494,6 +508,7 @@ mod cl_preprocessing_tests {
                     },
                     tangent: Vector3::new(0.0, 0.0, 1.0),
                     branch_id: 0,
+                    radius: 0.0,
                 },
             ],
             branch_start_indices: vec![0],
@@ -524,6 +539,7 @@ mod cl_preprocessing_tests {
                     },
                     tangent: Vector3::new(0.0, 0.0, 1.0),
                     branch_id: 0,
+                    radius: 0.0,
                 },
                 CenterlinePoint {
                     contour_point: ContourPoint {
@@ -536,6 +552,7 @@ mod cl_preprocessing_tests {
                     },
                     tangent: Vector3::new(0.0, 0.0, 1.0),
                     branch_id: 0,
+                    radius: 0.0,
                 },
                 CenterlinePoint {
                     contour_point: ContourPoint {
@@ -548,6 +565,7 @@ mod cl_preprocessing_tests {
                     },
                     tangent: Vector3::new(0.0, 0.0, 1.0),
                     branch_id: 0,
+                    radius: 0.0,
                 },
                 CenterlinePoint {
                     contour_point: ContourPoint {
@@ -560,6 +578,7 @@ mod cl_preprocessing_tests {
                     },
                     tangent: Vector3::new(0.0, 0.0, 1.0),
                     branch_id: 0,
+                    radius: 0.0,
                 },
             ],
             branch_start_indices: vec![0],
@@ -574,5 +593,7 @@ mod cl_preprocessing_tests {
         assert_relative_eq!(pt.contour_point.z, 1.5, epsilon = 1e-12);
         // tangent should be normalized and in z direction
         assert_relative_eq!(pt.tangent.z, 1.0, epsilon = 1e-12);
+        // radius should be 0.0
+        assert_relative_eq!(pt.radius, 0.0, epsilon = 1e-12);
     }
 }

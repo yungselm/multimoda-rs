@@ -29,6 +29,7 @@ impl Centerline {
                 contour_point: *current,
                 tangent,
                 branch_id: 0,
+                radius: 0.0,
             });
         }
 
