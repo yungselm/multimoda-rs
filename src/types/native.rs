@@ -6,7 +6,6 @@ pub mod discretized_tree;
 pub mod frame;
 pub mod geometry;
 pub mod geometry_pair;
-pub mod input_data;
 pub mod record;
 
 pub use centerline::Centerline;
@@ -17,8 +16,7 @@ pub use discretized_tree::{DiscretizedVesselTree, ReferenceTriplet};
 pub use frame::Frame;
 pub use geometry::Geometry;
 pub use geometry_pair::GeometryPair;
-pub use input_data::InputData;
-pub use record::{read_records, Record};
+pub use record::Record;
 
 pub trait Point3D {
     fn x(&self) -> f64;
