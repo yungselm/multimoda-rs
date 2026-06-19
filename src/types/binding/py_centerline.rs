@@ -227,8 +227,8 @@ impl PyCenterline {
         })
     }
 
-    /// Remove the run-alongside-main-branch prefix from every side branch and
-    /// optionally strip the inlet region from branch 0.
+    /// Remove the run-alongside-main-branch prefix from every side branch,
+    /// optionally strip the inlet region from branch 0, and optionally smooth.
     ///
     /// VTP files export every branch starting from the vessel origin, so side
     /// branches share a common prefix with branch 0.  This method trims that
@@ -240,17 +240,31 @@ impl PyCenterline {
     /// ----------
     /// rm_start_mm : float, optional
     ///     Arc-length in mm to remove from the start of branch 0 (the inlet
-    ///     region).  Set to ``0.0`` (default) to leave branch 0 untouched.
+    ///     region).  Set to ``0.0`` to leave branch 0 untouched.  Default ``5.0``.
+    /// smooth : bool, optional
+    ///     When ``True``, apply a per-branch Gaussian smoothing pass after all
+    ///     trimming.  Default ``False``.
+    /// smooth_sigma : float, optional
+    ///     Half-width of the Gaussian kernel in number of centerline points.
+    ///     A value of ``1.0`` is a gentle neighbourhood average; ``2–5`` removes
+    ///     noise while preserving the overall vessel path.  Ignored when
+    ///     ``smooth=False``.  Default ``2.5``.
     ///
     /// Returns
     /// -------
     /// PyCenterline
     ///     New centerline with overlapping prefixes removed from all side
-    ///     branches and the inlet trimmed from branch 0 if requested.
-    #[pyo3(signature = (rm_start_mm = 5.0))]
-    pub fn cleanup_vtp_data(&self, rm_start_mm: f64) -> PyResult<PyCenterline> {
+    ///     branches, the inlet trimmed from branch 0 if requested, and
+    ///     positions smoothed if requested.
+    #[pyo3(signature = (rm_start_mm = 5.0, smooth = false, smooth_sigma = 2.5))]
+    pub fn cleanup_vtp_data(
+        &self,
+        rm_start_mm: f64,
+        smooth: bool,
+        smooth_sigma: f64,
+    ) -> PyResult<PyCenterline> {
         let mut cl = self.to_rust_centerline();
-        cl.cleanup_vtp_data(rm_start_mm);
+        cl.cleanup_vtp_data(rm_start_mm, smooth, smooth_sigma);
         Ok(PyCenterline::from(&cl))
     }
 

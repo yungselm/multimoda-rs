@@ -1,9 +1,9 @@
 pub mod projecting;
 pub mod resampling;
-mod utils;
 pub mod vessel_tree;
 
 use crate::types::native::{Centerline, Contour};
+use crate::types::utils;
 
 /// Walk `branch_id` of `centerline` at uniform `step_size` intervals, project the supplied
 /// mesh `points` onto each perpendicular cross-section, filter incomplete slices, and

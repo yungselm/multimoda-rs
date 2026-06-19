@@ -383,8 +383,14 @@ class PyCenterline:
         """
         ...
 
-    def cleanup_vtp_data(self, rm_start_mm: float = ...) -> PyCenterline:
-        """Remove the run-alongside-main-branch prefix from every side branch.
+    def cleanup_vtp_data(
+        self,
+        rm_start_mm: float = ...,
+        smooth: bool = ...,
+        smooth_sigma: float = ...,
+    ) -> PyCenterline:
+        """Remove the run-alongside-main-branch prefix from every side branch,
+        optionally strip the inlet region from branch 0, and optionally smooth.
 
         VTP files export every branch starting from the vessel origin, so side
         branches share a common prefix with branch 0.  This method trims that
@@ -392,10 +398,26 @@ class PyCenterline:
         and the diverged portion.  Branches that overlap branch 0 entirely are
         dropped.  The trim threshold is one mean inter-point spacing of branch 0.
 
+        Parameters
+        ----------
+        rm_start_mm : float, optional
+            Arc-length in mm to remove from the start of branch 0 (the inlet
+            region).  Set to ``0.0`` to leave branch 0 untouched.  Default ``5.0``.
+        smooth : bool, optional
+            When ``True``, apply a per-branch Gaussian smoothing pass after all
+            trimming.  Default ``False``.
+        smooth_sigma : float, optional
+            Half-width of the Gaussian kernel in number of centerline points.
+            A value of ``1.0`` is a gentle neighbourhood average; ``2–5`` removes
+            noise while preserving the overall vessel path.  Ignored when
+            ``smooth=False``.  Default ``2.5``.
+
         Returns
         -------
         PyCenterline
-            New centerline with overlapping prefixes removed from all side branches.
+            New centerline with overlapping prefixes removed from all side
+            branches, the inlet trimmed from branch 0 if requested, and
+            positions smoothed if requested.
         """
         ...
 

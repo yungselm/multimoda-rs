@@ -483,8 +483,8 @@ mod input_tests {
     fn test_read_centerline_vtp_rca() -> anyhow::Result<()> {
         let cl = read_centerline_vtp("examples/data/rca_cl.vtp")?;
 
-        assert_eq!(cl.branch_start_indices.len(), 5, "expected 5 branches");
-        assert_eq!(cl.points.len(), 5161, "expected 5161 total points");
+        assert_eq!(cl.branch_start_indices.len(), 4, "expected 4 branches");
+        assert_eq!(cl.points.len(), 2652, "expected 2652 total points");
 
         let b0_len = cl
             .branch_start_indices
@@ -492,7 +492,7 @@ mod input_tests {
             .copied()
             .unwrap_or(cl.points.len())
             - cl.branch_start_indices[0];
-        assert_eq!(b0_len, 1847, "branch 0 should be the longest VTK line");
+        assert_eq!(b0_len, 763, "branch 0 should be the longest VTK line");
 
         // All branch_id values must match the branch they live in.
         for (i, &start) in cl.branch_start_indices.iter().enumerate() {

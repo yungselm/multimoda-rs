@@ -1,5 +1,6 @@
 use super::centerline_point::CenterlinePoint;
 use super::contour_point::ContourPoint;
+use crate::types::utils;
 use nalgebra::Vector3;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -607,8 +608,8 @@ impl Centerline {
         self.rebuild_from_branches(branches);
     }
 
-    /// Remove the run-alongside-main-branch prefix from every side branch and
-    /// optionally strip the inlet region from branch 0.
+    /// Remove the run-alongside-main-branch prefix from every side branch,
+    /// optionally strip the inlet region from branch 0, and optionally smooth.
     ///
     /// VTP files export every branch starting from the vessel origin, so side
     /// branches share a common prefix with branch 0.  For each side branch this
@@ -622,7 +623,11 @@ impl Centerline {
     /// up to `rm_start_mm` arc-length from its first point.  This is useful
     /// when the main branch starts at the aortic inlet and the proximal region
     /// is outside the region of interest.
-    pub fn cleanup_vtp_data(&mut self, rm_start_mm: f64) {
+    ///
+    /// If `smooth` is `true`, a Gaussian kernel with half-width `smooth_sigma`
+    /// (in number of points) is applied per branch after all trimming is done.
+    /// See [`utils::smooth_centerline`] for kernel details.
+    pub fn cleanup_vtp_data(&mut self, rm_start_mm: f64, smooth: bool, smooth_sigma: f64) {
         if self.branch_start_indices.is_empty() {
             return;
         }
@@ -678,6 +683,11 @@ impl Centerline {
         }
 
         self.rebuild_from_branches(branches);
+
+        if smooth {
+            let new_cl_smooth = utils::smooth_centerline(self, smooth_sigma);
+            *self = new_cl_smooth;
+        }
     }
 }
 
@@ -903,7 +913,7 @@ mod centerline_tests {
             (2., 3., 0.),
         ];
         let mut cl = make_multi_branch(&[main, side]);
-        cl.cleanup_vtp_data(0.0);
+        cl.cleanup_vtp_data(0.0, false, 0.0);
 
         let branches = cl.branches_as_vecs();
         assert_eq!(branches.len(), 2, "side branch must survive");
@@ -920,7 +930,7 @@ mod centerline_tests {
         // Side branch lies entirely on main within buffer=0.5.
         let side = &[(0., 0., 0.), (1., 0., 0.)];
         let mut cl = make_multi_branch(&[main, side]);
-        cl.cleanup_vtp_data(0.0);
+        cl.cleanup_vtp_data(0.0, false, 0.0);
 
         assert_eq!(
             cl.branch_start_indices.len(),
@@ -941,7 +951,7 @@ mod centerline_tests {
             (5., 0., 0.),
         ];
         let mut cl = make_multi_branch(&[main]);
-        cl.cleanup_vtp_data(3.0);
+        cl.cleanup_vtp_data(3.0, false, 0.0);
 
         assert_eq!(cl.branch_start_indices.len(), 1);
         // arc ≤ 3.0 covers points at 0, 1, 2, 3 mm → trim_idx = 3, keep from 3 onwards
@@ -955,7 +965,7 @@ mod centerline_tests {
         // Side branch diverges from the very first point.
         let side = &[(0., 5., 0.), (0., 6., 0.), (0., 7., 0.)];
         let mut cl = make_multi_branch(&[main, side]);
-        cl.cleanup_vtp_data(0.0);
+        cl.cleanup_vtp_data(0.0, false, 0.0);
 
         let branches = cl.branches_as_vecs();
         assert_eq!(branches.len(), 2);
