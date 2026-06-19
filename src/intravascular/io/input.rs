@@ -451,6 +451,35 @@ mod input_tests {
     use std::path::Path;
 
     #[test]
+    fn test_process_directory_runs_with_example_data() -> anyhow::Result<()> {
+        let mut names: HashMap<ContourType, &str> = HashMap::new();
+        names.insert(ContourType::Lumen, "lumen");
+        names.insert(ContourType::Eem, "eem");
+        names.insert(ContourType::Calcification, "calcification");
+        names.insert(ContourType::Sidebranch, "sidebranch");
+
+        let data_path = Path::new("./data/fixtures/idealized_geometry");
+        let input = InputData::process_directory(data_path, names, true, "")?;
+
+        assert!(
+            !input.lumen.is_empty(),
+            "lumen contour vector should not be empty"
+        );
+        assert!(
+            input.eem.is_some(),
+            "eem contour vector should not be empty"
+        );
+        assert!(
+            input.calcification.is_some(),
+            "calcification contour vector should not be empty"
+        );
+        assert!(input.record.is_none(), "record vector should be empty");
+        assert!(input.ref_point.x > 0.0, "ref_point should not be empty");
+
+        Ok(())
+    }
+
+    #[test]
     fn test_read_centerline_vtp_rca() -> anyhow::Result<()> {
         let cl = read_centerline_vtp("examples/data/rca_cl.vtp")?;
 
@@ -487,35 +516,6 @@ mod input_tests {
             b0_pts.iter().any(|p| p.tangent.norm() > 0.5),
             "branch 0 tangents should be non-zero"
         );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_process_directory_runs_with_example_data() -> anyhow::Result<()> {
-        let mut names: HashMap<ContourType, &str> = HashMap::new();
-        names.insert(ContourType::Lumen, "lumen");
-        names.insert(ContourType::Eem, "eem");
-        names.insert(ContourType::Calcification, "calcification");
-        names.insert(ContourType::Sidebranch, "sidebranch");
-
-        let data_path = Path::new("./data/fixtures/idealized_geometry");
-        let input = InputData::process_directory(data_path, names, true, "")?;
-
-        assert!(
-            !input.lumen.is_empty(),
-            "lumen contour vector should not be empty"
-        );
-        assert!(
-            input.eem.is_some(),
-            "eem contour vector should not be empty"
-        );
-        assert!(
-            input.calcification.is_some(),
-            "calcification contour vector should not be empty"
-        );
-        assert!(input.record.is_none(), "record vector should be empty");
-        assert!(input.ref_point.x > 0.0, "ref_point should not be empty");
 
         Ok(())
     }

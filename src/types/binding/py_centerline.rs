@@ -67,9 +67,10 @@ impl PyCenterline {
 
     fn __repr__(&self) -> String {
         format!(
-            "Centerline(len={}, spacing={:.2} mm)",
+            "Centerline(len={}, spacing={:.2} mm, branches={:?})",
             self.points.len(),
-            self._spacing()
+            self._spacing(),
+            self.branch_start_indices.len(),
         )
     }
 

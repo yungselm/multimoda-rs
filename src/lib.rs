@@ -7,7 +7,6 @@ pub mod types;
 
 use crate::ccta::binding::ccta_py;
 use crate::intravascular::binding;
-use crate::intravascular::binding::align;
 use crate::types::binding::*;
 
 use pyo3::prelude::*;
@@ -30,9 +29,9 @@ fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<(
     m.add_function(wrap_pyfunction!(binding::from_file_doublepair, m.clone())?)?;
     m.add_function(wrap_pyfunction!(binding::from_file_singlepair, m.clone())?)?;
     m.add_function(wrap_pyfunction!(binding::from_file_single, m.clone())?)?;
-    m.add_function(wrap_pyfunction!(align::align_three_point, m.clone())?)?;
-    m.add_function(wrap_pyfunction!(align::align_manual, m.clone())?)?;
-    m.add_function(wrap_pyfunction!(align::align_combined, m.clone())?)?;
+    m.add_function(wrap_pyfunction!(binding::align_three_point, m.clone())?)?;
+    m.add_function(wrap_pyfunction!(binding::align_manual, m.clone())?)?;
+    m.add_function(wrap_pyfunction!(binding::align_combined, m.clone())?)?;
     m.add_function(wrap_pyfunction!(binding::from_array_full, m.clone())?)?;
     m.add_function(wrap_pyfunction!(binding::from_array_doublepair, m.clone())?)?;
     m.add_function(wrap_pyfunction!(binding::from_array_singlepair, m.clone())?)?;
