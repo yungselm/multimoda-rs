@@ -359,8 +359,19 @@ pub fn refine_alignment_hausdorff<T: AlignTarget>(
         initial_cl_ref_idx
     );
 
-    for delta_idx in -(index_search_range as isize)..=(index_search_range as isize) {
-        let current_cl_ref_idx = (initial_cl_ref_idx as isize + delta_idx) as usize;
+    // When index_search_range == 0 only test the initial index; no loop over candidates needed.
+    let delta_range = if index_search_range == 0 {
+        0isize..=0isize
+    } else {
+        -(index_search_range as isize)..=(index_search_range as isize)
+    };
+
+    for delta_idx in delta_range {
+        let signed = initial_cl_ref_idx as isize + delta_idx;
+        if signed < 0 {
+            continue;
+        }
+        let current_cl_ref_idx = signed as usize;
 
         if current_cl_ref_idx + len_frames >= centerline.points.len() {
             continue;
