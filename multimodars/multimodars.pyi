@@ -383,6 +383,22 @@ class PyCenterline:
         """
         ...
 
+    def cleanup_vtp_data(self, rm_start_mm: float = ...) -> PyCenterline:
+        """Remove the run-alongside-main-branch prefix from every side branch.
+
+        VTP files export every branch starting from the vessel origin, so side
+        branches share a common prefix with branch 0.  This method trims that
+        prefix from each side branch, keeping the bifurcation junction point
+        and the diverged portion.  Branches that overlap branch 0 entirely are
+        dropped.  The trim threshold is one mean inter-point spacing of branch 0.
+
+        Returns
+        -------
+        PyCenterline
+            New centerline with overlapping prefixes removed from all side branches.
+        """
+        ...
+
     def check_centerline(self) -> PyCenterline:
         """Normalise branch ordering and return the corrected centerline.
 

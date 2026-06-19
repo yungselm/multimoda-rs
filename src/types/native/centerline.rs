@@ -294,6 +294,27 @@ impl Centerline {
         path
     }
 
+    /// Mean arc-length spacing between consecutive points of branch 0.
+    ///
+    /// Only intra-branch pairs are considered.  Returns `1.0` if branch 0
+    /// has fewer than two points.
+    pub fn mean_spacing(&self) -> f64 {
+        let end = self
+            .branch_start_indices
+            .get(1)
+            .copied()
+            .unwrap_or(self.points.len());
+        let main = &self.points[..end];
+        if main.len() < 2 {
+            return 1.0;
+        }
+        let sum: f64 = main
+            .windows(2)
+            .map(|w| w[0].contour_point.distance_to(&w[1].contour_point))
+            .sum();
+        sum / (main.len() - 1) as f64
+    }
+
     /// 95th-percentile of consecutive-point spacings — O(n).
     ///
     /// Operates only on adjacent pairs in the original ordering so large
@@ -585,11 +606,112 @@ impl Centerline {
 
         self.rebuild_from_branches(branches);
     }
+
+    /// Remove the run-alongside-main-branch prefix from every side branch and
+    /// optionally strip the inlet region from branch 0.
+    ///
+    /// VTP files export every branch starting from the vessel origin, so side
+    /// branches share a common prefix with branch 0.  For each side branch this
+    /// method trims the contiguous leading prefix whose points all lie within
+    /// one mean inter-point spacing of branch 0 of at least one main-branch
+    /// point.  The last point of the trimmed prefix is kept as the bifurcation
+    /// junction.  Branches whose entire extent lies within that buffer are
+    /// dropped completely.
+    ///
+    /// If `rm_start_mm > 0`, the leading points of branch 0 are also removed
+    /// up to `rm_start_mm` arc-length from its first point.  This is useful
+    /// when the main branch starts at the aortic inlet and the proximal region
+    /// is outside the region of interest.
+    pub fn cleanup_vtp_data(&mut self, rm_start_mm: f64) {
+        if self.branch_start_indices.is_empty() {
+            return;
+        }
+
+        let buffer = self.mean_spacing();
+        let buffer_sq = buffer * buffer;
+
+        let mut branches = self.branches_as_vecs();
+
+        if branches.len() > 1 {
+            let main_pts: Vec<(f64, f64, f64)> = branches[0]
+                .iter()
+                .map(|p| (p.contour_point.x, p.contour_point.y, p.contour_point.z))
+                .collect();
+
+            let close_to_main = |pt: &CenterlinePoint| -> bool {
+                let (x, y, z) = (pt.contour_point.x, pt.contour_point.y, pt.contour_point.z);
+                main_pts.iter().any(|&(mx, my, mz)| {
+                    (x - mx).powi(2) + (y - my).powi(2) + (z - mz).powi(2) <= buffer_sq
+                })
+            };
+
+            for branch in branches.iter_mut().skip(1) {
+                let first_outside = branch.iter().position(|pt| !close_to_main(pt));
+                match first_outside {
+                    None => branch.clear(),
+                    Some(0) => {}
+                    Some(i) => {
+                        branch.drain(..i - 1);
+                    }
+                }
+            }
+
+            branches.retain(|b| !b.is_empty());
+        }
+
+        if rm_start_mm > 0.0 && branches[0].len() > 1 {
+            let mut arc = 0.0;
+            let mut trim_idx = 0;
+            for i in 1..branches[0].len() {
+                arc += branches[0][i - 1]
+                    .contour_point
+                    .distance_to(&branches[0][i].contour_point);
+                if arc <= rm_start_mm {
+                    trim_idx = i;
+                } else {
+                    break;
+                }
+            }
+            if trim_idx > 0 {
+                branches[0].drain(..trim_idx);
+            }
+        }
+
+        self.rebuild_from_branches(branches);
+    }
 }
 
 #[cfg(test)]
 mod centerline_tests {
     use super::*;
+
+    fn make_multi_branch(branches: &[&[(f64, f64, f64)]]) -> Centerline {
+        let mut points: Vec<CenterlinePoint> = vec![];
+        let mut branch_start_indices: Vec<usize> = vec![];
+        for (bid, coords) in branches.iter().enumerate() {
+            branch_start_indices.push(points.len());
+            for &(x, y, z) in *coords {
+                let i = points.len() as u32;
+                points.push(CenterlinePoint {
+                    contour_point: ContourPoint {
+                        frame_index: i,
+                        point_index: i,
+                        x,
+                        y,
+                        z,
+                        aortic: false,
+                    },
+                    tangent: Vector3::zeros(),
+                    radius: 0.0,
+                    branch_id: bid as u32,
+                });
+            }
+        }
+        Centerline {
+            points,
+            branch_start_indices,
+        }
+    }
 
     fn cl_from_coords(coords: &[(f64, f64, f64)]) -> Centerline {
         let points = coords
@@ -726,6 +848,84 @@ mod centerline_tests {
         assert_eq!(centerline.points[0].tangent, Vector3::new(1.0, 0.0, 0.0));
         assert_eq!(centerline.points[1].tangent, Vector3::new(1.0, 0.0, 0.0));
         assert_eq!(centerline.points[2].tangent, Vector3::new(1.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn test_cleanup_vtp_trims_overlap_prefix() {
+        // Main: straight along x, spacing = 1.0.
+        // Side: first 3 pts lie on main, then diverges by 1.5 (> 1 spacing) in y.
+        let main = &[
+            (0., 0., 0.),
+            (1., 0., 0.),
+            (2., 0., 0.),
+            (3., 0., 0.),
+            (4., 0., 0.),
+        ];
+        let side = &[
+            (0., 0., 0.),
+            (1., 0., 0.),
+            (2., 0., 0.),
+            (2., 1.5, 0.),
+            (2., 3., 0.),
+        ];
+        let mut cl = make_multi_branch(&[main, side]);
+        cl.cleanup_vtp_data(0.0);
+
+        let branches = cl.branches_as_vecs();
+        assert_eq!(branches.len(), 2, "side branch must survive");
+        assert_eq!(branches[0].len(), 5, "main branch unchanged");
+        // Junction (2,0,0) + 2 diverged points.
+        assert_eq!(branches[1].len(), 3);
+        let j = &branches[1][0].contour_point;
+        assert!((j.x - 2.0).abs() < 1e-9 && j.y.abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_cleanup_vtp_drops_fully_overlapping_branch() {
+        let main = &[(0., 0., 0.), (1., 0., 0.), (2., 0., 0.)];
+        // Side branch lies entirely on main within buffer=0.5.
+        let side = &[(0., 0., 0.), (1., 0., 0.)];
+        let mut cl = make_multi_branch(&[main, side]);
+        cl.cleanup_vtp_data(0.0);
+
+        assert_eq!(
+            cl.branch_start_indices.len(),
+            1,
+            "fully-overlapping branch must be dropped"
+        );
+    }
+
+    #[test]
+    fn test_cleanup_vtp_inlet_trim() {
+        // Main: spacing = 1.0, 6 points → trim first 3 mm → keep from point 3 onwards.
+        let main = &[
+            (0., 0., 0.),
+            (1., 0., 0.),
+            (2., 0., 0.),
+            (3., 0., 0.),
+            (4., 0., 0.),
+            (5., 0., 0.),
+        ];
+        let mut cl = make_multi_branch(&[main]);
+        cl.cleanup_vtp_data(3.0);
+
+        assert_eq!(cl.branch_start_indices.len(), 1);
+        // arc ≤ 3.0 covers points at 0, 1, 2, 3 mm → trim_idx = 3, keep from 3 onwards
+        assert_eq!(cl.points.len(), 3);
+        assert!((cl.points[0].contour_point.x - 3.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_cleanup_vtp_no_overlap_leaves_branch_intact() {
+        let main = &[(0., 0., 0.), (1., 0., 0.), (2., 0., 0.)];
+        // Side branch diverges from the very first point.
+        let side = &[(0., 5., 0.), (0., 6., 0.), (0., 7., 0.)];
+        let mut cl = make_multi_branch(&[main, side]);
+        cl.cleanup_vtp_data(0.0);
+
+        let branches = cl.branches_as_vecs();
+        assert_eq!(branches.len(), 2);
+        assert_eq!(branches[1].len(), 3, "no trimming when no overlap");
     }
 
     #[test]

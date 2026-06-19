@@ -214,6 +214,7 @@ def prepare_centerlines(
     lca_cl: PyCenterline,
     results_dict: dict,
     branch_sigma: float = 2.0,
+    vtp_data: bool = False,
     control_plot: bool = False,
 ) -> tuple[PyCenterline, PyCenterline, dict]:
     """Compute branches, validate, and label both coronary centerlines.
@@ -221,9 +222,17 @@ def prepare_centerlines(
     This is the standard preparation step before :func:`discretize_vessel_tree`.
     It runs the non-interactive part of centerline setup automatically:
 
+    When ``vtp_data=False`` (default):
+
     1. ``rca_cl.calculate_branches(branch_sigma)`` + ``check_centerline()``
     2. ``lca_cl.calculate_branches(branch_sigma)`` + ``check_centerline()``
     3. :func:`~multimodars.label_branches` for RCA, then LCA
+
+    When ``vtp_data=True``, branch detection is skipped because the centerline
+    already carries branch information from the VTP file (populated by
+    :func:`~multimodars.read_centerline_vtp` and cleaned by
+    ``cleanup_vtp_data``).  Only ``check_centerline`` is called to normalise
+    branch ordering.
 
     .. note::
         Manual edits — ``find_sharp_angles``, ``split_branch``,
@@ -234,12 +243,17 @@ def prepare_centerlines(
     Parameters
     ----------
     rca_cl, lca_cl:
-        Raw centerlines as returned by :func:`~multimodars.numpy_to_centerline`
-        or :func:`~multimodars.label_geometry`.
+        Raw centerlines as returned by :func:`~multimodars.numpy_to_centerline`,
+        :func:`~multimodars.label_geometry`, or
+        :func:`~multimodars.read_centerline_vtp`.
     results_dict:
         Dictionary produced by :func:`~multimodars.label_geometry`.
     branch_sigma:
         Smoothing sigma (mm) passed to ``calculate_branches`` for both vessels.
+        Ignored when ``vtp_data=True``.
+    vtp_data:
+        When ``True``, skip ``calculate_branches`` because branch indices are
+        already populated from the VTP file.  Only ``check_centerline`` runs.
     control_plot:
         When ``True``, open an interactive Plotly 3-D visualisation showing
         centerline points coloured by branch ID and the labelled surface-mesh
@@ -256,11 +270,15 @@ def prepare_centerlines(
         Updated dictionary with ``rca_points_main``, ``rca_points_side_N``,
         ``lca_points_main``, and ``lca_points_side_N`` keys added.
     """
-    rca_cl = rca_cl.calculate_branches(branch_sigma)
-    rca_cl = rca_cl.check_centerline()
+    if vtp_data:
+        rca_cl = rca_cl.check_centerline()
+        lca_cl = lca_cl.check_centerline()
+    else:
+        rca_cl = rca_cl.calculate_branches(branch_sigma)
+        rca_cl = rca_cl.check_centerline()
 
-    lca_cl = lca_cl.calculate_branches(branch_sigma)
-    lca_cl = lca_cl.check_centerline()
+        lca_cl = lca_cl.calculate_branches(branch_sigma)
+        lca_cl = lca_cl.check_centerline()
 
     results_dict = _label_branches(rca_cl, results_dict)
     results_dict = _label_branches(lca_cl, results_dict, results_key="lca_points")
