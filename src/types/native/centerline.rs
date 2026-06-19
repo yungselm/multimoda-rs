@@ -730,6 +730,40 @@ mod centerline_tests {
     }
 
     #[test]
+    fn test_cl_find_ref_pt() {
+        let points = vec![
+            ContourPoint {
+                frame_index: 1,
+                point_index: 0,
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 2,
+                point_index: 1,
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+            ContourPoint {
+                frame_index: 3,
+                point_index: 2,
+                x: 2.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            },
+        ];
+        let centerline = Centerline::from_contour_points(points);
+        let ref_pt = (0.0, 0.0, 0.0);
+        let ref_id = centerline.find_reference_cl_point_idx(&ref_pt);
+        assert_eq!(centerline.points[0], centerline.points[ref_id]);
+    }
+
+    #[test]
     fn test_find_sharp_angles_straight() {
         let cl = cl_from_coords(&[
             (0.0, 0.0, 0.0),
@@ -926,39 +960,5 @@ mod centerline_tests {
         let branches = cl.branches_as_vecs();
         assert_eq!(branches.len(), 2);
         assert_eq!(branches[1].len(), 3, "no trimming when no overlap");
-    }
-
-    #[test]
-    fn test_cl_find_ref_pt() {
-        let points = vec![
-            ContourPoint {
-                frame_index: 1,
-                point_index: 0,
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-                aortic: false,
-            },
-            ContourPoint {
-                frame_index: 2,
-                point_index: 1,
-                x: 1.0,
-                y: 0.0,
-                z: 0.0,
-                aortic: false,
-            },
-            ContourPoint {
-                frame_index: 3,
-                point_index: 2,
-                x: 2.0,
-                y: 0.0,
-                z: 0.0,
-                aortic: false,
-            },
-        ];
-        let centerline = Centerline::from_contour_points(points);
-        let ref_pt = (0.0, 0.0, 0.0);
-        let ref_id = centerline.find_reference_cl_point_idx(&ref_pt);
-        assert_eq!(centerline.points[0], centerline.points[ref_id]);
     }
 }
