@@ -1,7 +1,7 @@
 use crate::intravascular::io::output;
-use crate::intravascular::processing::align_between::GeometryPair;
 use crate::types::native::contour::ContourType;
 use crate::types::native::geometry::Geometry;
+use crate::types::native::GeometryPair;
 use std::io::Write;
 use std::path::Path;
 use {super::interpolation::interpolate_contours, super::write_mtl::write_mtl_geometry};

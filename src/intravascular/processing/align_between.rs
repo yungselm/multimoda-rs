@@ -6,7 +6,7 @@ use crate::types::native;
 use crate::types::native::geometry::Geometry;
 use crate::types::native::ContourPoint;
 
-pub use crate::types::native::GeometryPair;
+use crate::types::native::GeometryPair;
 
 pub fn align_between_geometries(
     geom_a: &mut Geometry,

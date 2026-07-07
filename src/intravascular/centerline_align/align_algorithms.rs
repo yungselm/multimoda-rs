@@ -1,9 +1,9 @@
-use crate::intravascular::processing::align_between::GeometryPair;
 use crate::intravascular::processing::process_utils::hausdorff_distance;
 use crate::types::native;
 use crate::types::native::contour::Contour;
 use crate::types::native::geometry::Geometry;
 use crate::types::native::ContourPoint;
+use crate::types::native::GeometryPair;
 use crate::types::native::{Centerline, CenterlinePoint};
 use nalgebra::{Point3, Rotation3, Unit, Vector3};
 

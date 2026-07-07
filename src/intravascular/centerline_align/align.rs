@@ -1,7 +1,7 @@
-use crate::intravascular::processing::align_between::GeometryPair;
 use crate::types::native::contour::{Contour, ContourType};
 use crate::types::native::frame::Frame;
 use crate::types::native::geometry::Geometry;
+use crate::types::native::GeometryPair;
 use crate::types::native::{Centerline, ContourPoint};
 use anyhow::anyhow;
 use nalgebra::{Point3, Rotation3, Unit, Vector3};
