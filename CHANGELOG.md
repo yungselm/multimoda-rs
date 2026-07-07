@@ -3,6 +3,53 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-07-07
+
+### Added
+**VTP centerline reader**
+
+- `read_centerline_vtp(path)`: parses ASCII-format VTK PolyData (`.vtp`) files
+  exported by VMTK and returns a `PyCenterline`.  Branch detection
+  is performed automatically; branch 0 is always the longest.  Available at the
+  top-level `multimodars` namespace.
+
+**`PyCenterline.cleanup_vtp_data(rm_start_mm, smooth, smooth_sigma)`**
+
+- Removes the run-alongside-main-branch prefix that VTP files attach to every
+  side branch, keeping only the true bifurcation junction and the diverged
+  portion.  Branches that overlap branch 0 entirely are dropped.
+- `rm_start_mm` (default `5.0`): arc-length in mm to additionally trim from the
+  start of branch 0 (the aortic inlet region).
+- `smooth` / `smooth_sigma`: optional post-trim per-branch Gaussian smoothing via
+  a symmetric truncated kernel; half-width `smooth_sigma` is in number of points.
+
+**`CenterlinePoint.radius`**
+
+- New `radius: f64` field on `CenterlinePoint` / `PyCenterlinePoint`, populated
+  from the `MaximumInscribedSphereRadius` PointData array in VTP files.
+
+**`prepare_centerlines` - VTP fast path**
+
+- New `vtp_data: bool = False` parameter.  When `True`, `calculate_branches` is
+  skipped (branch indices are already set from the VTP file) and only
+  `check_centerline` runs to normalise ordering.
+
+### Changed
+- `CenterlinePoint.normal` **renamed** to `CenterlinePoint.tangent` (and
+  `PyCenterlinePoint.tangent` / `.pyi` stub updated accordingly).  Any code
+  accessing `.normal` on a centerline point must be updated.
+
+### Fixed
+- `refine_alignment_hausdorff`: when `index_search_range == 0` the function now
+  runs a single angle-search pass at the fixed reference index instead of
+  iterating over an empty delta range.  A latent negative-underflow bug (casting
+  a negative `isize` delta to `usize`) was also fixed with a signed-before-cast
+  guard.
+
+### Internal
+- Moved `InputData` helper struct to the `intravascular::io` module.
+- Removed an unused `geometry` submodule.
+
 ## [0.4.3] - 2026-06-04
 Small refactor based on cargo modules analysis (https://github.com/regexident/cargo-modules)
 
@@ -63,7 +110,7 @@ the style of `label_geometry`'s control plot and working correctly in all enviro
 - `plot_centerline_branches(rca_cl, lca_cl, results_dict)`: shows each centerline branch in a
   distinct colour; optionally overlays the labeled surface-mesh points semi-transparently.
 - `plot_centerline_edges(cl, cos_threshold)`: shows all branches with red dots at positions
-  flagged by `find_sharp_angles` — useful for deciding where to call `split_branch`.
+  flagged by `find_sharp_angles` - useful for deciding where to call `split_branch`.
 - `plot_sharp_angles(cl, branch_id, sharp_positions, context_pts)`: shows the full centerline
   dimmed in gray with each flagged position and its neighbours highlighted in a distinct colour.
 - `plot_results_key`, `compare_centerline_scaling`: migrated from Plotly to trimesh.
@@ -89,7 +136,7 @@ documentation (`tutorial_intravascular.rst`), and the CCTA notebook.
   `(main_ref, counterclockwise_ref, clockwise_ref)` matching the new parameter order.
 - `PyCenterline` struct gains a new read-only field `branch_start_indices : list[int]`
   (index into `points` where each branch begins; `branch_start_indices[0]` is always 0).
-  The constructor signature is unchanged — `PyCenterline(points=[...])` populates the field
+  The constructor signature is unchanged - `PyCenterline(points=[...])` populates the field
   automatically.  **Note:** objects pickled with 0.3.x cannot be unpickled under 0.4.x.
 - CCTA tutorial (`docs/tutorial_ccta.rst`) updated with new section 2 covering
   `prepare_centerlines`, sharp-angle inspection/correction, and `discretize_vessel_tree`.
@@ -150,7 +197,7 @@ documentation (`tutorial_intravascular.rst`), and the CCTA notebook.
 
 ### Added
 - Example data and Jupyter notebooks are now included directly in the repository under
-  `examples/` — no longer distributed as a release attachment. Both tutorials link to
+  `examples/` - no longer distributed as a release attachment. Both tutorials link to
   the `examples/` directory and cross-reference the rendered notebook pages.
 - CCTA and intravascular Jupyter notebooks (`docs/notebooks/`) are now rendered and served
   in the documentation via `myst-nb`, accessible as `:doc:` references from the tutorials.
