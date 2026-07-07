@@ -51,6 +51,8 @@ impl InputData {
         diastole: bool,
         label: &str,
     ) -> anyhow::Result<InputData> {
+        const RECORD_FILE_NAME: &str = "combined_sorted_manual.csv";
+
         let path = path.as_ref();
         let label_string = label.to_string();
 
@@ -89,52 +91,22 @@ impl InputData {
                 "" | "lumen" => {}
 
                 "branch" | "sidebranch" => {
-                    let fname = format!("{}_{}_contours.csv", "branch", phase);
-                    let p = path.join(&fname);
-                    if p.exists() {
-                        sidebranch = Some(
-                            read_contour_data(&p)
-                                .with_context(|| format!("reading {}", p.display()))?,
-                        );
-                    } else {
-                        eprintln!("sidebranch file not found, skipping: {p:?}");
-                    }
+                    sidebranch = read_optional_contour_file(path, "branch", phase, "sidebranch")?;
                 }
 
                 "calcium" | "calcification" => {
-                    let fname = format!("{}_{}_contours.csv", "calcium", phase);
-                    let p = path.join(&fname);
-                    if p.exists() {
-                        calcification = Some(
-                            read_contour_data(&p)
-                                .with_context(|| format!("reading {}", p.display()))?,
-                        );
-                    } else {
-                        eprintln!("calcification file not found, skipping: {p:?}");
-                    }
+                    calcification =
+                        read_optional_contour_file(path, "calcium", phase, "calcification")?;
                 }
 
                 "eem" | "e_e_m" => {
-                    let fname = format!("{}_{}_contours.csv", "eem", phase);
-                    let p = path.join(&fname);
-                    if p.exists() {
-                        eem = Some(
-                            read_contour_data(&p)
-                                .with_context(|| format!("reading {}", p.display()))?,
-                        );
-                    } else {
-                        eprintln!("eem file not found, skipping: {p:?}");
-                    }
+                    eem = read_optional_contour_file(path, "eem", phase, "eem")?;
                 }
 
                 "records" | "record" | "phases" => {
-                    let fname = "combined_sorted_manual.csv";
-                    let p = path.join(fname);
-                    if p.exists() {
-                        record = Some(
-                            read_records(&p).with_context(|| format!("reading {}", p.display()))?,
-                        );
-                    } else {
+                    let p = path.join(RECORD_FILE_NAME);
+                    record = read_optional_records(&p)?;
+                    if record.is_none() {
                         eprintln!("records file not found, skipping: {p:?}");
                     }
                 }
@@ -145,14 +117,8 @@ impl InputData {
             }
         }
 
-        const RECORD_FILE_NAME: &str = "combined_sorted_manual.csv";
         if record.is_none() {
-            let maybe_records = path.join(RECORD_FILE_NAME);
-            if maybe_records.exists() {
-                record = Some(read_records(&maybe_records).with_context(|| {
-                    format!("reading optional records file {}", maybe_records.display())
-                })?);
-            }
+            record = read_optional_records(&path.join(RECORD_FILE_NAME))?;
         }
 
         Ok(InputData {
@@ -215,6 +181,23 @@ pub fn read_contour_data<P: AsRef<Path> + std::fmt::Debug + Clone>(
     Ok(points)
 }
 
+/// Read an optional `{prefix}_{phase}_contours.csv` file, warning and returning
+/// `None` (rather than erroring) if it is missing.
+fn read_optional_contour_file(
+    dir: &Path,
+    prefix: &str,
+    phase: &str,
+    label: &str,
+) -> anyhow::Result<Option<Vec<ContourPoint>>> {
+    let p = dir.join(format!("{prefix}_{phase}_contours.csv"));
+    if !p.exists() {
+        eprintln!("{label} file not found, skipping: {p:?}");
+        return Ok(None);
+    }
+    let points = read_contour_data(&p).with_context(|| format!("reading {}", p.display()))?;
+    Ok(Some(points))
+}
+
 pub fn read_reference_point<P: AsRef<Path>>(path: P) -> Result<ContourPoint> {
     let delim = detect_delimiter(&path)?;
     let file = File::open(&path)
@@ -251,6 +234,14 @@ pub fn read_records<P: AsRef<Path>>(path: P) -> anyhow::Result<Vec<Record>> {
         records.push(record);
     }
     Ok(records)
+}
+
+fn read_optional_records(path: &Path) -> anyhow::Result<Option<Vec<Record>>> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    let records = read_records(path).with_context(|| format!("reading {}", path.display()))?;
+    Ok(Some(records))
 }
 
 pub fn read_centerline_vtp<P: AsRef<Path>>(path: P) -> anyhow::Result<Centerline> {
