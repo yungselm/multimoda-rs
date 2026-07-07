@@ -81,8 +81,8 @@ To address this limitation, a ray-casting algorithm is employed. A ray is cast f
 *Left:* 3D visualization of all cast rays. *Right:* schematic diagram of the occlusion-detection step.
 
 As a final clean-up, any RCA or LCA vertex whose immediate mesh neighbours carry no
-same-label assignment — an island vertex disconnected from all other coronary-labeled
-vertices — is reclassified as aortic. This adjacency-based elimination ensures that
+same-label assignment - an island vertex disconnected from all other coronary-labeled
+vertices - is reclassified as aortic. This adjacency-based elimination ensures that
 the returned ``rca_points`` and ``lca_points`` sets form topologically connected regions
 on the mesh surface.
 
@@ -109,17 +109,18 @@ on the mesh surface.
 
 The returned ``results`` dictionary contains:
 
-- ``"mesh"`` — the CCTA geometry as a ``trimesh.Trimesh`` object.
-- ``"aorta_points"`` — vertices labeled as aorta: ``[(x, y, z), ...]``.
-- ``"rca_points"`` — vertices labeled as RCA: ``[(x, y, z), ...]``.
-- ``"lca_points"`` — vertices labeled as LCA: ``[(x, y, z), ...]``.
-- ``"rca_removed_points"`` — RCA vertices inside the intramural course that were removed from
+- ``"mesh"`` - the CCTA geometry as a ``trimesh.Trimesh`` object.
+- ``"aorta_points"`` - vertices labeled as aorta: ``[(x, y, z), ...]``.
+- ``"rca_points"`` - vertices labeled as RCA: ``[(x, y, z), ...]``.
+- ``"lca_points"`` - vertices labeled as LCA: ``[(x, y, z), ...]``.
+- ``"rca_removed_points"`` - RCA vertices inside the intramural course that were removed from
   the RCA label: ``[(x, y, z), ...]``.
-- ``"lca_removed_points"`` — same for LCA.
+- ``"lca_removed_points"`` - same for LCA.
 
-The centerline CSV files must contain three columns (no header): ``x``, ``y``, ``z`` in mm.
-They can be converted to :class:`multimodars.PyCenterline` objects with normals using
-:func:`multimodars.numpy_to_centerline`:
+Centerlines can be supplied in two formats.
+
+**CSV files** - three columns (no header): ``x``, ``y``, ``z`` in mm.  Convert to
+:class:`~multimodars.PyCenterline` with :func:`multimodars.numpy_to_centerline`:
 
 .. code-block:: python
 
@@ -133,6 +134,20 @@ They can be converted to :class:`multimodars.PyCenterline` objects with normals 
     lca_cl   = mm.numpy_to_centerline(lca_cl_raw)
     aorta_cl = mm.numpy_to_centerline(aorta_cl_raw)
 
+**VTP files** (recommended) - ASCII VTK PolyData exported by 3D-Slicer or VMTK.
+:func:`multimodars.read_centerline_vtp` parses the file and identifies branches automatically.
+:meth:`~multimodars.PyCenterline.cleanup_vtp_data` then removes the run-alongside-main-branch
+prefix that VTP files attach to every side branch and optionally smooths the result:
+
+.. code-block:: python
+
+    rca_cl   = mm.read_centerline_vtp("data/rca_cl.vtp").cleanup_vtp_data(smooth=True)
+    lca_cl   = mm.read_centerline_vtp("data/lca_cl.vtp").cleanup_vtp_data(smooth=True)
+    aorta_cl = mm.read_centerline_vtp("data/ao_cl.vtp").cleanup_vtp_data(smooth=True)
+
+When using VTP files, pass the :class:`~multimodars.PyCenterline` objects directly to
+``path_centerline_*`` (instead of file-path strings).
+
 2. Prepare centerlines, detect branches, and discretize the vessel tree
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -143,6 +158,8 @@ on each centerline, then calls :func:`multimodars.label_branches` so the ``resul
 gains keys ``rca_points_main``, ``rca_points_side_1``, …, ``lca_points_main``,
 ``lca_points_side_1``, …:
 
+**CSV path** - run full branch detection from scratch:
+
 .. code-block:: python
 
     rca_cl, lca_cl, results = mm.prepare_centerlines(
@@ -151,10 +168,21 @@ gains keys ``rca_points_main``, ``rca_points_side_1``, …, ``lca_points_main``,
         control_plot=False,   # True opens a trimesh scene of the branch assignment
     )
 
+**VTP path** - branch indices are already set; only ordering is normalised:
+
+.. code-block:: python
+
+    rca_cl, lca_cl, results = mm.prepare_centerlines(
+        rca_cl, lca_cl, results, vtp_data=True
+    )
+
 **Parameter reference:**
 
 - ``branch_sigma``: Gaussian smoothing radius (mm) applied during branch detection.  Increase
   if the algorithm over-segments a noisy centerline; decrease to preserve fine anatomical detail.
+  Ignored when ``vtp_data=True``.
+- ``vtp_data``: when ``True``, skip ``calculate_branches`` (branch indices are already populated
+  from the VTP file) and only run ``check_centerline`` to normalise branch ordering.
 - ``control_plot``: opens an interactive trimesh scene coloured by branch ID and showing the
   labelled surface points, so you can verify the assignment before discretizing.
 
@@ -181,7 +209,7 @@ re-label. After splitting and merging it is assured that the longest centerline 
 
 .. code-block:: python
 
-    # Example: the 5th flagged position creates a loop — split there, then re-merge
+    # Example: the 5th flagged position creates a loop - split there, then re-merge
     lca_cl = lca_cl.split_branch(0, positions[4])
     lca_cl = lca_cl.merge_branches(0, 4)
     lca_cl = lca_cl.check_centerline()
@@ -241,10 +269,10 @@ used to initialize the three-point alignment in step 3:
 
 The discretized tree exposes the following attributes:
 
-- ``tree.discretized_aorta`` — list of :class:`~multimodars.PyContour` for the aorta.
-- ``tree.discretized_rca_main`` / ``tree.discretized_lca_main`` — main-vessel contours.
-- ``tree.rca_branches`` / ``tree.lca_branches`` — list of lists, one per side branch.
-- ``tree.rca_references`` / ``tree.lca_references`` — list of ``(main_ref, ccw_ref, cw_ref)``
+- ``tree.discretized_aorta`` - list of :class:`~multimodars.PyContour` for the aorta.
+- ``tree.discretized_rca_main`` / ``tree.discretized_lca_main`` - main-vessel contours.
+- ``tree.rca_branches`` / ``tree.lca_branches`` - list of lists, one per side branch.
+- ``tree.rca_references`` / ``tree.lca_references`` - list of ``(main_ref, ccw_ref, cw_ref)``
   triplets, one per bifurcation site.
 
 3. Load and align intravascular geometry
@@ -299,7 +327,7 @@ RCA ostium is available directly from the discretized tree:
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 After alignment, :func:`multimodars.label_anomalous_region` subdivides the RCA points into
-three sub-regions — proximal, anomalous (intramural), and distal — based on the spatial
+three sub-regions - proximal, anomalous (intramural), and distal - based on the spatial
 overlap between the aligned intravascular frames and the CCTA mesh:
 
 .. code-block:: python
@@ -314,12 +342,12 @@ overlap between the aligned intravascular frames and the CCTA mesh:
 
 The ``results`` dictionary is extended with:
 
-- ``"proximal_points"`` — RCA vertices proximal to the anomalous segment.
-- ``"anomalous_points"`` — RCA vertices inside the intramural segment.
-- ``"distal_points"`` — RCA vertices distal to the anomalous segment.
+- ``"proximal_points"`` - RCA vertices proximal to the anomalous segment.
+- ``"anomalous_points"`` - RCA vertices inside the intramural segment.
+- ``"distal_points"`` - RCA vertices distal to the anomalous segment.
 
 Set ``debug_plot=True`` to open an interactive scene that shows how the three sub-regions
-are assigned — useful when the boundary appears misplaced.
+are assigned - useful when the boundary appears misplaced.
 
 .. image:: ./figures/anomalous_labeling.jpg
    :alt: Example anomalous labeling figure
@@ -371,7 +399,7 @@ Aortic wall scaling
 
 For anomalous coronary arteries, an additional scaling factor targets the aortic *wall*
 vertices (``"rca_removed_points"`` region) and aligns them with the first intravascular
-frame whose lumen elliptic ratio drops below 1.3 — the transition from compressed intramural
+frame whose lumen elliptic ratio drops below 1.3 - the transition from compressed intramural
 to round free-segment lumen:
 
 .. code-block:: python
@@ -488,9 +516,9 @@ geometry with a triangulated patch:
 - ``prox_start_mode`` / ``dist_start_mode``: controls which vertex is chosen as index 0 of
   the boundary ring before the rings are paired for stitching.
 
-  * ``"nearest_iv"`` (default) — rotate to the boundary vertex closest to intravascular
+  * ``"nearest_iv"`` (default) - rotate to the boundary vertex closest to intravascular
     point 0.  Works well when the two point sets share a consistent anatomical orientation.
-  * ``"highest_z"`` — rotate to the boundary vertex with the largest z-coordinate.  Prefer
+  * ``"highest_z"`` - rotate to the boundary vertex with the largest z-coordinate.  Prefer
     this when the pullback axis is nearly aligned with the image z-axis, as is common for
     straight intramural segments.
 
@@ -502,8 +530,8 @@ geometry with a triangulated patch:
 
 The return value is a new ``results``-like dictionary that additionally contains:
 
-- ``"prox_boundary_points"`` — the ordered proximal boundary ring used for stitching.
-- ``"dist_boundary_points"`` — the ordered distal boundary ring.
+- ``"prox_boundary_points"`` - the ordered proximal boundary ring used for stitching.
+- ``"dist_boundary_points"`` - the ordered distal boundary ring.
 
 Export the raw stitched mesh before remeshing to allow inspection:
 
@@ -566,13 +594,13 @@ Pass ``True`` for each region you want to highlight:
 
 Colour coding:
 
-- **Yellow** — aortic points
-- **Blue** — RCA coronary points
-- **Green** — LCA coronary points
-- **Red** — removed / intramural points
-- **Cyan** — proximal points
-- **Magenta** — distal points
-- **Orange** — anomalous points
+- **Yellow** - aortic points
+- **Blue** - RCA coronary points
+- **Green** - LCA coronary points
+- **Red** - removed / intramural points
+- **Cyan** - proximal points
+- **Magenta** - distal points
+- **Orange** - anomalous points
 
 To inspect the stitching seam directly, overlay the proximal boundary ring with the
 intravascular contour in a trimesh scene.  The following snippet colours the boundary ring
