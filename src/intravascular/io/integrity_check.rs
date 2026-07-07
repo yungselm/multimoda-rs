@@ -1,8 +1,8 @@
 use anyhow::{anyhow, Result};
 use std::collections::HashSet;
 
-use super::input::ContourPoint;
 use crate::types::native::contour::ContourType;
+use crate::types::native::contour_point::ContourPoint;
 use crate::types::native::geometry::Geometry;
 
 pub fn check_geometry_integrity(geometry: &Geometry) -> Result<()> {

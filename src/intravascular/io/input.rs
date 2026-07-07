@@ -1,15 +1,13 @@
+use crate::types::native::centerline::Centerline;
 use crate::types::native::contour::ContourType;
+use crate::types::native::contour_point::ContourPoint;
+use crate::types::native::record::Record;
 use anyhow::{anyhow, Context, Result};
 use csv::ReaderBuilder;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-
-// Re-export types that downstream modules import from here.
-pub use crate::types::native::centerline::Centerline;
-pub use crate::types::native::contour_point::ContourPoint;
-pub use crate::types::native::record::Record;
 
 /// Raw intravascular imaging input for one cardiac phase, loaded from a measurement directory.
 #[derive(Debug, Clone)]
