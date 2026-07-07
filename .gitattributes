@@ -7,3 +7,6 @@
 # Exclude documentation files
 *.md linguist-documentation=true
 *.rst linguist-documentation=true
+
+# Exclude .vtp files
+*.vtp linguist-generated=true
