@@ -2,10 +2,10 @@ use anyhow::Context;
 
 use super::align_between::GeometryPair;
 use super::wall;
-use crate::intravascular::io::input::ContourPoint;
 use crate::types::native::contour::{Contour, ContourType};
 use crate::types::native::frame::Frame;
 use crate::types::native::geometry::Geometry;
+use crate::types::native::ContourPoint;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 

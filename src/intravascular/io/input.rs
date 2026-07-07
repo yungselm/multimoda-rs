@@ -8,7 +8,6 @@ use std::path::Path;
 
 // Re-export types that downstream modules import from here.
 pub use crate::types::native::centerline::Centerline;
-pub use crate::types::native::centerline_point::CenterlinePoint;
 pub use crate::types::native::contour_point::ContourPoint;
 pub use crate::types::native::record::Record;
 

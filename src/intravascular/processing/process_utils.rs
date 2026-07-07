@@ -1,6 +1,6 @@
-use crate::intravascular::io::input::ContourPoint;
 use crate::types::native::contour::{Contour, ContourType};
 use crate::types::native::geometry::Geometry;
+use crate::types::native::ContourPoint;
 use rayon::prelude::*;
 use std::f64::consts::PI;
 

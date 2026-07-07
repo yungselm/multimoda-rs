@@ -1,10 +1,10 @@
 use anyhow::Result;
 use rayon::prelude::*;
 
-use crate::intravascular::io::input::ContourPoint;
 use crate::intravascular::processing::process_utils::{hausdorff_distance, search_range};
 use crate::types::native;
 use crate::types::native::geometry::Geometry;
+use crate::types::native::ContourPoint;
 
 pub use crate::types::native::GeometryPair;
 

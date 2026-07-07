@@ -1,7 +1,7 @@
-use crate::intravascular::io::input::ContourPoint;
 use crate::types::native::contour::{Contour, ContourType};
 use crate::types::native::frame::Frame;
 use crate::types::native::geometry::Geometry;
+use crate::types::native::ContourPoint;
 use crate::types::native::Transform;
 use std::collections::HashMap;
 

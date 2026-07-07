@@ -3,12 +3,12 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::sync::{Arc, Mutex};
 
 use super::wall;
-use crate::intravascular::io::input::ContourPoint;
 use crate::intravascular::processing::process_utils::{hausdorff_distance, search_range};
 use crate::types::native;
 use crate::types::native::contour::{Contour, ContourType};
 use crate::types::native::frame::Frame;
 use crate::types::native::geometry::Geometry;
+use crate::types::native::ContourPoint;
 use crate::types::native::Transform;
 
 #[derive(Debug)]
