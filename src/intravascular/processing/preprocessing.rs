@@ -2,8 +2,8 @@ use anyhow::Context;
 use std::path::Path;
 
 use crate::intravascular::io;
-use crate::intravascular::io::geometry::Geometry;
 use crate::intravascular::io::input::InputData;
+use crate::types::native::geometry::Geometry;
 
 #[derive(Debug, Clone, Copy)]
 pub enum ProcessingOptions {
@@ -204,7 +204,8 @@ pub fn prepare_n_geometries(
 
 #[cfg(test)]
 mod preprocessing_tests {
-    use crate::intravascular::io::input::{ContourPoint, InputData};
+    use crate::intravascular::io::input::InputData;
+    use crate::types::native::ContourPoint;
     use anyhow::Ok;
 
     use super::*;

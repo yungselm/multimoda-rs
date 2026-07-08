@@ -5,14 +5,14 @@ use pyo3::prelude::*;
 
 /// Python representation of a centerline point.
 ///
-/// Combines a contour point with its local normal vector.
+/// Combines a contour point with its local tangent vector.
 ///
 /// Attributes
 /// ----------
 /// contour_point : PyContourPoint
 ///     Position of the centerline point in 3D space.
-/// normal : tuple of float
-///     Normal vector ``(nx, ny, nz)`` at this centerline position.
+/// tangent : tuple of float
+///     Tangent vector ``(tx, ty, tz)`` at this centerline position.
 /// branch_id : int
 ///     Branch identifier.  ``0`` = main vessel; ``1+`` = side branches
 ///     ordered by descending length.
@@ -21,7 +21,7 @@ use pyo3::prelude::*;
 /// --------
 /// >>> cl_point = PyCenterlinePoint(
 /// ...     contour_point=point,
-/// ...     normal=(0.0, 1.0, 0.0)
+/// ...     tangent=(0.0, 1.0, 0.0)
 /// ... )
 #[pyclass(from_py_object)]
 #[derive(Debug, Clone)]
@@ -29,31 +29,35 @@ pub struct PyCenterlinePoint {
     #[pyo3(get, set)]
     pub contour_point: PyContourPoint,
     #[pyo3(get, set)]
-    pub normal: (f64, f64, f64),
+    pub tangent: (f64, f64, f64),
     #[pyo3(get, set)]
     pub branch_id: u32,
+    #[pyo3(get, set)]
+    pub radius: f64,
 }
 
 #[pymethods]
 impl PyCenterlinePoint {
     #[new]
-    #[pyo3(signature = (contour_point, normal, branch_id = 0))]
-    fn new(contour_point: PyContourPoint, normal: (f64, f64, f64), branch_id: u32) -> Self {
+    #[pyo3(signature = (contour_point, tangent, branch_id = 0))]
+    fn new(contour_point: PyContourPoint, tangent: (f64, f64, f64), branch_id: u32) -> Self {
         Self {
             contour_point,
-            normal,
+            tangent,
             branch_id,
+            radius: 0.0,
         }
     }
 
     fn __repr__(&self) -> String {
         format!(
-            "CenterlinePoint(point={}, normal=({:.3}, {:.3}, {:.3}), branch={})",
+            "CenterlinePoint(point={}, tangent=({:.3}, {:.3}, {:.3}), branch={}, radius={:.3})",
             self.contour_point.__repr__(),
-            self.normal.0,
-            self.normal.1,
-            self.normal.2,
+            self.tangent.0,
+            self.tangent.1,
+            self.tangent.2,
             self.branch_id,
+            self.radius
         )
     }
 
@@ -66,8 +70,9 @@ impl From<&CenterlinePoint> for PyCenterlinePoint {
     fn from(p: &CenterlinePoint) -> Self {
         PyCenterlinePoint {
             contour_point: PyContourPoint::from(&p.contour_point),
-            normal: (p.normal[0], p.normal[1], p.normal[2]),
+            tangent: (p.tangent[0], p.tangent[1], p.tangent[2]),
             branch_id: p.branch_id,
+            radius: p.radius,
         }
     }
 }
@@ -76,8 +81,9 @@ impl From<&PyCenterlinePoint> for CenterlinePoint {
     fn from(p: &PyCenterlinePoint) -> Self {
         CenterlinePoint {
             contour_point: ContourPoint::from(&p.contour_point),
-            normal: Vector3::new(p.normal.0, p.normal.1, p.normal.2),
+            tangent: Vector3::new(p.tangent.0, p.tangent.1, p.tangent.2),
             branch_id: p.branch_id,
+            radius: p.radius,
         }
     }
 }

@@ -1,7 +1,7 @@
 use nalgebra::Vector3;
 
-use crate::intravascular::io::geometry::Geometry;
-use crate::intravascular::io::input::{Centerline, CenterlinePoint, ContourPoint};
+use crate::types::native::geometry::Geometry;
+use crate::types::native::{Centerline, CenterlinePoint, ContourPoint};
 
 /// Resample `centerline` along its arc-length so that adjacent points are spaced at the
 /// mean Euclidean distance between consecutive contour centroids in `ref_mesh`.
@@ -169,7 +169,8 @@ fn interpolate_centerline_at_s(
     // if at the very end, return last point
     if idx >= centerline.points.len().saturating_sub(1) {
         let last_pt = &centerline.points.last().unwrap().contour_point;
-        let normal = centerline.points.last().unwrap().normal;
+        let tangent = centerline.points.last().unwrap().tangent;
+        let radius = centerline.points.last().unwrap().radius;
         return CenterlinePoint {
             contour_point: ContourPoint {
                 frame_index: sample_index as u32,
@@ -179,8 +180,9 @@ fn interpolate_centerline_at_s(
                 z: last_pt.z,
                 aortic: false,
             },
-            normal,
+            tangent,
             branch_id: 0,
+            radius,
         };
     }
 
@@ -200,19 +202,23 @@ fn interpolate_centerline_at_s(
     let y = p0.y + t * (p1.y - p0.y);
     let z = p0.z + t * (p1.z - p0.z);
 
-    // interpolate normal if available, else zeros
-    let n0 = centerline.points[idx].normal;
-    let n1 = centerline.points[idx + 1].normal;
-    let mut normal = Vector3::zeros();
-    if n0.norm() > 0.0 || n1.norm() > 0.0 {
-        normal = n0 * (1.0 - t) + n1 * t;
-        let n_norm = normal.norm();
-        if n_norm > 1e-12 {
-            normal /= n_norm;
+    // interpolate tangent if available, else zeros
+    let t0 = centerline.points[idx].tangent;
+    let t1 = centerline.points[idx + 1].tangent;
+    let mut tangent = Vector3::zeros();
+    if t0.norm() > 0.0 || t1.norm() > 0.0 {
+        tangent = t0 * (1.0 - t) + t1 * t;
+        let t_norm = tangent.norm();
+        if t_norm > 1e-12 {
+            tangent /= t_norm;
         } else {
-            normal = Vector3::zeros();
+            tangent = Vector3::zeros();
         }
     }
+
+    let radius0 = centerline.points[idx].radius;
+    let radius1 = centerline.points[idx + 1].radius;
+    let radius = radius0 * (1.0 - t) + radius1 * t;
 
     CenterlinePoint {
         contour_point: ContourPoint {
@@ -223,8 +229,9 @@ fn interpolate_centerline_at_s(
             z,
             aortic: false,
         },
-        normal,
+        tangent,
         branch_id: 0,
+        radius,
     }
 }
 
@@ -269,7 +276,7 @@ fn calculate_mean_spacing(ref_mesh: &Geometry) -> (Vec<(f64, f64, f64)>, Option<
 #[cfg(test)]
 mod cl_preprocessing_tests {
     use super::*;
-    use crate::intravascular::io::input::ContourPoint;
+    use crate::types::native::ContourPoint;
     use approx::assert_relative_eq;
 
     #[test]
@@ -285,8 +292,9 @@ mod cl_preprocessing_tests {
                         z: 1.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(0.0, 0.0, -1.0),
+                    tangent: Vector3::new(0.0, 0.0, -1.0),
                     branch_id: 0,
+                    radius: 0.0,
                 },
                 CenterlinePoint {
                     contour_point: ContourPoint {
@@ -297,8 +305,9 @@ mod cl_preprocessing_tests {
                         z: 0.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(0.0, 0.0, -1.0),
+                    tangent: Vector3::new(0.0, 0.0, -1.0),
                     branch_id: 0,
+                    radius: 0.0,
                 },
             ],
             branch_start_indices: vec![0],
@@ -318,8 +327,9 @@ mod cl_preprocessing_tests {
                         z: 0.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(0.0, 0.0, -1.0),
+                    tangent: Vector3::new(0.0, 0.0, -1.0),
                     branch_id: 0,
+                    radius: 0.0,
                 },
                 CenterlinePoint {
                     contour_point: ContourPoint {
@@ -330,8 +340,9 @@ mod cl_preprocessing_tests {
                         z: 1.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(0.0, 0.0, -1.0),
+                    tangent: Vector3::new(0.0, 0.0, -1.0),
                     branch_id: 0,
+                    radius: 0.0,
                 },
             ],
             branch_start_indices: vec![0],
@@ -343,8 +354,10 @@ mod cl_preprocessing_tests {
 
     #[test]
     fn test_calculate_mean_spacing() {
-        use crate::intravascular::io::geometry::{Contour, ContourType, Frame, Geometry};
-        use crate::intravascular::io::input::ContourPoint;
+        use crate::types::native::contour::{Contour, ContourType};
+        use crate::types::native::frame::Frame;
+        use crate::types::native::geometry::Geometry;
+        use crate::types::native::ContourPoint;
         use std::collections::HashMap;
 
         // Case 1: multiple frames → valid mean spacing
@@ -454,8 +467,9 @@ mod cl_preprocessing_tests {
                         z: 0.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    tangent: Vector3::new(0.0, 0.0, 1.0),
                     branch_id: 0,
+                    radius: 0.0,
                 },
                 CenterlinePoint {
                     contour_point: ContourPoint {
@@ -466,8 +480,9 @@ mod cl_preprocessing_tests {
                         z: 1.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    tangent: Vector3::new(0.0, 0.0, 1.0),
                     branch_id: 0,
+                    radius: 0.0,
                 },
                 CenterlinePoint {
                     contour_point: ContourPoint {
@@ -478,8 +493,9 @@ mod cl_preprocessing_tests {
                         z: 2.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    tangent: Vector3::new(0.0, 0.0, 1.0),
                     branch_id: 0,
+                    radius: 0.0,
                 },
                 CenterlinePoint {
                     contour_point: ContourPoint {
@@ -490,8 +506,9 @@ mod cl_preprocessing_tests {
                         z: 3.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    tangent: Vector3::new(0.0, 0.0, 1.0),
                     branch_id: 0,
+                    radius: 0.0,
                 },
             ],
             branch_start_indices: vec![0],
@@ -520,8 +537,9 @@ mod cl_preprocessing_tests {
                         z: 0.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    tangent: Vector3::new(0.0, 0.0, 1.0),
                     branch_id: 0,
+                    radius: 0.0,
                 },
                 CenterlinePoint {
                     contour_point: ContourPoint {
@@ -532,8 +550,9 @@ mod cl_preprocessing_tests {
                         z: 1.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    tangent: Vector3::new(0.0, 0.0, 1.0),
                     branch_id: 0,
+                    radius: 0.0,
                 },
                 CenterlinePoint {
                     contour_point: ContourPoint {
@@ -544,8 +563,9 @@ mod cl_preprocessing_tests {
                         z: 2.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    tangent: Vector3::new(0.0, 0.0, 1.0),
                     branch_id: 0,
+                    radius: 0.0,
                 },
                 CenterlinePoint {
                     contour_point: ContourPoint {
@@ -556,8 +576,9 @@ mod cl_preprocessing_tests {
                         z: 3.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    tangent: Vector3::new(0.0, 0.0, 1.0),
                     branch_id: 0,
+                    radius: 0.0,
                 },
             ],
             branch_start_indices: vec![0],
@@ -570,7 +591,9 @@ mod cl_preprocessing_tests {
         // interpolate at s = 1.5 (should be z = 1.5)
         let pt = interpolate_centerline_at_s(&cl, &cum, 1.5, 0);
         assert_relative_eq!(pt.contour_point.z, 1.5, epsilon = 1e-12);
-        // normal should be normalized and in z direction
-        assert_relative_eq!(pt.normal.z, 1.0, epsilon = 1e-12);
+        // tangent should be normalized and in z direction
+        assert_relative_eq!(pt.tangent.z, 1.0, epsilon = 1e-12);
+        // radius should be 0.0
+        assert_relative_eq!(pt.radius, 0.0, epsilon = 1e-12);
     }
 }

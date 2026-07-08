@@ -1,9 +1,10 @@
-use crate::intravascular::io::geometry::{Contour, Geometry};
-use crate::intravascular::io::input::ContourPoint;
-use crate::intravascular::io::input::{Centerline, CenterlinePoint};
-use crate::intravascular::processing::align_between::GeometryPair;
 use crate::intravascular::processing::process_utils::hausdorff_distance;
 use crate::types::native;
+use crate::types::native::contour::Contour;
+use crate::types::native::geometry::Geometry;
+use crate::types::native::ContourPoint;
+use crate::types::native::GeometryPair;
+use crate::types::native::{Centerline, CenterlinePoint};
 use nalgebra::{Point3, Rotation3, Unit, Vector3};
 
 /// Allows alignment algorithms to operate on either a single [`Geometry`] or a [`GeometryPair`].
@@ -142,7 +143,7 @@ fn align_frame(frame: &Contour, cl_point: &CenterlinePoint) -> FrameTransformati
 
     // === Rotation Step ===
     let current_normal = calculate_normal(&frame.points, &centroid);
-    let desired_normal = cl_point.normal;
+    let desired_normal = cl_point.tangent;
     let angle = current_normal.angle(&desired_normal);
     let rotation: Rotation3<f64> = if angle.abs() < 1e-6 {
         Rotation3::identity()
@@ -358,8 +359,19 @@ pub fn refine_alignment_hausdorff<T: AlignTarget>(
         initial_cl_ref_idx
     );
 
-    for delta_idx in -(index_search_range as isize)..=(index_search_range as isize) {
-        let current_cl_ref_idx = (initial_cl_ref_idx as isize + delta_idx) as usize;
+    // When index_search_range == 0 only test the initial index; no loop over candidates needed.
+    let delta_range = if index_search_range == 0 {
+        0isize..=0isize
+    } else {
+        -(index_search_range as isize)..=(index_search_range as isize)
+    };
+
+    for delta_idx in delta_range {
+        let signed = initial_cl_ref_idx as isize + delta_idx;
+        if signed < 0 {
+            continue;
+        }
+        let current_cl_ref_idx = signed as usize;
 
         if current_cl_ref_idx + len_frames >= centerline.points.len() {
             continue;
@@ -525,7 +537,9 @@ fn apply_transforms_to_geometry(geometry: &mut Geometry, transformations: &[Fram
 #[cfg(test)]
 mod align_algorithms_tests {
     use super::*;
-    use crate::intravascular::io::geometry::{ContourType, Frame, Geometry};
+    use crate::types::native::contour::ContourType;
+    use crate::types::native::frame::Frame;
+    use crate::types::native::geometry::Geometry;
     use std::collections::HashMap;
 
     fn create_test_contour(id: u32, original_frame: u32, points: Vec<ContourPoint>) -> Contour {
@@ -550,8 +564,9 @@ mod align_algorithms_tests {
                 z,
                 aortic: false,
             },
-            normal: Vector3::new(0.0, 0.0, 1.0), // Default normal pointing up
+            tangent: Vector3::new(0.0, 0.0, 1.0), // Default tangent pointing up
             branch_id: 0,
+            radius: 0.0,
         }
     }
 

@@ -1,7 +1,8 @@
 use std::ops::RangeInclusive;
 
-use crate::intravascular::io::geometry::{Contour, ContourType, Frame};
-use crate::intravascular::io::input::ContourPoint;
+use crate::types::native::contour::{Contour, ContourType};
+use crate::types::native::frame::Frame;
+use crate::types::native::ContourPoint;
 
 pub fn create_wall_frames(frames: &[Frame], anomalous: bool, with_pulmonary: bool) -> Vec<Frame> {
     let mut new_frames = Vec::new();

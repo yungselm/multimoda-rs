@@ -1,5 +1,8 @@
-use super::geometry::{Contour, ContourType, Frame, Geometry};
-use super::input::{ContourPoint, InputData};
+use super::input::InputData;
+use crate::types::native::contour::{Contour, ContourType};
+use crate::types::native::contour_point::ContourPoint;
+use crate::types::native::frame::Frame;
+use crate::types::native::geometry::Geometry;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 

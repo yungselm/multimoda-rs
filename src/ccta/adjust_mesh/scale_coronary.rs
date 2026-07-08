@@ -435,8 +435,9 @@ mod tests {
                         z: 0.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(1.0, 0.0, 0.0),
+                    tangent: Vector3::new(1.0, 0.0, 0.0),
                     branch_id: 0,
+                    radius: 0.0,
                 },
                 CenterlinePoint {
                     contour_point: ContourPoint {
@@ -447,8 +448,9 @@ mod tests {
                         z: 0.0,
                         aortic: false,
                     },
-                    normal: Vector3::new(1.0, 0.0, 0.0),
+                    tangent: Vector3::new(1.0, 0.0, 0.0),
                     branch_id: 0,
+                    radius: 0.0,
                 },
             ],
             branch_start_indices: vec![0],
@@ -480,8 +482,9 @@ mod tests {
                     z: 0.0,
                     aortic: false,
                 },
-                normal: Vector3::new(1.0, 0.0, 0.0),
+                tangent: Vector3::new(1.0, 0.0, 0.0),
                 branch_id: 0,
+                radius: 0.0,
             }],
             branch_start_indices: vec![0],
         };
@@ -532,7 +535,9 @@ mod tests {
     //                     z: 0.0,
     //                     aortic: false,
     //                 },
-    //                 normal: Vector3::new(1.0, 0.0, 0.0).into(),
+    //                 tangent: Vector3::new(1.0, 0.0, 0.0).into(),
+    //                 branch_id: 0,
+    //                 radius: 0.0,
     //             },
     //             CenterlinePoint {
     //                 contour_point: ContourPoint {
@@ -543,7 +548,9 @@ mod tests {
     //                     z: 1.0,
     //                     aortic: false,
     //                 },
-    //                 normal: Vector3::new(1.0, 0.0, 0.0).into(),
+    //                 tangent: Vector3::new(1.0, 0.0, 0.0).into(),
+    //                 branch_id: 0,
+    //                 radius: 0.0,
     //             },
     //         ],
     //     };

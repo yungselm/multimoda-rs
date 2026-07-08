@@ -5,7 +5,8 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use crate::intravascular::io::geometry::{Contour, ContourType, Geometry};
+use crate::types::native::contour::{Contour, ContourType};
+use crate::types::native::geometry::Geometry;
 
 #[allow(dead_code)]
 pub fn write_geometry_to_csv<P: AsRef<Path>>(

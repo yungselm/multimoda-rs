@@ -1,7 +1,7 @@
 use super::entry::*;
 use crate::intravascular::io::{input::InputData, output::write_obj_mesh_without_uv};
 use crate::intravascular::processing::align_within::AlignLog;
-use crate::types::binding::{PyContourType, PyGeometry, PyGeometryPair, PyInputData};
+use crate::types::binding::{PyCenterline, PyContourType, PyGeometry, PyGeometryPair, PyInputData};
 use pyo3::prelude::*;
 use std::path::Path;
 
@@ -187,7 +187,7 @@ pub fn from_file_full(
     smooth: bool,
     postprocessing: bool,
 ) -> PyResult<FullResult> {
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+    let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
     let (
@@ -370,7 +370,7 @@ pub fn from_file_doublepair(
     smooth: bool,
     postprocessing: bool,
 ) -> PyResult<DoublePairResult> {
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+    let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
     let (geom_ab_final, geom_cd_final, logs_a, logs_b, logs_c, logs_d) = double_pair_processing_rs(
@@ -532,7 +532,7 @@ pub fn from_file_singlepair(
     smooth: bool,
     postprocessing: bool,
 ) -> PyResult<PairResult> {
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+    let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
     let (geom_pair_final, logs_a, logs_b) = pair_processing_rs(
@@ -670,7 +670,7 @@ pub fn from_file_single(
     bruteforce: bool,
     smooth: bool,
 ) -> PyResult<(PyGeometry, Vec<AlignLogTuple>)> {
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+    let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
     let (geom, logs) = single_processing_rs(
@@ -849,7 +849,7 @@ pub fn from_array_full(
 ) -> PyResult<FullResult> {
     let labels: Vec<String> = vec![]; // InputData carries its own labels
 
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+    let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
     let input_data_a_rust: InputData = input_data_a.try_into().map_err(|e| {
@@ -1056,7 +1056,7 @@ pub fn from_array_doublepair(
 ) -> PyResult<DoublePairResult> {
     let labels: Vec<String> = vec![]; // InputData carries its own labels
 
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+    let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
     let input_data_a_rust: InputData = input_data_a.try_into().map_err(|e| {
@@ -1227,7 +1227,7 @@ pub fn from_array_singlepair(
 ) -> PyResult<PairResult> {
     let labels: Vec<String> = vec![]; // InputData carries its own labels
 
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+    let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
     let input_data_a_rust: InputData = input_data_a.try_into().map_err(|e| {
@@ -1364,7 +1364,7 @@ pub fn from_array_single(
 ) -> PyResult<(PyGeometry, Vec<AlignLogTuple>)> {
     let labels: Vec<String> = vec![]; // InputData carries its own labels
 
-    let rust_contour_types: Vec<crate::intravascular::io::geometry::ContourType> =
+    let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
 
     let input_data_rust: InputData = input_data.try_into().map_err(|e| {
@@ -1501,11 +1501,55 @@ pub fn to_obj(
     Ok(())
 }
 
+/// Read an ASCII-format VTP centerline file and return a ``PyCenterline``.
+///
+/// Parses VTK PolyData XML (``.vtp``) files exported with ``DataType="ASCII"``.
+/// Binary or appended-binary VTP files are rejected with a descriptive error.
+///
+/// Branch identification follows VTK Lines topology: each polyline in the
+/// ``<Lines>`` section becomes one branch.  The longest branch is assigned
+/// ``branch_id = 0``; shorter branches are numbered in descending length order.
+///
+/// Tangent vectors are computed by forward difference (``next - current``,
+/// normalised); the last point of each branch copies its predecessor's tangent.
+/// Per-point radius is read from ``PointData/MaximumInscribedSphereRadius``
+/// when present, otherwise defaults to ``0.0``.
+///
+/// Parameters
+/// ----------
+/// path : str
+///     Path to an ASCII-format ``.vtp`` file.
+///
+/// Returns
+/// -------
+/// centerline : PyCenterline
+///     Parsed centerline with branches identified; branch 0 is the longest.
+///
+/// Raises
+/// ------
+/// RuntimeError
+///     If the file cannot be opened, is not valid UTF-8, uses binary encoding,
+///     or contains malformed VTP topology.
+///
+/// Examples
+/// --------
+/// >>> import multimodars as mm
+/// >>> cl = mm.read_centerline_vtp("data/rca_cl.vtp")
+/// >>> print(cl.branch_ids())
+///
+#[pyfunction]
+#[pyo3(signature = (path))]
+pub fn read_centerline_vtp(path: &str) -> PyResult<PyCenterline> {
+    let cl = crate::intravascular::io::input::read_centerline_vtp(path)
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))?;
+    Ok(PyCenterline::from(&cl))
+}
+
 #[cfg(test)]
 mod tests {
     use crate::intravascular::binding::entry::full_processing_rs;
-    use crate::intravascular::io::geometry::ContourType;
     use crate::intravascular::io::input::InputData;
+    use crate::types::native::contour::ContourType;
     use std::collections::HashMap;
 
     const REST: &str = "data/fixtures/ivus_rest";

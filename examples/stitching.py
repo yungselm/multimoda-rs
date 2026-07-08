@@ -26,7 +26,7 @@ lca_cl = mm.numpy_to_centerline(lca_cl_raw)
 aorta_cl = mm.numpy_to_centerline(aorta_cl_raw)
 
 results, (rca_cl, lca_cl, ao_cl) = mm.label_geometry(
-    path_ccta_geometry="../data/NARCO_119_noside.stl",
+    path_ccta_geometry="../data/NARCO_119.stl",
     path_centerline_aorta="../data/centerline_aorta.csv",
     path_centerline_rca="../data/centerline_rca_short.csv",
     path_centerline_lca="../data/centerline_lca.csv",

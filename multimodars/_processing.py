@@ -20,6 +20,7 @@ from .multimodars import (
     align_manual as _align_manual,
     align_combined as _align_combined,
     to_obj as _to_obj,
+    read_centerline_vtp as _read_centerline_vtp,
     find_centerline_bounded_points_simple as _find_centerline_bounded_points_simple,
     find_proximal_distal_scaling as _find_proximal_distal_scaling,
     build_adjacency_map as _build_adjacency_map,
@@ -1327,6 +1328,44 @@ def to_obj(
     if contour_types is None:
         contour_types = _default_contour_types()
     return _to_obj(geometry, output_path, watertight, contour_types, filename_prefix)
+
+
+# ---------------------------------------------------------------------------
+# VTP centerline reader
+# ---------------------------------------------------------------------------
+
+
+def read_centerline_vtp(file_path: str) -> PyCenterline:
+    """Read an ASCII-format VTP centerline file and return a ``PyCenterline``.
+
+    Parses VTK PolyData XML (``.vtp``) files exported with ``DataType="ASCII"``.
+    Binary or appended-binary VTP files are rejected with a descriptive error.
+    The longest branch is assigned ``branch_id = 0``; shorter branches are
+    numbered in descending length order.
+
+    Parameters
+    ----------
+    file_path : str
+        Path to an ASCII-format ``.vtp`` file.
+
+    Returns
+    -------
+    centerline : PyCenterline
+        Parsed centerline with branches identified; branch 0 is the longest.
+
+    Raises
+    ------
+    RuntimeError
+        If the file cannot be opened, is not valid UTF-8, uses binary encoding,
+        or contains malformed VTP topology.
+
+    Examples
+    --------
+    >>> import multimodars as mm
+    >>> cl = mm.read_centerline_vtp("data/rca_cl.vtp")
+    >>> print(cl.branch_start_indices)
+    """
+    return _read_centerline_vtp(file_path)
 
 
 # ---------------------------------------------------------------------------

@@ -1,7 +1,8 @@
 use super::py_contour::PyContour;
 use super::py_contour_point::PyContourPoint;
 use super::py_record::PyRecord;
-use crate::types::native::{ContourPoint, InputData, Record};
+use crate::intravascular::io::input::InputData;
+use crate::types::native::{ContourPoint, Record};
 use anyhow::{anyhow, Result};
 use pyo3::prelude::*;
 use std::convert::TryFrom;

@@ -1,8 +1,9 @@
 use anyhow::{anyhow, Result};
 use std::collections::HashSet;
 
-use super::geometry::{ContourType, Geometry};
-use super::input::ContourPoint;
+use crate::types::native::contour::ContourType;
+use crate::types::native::contour_point::ContourPoint;
+use crate::types::native::geometry::Geometry;
 
 pub fn check_geometry_integrity(geometry: &Geometry) -> Result<()> {
     if geometry.frames.is_empty() {
@@ -296,7 +297,8 @@ pub fn detailed_geometry_analysis(geometry: &Geometry) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::intravascular::io::geometry::{Contour, Frame};
+    use crate::types::native::contour::Contour;
+    use crate::types::native::frame::Frame;
     use std::collections::HashMap;
 
     fn create_test_contour_points(count: usize, frame_index: u32, z: f64) -> Vec<ContourPoint> {

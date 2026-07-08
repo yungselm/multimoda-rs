@@ -1,7 +1,9 @@
 use anyhow::bail;
 
-use crate::intravascular::io::geometry::{Contour, ContourType, Frame, Geometry};
-use crate::intravascular::io::input::ContourPoint;
+use crate::types::native::contour::{Contour, ContourType};
+use crate::types::native::frame::Frame;
+use crate::types::native::geometry::Geometry;
+use crate::types::native::ContourPoint;
 use std::collections::HashMap;
 
 /// Interpolates between two aligned Geometry configurations with number of steps
@@ -148,8 +150,10 @@ fn interpolate_thickness(start: &Option<f64>, end: &Option<f64>, t: f64) -> Opti
 #[cfg(test)]
 mod test_interpolation {
     use super::*;
-    use crate::intravascular::io::geometry::{Contour, ContourType, Frame, Geometry};
-    use crate::intravascular::io::input::ContourPoint;
+    use crate::types::native::contour::{Contour, ContourType};
+    use crate::types::native::frame::Frame;
+    use crate::types::native::geometry::Geometry;
+    use crate::types::native::ContourPoint;
     use approx::assert_relative_eq;
     use std::collections::HashMap;
 

@@ -1,4 +1,6 @@
-use crate::types::native::{Centerline, CenterlinePoint, Contour, ContourPoint, ContourType};
+use crate::types::native::{
+    Centerline, CenterlinePoint, Contour, ContourPoint, ContourType, Point3D,
+};
 use nalgebra::Vector3;
 
 /// Walks branch `branch_id` at uniform arc-length steps of `step_size`, assigns each mesh point
@@ -109,7 +111,7 @@ fn project_to_plane(point: (f64, f64, f64), anchor: &CenterlinePoint) -> (f64, f
         anchor.contour_point.z,
     );
     let p = Vector3::new(point.0, point.1, point.2);
-    let n = anchor.normal;
+    let n = anchor.tangent;
     let proj = p - n * (p - center).dot(&n);
     (proj.x, proj.y, proj.z)
 }
@@ -165,8 +167,9 @@ fn interpolate_branch_at_s(
                 point_index: idx_out as u32,
                 ..last.contour_point
             },
-            normal: last.normal,
+            tangent: last.tangent,
             branch_id: last.branch_id,
+            radius: last.radius,
         };
     }
 
@@ -180,12 +183,12 @@ fn interpolate_branch_at_s(
         (target_s - s0) / (s1 - s0)
     };
 
-    let n0 = pts[seg].normal;
-    let n1 = pts[seg + 1].normal;
-    let mut normal = n0 * (1.0 - t) + n1 * t;
-    let n_norm = normal.norm();
+    let n0 = pts[seg].tangent;
+    let n1 = pts[seg + 1].tangent;
+    let mut tangent = n0 * (1.0 - t) + n1 * t;
+    let n_norm = tangent.norm();
     if n_norm > 1e-12 {
-        normal /= n_norm;
+        tangent /= n_norm;
     }
 
     CenterlinePoint {
@@ -197,8 +200,9 @@ fn interpolate_branch_at_s(
             z: p0.z + t * (p1.z - p0.z),
             aortic: false,
         },
-        normal,
+        tangent,
         branch_id: pts[seg].branch_id,
+        radius: pts[seg].radius,
     }
 }
 
@@ -222,8 +226,9 @@ mod tests {
     fn cl_pt(frame_idx: u32, x: f64, y: f64, z: f64, nx: f64, ny: f64, nz: f64) -> CenterlinePoint {
         CenterlinePoint {
             contour_point: cp(frame_idx, x, y, z),
-            normal: Vector3::new(nx, ny, nz).normalize(),
+            tangent: Vector3::new(nx, ny, nz).normalize(),
             branch_id: 0,
+            radius: 0.0,
         }
     }
 
@@ -283,7 +288,7 @@ mod tests {
     fn test_projected_point_lies_on_plane() {
         let anchor = cl_pt(0, 0.0, 0.0, 5.0, 0.0, 0.0, 1.0);
         let projected = project_to_plane((1.5, 2.0, 6.3), &anchor);
-        let dist = plane_dist(projected, cl_center(&anchor), anchor.normal);
+        let dist = plane_dist(projected, cl_center(&anchor), anchor.tangent);
         assert!(
             dist.abs() < 1e-10,
             "projected point not on plane: dist={dist}"
@@ -328,7 +333,7 @@ mod tests {
             (0.5, 0.5, -0.5),
         ] {
             let proj = project_to_plane(raw, &anchor);
-            let dist = plane_dist(proj, cl_center(&anchor), anchor.normal);
+            let dist = plane_dist(proj, cl_center(&anchor), anchor.tangent);
             assert!(
                 dist.abs() < 1e-10,
                 "tilted projection off-plane: dist={dist}"
@@ -412,7 +417,7 @@ mod tests {
             .collect();
         for (i, (s, anchor)) in slices.iter().zip(anchors.iter()).enumerate() {
             for p in &s.points {
-                let dist = plane_dist(pt_to_tuple(p), cl_center(anchor), anchor.normal);
+                let dist = plane_dist(pt_to_tuple(p), cl_center(anchor), anchor.tangent);
                 assert!(dist.abs() < 1e-10, "slice {i}: point off-plane by {dist}");
             }
         }
@@ -508,7 +513,7 @@ mod tests {
         for (i, (s, anchor)) in slices.iter().zip(anchors.iter()).enumerate() {
             assert_eq!(s.id, i as u32);
             for proj in &s.points {
-                let dist = plane_dist(pt_to_tuple(proj), cl_center(anchor), anchor.normal);
+                let dist = plane_dist(pt_to_tuple(proj), cl_center(anchor), anchor.tangent);
                 assert!(
                     dist.abs() < 1e-10,
                     "curved frame {i}: off-plane dist={dist}"

@@ -3,7 +3,8 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use super::geometry::{Contour, ContourType, Geometry};
+use crate::types::native::contour::{Contour, ContourType};
+use crate::types::native::geometry::Geometry;
 use rayon::prelude::*;
 
 pub fn write_obj_mesh(

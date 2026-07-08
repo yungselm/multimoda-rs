@@ -1,9 +1,11 @@
 use anyhow::Context;
 
-use super::align_between::GeometryPair;
 use super::wall;
-use crate::intravascular::io::geometry::{Contour, ContourType, Frame, Geometry};
-use crate::intravascular::io::input::ContourPoint;
+use crate::types::native::contour::{Contour, ContourType};
+use crate::types::native::frame::Frame;
+use crate::types::native::geometry::Geometry;
+use crate::types::native::ContourPoint;
+use crate::types::native::GeometryPair;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
@@ -467,8 +469,10 @@ fn adjust_walls_anomalous_geom_pair(geom_pair: &GeometryPair) -> GeometryPair {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::intravascular::io::geometry::{Contour, ContourType, Frame, Geometry};
     use crate::intravascular::utils::test_utils::dummy_geometry_custom;
+    use crate::types::native::contour::{Contour, ContourType};
+    use crate::types::native::frame::Frame;
+    use crate::types::native::geometry::Geometry;
     use std::collections::HashMap;
 
     // Helper function to create test contours

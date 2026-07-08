@@ -4,17 +4,18 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
-use crate::intravascular::io::geometry::{ContourType, Geometry};
 use crate::intravascular::io::input::InputData;
 use crate::intravascular::io::output;
 use crate::intravascular::processing::align_between;
-use crate::intravascular::processing::align_between::GeometryPair;
 use crate::intravascular::processing::align_within;
 use crate::intravascular::processing::align_within::AlignLog;
 use crate::intravascular::processing::postprocessing as postprocess;
 use crate::intravascular::processing::preprocessing;
 use crate::intravascular::processing::preprocessing::ProcessingOptions;
 use crate::intravascular::to_object;
+use crate::types::native::contour::ContourType;
+use crate::types::native::geometry::Geometry;
+use crate::types::native::GeometryPair;
 
 // tolerance of distance between frames [mm], that counts as 0
 const TOLERANCE: f64 = 0.03;
