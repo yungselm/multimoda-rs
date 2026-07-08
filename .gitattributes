@@ -10,3 +10,6 @@
 
 # Exclude .vtp files
 *.vtp linguist-generated=true
+
+# Exclude .stl files
+*.stl linguist-generated=true
