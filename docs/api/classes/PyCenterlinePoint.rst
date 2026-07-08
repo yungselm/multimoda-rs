@@ -9,4 +9,4 @@ PyCenterlinePoint
    :undoc-members:
    :show-inheritance:
    :inherited-members:
-   :exclude-members: contour_point, branch_id
+   :exclude-members: contour_point, branch_id, tangent
