@@ -7,7 +7,21 @@ use csv::ReaderBuilder;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+const RECORD_FILE_NAME: &str = "combined_sorted_manual.csv"; // legacy AIVUS
+const RECORD_FILE_NAME_ALT: &str = "diastolic_systolic_records.csv"; // holOrama
+
+/// Resolves the records file in `dir`, preferring `RECORD_FILE_NAME` and
+/// falling back to `RECORD_FILE_NAME_ALT` if the preferred name isn't present.
+fn resolve_record_path(dir: &Path) -> PathBuf {
+    let primary = dir.join(RECORD_FILE_NAME);
+    if primary.exists() {
+        primary
+    } else {
+        dir.join(RECORD_FILE_NAME_ALT)
+    }
+}
 
 /// Raw intravascular imaging input for one cardiac phase, loaded from a measurement directory.
 #[derive(Debug, Clone)]
@@ -51,8 +65,6 @@ impl InputData {
         diastole: bool,
         label: &str,
     ) -> anyhow::Result<InputData> {
-        const RECORD_FILE_NAME: &str = "combined_sorted_manual.csv";
-
         let path = path.as_ref();
         let label_string = label.to_string();
 
@@ -104,7 +116,7 @@ impl InputData {
                 }
 
                 "records" | "record" | "phases" => {
-                    let p = path.join(RECORD_FILE_NAME);
+                    let p = resolve_record_path(path);
                     record = read_optional_records(&p)?;
                     if record.is_none() {
                         eprintln!("records file not found, skipping: {p:?}");
@@ -118,7 +130,7 @@ impl InputData {
         }
 
         if record.is_none() {
-            record = read_optional_records(&path.join(RECORD_FILE_NAME))?;
+            record = read_optional_records(&resolve_record_path(path))?;
         }
 
         Ok(InputData {
