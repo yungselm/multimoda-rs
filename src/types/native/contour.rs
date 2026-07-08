@@ -1,6 +1,6 @@
 use super::contour_point::ContourPoint;
 use super::record::Record;
-use super::Transform;
+use super::{Point3D, Transform};
 use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::fmt;

@@ -1,4 +1,4 @@
-use crate::types::native::ContourPoint;
+use crate::types::native::{ContourPoint, Point3D};
 use pyo3::prelude::*;
 
 /// Python representation of a 3D contour point.

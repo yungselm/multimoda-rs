@@ -1,5 +1,6 @@
 use super::centerline_point::CenterlinePoint;
 use super::contour_point::ContourPoint;
+use super::Point3D;
 use crate::types::utils;
 use nalgebra::Vector3;
 
@@ -41,7 +42,6 @@ impl Centerline {
         }
     }
 
-    /// Retrieves a centerline point by matching frame index.
     pub fn get_by_frame(&self, frame_index: u32) -> Option<&CenterlinePoint> {
         self.points
             .iter()
@@ -50,24 +50,16 @@ impl Centerline {
 
     /// Finds the index of the centerline point closest to the reference point
     pub fn find_reference_cl_point_idx(&self, reference_point: &(f64, f64, f64)) -> usize {
-        // Helper function to calculate squared distance (avoids sqrt for performance)
-        fn distance_sq(contour_point: &ContourPoint, reference: &(f64, f64, f64)) -> f64 {
-            let dx = contour_point.x - reference.0;
-            let dy = contour_point.y - reference.1;
-            let dz = contour_point.z - reference.2;
-            dx * dx + dy * dy + dz * dz
+        let mut best_idx = 0;
+        let mut best_dist = f64::INFINITY;
+        for (idx, p) in self.points.iter().enumerate() {
+            let dist = p.contour_point.distance_to(reference_point);
+            if dist < best_dist {
+                best_dist = dist;
+                best_idx = idx;
+            }
         }
-
-        self.points
-            .iter()
-            .enumerate()
-            .min_by(|(_, a), (_, b)| {
-                distance_sq(&a.contour_point, reference_point)
-                    .partial_cmp(&distance_sq(&b.contour_point, reference_point))
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-            .map(|(idx, _)| idx)
-            .unwrap()
+        best_idx
     }
 
     /// Partition the centerline into anatomical branches using the tree-diameter algorithm.

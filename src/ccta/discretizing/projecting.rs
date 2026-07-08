@@ -1,4 +1,6 @@
-use crate::types::native::{Centerline, CenterlinePoint, Contour, ContourPoint, ContourType};
+use crate::types::native::{
+    Centerline, CenterlinePoint, Contour, ContourPoint, ContourType, Point3D,
+};
 use nalgebra::Vector3;
 
 /// Walks branch `branch_id` at uniform arc-length steps of `step_size`, assigns each mesh point

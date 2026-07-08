@@ -67,23 +67,6 @@ pub struct ContourPoint {
     pub aortic: bool,
 }
 
-impl ContourPoint {
-    /// Computes the Euclidean 3-D distance between two contour points.
-    pub fn distance_to(&self, other: &ContourPoint) -> f64 {
-        let dx = self.x - other.x;
-        let dy = self.y - other.y;
-        let dz = self.z - other.z;
-        (dx * dx + dy * dy + dz * dz).sqrt()
-    }
-
-    /// Computes the 2-D (XY-plane) distance between two contour points.
-    pub fn distance_2d_to(&self, other: &ContourPoint) -> f64 {
-        let dx = self.x - other.x;
-        let dy = self.y - other.y;
-        (dx * dx + dy * dy).sqrt()
-    }
-}
-
 #[cfg(test)]
 mod contour_point_tests {
     use super::*;

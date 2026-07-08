@@ -22,6 +22,21 @@ pub trait Point3D {
     fn x(&self) -> f64;
     fn y(&self) -> f64;
     fn z(&self) -> f64;
+
+    /// Computes the Euclidean 3-D distance to another point.
+    fn distance_to(&self, other: &impl Point3D) -> f64 {
+        let dx = self.x() - other.x();
+        let dy = self.y() - other.y();
+        let dz = self.z() - other.z();
+        (dx * dx + dy * dy + dz * dz).sqrt()
+    }
+
+    /// Computes the 2-D (XY-plane) distance to another point.
+    fn distance_2d_to(&self, other: &impl Point3D) -> f64 {
+        let dx = self.x() - other.x();
+        let dy = self.y() - other.y();
+        (dx * dx + dy * dy).sqrt()
+    }
 }
 
 pub trait Transform: Sized + Clone {
