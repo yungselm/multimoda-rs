@@ -393,24 +393,24 @@ class PyCenterline:
         optionally strip the inlet region from branch 0, and optionally smooth.
 
         VTP files export every branch starting from the vessel origin, so side
-        branches share a common prefix with branch 0.  This method trims that
+        branches share a common prefix with branch 0. This method trims that
         prefix from each side branch, keeping the bifurcation junction point
-        and the diverged portion.  Branches that overlap branch 0 entirely are
-        dropped.  The trim threshold is one mean inter-point spacing of branch 0.
+        and the diverged portion. Branches that overlap branch 0 entirely are
+        dropped. The trim threshold is one mean inter-point spacing of branch 0.
 
         Parameters
         ----------
         rm_start_mm : float, optional
             Arc-length in mm to remove from the start of branch 0 (the inlet
-            region).  Set to ``0.0`` to leave branch 0 untouched.  Default ``5.0``.
+            region). Set to ``0.0`` to leave branch 0 untouched. Default ``5.0``.
         smooth : bool, optional
             When ``True``, apply a per-branch Gaussian smoothing pass after all
-            trimming.  Default ``False``.
+            trimming. Default ``False``.
         smooth_sigma : float, optional
             Half-width of the Gaussian kernel in number of centerline points.
-            A value of ``1.0`` is a gentle neighbourhood average; ``2–5`` removes
-            noise while preserving the overall vessel path.  Ignored when
-            ``smooth=False``.  Default ``2.5``.
+            A value of ``1.0`` is a gentle neighbourhood average; ``2-5`` removes
+            noise while preserving the overall vessel path. Ignored when
+            ``smooth=False``. Default ``2.5``.
 
         Returns
         -------

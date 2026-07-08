@@ -28,9 +28,9 @@ def _fit_bspline_contour(
         Smoothing condition ``s`` for ``scipy.interpolate.splprep``.
         Range: ``[0, ∞)``.
 
-        * ``s = 0``       — exact interpolation; spline passes through every point.
-        * ``s ≈ n``       — gentle smoothing (~1 mm² average residual per point).
-        * ``s ≈ 5 * n``   — strong smoothing.
+        * ``s = 0``       - exact interpolation; spline passes through every point.
+        * ``s ≈ n``       - gentle smoothing (~1 mm² average residual per point).
+        * ``s ≈ 5 * n``   - strong smoothing.
 
           where ``n`` is the number of contour points (e.g. ``n = 100`` →
           start around ``s = 100.0`` and tune from there).
@@ -162,9 +162,9 @@ def discretize_vessel_tree(
         Smoothing condition ``s`` for ``scipy.interpolate.splprep``.
         Range: ``[0, ∞)``.
 
-        * ``s = 0``            — exact interpolation.
-        * ``s ≈ n_points``     — gentle smoothing (~1 mm² average residual per point).
-        * ``s ≈ 5 * n_points`` — strong smoothing.
+        * ``s = 0``            - exact interpolation.
+        * ``s ≈ n_points``     - gentle smoothing (~1 mm² average residual per point).
+        * ``s ≈ 5 * n_points`` - strong smoothing.
 
           Tune empirically; the right value depends on how irregular the raw
           contours are.
@@ -231,12 +231,12 @@ def prepare_centerlines(
     When ``vtp_data=True``, branch detection is skipped because the centerline
     already carries branch information from the VTP file (populated by
     :func:`~multimodars.read_centerline_vtp` and cleaned by
-    ``cleanup_vtp_data``).  Only ``check_centerline`` is called to normalise
+    ``cleanup_vtp_data``). Only ``check_centerline`` is called to normalise
     branch ordering.
 
     .. note::
-        Manual edits — ``find_sharp_angles``, ``split_branch``,
-        ``merge_branches`` — cannot be automated.  If your data needs them,
+        Manual edits - ``find_sharp_angles``, ``split_branch``,
+        ``merge_branches`` - cannot be automated.  If your data needs them,
         call those methods on the returned centerlines before passing them to
         :func:`discretize_vessel_tree`.
 

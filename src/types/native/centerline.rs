@@ -607,8 +607,8 @@ impl Centerline {
     /// branches share a common prefix with branch 0.  For each side branch this
     /// method trims the contiguous leading prefix whose points all lie within
     /// one mean inter-point spacing of branch 0 of at least one main-branch
-    /// point.  The last point of the trimmed prefix is kept as the bifurcation
-    /// junction.  Branches whose entire extent lies within that buffer are
+    /// point. The last point of the trimmed prefix is kept as the bifurcation
+    /// junction. Branches whose entire extent lies within that buffer are
     /// dropped completely.
     ///
     /// If `rm_start_mm > 0`, the leading points of branch 0 are also removed
@@ -625,60 +625,76 @@ impl Centerline {
         }
 
         let buffer = self.mean_spacing();
-        let buffer_sq = buffer * buffer;
-
         let mut branches = self.branches_as_vecs();
 
-        if branches.len() > 1 {
-            let main_pts: Vec<(f64, f64, f64)> = branches[0]
-                .iter()
-                .map(|p| (p.contour_point.x, p.contour_point.y, p.contour_point.z))
-                .collect();
-
-            let close_to_main = |pt: &CenterlinePoint| -> bool {
-                let (x, y, z) = (pt.contour_point.x, pt.contour_point.y, pt.contour_point.z);
-                main_pts.iter().any(|&(mx, my, mz)| {
-                    (x - mx).powi(2) + (y - my).powi(2) + (z - mz).powi(2) <= buffer_sq
-                })
-            };
-
-            for branch in branches.iter_mut().skip(1) {
-                let first_outside = branch.iter().position(|pt| !close_to_main(pt));
-                match first_outside {
-                    None => branch.clear(),
-                    Some(0) => {}
-                    Some(i) => {
-                        branch.drain(..i - 1);
-                    }
-                }
-            }
-
-            branches.retain(|b| !b.is_empty());
-        }
-
-        if rm_start_mm > 0.0 && branches[0].len() > 1 {
-            let mut arc = 0.0;
-            let mut trim_idx = 0;
-            for i in 1..branches[0].len() {
-                arc += branches[0][i - 1]
-                    .contour_point
-                    .distance_to(&branches[0][i].contour_point);
-                if arc <= rm_start_mm {
-                    trim_idx = i;
-                } else {
-                    break;
-                }
-            }
-            if trim_idx > 0 {
-                branches[0].drain(..trim_idx);
-            }
-        }
+        Self::remove_overlapping(&mut branches, buffer * buffer);
+        Self::remove_trailing_start(&mut branches, rm_start_mm);
 
         self.rebuild_from_branches(branches);
 
         if smooth {
             let new_cl_smooth = utils::smooth_centerline(self, smooth_sigma);
             *self = new_cl_smooth;
+        }
+    }
+
+    /// Trims the leading overlap each side branch shares with the main vessel (branch 0).
+    ///
+    /// VTP centerline branch data often starts by duplicating a stretch of the main
+    /// vessel before diverging at the true bifurcation; this drops that duplicated prefix.
+    fn remove_overlapping(branches: &mut Vec<Vec<CenterlinePoint>>, buffer_sq: f64) {
+        if branches.len() <= 1 {
+            return;
+        }
+
+        let main_pts: Vec<(f64, f64, f64)> = branches[0]
+            .iter()
+            .map(|p| (p.contour_point.x, p.contour_point.y, p.contour_point.z))
+            .collect();
+
+        let close_to_main = |pt: &CenterlinePoint| -> bool {
+            let (x, y, z) = (pt.contour_point.x, pt.contour_point.y, pt.contour_point.z);
+            main_pts.iter().any(|&(mx, my, mz)| {
+                // avoid distance_to's sqrt in this O(branch_points * main_points) check
+                (x - mx).powi(2) + (y - my).powi(2) + (z - mz).powi(2) <= buffer_sq
+            })
+        };
+
+        for branch in branches.iter_mut().skip(1) {
+            let first_outside = branch.iter().position(|pt| !close_to_main(pt));
+            match first_outside {
+                None => branch.clear(),
+                Some(0) => {}
+                Some(i) => {
+                    branch.drain(..i - 1);
+                }
+            }
+        }
+
+        branches.retain(|b| !b.is_empty());
+    }
+
+    /// Trims points off the start of the main branch (branch 0) until `rm_start_mm` of
+    /// arc length has been removed.
+    fn remove_trailing_start(branches: &mut [Vec<CenterlinePoint>], rm_start_mm: f64) {
+        if rm_start_mm <= 0.0 || branches[0].len() <= 1 {
+            return;
+        }
+
+        let mut arc = 0.0;
+        let mut trim_idx = 0;
+        for i in 1..branches[0].len() {
+            arc += branches[0][i - 1]
+                .contour_point
+                .distance_to(&branches[0][i].contour_point);
+            if arc <= rm_start_mm {
+                trim_idx = i;
+            } else {
+                break;
+            }
+        }
+        if trim_idx > 0 {
+            branches[0].drain(..trim_idx);
         }
     }
 }
