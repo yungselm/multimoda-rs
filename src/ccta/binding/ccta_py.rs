@@ -123,6 +123,40 @@ pub fn remove_occluded_points_ray_triangle(
     Ok(result)
 }
 
+/// Find mesh faces that reference any vertex coincident (within `tol`) with one of
+/// `points`.
+///
+/// Parameters
+/// ----------
+/// vertices : list of tuple of float
+///     Mesh vertex coordinates, e.g. ``mesh.vertices.tolist()``.
+/// faces : list of list of int
+///     Mesh face vertex-index triples, e.g. ``mesh.faces.tolist()``.
+/// points : list of tuple of float
+///     Query points to match against mesh vertices (exact/near-exact matches
+///     expected, within `tol`), e.g. output of
+///     :func:`find_centerline_bounded_points`.
+/// tol : float, optional
+///     Distance tolerance for vertex matching.  Default is ``1e-6``.
+///
+/// Returns
+/// -------
+/// faces_found : list of tuple of tuple of float
+///     Triangle faces as ``((v0x, v0y, v0z), (v1x, v1y, v1z), (v2x, v2y, v2z))``
+///     triples, ready to pass to :func:`remove_occluded_points_ray_triangle`.
+#[pyfunction]
+#[pyo3(signature = (vertices, faces, points, tol = 1e-6))]
+pub fn find_faces_near_points(
+    vertices: Vec<Point3D>,
+    faces: Vec<[usize; 3]>,
+    points: Vec<Point3D>,
+    tol: f64,
+) -> PyResult<Vec<TriangleTuple>> {
+    let triangles = label_coronary::find_faces_near_points(&vertices, &faces, &points, tol);
+    let result: Vec<TriangleTuple> = triangles.into_iter().map(|t| (t.v0, t.v1, t.v2)).collect();
+    Ok(result)
+}
+
 /// Adjust the vessel diameter by morphing points outward or inward along the centerline.
 ///
 /// Parameters

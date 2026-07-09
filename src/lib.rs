@@ -47,6 +47,10 @@ fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<(
         m.clone()
     )?)?;
     m.add_function(wrap_pyfunction!(
+        ccta_py::find_faces_near_points,
+        m.clone()
+    )?)?;
+    m.add_function(wrap_pyfunction!(
         ccta_py::adjust_diameter_centerline_morphing_simple,
         m.clone()
     )?)?;

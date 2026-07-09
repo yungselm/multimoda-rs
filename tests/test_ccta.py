@@ -1,8 +1,9 @@
 """Tests for the multimodars.ccta module.
 
 Covers:
-  - labeling:   _find_aortic_points, _find_faces_for_points,
-                _prepare_faces_for_rust, _final_reclassification
+  - labeling:   _find_aortic_points, _final_reclassification
+  - multimodars.multimodars: find_faces_near_points (Rust binding backing
+                labeling.label_geometry's occlusion-removal face lookup)
   - fixing_functions: manual_hole_fill, postprocess_stitched_mesh
   - manipulating: remove_labeled_points_from_mesh,
                   keep_labeled_points_from_mesh, sync_results_to_mesh,
@@ -26,10 +27,9 @@ from multimodars.ccta.fixing_functions import (
 )
 from multimodars.ccta.labeling import (
     _find_aortic_points,
-    _find_faces_for_points,
     _final_reclassification,
-    _prepare_faces_for_rust,
 )
+from multimodars.multimodars import find_faces_near_points
 from multimodars.ccta.manipulating import (
     _clamp_to_plane,
     _enforce_layer_gap_from_plane,
@@ -167,68 +167,51 @@ class TestFindAorticPoints:
 
 
 # ===========================================================================
-# labeling._find_faces_for_points
+# multimodars.multimodars.find_faces_near_points
+# (Rust binding that replaced labeling._find_faces_for_points +
+#  labeling._prepare_faces_for_rust)
 # ===========================================================================
 
 
-class TestFindFacesForPoints:
+class TestFindFacesNearPoints:
+    @staticmethod
+    def _call(grid_mesh, points, tol=1e-6):
+        vertices = [tuple(v) for v in grid_mesh.vertices]
+        faces = grid_mesh.faces.tolist()
+        return find_faces_near_points(vertices, faces, points, tol)
+
     def test_corner_vertex_finds_its_face(self, grid_mesh):
-        # vertex 0 = (0,0,0) belongs to face [0,1,3] → face index 0
-        indices = _find_faces_for_points(grid_mesh, [(0.0, 0.0, 0.0)], tol=1e-6)
-        assert 0 in indices
+        # vertex 0 = (0,0,0) belongs to exactly face [0,1,3]
+        result = self._call(grid_mesh, [(0.0, 0.0, 0.0)])
+        verts = grid_mesh.vertices
+        expected = (tuple(verts[0]), tuple(verts[1]), tuple(verts[3]))
+        assert len(result) == 1
+        assert result[0] == expected
 
     def test_centre_vertex_touches_many_faces(self, grid_mesh):
         # vertex 4 = (1,1,0) appears in 6 of the 8 faces
-        indices = _find_faces_for_points(grid_mesh, [(1.0, 1.0, 0.0)], tol=1e-6)
-        assert len(indices) == 6
+        result = self._call(grid_mesh, [(1.0, 1.0, 0.0)])
+        assert len(result) == 6
 
     def test_empty_points_returns_empty(self, grid_mesh):
-        assert _find_faces_for_points(grid_mesh, [], tol=1e-6) == []
+        assert self._call(grid_mesh, []) == []
 
     def test_no_vertex_within_tol(self, grid_mesh):
-        indices = _find_faces_for_points(grid_mesh, [(99.0, 99.0, 0.0)], tol=1e-6)
-        assert indices == []
-
-    def test_returns_list_of_ints(self, grid_mesh):
-        indices = _find_faces_for_points(grid_mesh, [(0.0, 0.0, 0.0)], tol=1e-6)
-        assert all(isinstance(i, int) for i in indices)
-
-
-# ===========================================================================
-# labeling._prepare_faces_for_rust
-# ===========================================================================
-
-
-class TestPrepareFacesForRust:
-    def test_all_faces_when_no_args(self, grid_mesh):
-        rust_faces = _prepare_faces_for_rust(grid_mesh)
-        assert len(rust_faces) == len(grid_mesh.faces)
+        result = self._call(grid_mesh, [(99.0, 99.0, 0.0)])
+        assert result == []
 
     def test_each_face_is_triple_of_triples(self, grid_mesh):
-        for face in _prepare_faces_for_rust(grid_mesh):
+        result = self._call(grid_mesh, [(1.0, 1.0, 0.0)])
+        for face in result:
             assert len(face) == 3
             for v in face:
                 assert len(v) == 3
-
-    def test_coordinates_are_floats(self, grid_mesh):
-        v0, v1, v2 = _prepare_faces_for_rust(grid_mesh, face_indices=[0])[0]
-        assert all(isinstance(c, float) for c in v0 + v1 + v2)
-
-    def test_explicit_face_indices(self, grid_mesh):
-        rust_faces = _prepare_faces_for_rust(grid_mesh, face_indices=[0, 2])
-        assert len(rust_faces) == 2
+                assert all(isinstance(c, float) for c in v)
 
     def test_subset_via_points(self, grid_mesh):
-        # corner vertex 0 only in ~1 face, so subset < all
-        rust_faces = _prepare_faces_for_rust(
-            grid_mesh, points=[(0.0, 0.0, 0.0)], tol=1e-6
-        )
-        assert 0 < len(rust_faces) < len(grid_mesh.faces)
-
-    def test_empty_points_returns_all(self, grid_mesh):
-        # When points=[] → _find_faces_for_points returns [] → no faces
-        rust_faces = _prepare_faces_for_rust(grid_mesh, points=[], tol=1e-6)
-        assert rust_faces == []
+        # corner vertex 0 only in 1 face, so subset < all faces
+        result = self._call(grid_mesh, [(0.0, 0.0, 0.0)])
+        assert 0 < len(result) < len(grid_mesh.faces)
 
 
 # ===========================================================================

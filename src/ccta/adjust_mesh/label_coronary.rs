@@ -223,6 +223,58 @@ pub fn find_centerline_bounded_points(
         .collect()
 }
 
+/// Find mesh faces that reference any vertex coincident (within `tol`) with one of
+/// `points`. Replaces the old pure-Python `_find_faces_for_points` +
+/// `_prepare_faces_for_rust`, which scanned every mesh vertex per point
+/// (O(points * n_vertices)) and then every mesh face (O(n_faces)) in Python. Here an
+/// R-tree over `vertices` brings the per-point lookup to O(log n_vertices), and the
+/// face scan stays O(n_faces) but runs as a single Rust pass instead of a Python loop.
+pub fn find_faces_near_points(
+    vertices: &[(f64, f64, f64)],
+    faces: &[[usize; 3]],
+    points: &[(f64, f64, f64)],
+    tol: f64,
+) -> Vec<Triangle> {
+    if points.is_empty() || vertices.is_empty() || faces.is_empty() {
+        return Vec::new();
+    }
+
+    let tagged_vertices: Vec<rstar::primitives::GeomWithData<[f64; 3], usize>> = vertices
+        .iter()
+        .enumerate()
+        .map(|(idx, v)| rstar::primitives::GeomWithData::new([v.0, v.1, v.2], idx))
+        .collect();
+    let vertex_tree = rstar::RTree::bulk_load(tagged_vertices);
+
+    let tol_sq = tol * tol;
+    // Every vertex within `tol` is matched (not just the single nearest), which is a
+    // slightly more thorough than the original "closest vertex only" Python logic —
+    // relevant only if the mesh has coincident/duplicate vertices, in which case this
+    // correctly includes faces touching every one of them instead of just one.
+    let matched_vertex_indices: HashSet<usize> = points
+        .par_iter()
+        .flat_map_iter(|p| {
+            vertex_tree
+                .locate_within_distance([p.0, p.1, p.2], tol_sq)
+                .map(|item| item.data)
+        })
+        .collect();
+
+    if matched_vertex_indices.is_empty() {
+        return Vec::new();
+    }
+
+    faces
+        .iter()
+        .filter(|[a, b, c]| {
+            matched_vertex_indices.contains(a)
+                || matched_vertex_indices.contains(b)
+                || matched_vertex_indices.contains(c)
+        })
+        .map(|&[a, b, c]| Triangle::new(vertices[a], vertices[b], vertices[c]))
+        .collect()
+}
+
 /// Check that the centerline is sorted by z-value (distal to proximal)
 /// and ensure the last point has the lowest z-value
 fn check_centerline(centerline: Centerline) -> Centerline {
@@ -347,5 +399,35 @@ mod test_find_cl_bounded_points {
             (result.unwrap() - 1.0).abs() < 1e-6,
             "Intersection should be at t=1.0"
         );
+    }
+
+    #[test]
+    fn test_find_faces_near_points_matches_only_touching_faces() {
+        let vertices = vec![
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0),
+            (0.0, 0.0, 1.0),
+        ];
+        let faces = vec![[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]];
+
+        // Only vertex 0 matches -> faces referencing it: (0,1,2), (0,1,3), (0,2,3).
+        // Face (1,2,3) doesn't touch vertex 0 and must be excluded.
+        let points = vec![(0.0, 0.0, 0.0)];
+        let result = find_faces_near_points(&vertices, &faces, &points, 1e-6);
+        assert_eq!(result.len(), 3);
+        assert!(!result.contains(&Triangle::new(vertices[1], vertices[2], vertices[3])));
+        assert!(result.contains(&Triangle::new(vertices[0], vertices[1], vertices[2])));
+        assert!(result.contains(&Triangle::new(vertices[0], vertices[1], vertices[3])));
+        assert!(result.contains(&Triangle::new(vertices[0], vertices[2], vertices[3])));
+    }
+
+    #[test]
+    fn test_find_faces_near_points_no_match_returns_empty() {
+        let vertices = vec![(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)];
+        let faces = vec![[0, 1, 2]];
+        let points = vec![(5.0, 5.0, 5.0)];
+        let result = find_faces_near_points(&vertices, &faces, &points, 1e-6);
+        assert!(result.is_empty());
     }
 }
