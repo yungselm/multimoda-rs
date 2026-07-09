@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-import numpy as np
 import multimodars as mm
 import trimesh
 
@@ -14,12 +13,9 @@ for candidate in [cwd, cwd.parent, cwd.parent.parent]:
         break
 print(f"Working directory: {os.getcwd()}")
 
-rca_cl_raw = np.genfromtxt("./centerline_rca_short.csv", delimiter=",")
-lca_cl_raw = np.genfromtxt("./centerline_lca.csv", delimiter=",")
-aorta_cl_raw = np.genfromtxt("./centerline_aorta.csv", delimiter=",")
-rca_cl = mm.numpy_to_centerline(rca_cl_raw)
-lca_cl = mm.numpy_to_centerline(lca_cl_raw)
-aorta_cl = mm.numpy_to_centerline(aorta_cl_raw)
+rca_cl = mm.read_centerline_vtp("./rca_cl.vtp").cleanup_vtp_data(smooth=True)
+lca_cl = mm.read_centerline_vtp("./lca_cl.vtp").cleanup_vtp_data(smooth=True)
+aorta_cl = mm.read_centerline_vtp("./ao_cl.vtp").cleanup_vtp_data(smooth=True)
 
 results, (rca_cl, lca_cl, ao_cl) = mm.label_geometry(
     path_ccta_geometry="./NARCO_119.stl",
@@ -33,21 +29,8 @@ results, (rca_cl, lca_cl, ao_cl) = mm.label_geometry(
     control_plot=True,
 )
 
-rca_cl, lca_cl, results = mm.prepare_centerlines(
-    rca_cl,
-    lca_cl,
-    results,
-    branch_sigma=2.0,
-    control_plot=True,
-)
-
-list_edges = mm.find_sharp_angles(
-    lca_cl, branch_id=0, cos_threshold=0.0, control_plot=True
-)
-lca_cl = lca_cl.split_branch(0, list_edges[4])
-lca_cl = lca_cl.merge_branches(0, 4)
-lca_cl = lca_cl.check_centerline()
-results = mm.label_branches(lca_cl, results, results_key="lca_points")
+# Branch indices already set from VTP — skip calculate_branches
+rca_cl, lca_cl, results = mm.prepare_centerlines(rca_cl, lca_cl, results, vtp_data=True)
 
 tree = mm.discretize_vessel_tree(
     ao_cl,

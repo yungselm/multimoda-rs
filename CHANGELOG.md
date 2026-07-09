@@ -5,6 +5,21 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [0.5.2] -2026-07-09
 
+### Fixed
+- `label_anomalous_region` could leave a handful of mesh vertices mislabeled into
+  `proximal_points` / `distal_points` / `anomalous_points` despite not being mesh-connected to
+  that region's main cluster ("islands"), since `find_points_by_cl_region` classifies points
+  using coordinate-only heuristics with no notion of mesh topology. Each island then made
+  `remove_labeled_points_from_mesh` carve out an extra small hole, corrupting
+  `stitch_ccta_to_intravascular`'s boundary-ring ordering. Added
+  `_keep_largest_connected_component` (`labeling.py`): builds the mesh's adjacency graph and
+  keeps only the largest connected component per region, reassigning dropped points to
+  `aorta_points` (removing them from `results[results_key]` too, so they aren't stranded
+  outside every scaling step). Verified on the reference dataset: 7 dropped points
+  (`anomalous_points` 421 → 414) eliminated 27 extra boundary vertices (82 → 55), cut the
+  post-stitch max edge length from 6.65mm to 4.69mm, and are now correctly counted in
+  `aorta_points` instead of stranded in `rca_points`.
+
 ### Performance
 - `label_geometry` and `stitch_ccta_to_intravascular` sped up substantially: several O(N×M)
   brute-force point/face searches were replaced with R-tree-based lookups (new `rstar`

@@ -5,6 +5,8 @@ Covers:
                 final_reclassification (Rust bindings backing
                 labeling.label_geometry's occlusion-removal and
                 adjacency-based label-smoothing steps)
+  - labeling: _keep_largest_connected_component (island-point filter for
+                find_points_by_cl_region's proximal/distal/anomalous output)
   - fixing_functions: manual_hole_fill, postprocess_stitched_mesh
   - manipulating: remove_labeled_points_from_mesh,
                   keep_labeled_points_from_mesh, sync_results_to_mesh,
@@ -26,6 +28,7 @@ from multimodars.ccta.fixing_functions import (
     manual_hole_fill,
     postprocess_stitched_mesh,
 )
+from multimodars.ccta.labeling import _keep_largest_connected_component
 from multimodars.multimodars import (
     find_faces_near_points,
     find_aortic_points,
@@ -317,6 +320,43 @@ class TestFinalReclassification:
             "lca_removed_points",
         ):
             assert key in new
+
+
+# ===========================================================================
+# labeling._keep_largest_connected_component
+# (island-point filter for find_points_by_cl_region's proximal/distal/
+# anomalous output - see grid_mesh layout in the module docstring above:
+# vertices {0,1,3,4} are mutually mesh-adjacent; vertex 8's neighbours are
+# {5,7}, neither of which is in that cluster, so it's a true singleton
+# within the induced subgraph over {0,1,3,4,8}.)
+# ===========================================================================
+
+
+class TestKeepLargestConnectedComponent:
+    def test_drops_isolated_point(self, grid_mesh):
+        verts = [tuple(v) for v in grid_mesh.vertices]
+        points = [verts[0], verts[1], verts[3], verts[4], verts[8]]
+        result = _keep_largest_connected_component(grid_mesh, points)
+        assert set(result) == {verts[0], verts[1], verts[3], verts[4]}
+        assert verts[8] not in result
+
+    def test_fully_connected_set_unchanged(self, grid_mesh):
+        verts = [tuple(v) for v in grid_mesh.vertices]
+        points = [verts[0], verts[1], verts[3]]
+        result = _keep_largest_connected_component(grid_mesh, points)
+        assert set(result) == set(points)
+
+    def test_empty_input_returns_empty(self, grid_mesh):
+        assert _keep_largest_connected_component(grid_mesh, []) == []
+
+    def test_single_point_returns_unchanged(self, grid_mesh):
+        verts = [tuple(v) for v in grid_mesh.vertices]
+        points = [verts[0]]
+        assert _keep_largest_connected_component(grid_mesh, points) == points
+
+    def test_points_not_on_mesh_returned_unchanged(self, grid_mesh):
+        points = [(99.0, 99.0, 99.0), (100.0, 100.0, 100.0)]
+        assert _keep_largest_connected_component(grid_mesh, points) == points
 
 
 # ===========================================================================
