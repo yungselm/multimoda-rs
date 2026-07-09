@@ -3,6 +3,11 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.1] -2026-07-09
+
+### Changed
+- Refactored `label_coronary` to use nalgebra
+
 ## [0.5.0] - 2026-07-07
 
 ### Added

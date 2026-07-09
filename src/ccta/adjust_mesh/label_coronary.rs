@@ -1,4 +1,5 @@
 use crate::types::native::{Centerline, CenterlinePoint};
+use nalgebra::{Point3, Vector3};
 use rayon::prelude::*;
 use std::collections::HashSet;
 
@@ -13,64 +14,51 @@ impl Triangle {
     pub fn new(v0: (f64, f64, f64), v1: (f64, f64, f64), v2: (f64, f64, f64)) -> Self {
         Self { v0, v1, v2 }
     }
+
+    fn points(&self) -> [Point3<f64>; 3] {
+        [
+            Point3::new(self.v0.0, self.v0.1, self.v0.2),
+            Point3::new(self.v1.0, self.v1.1, self.v1.2),
+            Point3::new(self.v2.0, self.v2.1, self.v2.2),
+        ]
+    }
 }
 
 // Ray-Triangle intersection using Möller–Trumbore algorithm
 fn ray_triangle_intersection(
-    ray_origin: &(f64, f64, f64),
-    ray_direction: &(f64, f64, f64),
+    ray_origin: &Point3<f64>,
+    ray_direction: &Vector3<f64>,
     triangle: &Triangle,
 ) -> Option<f64> {
     let eps = 1e-8;
 
-    let edge1 = (
-        triangle.v1.0 - triangle.v0.0,
-        triangle.v1.1 - triangle.v0.1,
-        triangle.v1.2 - triangle.v0.2,
-    );
-    let edge2 = (
-        triangle.v2.0 - triangle.v0.0,
-        triangle.v2.1 - triangle.v0.1,
-        triangle.v2.2 - triangle.v0.2,
-    );
+    let [v0, v1, v2] = triangle.points();
+    let edge1 = v1 - v0;
+    let edge2 = v2 - v0;
 
-    // Calculate determinant
-    let h = (
-        ray_direction.1 * edge2.2 - ray_direction.2 * edge2.1,
-        ray_direction.2 * edge2.0 - ray_direction.0 * edge2.2,
-        ray_direction.0 * edge2.1 - ray_direction.1 * edge2.0,
-    );
-
-    let a = edge1.0 * h.0 + edge1.1 * h.1 + edge1.2 * h.2;
-    if a > -eps && a < eps {
+    let h = ray_direction.cross(&edge2);
+    let a = edge1.dot(&h);
+    if a.abs() < eps {
         return None; // Ray is parallel to triangle
     }
 
     let f = 1.0 / a;
-    let s = (
-        ray_origin.0 - triangle.v0.0,
-        ray_origin.1 - triangle.v0.1,
-        ray_origin.2 - triangle.v0.2,
-    );
+    let s = ray_origin - v0;
 
-    let u = f * (s.0 * h.0 + s.1 * h.1 + s.2 * h.2);
+    let u = f * s.dot(&h);
     if !(0.0..=1.0).contains(&u) {
         return None;
     }
 
-    let q = (
-        s.1 * edge1.2 - s.2 * edge1.1,
-        s.2 * edge1.0 - s.0 * edge1.2,
-        s.0 * edge1.1 - s.1 * edge1.0,
-    );
+    let q = s.cross(&edge1);
 
-    let v = f * (ray_direction.0 * q.0 + ray_direction.1 * q.1 + ray_direction.2 * q.2);
+    let v = f * ray_direction.dot(&q);
     if v < 0.0 || u + v > 1.0 {
         return None;
     }
 
     // Compute t to find intersection point
-    let t = f * (edge2.0 * q.0 + edge2.1 * q.1 + edge2.2 * q.2);
+    let t = f * edge2.dot(&q);
     if t > eps {
         Some(t)
     } else {
@@ -98,7 +86,7 @@ pub fn remove_occluded_points_ray_triangle_rust(
         .points
         .par_iter()
         .flat_map_iter(|aorta_point| {
-            let aorta_coord = (
+            let aorta_coord = Point3::new(
                 aorta_point.contour_point.x,
                 aorta_point.contour_point.y,
                 aorta_point.contour_point.z,
@@ -107,17 +95,13 @@ pub fn remove_occluded_points_ray_triangle_rust(
             let mut local_excluded: Vec<usize> = Vec::new();
 
             for coronary_point in checked_cl_coronary.points.iter().take(range_coronary) {
-                let coronary_coord = (
+                let coronary_coord = Point3::new(
                     coronary_point.contour_point.x,
                     coronary_point.contour_point.y,
                     coronary_point.contour_point.z,
                 );
 
-                let ray_direction = (
-                    coronary_coord.0 - aorta_coord.0,
-                    coronary_coord.1 - aorta_coord.1,
-                    coronary_coord.2 - aorta_coord.2,
-                );
+                let ray_direction = coronary_coord - aorta_coord;
 
                 let mut intersecting_faces: Vec<(usize, f64)> = faces
                     .iter()
@@ -177,16 +161,17 @@ pub fn remove_occluded_points_ray_triangle_rust(
 }
 
 fn point_to_triangle_distance(point: &(f64, f64, f64), triangle: &Triangle) -> f64 {
-    let dist_v0 = super::calculate_squared_distance(point, &triangle.v0);
-    let dist_v1 = super::calculate_squared_distance(point, &triangle.v1);
-    let dist_v2 = super::calculate_squared_distance(point, &triangle.v2);
-
-    dist_v0.min(dist_v1).min(dist_v2)
+    let p = Point3::new(point.0, point.1, point.2);
+    triangle
+        .points()
+        .iter()
+        .map(|v| nalgebra::distance_squared(&p, v))
+        .fold(f64::INFINITY, f64::min)
 }
 
 #[derive(Debug)]
 struct BoundingSphere {
-    center: (f64, f64, f64),
+    center: Point3<f64>,
     radius: f64,
 }
 
@@ -219,12 +204,7 @@ pub fn find_centerline_bounded_points(
         } else {
             let dists: Vec<f64> = points_inside
                 .iter()
-                .map(|p| {
-                    let dx = p.0 - bounding_sphere.center.0;
-                    let dy = p.1 - bounding_sphere.center.1;
-                    let dz = p.2 - bounding_sphere.center.2;
-                    (dx * dx + dy * dy + dz * dz).sqrt()
-                })
+                .map(|p| nalgebra::distance(&Point3::new(p.0, p.1, p.2), &bounding_sphere.center))
                 .collect();
 
             let mean = dists.iter().sum::<f64>() / dists.len() as f64;
@@ -277,7 +257,7 @@ fn check_centerline(centerline: Centerline) -> Centerline {
 
 fn create_bounding_sphere(cl_point: &CenterlinePoint, radius: f64) -> BoundingSphere {
     BoundingSphere {
-        center: (
+        center: Point3::new(
             cl_point.contour_point.x,
             cl_point.contour_point.y,
             cl_point.contour_point.z,
@@ -287,12 +267,8 @@ fn create_bounding_sphere(cl_point: &CenterlinePoint, radius: f64) -> BoundingSp
 }
 
 fn find_points_inside_of_sphere(sphere: &BoundingSphere, point: &(f64, f64, f64)) -> bool {
-    let dx = point.0 - sphere.center.0;
-    let dy = point.1 - sphere.center.1;
-    let dz = point.2 - sphere.center.2;
-    let distance_squared = dx * dx + dy * dy + dz * dz;
-
-    distance_squared <= sphere.radius * sphere.radius
+    let p = Point3::new(point.0, point.1, point.2);
+    nalgebra::distance_squared(&p, &sphere.center) <= sphere.radius * sphere.radius
 }
 
 #[cfg(test)]
@@ -386,8 +362,8 @@ mod test_find_cl_bounded_points {
     #[test]
     fn test_single_ray_triangle_intersection() {
         // Test a single specific ray and triangle
-        let ray_origin = (0.0, 0.0, 0.0);
-        let ray_direction = (1.0, 0.0, 0.0); // Ray along x-axis
+        let ray_origin = Point3::new(0.0, 0.0, 0.0);
+        let ray_direction = Vector3::new(1.0, 0.0, 0.0); // Ray along x-axis
 
         // Triangle in the yz-plane at x=1.0
         let triangle = Triangle::new((1.0, -1.0, -1.0), (1.0, 1.0, -1.0), (1.0, 0.0, 1.0));
