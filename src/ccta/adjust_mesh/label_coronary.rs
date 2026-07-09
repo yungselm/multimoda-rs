@@ -1,4 +1,4 @@
-use crate::types::native::{Centerline, CenterlinePoint};
+use crate::types::native::Centerline;
 use nalgebra::{Point3, Vector3};
 use rayon::prelude::*;
 use std::collections::HashSet;
@@ -177,76 +177,36 @@ fn point_to_triangle_distance(point: &(f64, f64, f64), triangle: &Triangle) -> f
         .fold(f64::INFINITY, f64::min)
 }
 
-#[derive(Debug)]
-struct BoundingSphere {
-    center: Point3<f64>,
-    radius: f64,
-}
-
 pub fn find_centerline_bounded_points(
     centerline: Centerline,
     points: &[(f64, f64, f64)],
     radius: f64,
 ) -> Vec<(f64, f64, f64)> {
     let checked_centerline = check_centerline(centerline);
-    let mut all_points_inside: Vec<(f64, f64, f64)> = Vec::new();
-
-    for cl_point in checked_centerline.points.iter().rev() {
-        let bounding_sphere = create_bounding_sphere(cl_point, radius);
-        let mut points_inside: Vec<(f64, f64, f64)> = Vec::new();
-
-        for point in points.iter() {
-            if find_points_inside_of_sphere(&bounding_sphere, point) {
-                points_inside.push(*point);
-            }
-        }
-
-        if points_inside.is_empty() {
-            continue;
-        }
-
-        // Local filtering: use distances from the sphere center and discard
-        // distance outliers (within 2*std). Skip filter if there are too few points.
-        let filtered_local = if points_inside.len() < 3 {
-            points_inside
-        } else {
-            let dists: Vec<f64> = points_inside
-                .iter()
-                .map(|p| nalgebra::distance(&Point3::new(p.0, p.1, p.2), &bounding_sphere.center))
-                .collect();
-
-            let mean = dists.iter().sum::<f64>() / dists.len() as f64;
-            let var = dists.iter().map(|d| (d - mean).powi(2)).sum::<f64>() / dists.len() as f64;
-            let std = var.sqrt();
-
-            if std == 0.0 {
-                points_inside
-            } else {
-                points_inside
-                    .into_iter()
-                    .zip(dists)
-                    .filter(|(_p, d)| (d - mean).abs() <= 2.0 * std)
-                    .map(|(p, _d)| p)
-                    .collect()
-            }
-        };
-
-        all_points_inside.extend(filtered_local);
+    if points.is_empty() || checked_centerline.points.is_empty() {
+        return Vec::new();
     }
 
-    all_points_inside.sort_by(|a, b| {
-        a.0.partial_cmp(&b.0)
-            .unwrap()
-            .then(a.1.partial_cmp(&b.1).unwrap())
-            .then(a.2.partial_cmp(&b.2).unwrap())
-    });
+    // R-tree over the centerline points (the small side, typically ~1000 points):
+    // each mesh point then costs O(log M) instead of a scan over all M centerline
+    // points, so the whole query is O(N log M) instead of O(N * M).
+    let cl_coords: Vec<[f64; 3]> = checked_centerline
+        .points
+        .iter()
+        .map(|p| [p.contour_point.x, p.contour_point.y, p.contour_point.z])
+        .collect();
+    let tree = rstar::RTree::bulk_load(cl_coords);
 
-    const EPS: f64 = 1e-6;
-    all_points_inside.dedup_by(|a, b| {
-        (a.0 - b.0).abs() < EPS && (a.1 - b.1).abs() < EPS && (a.2 - b.2).abs() < EPS
-    });
-
-    all_points_inside
+    let radius_sq = radius * radius;
+    points
+        .iter()
+        .filter(|p| {
+            tree.locate_within_distance([p.0, p.1, p.2], radius_sq)
+                .next()
+                .is_some()
+        })
+        .copied()
+        .collect()
 }
 
 /// Check that the centerline is sorted by z-value (distal to proximal)
@@ -261,22 +221,6 @@ fn check_centerline(centerline: Centerline) -> Centerline {
         points,
         branch_start_indices,
     }
-}
-
-fn create_bounding_sphere(cl_point: &CenterlinePoint, radius: f64) -> BoundingSphere {
-    BoundingSphere {
-        center: Point3::new(
-            cl_point.contour_point.x,
-            cl_point.contour_point.y,
-            cl_point.contour_point.z,
-        ),
-        radius,
-    }
-}
-
-fn find_points_inside_of_sphere(sphere: &BoundingSphere, point: &(f64, f64, f64)) -> bool {
-    let p = Point3::new(point.0, point.1, point.2);
-    nalgebra::distance_squared(&p, &sphere.center) <= sphere.radius * sphere.radius
 }
 
 #[cfg(test)]

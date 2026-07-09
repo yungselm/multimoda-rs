@@ -45,10 +45,13 @@ once on the raw CCTA mesh (25,171 verts) and once on the remeshed mesh after
 38.6s to 95.1s, i.e. worse than linear in vertex count. Breakdown of the internal timers
 (initial call → final call):
 
-- [] `find_centerline_bounded_points_simple` (Rust, rca+lca combined): 22.4s → 51.1s.
-  Largest single cost in both calls; roughly linear with `points_list × centerline points`,
-  but still the top target for algorithmic improvement (spatial index instead of brute rolling
-  sphere check).
+- [x] `find_centerline_bounded_points_simple` (Rust, rca+lca combined): 22.4s → 51.1s.
+  **FIXED (2026-07-09):** rewrote `find_centerline_bounded_points` in
+  `src/ccta/adjust_mesh/label_coronary.rs` to build an `rstar::RTree` over the (small)
+  centerline point set and query each mesh point via `locate_within_distance`, dropping
+  complexity from O(N_points × M_centerline) to O((N+M) log M). Re-measured on the
+  25,171-vertex mesh: **22.4s → 0.236s** (~95x). See the new audit section below for every
+  other place in the codebase with the same fixable pattern.
 - [] `_find_faces_for_points` (called via `_prepare_faces_for_rust`, pure Python in
   `labeling.py`): 3.1s → 19.5s — a 6.2x increase for only a 2.8x increase in input points.
   Root cause: for every occlusion-candidate point it computes `np.linalg.norm(verts - p,
