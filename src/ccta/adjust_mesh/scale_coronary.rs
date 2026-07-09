@@ -365,36 +365,40 @@ pub fn clean_up_non_section_points(
     let mut cleaned_points = Vec::new();
     let mut reassigned_points = reference_points.clone();
 
+    if points_to_cleanup.is_empty() {
+        return (cleaned_points, reassigned_points);
+    }
+
+    // R-trees over both point sets: each point's ref/self neighbor counts then
+    // cost O(log n + k) instead of a full linear scan, so the whole function is
+    // O((P+R) log(P+R)) instead of O(P * (P+R)).
+    let ref_tree = rstar::RTree::bulk_load(
+        reference_points
+            .iter()
+            .map(|p| [p.0, p.1, p.2])
+            .collect::<Vec<_>>(),
+    );
+    let cleanup_tree = rstar::RTree::bulk_load(
+        points_to_cleanup
+            .iter()
+            .map(|p| [p.0, p.1, p.2])
+            .collect::<Vec<_>>(),
+    );
+
     for point in points_to_cleanup.iter() {
-        let mut ref_neighbors = 0;
-        let mut total_neighbors = 0;
+        let query = [point.0, point.1, point.2];
 
-        for ref_point in reference_points.iter() {
-            let dx = point.0 - ref_point.0;
-            let dy = point.1 - ref_point.1;
-            let dz = point.2 - ref_point.2;
-            let distance_squared = dx * dx + dy * dy + dz * dz;
-
-            if distance_squared <= neighborhood_radius_sq {
-                ref_neighbors += 1;
-                total_neighbors += 1;
-            }
-        }
-
-        for other_point in points_to_cleanup.iter() {
-            if std::ptr::eq(point, other_point) {
-                continue; // Skip the point itself
-            }
-
-            let dx = point.0 - other_point.0;
-            let dy = point.1 - other_point.1;
-            let dz = point.2 - other_point.2;
-            let distance_squared = dx * dx + dy * dy + dz * dz;
-
-            if distance_squared <= neighborhood_radius_sq {
-                total_neighbors += 1;
-            }
-        }
+        let ref_neighbors = ref_tree
+            .locate_within_distance(query, neighborhood_radius_sq)
+            .count();
+        // The point itself is always within its own radius, so subtract 1 to
+        // match the original "skip self" behavior (duplicate points at the same
+        // coordinate still count as neighbors, exactly one instance is excluded).
+        let self_neighbors = cleanup_tree
+            .locate_within_distance(query, neighborhood_radius_sq)
+            .count()
+            .saturating_sub(1);
+        let total_neighbors = ref_neighbors + self_neighbors;
 
         // Decision logic: if most neighbors are reference points, reassign
         if total_neighbors > 0 {

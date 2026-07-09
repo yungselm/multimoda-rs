@@ -135,20 +135,43 @@ pub fn remove_occluded_points_ray_triangle_rust(
 
     println!("Total faces to exclude: {}", faces_to_exclude.len());
 
-    let mut points_to_remove: HashSet<usize> = HashSet::new();
     const DISTANCE_THRESHOLD: f64 = 0.5; // This only works for mm, just needs to be sufficiently small
 
-    for (point_idx, point) in points.iter().enumerate() {
-        for &face_idx in &faces_to_exclude {
-            if let Some(face) = faces.get(face_idx) {
-                let distance = point_to_triangle_distance(point, face);
-                if distance < DISTANCE_THRESHOLD {
-                    points_to_remove.insert(point_idx);
-                    break; // No need to check other faces for this point
-                }
-            }
-        }
-    }
+    // R-tree over the vertices of only the excluded faces (small, typically a few hundred):
+    // each mesh point then costs O(log k) instead of a linear scan over every excluded face,
+    // so this pass is O(points * log k) instead of O(points * faces_to_exclude). Checking "any
+    // excluded face's vertex within threshold" is exactly equivalent to the original per-face
+    // min-of-3-vertices check, since the vertex pool covers the same 3 vertices per face.
+    // `locate_within_distance` compares squared distance, matching the pre-existing (squared)
+    // semantics of `DISTANCE_THRESHOLD` here.
+    let excluded_vertices: Vec<[f64; 3]> = faces_to_exclude
+        .iter()
+        .filter_map(|&face_idx| faces.get(face_idx))
+        .flat_map(|face| {
+            [
+                [face.v0.0, face.v0.1, face.v0.2],
+                [face.v1.0, face.v1.1, face.v1.2],
+                [face.v2.0, face.v2.1, face.v2.2],
+            ]
+        })
+        .collect();
+
+    let points_to_remove: HashSet<usize> = if excluded_vertices.is_empty() {
+        HashSet::new()
+    } else {
+        let excluded_tree = rstar::RTree::bulk_load(excluded_vertices);
+        points
+            .par_iter()
+            .enumerate()
+            .filter_map(|(point_idx, point)| {
+                excluded_tree
+                    .locate_within_distance([point.0, point.1, point.2], DISTANCE_THRESHOLD)
+                    .next()
+                    .is_some()
+                    .then_some(point_idx)
+            })
+            .collect()
+    };
 
     let filtered_points: Vec<(f64, f64, f64)> = points
         .iter()
@@ -166,15 +189,6 @@ pub fn remove_occluded_points_ray_triangle_rust(
     );
 
     filtered_points
-}
-
-fn point_to_triangle_distance(point: &(f64, f64, f64), triangle: &Triangle) -> f64 {
-    let p = Point3::new(point.0, point.1, point.2);
-    triangle
-        .points()
-        .iter()
-        .map(|v| nalgebra::distance_squared(&p, v))
-        .fold(f64::INFINITY, f64::min)
 }
 
 pub fn find_centerline_bounded_points(
