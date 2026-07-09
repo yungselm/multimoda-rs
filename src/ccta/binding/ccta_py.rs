@@ -11,6 +11,13 @@ use pyo3::prelude::*;
 
 type Point3D = (f64, f64, f64);
 type TriangleTuple = (Point3D, Point3D, Point3D);
+type FiveRegionPointLists = (
+    Vec<Point3D>,
+    Vec<Point3D>,
+    Vec<Point3D>,
+    Vec<Point3D>,
+    Vec<Point3D>,
+);
 
 /// Find points bounded by spheres along a coronary vessel centerline.
 ///
@@ -155,6 +162,81 @@ pub fn find_faces_near_points(
     let triangles = label_coronary::find_faces_near_points(&vertices, &faces, &points, tol);
     let result: Vec<TriangleTuple> = triangles.into_iter().map(|t| (t.v0, t.v1, t.v2)).collect();
     Ok(result)
+}
+
+/// Vertices present in neither `points_a` nor `points_b` (exact-match set difference).
+///
+/// Parameters
+/// ----------
+/// vertices : list of tuple of float
+///     Mesh vertex coordinates, e.g. ``mesh.vertices.tolist()``.
+/// points_a : list of tuple of float
+///     First set of vertex-derived points to exclude.
+/// points_b : list of tuple of float
+///     Second set of vertex-derived points to exclude.
+///
+/// Returns
+/// -------
+/// aortic_points : list of tuple of float
+///     Vertices from *vertices* that are not present in *points_a* or *points_b*.
+#[pyfunction]
+pub fn find_aortic_points(
+    vertices: Vec<Point3D>,
+    points_a: Vec<Point3D>,
+    points_b: Vec<Point3D>,
+) -> PyResult<Vec<Point3D>> {
+    Ok(label_coronary::find_aortic_points(
+        &vertices, &points_a, &points_b,
+    ))
+}
+
+/// Refine vertex labels using a mesh adjacency map.
+///
+/// Applies two adjacency-based correction rules:
+///
+/// * Logic A - an isolated RCA/LCA vertex (no same-label neighbours) is
+///   reassigned to the aorta class.
+/// * Logic B - a vertex removed by occlusion detection but whose neighbours are
+///   predominantly (> 70%) the corresponding coronary label is restored to that
+///   label.
+///
+/// Parameters
+/// ----------
+/// vertices : list of tuple of float
+///     Mesh vertex coordinates, e.g. ``mesh.vertices.tolist()``.
+/// faces : list of list of int
+///     Mesh face vertex-index triples, e.g. ``mesh.faces.tolist()``.
+/// rca_points, lca_points, rca_removed_points, lca_removed_points : list of tuple of float
+///     Current per-region vertex-derived point lists.
+///
+/// Returns
+/// -------
+/// aorta_points, rca_points, lca_points, rca_removed_points, lca_removed_points : list of tuple of float
+///     The five region point lists after adjacency-based label smoothing.
+#[pyfunction]
+pub fn final_reclassification(
+    vertices: Vec<Point3D>,
+    faces: Vec<[usize; 3]>,
+    rca_points: Vec<Point3D>,
+    lca_points: Vec<Point3D>,
+    rca_removed_points: Vec<Point3D>,
+    lca_removed_points: Vec<Point3D>,
+) -> PyResult<FiveRegionPointLists> {
+    let result = label_coronary::final_reclassification(
+        &vertices,
+        &faces,
+        &rca_points,
+        &lca_points,
+        &rca_removed_points,
+        &lca_removed_points,
+    );
+    Ok((
+        result.aorta_points,
+        result.rca_points,
+        result.lca_points,
+        result.rca_removed_points,
+        result.lca_removed_points,
+    ))
 }
 
 /// Adjust the vessel diameter by morphing points outward or inward along the centerline.

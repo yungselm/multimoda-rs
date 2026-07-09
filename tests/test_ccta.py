@@ -1,9 +1,10 @@
 """Tests for the multimodars.ccta module.
 
 Covers:
-  - labeling:   _find_aortic_points, _final_reclassification
-  - multimodars.multimodars: find_faces_near_points (Rust binding backing
-                labeling.label_geometry's occlusion-removal face lookup)
+  - multimodars.multimodars: find_faces_near_points, find_aortic_points,
+                final_reclassification (Rust bindings backing
+                labeling.label_geometry's occlusion-removal and
+                adjacency-based label-smoothing steps)
   - fixing_functions: manual_hole_fill, postprocess_stitched_mesh
   - manipulating: remove_labeled_points_from_mesh,
                   keep_labeled_points_from_mesh, sync_results_to_mesh,
@@ -25,11 +26,11 @@ from multimodars.ccta.fixing_functions import (
     manual_hole_fill,
     postprocess_stitched_mesh,
 )
-from multimodars.ccta.labeling import (
-    _find_aortic_points,
-    _final_reclassification,
+from multimodars.multimodars import (
+    find_faces_near_points,
+    find_aortic_points,
+    final_reclassification,
 )
-from multimodars.multimodars import find_faces_near_points
 from multimodars.ccta.manipulating import (
     _clamp_to_plane,
     _enforce_layer_gap_from_plane,
@@ -138,30 +139,34 @@ def grid_results(grid_mesh):
 
 
 # ===========================================================================
-# labeling._find_aortic_points
+# multimodars.multimodars.find_aortic_points
+# (Rust binding that replaced labeling._find_aortic_points)
 # ===========================================================================
 
 
 class TestFindAorticPoints:
     def test_basic_set_difference(self, grid_mesh):
+        verts = [tuple(v) for v in grid_mesh.vertices]
         rca = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]
         lca = [(0.0, 1.0, 0.0)]
-        aortic = _find_aortic_points(grid_mesh.vertices, rca, lca)
+        aortic = find_aortic_points(verts, rca, lca)
         assert len(aortic) == 6  # 9 total − 3 labelled
         assert (0.0, 0.0, 0.0) not in aortic
         assert (0.0, 1.0, 0.0) not in aortic
 
     def test_empty_rca_lca_returns_all(self, grid_mesh):
-        aortic = _find_aortic_points(grid_mesh.vertices, [], [])
-        assert len(aortic) == len(grid_mesh.vertices)
+        verts = [tuple(v) for v in grid_mesh.vertices]
+        aortic = find_aortic_points(verts, [], [])
+        assert len(aortic) == len(verts)
 
     def test_all_labelled_returns_empty(self, grid_mesh):
-        all_verts = [tuple(v) for v in grid_mesh.vertices]
-        aortic = _find_aortic_points(grid_mesh.vertices, all_verts[:5], all_verts[5:])
+        verts = [tuple(v) for v in grid_mesh.vertices]
+        aortic = find_aortic_points(verts, verts[:5], verts[5:])
         assert aortic == []
 
     def test_output_is_list_of_tuples(self, grid_mesh):
-        aortic = _find_aortic_points(grid_mesh.vertices, [], [])
+        verts = [tuple(v) for v in grid_mesh.vertices]
+        aortic = find_aortic_points(verts, [], [])
         assert all(isinstance(p, tuple) for p in aortic)
         assert all(len(p) == 3 for p in aortic)
 
@@ -215,11 +220,29 @@ class TestFindFacesNearPoints:
 
 
 # ===========================================================================
-# labeling._final_reclassification
+# multimodars.multimodars.final_reclassification
+# (Rust binding that replaced labeling._final_reclassification)
 # ===========================================================================
 
 
 class TestFinalReclassification:
+    @staticmethod
+    def _call(mesh, rca=(), lca=(), rca_removed=(), lca_removed=()) -> dict:
+        verts = [tuple(v) for v in mesh.vertices]
+        faces = mesh.faces.tolist()
+        aorta_pts, rca_pts, lca_pts, rca_removed_pts, lca_removed_pts = (
+            final_reclassification(
+                verts, faces, list(rca), list(lca), list(rca_removed), list(lca_removed)
+            )
+        )
+        return {
+            "aorta_points": aorta_pts,
+            "rca_points": rca_pts,
+            "lca_points": lca_pts,
+            "rca_removed_points": rca_removed_pts,
+            "lca_removed_points": lca_removed_pts,
+        }
+
     # ------------------------------------------------------------------
     # Logic A: isolated RCA/LCA vertex → reclassified to aorta
     # ------------------------------------------------------------------
@@ -227,44 +250,20 @@ class TestFinalReclassification:
     def test_isolated_rca_becomes_aorta(self, grid_mesh):
         """Vertex 0 labelled RCA; its neighbours (1, 3) are aorta → reclassified."""
         verts = [tuple(v) for v in grid_mesh.vertices]
-        results = {
-            "mesh": grid_mesh,
-            "aorta_points": verts[1:],  # all except vertex 0
-            "rca_points": [verts[0]],
-            "lca_points": [],
-            "rca_removed_points": [],
-            "lca_removed_points": [],
-        }
-        new = _final_reclassification(results)
+        new = self._call(grid_mesh, rca=[verts[0]])
         assert verts[0] not in new["rca_points"]
         assert verts[0] in new["aorta_points"]
 
     def test_isolated_lca_becomes_aorta(self, grid_mesh):
         verts = [tuple(v) for v in grid_mesh.vertices]
-        results = {
-            "mesh": grid_mesh,
-            "aorta_points": verts[1:],
-            "rca_points": [],
-            "lca_points": [verts[0]],
-            "rca_removed_points": [],
-            "lca_removed_points": [],
-        }
-        new = _final_reclassification(results)
+        new = self._call(grid_mesh, lca=[verts[0]])
         assert verts[0] not in new["lca_points"]
         assert verts[0] in new["aorta_points"]
 
     def test_non_isolated_rca_stays(self, grid_mesh):
         """Vertex 0 and neighbour 1 are both RCA → vertex 0 keeps its label."""
         verts = [tuple(v) for v in grid_mesh.vertices]
-        results = {
-            "mesh": grid_mesh,
-            "aorta_points": verts[2:],
-            "rca_points": [verts[0], verts[1]],
-            "lca_points": [],
-            "rca_removed_points": [],
-            "lca_removed_points": [],
-        }
-        new = _final_reclassification(results)
+        new = self._call(grid_mesh, rca=[verts[0], verts[1]])
         assert verts[0] in new["rca_points"]
 
     # ------------------------------------------------------------------
@@ -275,15 +274,11 @@ class TestFinalReclassification:
         """Vertex 4 is RCA_REMOVED; all 6 neighbours are RCA (100 % > 70 %)."""
         verts = [tuple(v) for v in grid_mesh.vertices]
         # vertex 4 neighbours: {1, 2, 3, 5, 6, 7}
-        results = {
-            "mesh": grid_mesh,
-            "aorta_points": [verts[0], verts[8]],
-            "rca_points": [verts[1], verts[2], verts[3], verts[5], verts[6], verts[7]],
-            "lca_points": [],
-            "rca_removed_points": [verts[4]],
-            "lca_removed_points": [],
-        }
-        new = _final_reclassification(results)
+        new = self._call(
+            grid_mesh,
+            rca=[verts[1], verts[2], verts[3], verts[5], verts[6], verts[7]],
+            rca_removed=[verts[4]],
+        )
         assert verts[4] in new["rca_points"]
         assert verts[4] not in new["rca_removed_points"]
 
@@ -294,15 +289,7 @@ class TestFinalReclassification:
     def test_vertex_count_conserved(self, grid_mesh):
         """Total vertices across all lists must equal mesh vertex count."""
         verts = [tuple(v) for v in grid_mesh.vertices]
-        results = {
-            "mesh": grid_mesh,
-            "aorta_points": verts[4:],
-            "rca_points": verts[:2],
-            "lca_points": verts[2:4],
-            "rca_removed_points": [],
-            "lca_removed_points": [],
-        }
-        new = _final_reclassification(results)
+        new = self._call(grid_mesh, rca=verts[:2], lca=verts[2:4])
         total = sum(
             len(new[k])
             for k in (
@@ -315,10 +302,13 @@ class TestFinalReclassification:
         )
         assert total == len(grid_mesh.vertices)
 
-    def test_returns_dict_with_required_keys(self, grid_results):
-        new = _final_reclassification(grid_results)
+    def test_returns_dict_with_required_keys(self, grid_mesh, grid_results):
+        new = self._call(
+            grid_mesh,
+            rca=grid_results["rca_points"],
+            lca=grid_results["lca_points"],
+        )
         for key in (
-            "mesh",
             "aorta_points",
             "rca_points",
             "lca_points",

@@ -1,7 +1,8 @@
+use crate::ccta::binding::ccta_py::build_adjacency_map;
 use crate::types::native::Centerline;
 use nalgebra::{Point3, Vector3};
 use rayon::prelude::*;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Triangle {
@@ -275,6 +276,149 @@ pub fn find_faces_near_points(
         .collect()
 }
 
+/// Exact-match key for a mesh-vertex coordinate. Vertex-derived point lists passed
+/// around this pipeline (e.g. `rca_points`, `lca_points`) are always bit-identical
+/// copies of the originating `vertices` entries (no arithmetic in between), so an
+/// exact bit-pattern key is the correct tool here — unlike a radius/nearest-neighbor
+/// query, this is a plain exact-membership test, so no spatial index is needed.
+fn bits_key(p: &(f64, f64, f64)) -> (u64, u64, u64) {
+    (p.0.to_bits(), p.1.to_bits(), p.2.to_bits())
+}
+
+/// Vertices present in neither `points_a` nor `points_b` (exact-match set
+/// difference). Replaces the old pure-Python `_find_aortic_points`, which did the
+/// same set-based filtering but paid per-vertex Python-loop overhead.
+pub fn find_aortic_points(
+    vertices: &[(f64, f64, f64)],
+    points_a: &[(f64, f64, f64)],
+    points_b: &[(f64, f64, f64)],
+) -> Vec<(f64, f64, f64)> {
+    let mut excluded: HashSet<(u64, u64, u64)> =
+        HashSet::with_capacity(points_a.len() + points_b.len());
+    excluded.extend(points_a.iter().map(bits_key));
+    excluded.extend(points_b.iter().map(bits_key));
+
+    vertices
+        .iter()
+        .filter(|v| !excluded.contains(&bits_key(v)))
+        .copied()
+        .collect()
+}
+
+/// Output of [`final_reclassification`]: the five vessel-region point lists after
+/// adjacency-based label smoothing.
+pub struct ReclassifiedLabels {
+    pub aorta_points: Vec<(f64, f64, f64)>,
+    pub rca_points: Vec<(f64, f64, f64)>,
+    pub lca_points: Vec<(f64, f64, f64)>,
+    pub rca_removed_points: Vec<(f64, f64, f64)>,
+    pub lca_removed_points: Vec<(f64, f64, f64)>,
+}
+
+/// Refine vertex labels using a mesh adjacency map. Replaces the old pure-Python
+/// `_final_reclassification`, which did the same per-vertex adjacency traversal but
+/// paid Python-loop overhead for every one of up to tens of thousands of vertices.
+///
+/// Applies two adjacency-based correction rules, identical to the original:
+/// * Logic A - an isolated RCA/LCA vertex (no same-label neighbours) is reassigned
+///   to the aorta class.
+/// * Logic B - a vertex removed by occlusion detection but whose neighbours are
+///   predominantly (> 70%) the corresponding coronary label is restored to that
+///   label.
+pub fn final_reclassification(
+    vertices: &[(f64, f64, f64)],
+    faces: &[[usize; 3]],
+    rca_points: &[(f64, f64, f64)],
+    lca_points: &[(f64, f64, f64)],
+    rca_removed_points: &[(f64, f64, f64)],
+    lca_removed_points: &[(f64, f64, f64)],
+) -> ReclassifiedLabels {
+    let n_vertices = vertices.len();
+
+    // Forward insertion so a duplicate coordinate keeps the *last* matching index,
+    // mirroring Python's `{tuple(coord): i for i, coord in enumerate(...)}`.
+    let mut coord_to_idx: HashMap<(u64, u64, u64), usize> = HashMap::with_capacity(n_vertices);
+    for (i, v) in vertices.iter().enumerate() {
+        coord_to_idx.insert(bits_key(v), i);
+    }
+
+    let mut labels: Vec<u8> = vec![0; n_vertices];
+    for pt in rca_points {
+        if let Some(&idx) = coord_to_idx.get(&bits_key(pt)) {
+            labels[idx] = 1;
+        }
+    }
+    for pt in lca_points {
+        if let Some(&idx) = coord_to_idx.get(&bits_key(pt)) {
+            labels[idx] = 2;
+        }
+    }
+    for pt in rca_removed_points {
+        if let Some(&idx) = coord_to_idx.get(&bits_key(pt)) {
+            labels[idx] = 3;
+        }
+    }
+    for pt in lca_removed_points {
+        if let Some(&idx) = coord_to_idx.get(&bits_key(pt)) {
+            labels[idx] = 4;
+        }
+    }
+
+    let adjacency = build_adjacency_map(faces.to_vec());
+
+    let mut new_labels = labels.clone();
+    for i in 0..n_vertices {
+        let Some(neighbors) = adjacency.get(&i) else {
+            continue;
+        };
+        if neighbors.is_empty() {
+            continue;
+        }
+
+        let current_label = labels[i];
+        let neighbor_labels: Vec<u8> = neighbors.iter().map(|&n| labels[n]).collect();
+
+        match current_label {
+            // LOGIC A: isolated RCA/LCA -> aorta
+            1 if !neighbor_labels.contains(&1) => new_labels[i] = 0,
+            2 if !neighbor_labels.contains(&2) => new_labels[i] = 0,
+            // LOGIC B: removed RCA/LCA point with >70% same-label neighbours -> restored
+            3 => {
+                let rca_neighbors = neighbor_labels.iter().filter(|&&l| l == 1).count();
+                if (rca_neighbors as f64) > (neighbors.len() as f64 * 0.7) {
+                    new_labels[i] = 1;
+                }
+            }
+            4 => {
+                let lca_neighbors = neighbor_labels.iter().filter(|&&l| l == 2).count();
+                if (lca_neighbors as f64) > (neighbors.len() as f64 * 0.7) {
+                    new_labels[i] = 2;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut result = ReclassifiedLabels {
+        aorta_points: Vec::new(),
+        rca_points: Vec::new(),
+        lca_points: Vec::new(),
+        rca_removed_points: Vec::new(),
+        lca_removed_points: Vec::new(),
+    };
+    for (i, &label) in new_labels.iter().enumerate() {
+        match label {
+            0 => result.aorta_points.push(vertices[i]),
+            1 => result.rca_points.push(vertices[i]),
+            2 => result.lca_points.push(vertices[i]),
+            3 => result.rca_removed_points.push(vertices[i]),
+            4 => result.lca_removed_points.push(vertices[i]),
+            _ => unreachable!(),
+        }
+    }
+    result
+}
+
 /// Check that the centerline is sorted by z-value (distal to proximal)
 /// and ensure the last point has the lowest z-value
 fn check_centerline(centerline: Centerline) -> Centerline {
@@ -429,5 +573,116 @@ mod test_find_cl_bounded_points {
         let points = vec![(5.0, 5.0, 5.0)];
         let result = find_faces_near_points(&vertices, &faces, &points, 1e-6);
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_find_aortic_points_basic_set_difference() {
+        let vertices = vec![
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0),
+            (1.0, 1.0, 0.0),
+        ];
+        let a = vec![vertices[0]];
+        let b = vec![vertices[1]];
+        let result = find_aortic_points(&vertices, &a, &b);
+        assert_eq!(result.len(), 2);
+        assert!(result.contains(&vertices[2]));
+        assert!(result.contains(&vertices[3]));
+    }
+
+    #[test]
+    fn test_find_aortic_points_empty_exclusions_returns_all() {
+        let vertices = vec![(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)];
+        let result = find_aortic_points(&vertices, &[], &[]);
+        assert_eq!(result.len(), 2);
+    }
+
+    type GridMeshFixture = (Vec<(f64, f64, f64)>, Vec<[usize; 3]>);
+
+    // 3x3 grid mesh (9 vertices, 8 faces, z=0 plane), mirroring
+    // tests/test_ccta.py::_make_grid_mesh. Vertex 4 (centre) is adjacent to
+    // {1, 2, 3, 5, 6, 7}; vertex 0 (corner) is adjacent to {1, 3}.
+    fn grid_mesh_fixture() -> GridMeshFixture {
+        let vertices = vec![
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (2.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0),
+            (1.0, 1.0, 0.0),
+            (2.0, 1.0, 0.0),
+            (0.0, 2.0, 0.0),
+            (1.0, 2.0, 0.0),
+            (2.0, 2.0, 0.0),
+        ];
+        let faces = vec![
+            [0, 1, 3],
+            [1, 4, 3],
+            [1, 2, 4],
+            [2, 5, 4],
+            [3, 4, 6],
+            [4, 7, 6],
+            [4, 5, 7],
+            [5, 8, 7],
+        ];
+        (vertices, faces)
+    }
+
+    #[test]
+    fn test_final_reclassification_isolated_rca_becomes_aorta() {
+        let (vertices, faces) = grid_mesh_fixture();
+        // vertex 0 labelled RCA; its neighbours (1, 3) are aorta -> reclassified.
+        let rca_points = vec![vertices[0]];
+        let result = final_reclassification(&vertices, &faces, &rca_points, &[], &[], &[]);
+        assert!(!result.rca_points.contains(&vertices[0]));
+        assert!(result.aorta_points.contains(&vertices[0]));
+    }
+
+    #[test]
+    fn test_final_reclassification_non_isolated_rca_stays() {
+        let (vertices, faces) = grid_mesh_fixture();
+        // vertex 0 and neighbour 1 are both RCA -> vertex 0 keeps its label.
+        let rca_points = vec![vertices[0], vertices[1]];
+        let result = final_reclassification(&vertices, &faces, &rca_points, &[], &[], &[]);
+        assert!(result.rca_points.contains(&vertices[0]));
+    }
+
+    #[test]
+    fn test_final_reclassification_removed_rca_restored_when_majority_rca() {
+        let (vertices, faces) = grid_mesh_fixture();
+        // vertex 4 is RCA_REMOVED; all 6 neighbours (1,2,3,5,6,7) are RCA (100% > 70%).
+        let rca_points = vec![
+            vertices[1],
+            vertices[2],
+            vertices[3],
+            vertices[5],
+            vertices[6],
+            vertices[7],
+        ];
+        let rca_removed_points = vec![vertices[4]];
+        let result = final_reclassification(
+            &vertices,
+            &faces,
+            &rca_points,
+            &[],
+            &rca_removed_points,
+            &[],
+        );
+        assert!(result.rca_points.contains(&vertices[4]));
+        assert!(!result.rca_removed_points.contains(&vertices[4]));
+    }
+
+    #[test]
+    fn test_final_reclassification_vertex_count_conserved() {
+        let (vertices, faces) = grid_mesh_fixture();
+        let rca_points = vec![vertices[0], vertices[1]];
+        let lca_points = vec![vertices[2], vertices[3]];
+        let result = final_reclassification(&vertices, &faces, &rca_points, &lca_points, &[], &[]);
+        let total = result.aorta_points.len()
+            + result.rca_points.len()
+            + result.lca_points.len()
+            + result.rca_removed_points.len()
+            + result.lca_removed_points.len();
+        assert_eq!(total, vertices.len());
     }
 }

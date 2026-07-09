@@ -88,7 +88,8 @@ below the `label_geometry` cost but candidates if the workflow needs to get fast
 ## R-tree / Rust-migration audit — `src/ccta` and `multimodars/ccta` (2026-07-09)
 
 Re-profiled `label_geometry` on the 25,171-vertex mesh after the `find_centerline_bounded_points`
-fix above. New bottleneck order:
+fix above. New bottleneck order (table below is from a **debug** build — see the B1 entry further
+down for why that matters and for release-build numbers after batch A+B1 landed):
 
 | Step | Time |
 |---|---|
@@ -110,37 +111,42 @@ what pure-Python logic in `multimodars/ccta` should move into Rust. Prioritized 
 impact:
 
 ### A. Small effort, ready to apply next
-- [] `rca_removed_points` / `lca_removed_points` diff (`labeling.py:219-222, 242-245`,
-  `p for p in a if p not in b`) — `b` is still a plain `list`, so this is still an O(n×m)
-  linear scan. Convert to a `set` before the membership test. Still costing 0.177s at 25k
-  verts; was 1.45s at 57k verts.
-- [] `clean_up_non_section_points` (`src/ccta/adjust_mesh/scale_coronary.rs:357-416`, exposed
-  as `clean_outlier_points`) — for every cleanup point scans all `reference_points` *and* all
-  of `points_to_cleanup` again for self-neighbor counting: O(cleanup×(cleanup+reference)).
-  Same `locate_within_distance` recipe as the already-fixed function. Currently 0.55-0.73s per
-  call, called twice per `label_geometry`.
-- [] `remove_occluded_points_ray_triangle_rust` Pass B (`label_coronary.rs:141-151`) — for
-  every mesh point scans all of `faces_to_exclude` (small, ~150-200) doing point-to-triangle
-  distance: O(points × faces_to_exclude). An R-tree over just the excluded faces, queried per
-  point, is a direct copy of the already-fixed pattern.
+- [x] `rca_removed_points` / `lca_removed_points` diff (`labeling.py`, `p for p in a if p not in
+  b`) — **FIXED:** now builds a `set` from the final points list before the membership test.
+  O(n×m) → O(n).
+- [x] `clean_up_non_section_points` (`src/ccta/adjust_mesh/scale_coronary.rs`, exposed as
+  `clean_outlier_points`) — **FIXED:** builds R-trees over `reference_points` and
+  `points_to_cleanup` and counts via `locate_within_distance` instead of two nested linear
+  scans. O(cleanup×(cleanup+reference)) → O((cleanup+reference) log(...)).
+- [x] `remove_occluded_points_ray_triangle_rust` Pass B (`label_coronary.rs`) — **FIXED:** pools
+  the (small) excluded-faces' vertices into one R-tree, queried per mesh point.
+  O(points × faces_to_exclude) → O(points × log k).
 
 ### B. Medium effort, high value
-- [] `_find_faces_for_points` / `_prepare_faces_for_rust` (`labeling.py:357-406`) — still pure
-  Python, O(points × n_vertices) via `np.linalg.norm` over all mesh vertices per candidate
-  point. Best Rust-migration candidate in the whole module: mesh vertices/faces already cross
-  the FFI boundary elsewhere, so this can become a Rust binding using an R-tree over mesh
-  vertices, and ideally get fused directly into `remove_occluded_points_ray_triangle_rust` so
-  points don't round-trip through Python just to come back as `Triangle`s. Currently 3.184s per
-  call (was 19.5s at 57k verts).
-- [] `remove_occluded_points_ray_triangle_rust` Pass A (`label_coronary.rs:88-134`) — for every
-  (aorta_point × sampled coronary_point) pair, tests ray intersection against **all** faces:
-  O(aorta_points × coronary_samples × faces). This is the single largest remaining cost
-  (4.353s). `rstar` has no native ray query, so this needs either a BVH crate or a manual
-  AABB-vs-ray prune step before the exact `ray_triangle_intersection` check — more work than the
-  other R-tree swaps but the biggest remaining line item.
+- [x] `_find_faces_for_points` / `_prepare_faces_for_rust` (`labeling.py`) — **FIXED
+  (2026-07-09):** deleted both pure-Python functions entirely; added a new Rust binding
+  `find_faces_near_points` (`label_coronary.rs` + `ccta_py.rs`) that builds an R-tree over mesh
+  vertices (tagged with `GeomWithData`) and does the whole nearest-vertex-match +
+  face-membership scan in one Rust pass. `labeling.py` now calls it directly, and
+  `tests/test_ccta.py` was updated to test the new binding instead of the deleted functions.
+  Re-measured on the 25,171-vertex mesh (release build): **3.184s → 0.025s**. Note: this
+  measurement (and the ones below) used `maturin develop --release`; the earlier 3.184s/22.4s/
+  4.353s numbers upstream in this doc were against a debug build (`cargo build`'s default) —
+  debug-vs-release alone is a large multiplier for numeric Rust code, so don't compare across
+  build types when re-profiling. Full `label_geometry` (anomalous_rca=True, `control_plot=False`,
+  release build, same mesh) is now **1.378s** end to end, down from 16.969s pre-B1 (same
+  build/config) — dominated by `load mesh` (0.685s, I/O) and `_final_reclassification` (0.293s,
+  still pure Python).
+- [] ~~`remove_occluded_points_ray_triangle_rust` Pass A~~ — **DECLINED (2026-07-09):** after
+  batch A + B1 landed and were re-measured against a release build, this dropped to 0.042-0.044s
+  on its own (see B1 entry re: debug-vs-release), so it's no longer a real bottleneck. Also
+  deliberately leaving the nested-loop-over-all-faces form alone since it reads more clearly than
+  a BVH/AABB-pruned version would — not worth the complexity for a step that isn't slow anymore.
 - [] `voronoi_partition` (`src/ccta/discretizing/projecting.rs:64-103`) — per mesh point, full
   linear scan of `anchors` to find the nearest one: O(points × anchors). Called once per vessel
-  segment from `discretize_vessel_tree`. Same R-tree-over-the-small-side recipe.
+  segment from `discretize_vessel_tree`. Same R-tree-over-the-small-side recipe. **On hold** until
+  the full `fullworkflow.py` is re-profiled under a release build — the old debug-build estimate
+  that motivated this (`discretize_vessel_tree` 4.3-4.5s) may no longer be accurate.
 - [] `find_closest_centerline_point_optimized`, `find_cl_points_in_range`, `find_region_points`,
   `symmetric_nn_distance` (all in `src/ccta/adjust_mesh/scale_coronary.rs`) — all do
   nearest/within-radius search against a *fixed* centerline or reference-point set, but worse:
@@ -149,11 +155,21 @@ impact:
   scratch on every step. Building one R-tree over the fixed side *once*, outside the sweep,
   is a compounding win — likely the highest-leverage fix in this list per line of code changed,
   but no fresh timing yet since these aren't on the currently-profiled `label_geometry` path.
-- [] `_final_reclassification` (`labeling.py:437-537`) plus the same-shaped
-  `remove_labeled_points_from_mesh` / `keep_labeled_points_from_mesh` boundary loops
-  (`manipulating.py:509`, `619`) — all pure-Python full-mesh adjacency traversals driven by the
-  Rust-built adjacency map. Good candidates for one shared Rust binding operating on
-  `(labels, adjacency_map)` rather than three separate Python re-implementations.
+  **On hold** for the same reason as `voronoi_partition` above — re-profile the full workflow
+  under release first.
+- [x] `_final_reclassification` + `_find_aortic_points` (`labeling.py`) — **FIXED (2026-07-09):**
+  deleted both pure-Python functions; added two new Rust bindings in `label_coronary.rs` +
+  `ccta_py.rs`: `find_aortic_points` (exact-match set difference, keyed by `f64::to_bits()` since
+  this is an exact-membership test, not a radius query — no R-tree needed here) and
+  `final_reclassification` (same adjacency-based label-smoothing logic, reusing the existing
+  `build_adjacency_map`). `labeling.py` and `tests/test_ccta.py` updated accordingly; 170 Rust +
+  97 Python tests pass. Re-measured on the 25,171-vertex mesh (release build):
+  `_final_reclassification` 0.293s → 0.043s (~7x); `_find_aortic_points` pre/post-clean 0.129s+
+  0.088s → 0.005s+0.058s. Full `label_geometry` (release, `control_plot=False`, same mesh) is now
+  **0.853s** total, of which 0.545s is unavoidable `trimesh` mesh I/O — our own code is under
+  0.31s. `remove_labeled_points_from_mesh` / `keep_labeled_points_from_mesh` in `manipulating.py`
+  are the same shape of fix but weren't touched — they're not on this profiled path, not
+  measured, and out of scope for this pass; still worth doing if that code shows up as hot later.
 
 ### C. Known, lower priority for now
 - [] `plot_results_key` is now the single biggest line item (6.446s) but it's rendering, not a
