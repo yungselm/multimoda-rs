@@ -769,6 +769,7 @@ def remove_occluded_points_ray_triangle(
     range_coronary: int,
     points: list[tuple[float, float, float]],
     faces: list[tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]],
+    step_size_mm: float,
 ) -> list[tuple[float, float, float]]: ...
 
 

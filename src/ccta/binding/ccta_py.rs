@@ -76,18 +76,33 @@ pub fn find_centerline_bounded_points_simple(
 /// faces : list of tuple of tuple of float
 ///     Triangle faces as ``((v0x, v0y, v0z), (v1x, v1y, v1z), (v2x, v2y, v2z))``
 ///     triples representing the mesh surface.
+/// step_size_mm : float, optional
+///    Step size in mm for iterating over coronary centerline points.  Default is
+///     1.0 mm, which is usually sufficient for most CCTA datasets.  Larger values
+///     may speed up processing at the cost of potentially missing occlusions in very tight vessel regions.
 ///
 /// Returns
 /// -------
 /// filtered_points : list of tuple of float
 ///     Points with occluded entries removed.
 #[pyfunction]
+#[pyo3(
+    signature = (
+        centerline_coronary,
+        centerline_aorta,
+        range_coronary,
+        points,
+        faces,
+        step_size_mm = 1.0,
+    )
+)]
 pub fn remove_occluded_points_ray_triangle(
     centerline_coronary: PyCenterline,
     centerline_aorta: PyCenterline,
     range_coronary: usize,
     points: Vec<Point3D>,
     faces: Vec<TriangleTuple>,
+    step_size_mm: f64,
 ) -> PyResult<Vec<Point3D>> {
     let rust_centerline_coronary = centerline_coronary.to_rust_centerline();
     let rust_centerline_aorta = centerline_aorta.to_rust_centerline();
@@ -103,6 +118,7 @@ pub fn remove_occluded_points_ray_triangle(
         range_coronary,
         &points,
         &triangles,
+        step_size_mm,
     );
     Ok(result)
 }

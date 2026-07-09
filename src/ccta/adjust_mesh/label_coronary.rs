@@ -72,6 +72,7 @@ pub fn remove_occluded_points_ray_triangle_rust(
     range_coronary: usize,
     points: &[(f64, f64, f64)],
     faces: &[Triangle],
+    step_size_mm: f64,
 ) -> Vec<(f64, f64, f64)> {
     if points.is_empty() || faces.is_empty() {
         return points.to_vec();
@@ -79,6 +80,8 @@ pub fn remove_occluded_points_ray_triangle_rust(
 
     let checked_cl_coronary = check_centerline(centerline_coronary.clone());
     let checked_cl_aorta = check_centerline(centerline_aorta.clone());
+    let spacing = (centerline_aorta.mean_spacing() + centerline_coronary.mean_spacing()) / 2.0;
+    let step_cl_points = (step_size_mm / spacing).ceil() as usize;
 
     // Parallelize over aorta points (75 items): each thread owns 100 sequential coronary
     // iterations against faces — coarse enough to avoid scheduler overhead from nested parallelism.
@@ -94,7 +97,12 @@ pub fn remove_occluded_points_ray_triangle_rust(
 
             let mut local_excluded: Vec<usize> = Vec::new();
 
-            for coronary_point in checked_cl_coronary.points.iter().take(range_coronary) {
+            for coronary_point in checked_cl_coronary
+                .points
+                .iter()
+                .take(range_coronary)
+                .step_by(step_cl_points)
+            {
                 let coronary_coord = Point3::new(
                     coronary_point.contour_point.x,
                     coronary_point.contour_point.y,

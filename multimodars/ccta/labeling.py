@@ -26,6 +26,7 @@ def label_geometry(
     anomalous_rca: bool = False,
     anomalous_lca: bool = False,
     n_points_intramural: int = 120,
+    step_size_mm: float = 1.0,
     bounding_sphere_radius_mm: float = 3.0,
     tolerance_float: float = 1e-6,
     control_plot: bool = True,
@@ -61,6 +62,9 @@ def label_geometry(
     n_points_intramural : int, optional
         Number of coronary centerline points examined during occlusion removal
         (the intramural segment length).  Default is ``120``.
+    step_size_mm : float, optional
+        Step size in mm for iterating over coronary centerline points during
+        occlusion removal.  Default is ``1.0`` mm.
     bounding_sphere_radius_mm : float, optional
         Radius in millimetres of the rolling sphere used to collect candidate
         mesh vertices around each centerline point.  Default is ``3.0``.
@@ -181,6 +185,7 @@ def label_geometry(
             range_coronary=n_points_intramural,
             points=rca_points_found,
             faces=rca_faces_for_rust,
+            step_size_mm=step_size_mm,
         )
         rca_removed_points = [
             p for p in rca_points_found if p not in final_rca_points_found
@@ -200,6 +205,7 @@ def label_geometry(
             range_coronary=n_points_intramural,
             points=lca_points_found,
             faces=lca_faces_for_rust,
+            step_size_mm=step_size_mm,
         )
         lca_removed_points = [
             p for p in lca_points_found if p not in final_lca_points_found

@@ -7,6 +7,8 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - Refactored `label_coronary` to use nalgebra
+- `remove_occluded_points_ray_triangle` now has a defined step size
+  with which points are iterated through
 
 ## [0.5.0] - 2026-07-07
 
