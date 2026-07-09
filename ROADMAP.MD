@@ -42,6 +42,24 @@ bottlenecks.
   `label_coronary.rs`; the one remaining `points.clone()` inside `check_centerline` is the only
   clone actually needed (to sort into a new order without mutating the caller's centerline).
 
+# Correctness fixes
+
+- [x] ~~VTP branch-0 ("main vessel") elected by point count instead of arc length~~ — **FIXED
+  (2026-07-09):** `read_centerline_vtp` (`src/intravascular/io/input.rs`) sorted VTK `Lines`
+  cells by raw point count to decide `branch_id = 0`; on VTP exports with non-uniform per-branch
+  sampling density, a physically shorter side branch with more points could out-rank the true
+  main vessel. Now sorts by summed 3D arc length instead. `cleanup_vtp_data`'s overlap-trimming
+  only ever trims branches *against* `branches[0]` and never trims `branches[0]` itself, so a
+  wrong branch-0 election silently truncated the true main vessel's proximal segment while
+  leaving the wrongly-elected branch untouched — this was the root cause of reference-point
+  selection only working near the first side branch, and of visibly uneven/duplicated centerline
+  spacing after `cleanup_vtp_data(smooth=True)`. Applied the same fix (arc length instead of hop
+  count) to `calculate_branches`'s tree-diameter BFS (`Centerline::bfs_farthest`), used by the
+  non-VTP/CSV branch-detection path, since it had the identical category of bug. Added a
+  regression test (`test_read_centerline_vtp_picks_longest_by_arc_length_not_point_count`)
+  constructing a short-but-dense vs. long-but-sparse line pair; confirmed the long line now wins
+  branch 0. All 176 Rust tests pass.
+
 # Mesh combination (v0.3.0/0.4.0)
 ## New/improved features
 - [] `numpy_to_report` function that allows to read in lists for the four variables of interest (frame, phase, measurement_1, measurement_2)

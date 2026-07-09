@@ -384,8 +384,24 @@ pub fn read_centerline_vtp<P: AsRef<Path>>(path: P) -> anyhow::Result<Centerline
         .map(|(start, end)| &connectivity[start..end])
         .collect();
 
+    let branch_arc_length = |branch: &[usize]| -> f64 {
+        branch
+            .windows(2)
+            .map(|w| {
+                let (x0, y0, z0) = coords[w[0]];
+                let (x1, y1, z1) = coords[w[1]];
+                ((x1 - x0).powi(2) + (y1 - y0).powi(2) + (z1 - z0).powi(2)).sqrt()
+            })
+            .sum()
+    };
+    let branch_lengths: Vec<f64> = vtk_branches.iter().map(|b| branch_arc_length(b)).collect();
+
     let mut order: Vec<usize> = (0..vtk_branches.len()).collect();
-    order.sort_unstable_by(|&a, &b| vtk_branches[b].len().cmp(&vtk_branches[a].len()));
+    order.sort_unstable_by(|&a, &b| {
+        branch_lengths[b]
+            .partial_cmp(&branch_lengths[a])
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let mut cl_points: Vec<CenterlinePoint> = Vec::with_capacity(connectivity.len());
     let mut branch_start_indices: Vec<usize> = Vec::with_capacity(order.len());
@@ -492,7 +508,10 @@ mod input_tests {
             .copied()
             .unwrap_or(cl.points.len())
             - cl.branch_start_indices[0];
-        assert_eq!(b0_len, 763, "branch 0 should be the longest VTK line");
+        assert_eq!(
+            b0_len, 763,
+            "branch 0 should be the longest VTK line by arc length"
+        );
 
         // All branch_id values must match the branch they live in.
         for (i, &start) in cl.branch_start_indices.iter().enumerate() {
@@ -515,6 +534,88 @@ mod input_tests {
         assert!(
             b0_pts.iter().any(|p| p.tangent.norm() > 0.5),
             "branch 0 tangents should be non-zero"
+        );
+
+        Ok(())
+    }
+
+    /// Branch 0 must be picked by physical arc length, not by raw point
+    /// count. Line A is geometrically long (40mm) but sparse (5 points);
+    /// line B is geometrically short (1.9mm) but densely sampled (20
+    /// points). A point-count-based sort would wrongly elect B as branch 0.
+    #[test]
+    fn test_read_centerline_vtp_picks_longest_by_arc_length_not_point_count() -> anyhow::Result<()>
+    {
+        let line_a_pts: Vec<(f64, f64, f64)> =
+            (0..5).map(|i| (i as f64 * 10.0, 0.0, 0.0)).collect();
+        let line_b_pts: Vec<(f64, f64, f64)> =
+            (0..20).map(|i| (0.0, i as f64 * 0.1, 0.0)).collect();
+
+        let all_pts: Vec<(f64, f64, f64)> = line_a_pts
+            .iter()
+            .chain(line_b_pts.iter())
+            .copied()
+            .collect();
+        let n_pts = all_pts.len();
+
+        let points_text = all_pts
+            .iter()
+            .map(|(x, y, z)| format!("{x} {y} {z}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let radii_text = vec!["1.0"; n_pts].join(" ");
+
+        let connectivity: Vec<usize> = (0..line_a_pts.len())
+            .chain(line_a_pts.len()..n_pts)
+            .collect();
+        let offsets = format!("{} {}", line_a_pts.len(), n_pts);
+
+        let xml = format!(
+            r#"<?xml version="1.0"?>
+<VTKFile type="PolyData" version="0.1" byte_order="LittleEndian" header_type="UInt32">
+  <PolyData>
+    <Piece NumberOfPoints="{n_pts}" NumberOfVerts="0" NumberOfLines="2" NumberOfStrips="0" NumberOfPolys="0">
+      <PointData>
+        <DataArray type="Float64" Name="MaximumInscribedSphereRadius" format="ascii">
+          {radii_text}
+        </DataArray>
+      </PointData>
+      <Points>
+        <DataArray type="Float64" Name="Points" NumberOfComponents="3" format="ascii">
+          {points_text}
+        </DataArray>
+      </Points>
+      <Lines>
+        <DataArray type="Int64" Name="connectivity" format="ascii">
+          {connectivity}
+        </DataArray>
+        <DataArray type="Int64" Name="offsets" format="ascii">
+          {offsets}
+        </DataArray>
+      </Lines>
+    </Piece>
+  </PolyData>
+</VTKFile>
+"#,
+            connectivity = connectivity
+                .iter()
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
+
+        let path = std::env::temp_dir().join("multimodars_test_arc_length_branch0.vtp");
+        std::fs::write(&path, xml)?;
+        let cl = read_centerline_vtp(&path);
+        let _ = std::fs::remove_file(&path);
+        let cl = cl?;
+
+        assert_eq!(cl.branch_start_indices.len(), 2, "expected 2 branches");
+        let b0_len = cl.branch_start_indices[1] - cl.branch_start_indices[0];
+        assert_eq!(
+            b0_len,
+            line_a_pts.len(),
+            "the geometrically longer (but sparser) line A must be branch 0"
         );
 
         Ok(())

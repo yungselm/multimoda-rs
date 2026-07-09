@@ -19,6 +19,13 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   (`anomalous_points` 421 → 414) eliminated 27 extra boundary vertices (82 → 55), cut the
   post-stitch max edge length from 6.65mm to 4.69mm, and are now correctly counted in
   `aorta_points` instead of stranded in `rca_points`.
+- `read_centerline_vtp` elected branch 0 ("main vessel") by raw point count instead of arc
+  length, so a non-uniformly-sampled VTP export could mislabel a shorter side branch as main.
+  Since `cleanup_vtp_data`'s overlap trimming only ever trims other branches against
+  `branches[0]`, a wrong election truncated the true main vessel's proximal segment while
+  leaving the wrong branch untouched — causing reference points to only make sense near the
+  first side branch and visibly uneven/duplicated centerline spacing. Now sorts by summed 3D
+  arc length; applied the same fix to `calculate_branches`'s tree-diameter BFS (CSV path).
 
 ### Performance
 - `label_geometry` and `stitch_ccta_to_intravascular` sped up substantially: several O(N×M)

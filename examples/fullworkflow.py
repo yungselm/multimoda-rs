@@ -19,9 +19,9 @@ aorta_cl = mm.read_centerline_vtp("./ao_cl.vtp").cleanup_vtp_data(smooth=True)
 
 results, (rca_cl, lca_cl, ao_cl) = mm.label_geometry(
     path_ccta_geometry="./NARCO_119.stl",
-    path_centerline_aorta="./centerline_aorta.csv",
-    path_centerline_rca="./centerline_rca_short.csv",
-    path_centerline_lca="./centerline_lca.csv",
+    path_centerline_aorta=aorta_cl,
+    path_centerline_rca=rca_cl,
+    path_centerline_lca=lca_cl,
     bounding_sphere_radius_mm=3.0,
     n_points_intramural=100,
     anomalous_rca=True,
@@ -43,6 +43,8 @@ tree = mm.discretize_vessel_tree(
     bspline_smoothing=5.0,
     control_plot=True,
 )
+
+print(tree)
 
 rest, (dia_logs, sys_logs) = mm.from_file_singlepair(
     input_path="ivus_rest",
