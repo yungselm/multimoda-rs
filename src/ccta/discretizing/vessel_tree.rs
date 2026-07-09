@@ -1,5 +1,6 @@
 use crate::types::native::{Centerline, Contour, DiscretizedVesselTree};
 use anyhow::Result;
+use rayon::prelude::*;
 
 impl DiscretizedVesselTree {
     /// Discretize the full vessel tree from pre-labelled point sets.
@@ -46,7 +47,7 @@ impl DiscretizedVesselTree {
         );
 
         let rca_branches: Vec<Vec<Contour>> = side_branches_rca
-            .iter()
+            .par_iter()
             .enumerate()
             .map(|(i, pts)| {
                 super::discretize_vessel_rs(rca_cl, pts, (i + 1) as u32, step_size, n_points)
@@ -54,7 +55,7 @@ impl DiscretizedVesselTree {
             .collect();
 
         let lca_branches: Vec<Vec<Contour>> = side_branches_lca
-            .iter()
+            .par_iter()
             .enumerate()
             .map(|(i, pts)| {
                 super::discretize_vessel_rs(lca_cl, pts, (i + 1) as u32, step_size, n_points)

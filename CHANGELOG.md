@@ -31,6 +31,12 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   `manipulating.py` as a drop-in replacement for `trimesh.Trimesh.fix_normals()` on large
   stitched meshes.
 - Type stubs (`multimodars.pyi`) updated for all new Rust bindings.
+- `DiscretizedVesselTree::from_results_dict` (`vessel_tree.rs`) now discretizes RCA/LCA side
+  branches via `par_iter()` instead of a sequential loop; each branch's `discretize_vessel_rs`
+  call is independent.
+- `check_centerline` (`label_coronary.rs`) now takes `&Centerline` instead of an owned
+  `Centerline`, removing an unnecessary clone at each of its two call sites in
+  `remove_occluded_points_ray_triangle_rust`.
 
 ## [0.5.1] -2026-07-09
 

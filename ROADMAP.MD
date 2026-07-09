@@ -24,23 +24,23 @@ bottlenecks.
   loop as `_final_reclassification`) but only 0.211s of ~24s total (<1%), and
   `keep_labeled_points_from_mesh` isn't even called by the real workflow. Deliberately left
   alone — diminishing returns past this point in the pipeline.
-- [] `plot_results_key` (control-plot rendering) was `label_geometry`'s biggest line item in the
-  audit table, but that number is from a debug build and `control_plot=False` has been used in
-  every release-build measurement since — its real cost under release is unverified. Lowest
-  priority of what's left; only worth profiling if `control_plot=True` usage becomes a
-  complaint.
 - [] Cross-file `coord_to_idx` (float-tuple-keyed vertex dict) gets rebuilt from scratch ~10
   times across a full label→scale→stitch pipeline run with no caching — architecture/caching
   cleanup rather than an algorithmic fix; independent of build type.
 - [] `manual_hole_fill` (`fixing_functions.py`) rebuilds `coord_to_idx` and `build_adjacency_map`
   from scratch on every hole/boundary loop instead of once outside the loop.
-- [] `discretize_vessel_tree`'s side-branch loop (`src/ccta/discretizing/vessel_tree.rs`) isn't
-  parallelized with rayon despite each branch's call being independent.
-- [] `remove_occluded_points_ray_triangle_rust` clones both centerlines twice unnecessarily just
-  to sort them.
-- [] Better parallelization strategy for frames alignment by processing in batches (frames only
-  have to be aligned relative to each other not sequentially) — intravascular alignment, a
-  different subsystem from the CCTA work above; unrelated and unexamined this pass.
+- [x] ~~`discretize_vessel_tree`'s side-branch loop wasn't parallelized with rayon~~ —
+  **FIXED (2026-07-09):** `rca_branches` / `lca_branches` in
+  `src/ccta/discretizing/vessel_tree.rs` now use `.par_iter()` instead of `.iter()`
+  (`discretize_vessel_rs` is a pure function over `&Centerline` + owned data, safe to
+  parallelize). No measurable win on the reference dataset (only ~4-9 side branches), but ready
+  for larger vessel trees. Verified: same output values end to end, 175 Rust + 100 Python tests
+  pass.
+- [x] ~~`remove_occluded_points_ray_triangle_rust` clones both centerlines twice~~ —
+  **FIXED (2026-07-09):** `check_centerline` now takes `&Centerline` instead of an owned
+  `Centerline`, removing the caller-side `.clone()` at both call sites in
+  `label_coronary.rs`; the one remaining `points.clone()` inside `check_centerline` is the only
+  clone actually needed (to sort into a new order without mutating the caller's centerline).
 
 # Mesh combination (v0.3.0/0.4.0)
 ## New/improved features

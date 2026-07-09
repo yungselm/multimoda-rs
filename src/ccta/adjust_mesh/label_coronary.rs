@@ -79,8 +79,8 @@ pub fn remove_occluded_points_ray_triangle_rust(
         return points.to_vec();
     }
 
-    let checked_cl_coronary = check_centerline(centerline_coronary.clone());
-    let checked_cl_aorta = check_centerline(centerline_aorta.clone());
+    let checked_cl_coronary = check_centerline(centerline_coronary);
+    let checked_cl_aorta = check_centerline(centerline_aorta);
     let spacing = (centerline_aorta.mean_spacing() + centerline_coronary.mean_spacing()) / 2.0;
     let step_cl_points = (step_size_mm / spacing).ceil() as usize;
 
@@ -197,7 +197,7 @@ pub fn find_centerline_bounded_points(
     points: &[(f64, f64, f64)],
     radius: f64,
 ) -> Vec<(f64, f64, f64)> {
-    let checked_centerline = check_centerline(centerline);
+    let checked_centerline = check_centerline(&centerline);
     if points.is_empty() || checked_centerline.points.is_empty() {
         return Vec::new();
     }
@@ -421,7 +421,7 @@ pub fn final_reclassification(
 
 /// Check that the centerline is sorted by z-value (distal to proximal)
 /// and ensure the last point has the lowest z-value
-fn check_centerline(centerline: Centerline) -> Centerline {
+fn check_centerline(centerline: &Centerline) -> Centerline {
     let mut points = centerline.points.clone();
 
     points.sort_by(|a, b| b.contour_point.z.partial_cmp(&a.contour_point.z).unwrap());
