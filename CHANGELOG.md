@@ -3,6 +3,35 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.2] -2026-07-09
+
+### Performance
+- `label_geometry` and `stitch_ccta_to_intravascular` sped up substantially: several O(N×M)
+  brute-force point/face searches were replaced with R-tree-based lookups (new `rstar`
+  dependency), and multiple pure-Python per-vertex/per-face loops (nearest-face lookup,
+  aortic-point set difference, adjacency-based label reclassification, mesh face-winding
+  correction) were moved into new Rust bindings. Full example pipeline
+  (`examples/fullworkflow.py`) dropped from ~190s to ~24s on the reference dataset (release
+  build). No behaviour change - outputs verified identical, including byte-for-bit parity
+  against `trimesh`'s own `fix_winding` on the winding-correction port.
+
+### Internal
+- `find_centerline_bounded_points_simple` (`label_coronary::find_centerline_bounded_points`)
+  now queries an `rstar::RTree` over the centerline points instead of a nested loop.
+- `clean_outlier_points` (`scale_coronary::clean_up_non_section_points`) now uses R-trees
+  instead of two nested linear scans.
+- `remove_occluded_points_ray_triangle`'s point-vs-excluded-face distance pass now queries an
+  R-tree over the excluded faces' vertices instead of scanning every excluded face per point.
+- Added Rust bindings `find_faces_near_points`, `find_aortic_points`, and
+  `final_reclassification`, replacing the pure-Python `_find_faces_for_points`,
+  `_prepare_faces_for_rust`, `_find_aortic_points`, and `_final_reclassification` helpers
+  (removed from `labeling.py`).
+- Added `fix_mesh_winding`: a Rust port of `trimesh.repair.fix_winding`'s BFS-based
+  face-winding-consistency algorithm, used via a new `_fast_fix_normals()` helper in
+  `manipulating.py` as a drop-in replacement for `trimesh.Trimesh.fix_normals()` on large
+  stitched meshes.
+- Type stubs (`multimodars.pyi`) updated for all new Rust bindings.
+
 ## [0.5.1] -2026-07-09
 
 ### Changed

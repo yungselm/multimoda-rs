@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 
-import time
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 import trimesh
@@ -21,25 +19,6 @@ from ..multimodars import (
 from .._converters import numpy_to_centerline
 from ..io.read_geometrical import read_mesh
 from .debug_plots import plot_results_key
-
-
-@contextmanager
-def _timed(label: str, store: list | None = None):
-    start = time.perf_counter()
-    try:
-        yield
-    finally:
-        elapsed = time.perf_counter() - start
-        if store is not None:
-            store.append((label, elapsed))
-        print(f"  [TIMER] {label}: {elapsed:.3f}s")
-
-
-def _print_timing_summary(store: list, title: str = "label_geometry timing summary"):
-    print(f"\n=== {title} (sorted by duration) ===")
-    for label, elapsed in sorted(store, key=lambda x: x[1], reverse=True):
-        print(f"  {elapsed:8.3f}s  {label}")
-    print(f"  {sum(t for _, t in store):8.3f}s  TOTAL")
 
 
 def label_geometry(
@@ -120,86 +99,76 @@ def label_geometry(
         Re-raises any error that occurs while reading the mesh or centerline
         files, after printing a descriptive message.
     """
-    _timings: list = []
-
-    with _timed("load mesh", _timings):
-        if isinstance(path_ccta_geometry, trimesh.Trimesh):
-            mesh = path_ccta_geometry
+    if isinstance(path_ccta_geometry, trimesh.Trimesh):
+        mesh = path_ccta_geometry
+        print(
+            f"Using provided mesh: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces"
+        )
+    else:
+        try:
+            mesh = read_mesh(path_ccta_geometry)
             print(
-                f"Using provided mesh: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces"
+                f"Loaded mesh: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces"
             )
-        else:
-            try:
-                mesh = read_mesh(path_ccta_geometry)
-                print(
-                    f"Loaded mesh: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces"
-                )
-            except Exception as e:
-                print(f"Error reading CCTA mesh from {path_ccta_geometry}: {e}")
-                raise
+        except Exception as e:
+            print(f"Error reading CCTA mesh from {path_ccta_geometry}: {e}")
+            raise
 
-    with _timed("load centerlines", _timings):
-        if isinstance(path_centerline_aorta, PyCenterline):
-            cl_aorta = path_centerline_aorta
-            print(f"Using provided aorta centerline: {len(cl_aorta.points)} points")
-        elif isinstance(path_centerline_aorta, np.ndarray):
-            cl_aorta = numpy_to_centerline(path_centerline_aorta)
-            print(f"Using provided aorta centerline: {len(cl_aorta.points)} points")
-        else:
-            try:
-                cl_aorta_raw = np.genfromtxt(path_centerline_aorta, delimiter=",")
-                cl_aorta = numpy_to_centerline(cl_aorta_raw)
-                print(f"Loaded aorta centerline: {len(cl_aorta.points)} points")
-            except Exception as e:
-                print(
-                    f"Error reading Aorta centerline from {path_centerline_aorta}: {e}"
-                )
-                raise
+    if isinstance(path_centerline_aorta, PyCenterline):
+        cl_aorta = path_centerline_aorta
+        print(f"Using provided aorta centerline: {len(cl_aorta.points)} points")
+    elif isinstance(path_centerline_aorta, np.ndarray):
+        cl_aorta = numpy_to_centerline(path_centerline_aorta)
+        print(f"Using provided aorta centerline: {len(cl_aorta.points)} points")
+    else:
+        try:
+            cl_aorta_raw = np.genfromtxt(path_centerline_aorta, delimiter=",")
+            cl_aorta = numpy_to_centerline(cl_aorta_raw)
+            print(f"Loaded aorta centerline: {len(cl_aorta.points)} points")
+        except Exception as e:
+            print(f"Error reading Aorta centerline from {path_centerline_aorta}: {e}")
+            raise
 
-        if isinstance(path_centerline_lca, PyCenterline):
-            cl_lca = path_centerline_lca
-            print(f"Using provided LCA centerline: {len(cl_lca.points)} points")
-        elif isinstance(path_centerline_lca, np.ndarray):
-            cl_lca = numpy_to_centerline(path_centerline_lca)
-            print(f"Using provided LCA centerline: {len(cl_lca.points)} points")
-        else:
-            try:
-                cl_lca_raw = np.genfromtxt(path_centerline_lca, delimiter=",")
-                cl_lca = numpy_to_centerline(cl_lca_raw)
-                print(f"Loaded LCA centerline: {len(cl_lca.points)} points")
-            except Exception as e:
-                print(f"Error reading LCA centerline from {path_centerline_lca}: {e}")
-                raise
+    if isinstance(path_centerline_lca, PyCenterline):
+        cl_lca = path_centerline_lca
+        print(f"Using provided LCA centerline: {len(cl_lca.points)} points")
+    elif isinstance(path_centerline_lca, np.ndarray):
+        cl_lca = numpy_to_centerline(path_centerline_lca)
+        print(f"Using provided LCA centerline: {len(cl_lca.points)} points")
+    else:
+        try:
+            cl_lca_raw = np.genfromtxt(path_centerline_lca, delimiter=",")
+            cl_lca = numpy_to_centerline(cl_lca_raw)
+            print(f"Loaded LCA centerline: {len(cl_lca.points)} points")
+        except Exception as e:
+            print(f"Error reading LCA centerline from {path_centerline_lca}: {e}")
+            raise
 
-        if isinstance(path_centerline_rca, PyCenterline):
-            cl_rca = path_centerline_rca
-            print(f"Using provided RCA centerline: {len(cl_rca.points)} points")
-        elif isinstance(path_centerline_rca, np.ndarray):
-            cl_rca = numpy_to_centerline(path_centerline_rca)
-            print(f"Using provided RCA centerline: {len(cl_rca.points)} points")
-        else:
-            try:
-                cl_rca_raw = np.genfromtxt(path_centerline_rca, delimiter=",")
-                cl_rca = numpy_to_centerline(cl_rca_raw)
-                print(f"Loaded RCA centerline: {len(cl_rca.points)} points")
-            except Exception as e:
-                print(f"Error reading RCA centerline from {path_centerline_rca}: {e}")
-                raise
+    if isinstance(path_centerline_rca, PyCenterline):
+        cl_rca = path_centerline_rca
+        print(f"Using provided RCA centerline: {len(cl_rca.points)} points")
+    elif isinstance(path_centerline_rca, np.ndarray):
+        cl_rca = numpy_to_centerline(path_centerline_rca)
+        print(f"Using provided RCA centerline: {len(cl_rca.points)} points")
+    else:
+        try:
+            cl_rca_raw = np.genfromtxt(path_centerline_rca, delimiter=",")
+            cl_rca = numpy_to_centerline(cl_rca_raw)
+            print(f"Loaded RCA centerline: {len(cl_rca.points)} points")
+        except Exception as e:
+            print(f"Error reading RCA centerline from {path_centerline_rca}: {e}")
+            raise
 
-    with _timed("build points_list from mesh.vertices", _timings):
-        points_list = [tuple(vertex) for vertex in mesh.vertices.tolist()]
-
-    with _timed("build mesh faces list", _timings):
-        mesh_faces_list = mesh.faces.tolist()
+    points_list = [tuple(vertex) for vertex in mesh.vertices.tolist()]
+    mesh_faces_list = mesh.faces.tolist()
 
     # Rust implementation using a rolling sphere with fixed radius
-    with _timed("find_centerline_bounded_points_simple (rca+lca)", _timings):
-        rca_points_found = find_centerline_bounded_points_simple(
-            cl_rca, points_list, bounding_sphere_radius_mm
-        )
-        lca_points_found = find_centerline_bounded_points_simple(
-            cl_lca, points_list, bounding_sphere_radius_mm
-        )
+    rca_points_found = find_centerline_bounded_points_simple(
+        cl_rca, points_list, bounding_sphere_radius_mm
+    )
+    lca_points_found = find_centerline_bounded_points_simple(
+        cl_lca, points_list, bounding_sphere_radius_mm
+    )
 
     print(f"\nRCA points found: {len(rca_points_found)}")
     print(f"LCA points found: {len(lca_points_found)}")
@@ -209,77 +178,66 @@ def label_geometry(
 
     if anomalous_rca:
         print("Applying occlusion removal for anomalous RCA...")
-        with _timed("find_faces_near_points (rca)", _timings):
-            rca_faces_for_rust = find_faces_near_points(
-                points_list, mesh_faces_list, rca_points_found, tolerance_float
-            )
+        rca_faces_for_rust = find_faces_near_points(
+            points_list, mesh_faces_list, rca_points_found, tolerance_float
+        )
         # Rust implementation, that creates ray between aortic and coronary centerline, and
         # removes faces if 3 consecutive faces are "pierced" by the ray
-        with _timed("remove_occluded_points_ray_triangle (rca)", _timings):
-            final_rca_points_found = remove_occluded_points_ray_triangle(
-                centerline_coronary=cl_rca,
-                centerline_aorta=cl_aorta,
-                range_coronary=n_points_intramural,
-                points=rca_points_found,
-                faces=rca_faces_for_rust,
-                step_size_mm=step_size_mm,
-            )
-        with _timed("diff rca_removed_points", _timings):
-            final_rca_points_found_set = set(final_rca_points_found)
-            rca_removed_points = [
-                p for p in rca_points_found if p not in final_rca_points_found_set
-            ]
+        final_rca_points_found = remove_occluded_points_ray_triangle(
+            centerline_coronary=cl_rca,
+            centerline_aorta=cl_aorta,
+            range_coronary=n_points_intramural,
+            points=rca_points_found,
+            faces=rca_faces_for_rust,
+            step_size_mm=step_size_mm,
+        )
+        final_rca_points_found_set = set(final_rca_points_found)
+        rca_removed_points = [
+            p for p in rca_points_found if p not in final_rca_points_found_set
+        ]
         print(f"RCA: relabeled {len(rca_removed_points)} points in intramual course")
     else:
         final_rca_points_found = rca_points_found.copy()
 
     if anomalous_lca:
         print("Applying occlusion removal for anomalous LCA...")
-        with _timed("find_faces_near_points (lca)", _timings):
-            lca_faces_for_rust = find_faces_near_points(
-                points_list, mesh_faces_list, lca_points_found, tolerance_float
-            )
-        with _timed("remove_occluded_points_ray_triangle (lca)", _timings):
-            final_lca_points_found = remove_occluded_points_ray_triangle(
-                centerline_coronary=cl_lca,
-                centerline_aorta=cl_aorta,
-                range_coronary=n_points_intramural,
-                points=lca_points_found,
-                faces=lca_faces_for_rust,
-                step_size_mm=step_size_mm,
-            )
-        with _timed("diff lca_removed_points", _timings):
-            final_lca_points_found_set = set(final_lca_points_found)
-            lca_removed_points = [
-                p for p in lca_points_found if p not in final_lca_points_found_set
-            ]
+        lca_faces_for_rust = find_faces_near_points(
+            points_list, mesh_faces_list, lca_points_found, tolerance_float
+        )
+        final_lca_points_found = remove_occluded_points_ray_triangle(
+            centerline_coronary=cl_lca,
+            centerline_aorta=cl_aorta,
+            range_coronary=n_points_intramural,
+            points=lca_points_found,
+            faces=lca_faces_for_rust,
+            step_size_mm=step_size_mm,
+        )
+        final_lca_points_found_set = set(final_lca_points_found)
+        lca_removed_points = [
+            p for p in lca_points_found if p not in final_lca_points_found_set
+        ]
         print(f"LCA: relabeled {len(lca_removed_points)} points in intramual course")
     else:
         final_lca_points_found = lca_points_found.copy()
 
     print("\nRemoving LCA and RCA island points...")
-    with _timed("find_aortic_points (pre-clean)", _timings):
-        aortic_points = find_aortic_points(
-            points_list, final_rca_points_found, final_lca_points_found
-        )
+    aortic_points = find_aortic_points(
+        points_list, final_rca_points_found, final_lca_points_found
+    )
     print(f"length before: {len(final_lca_points_found)}")
-    with _timed("clean_outlier_points (lca)", _timings):
-        final_lca_points, final_aortic_points = clean_outlier_points(
-            final_lca_points_found, aortic_points, 2.0, 0.4
-        )  # based on patient data, only precleaning anyways, rest done by final_reclassification
-    with _timed("clean_outlier_points (rca)", _timings):
-        final_rca_points, _ = clean_outlier_points(
-            final_rca_points_found, final_aortic_points, 2.0, 0.4
-        )
-    with _timed("find_aortic_points (post-clean)", _timings):
-        final_aortic_points = find_aortic_points(
-            points_list, final_rca_points, final_lca_points
-        )
+    final_lca_points, final_aortic_points = clean_outlier_points(
+        final_lca_points_found, aortic_points, 2.0, 0.4
+    )  # based on patient data, only precleaning anyways, rest done by final_reclassification
+    final_rca_points, _ = clean_outlier_points(
+        final_rca_points_found, final_aortic_points, 2.0, 0.4
+    )
+    final_aortic_points = find_aortic_points(
+        points_list, final_rca_points, final_lca_points
+    )
     # add also the rca_removed points and lca_removed points to aortic points
-    with _timed("union rca/lca removed into aortic points", _timings):
-        final_aortic_points = list(
-            set(final_aortic_points) | set(rca_removed_points) | set(lca_removed_points)
-        )
+    final_aortic_points = list(
+        set(final_aortic_points) | set(rca_removed_points) | set(lca_removed_points)
+    )
     print(f"length after: {len(final_lca_points)}")
 
     results: dict[str, Any] = {
@@ -293,25 +251,24 @@ def label_geometry(
 
     # final reclassification based on adjacency map
     print("\nApplying final reclassification based on adjacency map...")
-    with _timed("final_reclassification", _timings):
-        aorta_pts, rca_pts, lca_pts, rca_removed_pts, lca_removed_pts = (
-            final_reclassification(
-                points_list,
-                mesh_faces_list,
-                results["rca_points"],
-                results["lca_points"],
-                results["rca_removed_points"],
-                results["lca_removed_points"],
-            )
+    aorta_pts, rca_pts, lca_pts, rca_removed_pts, lca_removed_pts = (
+        final_reclassification(
+            points_list,
+            mesh_faces_list,
+            results["rca_points"],
+            results["lca_points"],
+            results["rca_removed_points"],
+            results["lca_removed_points"],
         )
-        new_results: dict[str, Any] = {
-            "mesh": mesh,
-            "aorta_points": aorta_pts,
-            "rca_points": rca_pts,
-            "lca_points": lca_pts,
-            "rca_removed_points": rca_removed_pts,
-            "lca_removed_points": lca_removed_pts,
-        }
+    )
+    new_results: dict[str, Any] = {
+        "mesh": mesh,
+        "aorta_points": aorta_pts,
+        "rca_points": rca_pts,
+        "lca_points": lca_pts,
+        "rca_removed_points": rca_removed_pts,
+        "lca_removed_points": lca_removed_pts,
+    }
     print(f"aorta_points:{len(new_results['aorta_points'])}")
     print(f"rca_points:{len(new_results['rca_points'])}")
     print(f"lca_points:{len(new_results['lca_points'])}")
@@ -319,22 +276,19 @@ def label_geometry(
     print(f"lca_removed_points:{len(new_results['lca_removed_points'])}")
 
     if control_plot:
-        with _timed("plot_results_key", _timings):
-            plot_results_key(
-                new_results,
-                aorta_points=True,
-                rca_points=True,
-                lca_points=True,
-                rca_removed_points=True,
-                proximal_points=True,
-                distal_points=False,
-                anomalous_points=False,
-                cl_rca=cl_rca,
-                cl_lca=cl_lca,
-                cl_aorta=cl_aorta,
-            )
-
-    _print_timing_summary(_timings)
+        plot_results_key(
+            new_results,
+            aorta_points=True,
+            rca_points=True,
+            lca_points=True,
+            rca_removed_points=True,
+            proximal_points=True,
+            distal_points=False,
+            anomalous_points=False,
+            cl_rca=cl_rca,
+            cl_lca=cl_lca,
+            cl_aorta=cl_aorta,
+        )
 
     return new_results, (cl_rca, cl_lca, cl_aorta)
 
