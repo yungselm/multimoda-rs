@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+from contextlib import contextmanager
 from collections.abc import Mapping
 import numpy as np
 import trimesh
@@ -9,12 +11,46 @@ from ..multimodars import (
     PyFrame,
     PyCenterline,
     build_adjacency_map,
+    fix_mesh_winding,
     adjust_diameter_centerline_morphing_simple,
     find_proximal_distal_scaling,
     find_aortic_scaling,
     find_aortic_wall_scaling as _find_aortic_wall_scaling,
 )
 from .._converters import geometry_to_trimesh
+
+
+@contextmanager
+def _timed(label: str, store: list | None = None):
+    start = time.perf_counter()
+    try:
+        yield
+    finally:
+        elapsed = time.perf_counter() - start
+        if store is not None:
+            store.append((label, elapsed))
+        print(f"  [TIMER] {label}: {elapsed:.3f}s")
+
+
+def _print_timing_summary(store: list, title: str):
+    print(f"\n=== {title} (sorted by duration) ===")
+    for label, elapsed in sorted(store, key=lambda x: x[1], reverse=True):
+        print(f"  {elapsed:8.3f}s  {label}")
+    print(f"  {sum(t for _, t in store):8.3f}s  TOTAL")
+
+
+def _fast_fix_normals(mesh: trimesh.Trimesh) -> None:
+    """Drop-in replacement for ``trimesh.Trimesh.fix_normals()``.
+
+    trimesh's own ``fix_winding`` does a Python/NetworkX BFS over the
+    face-adjacency graph with several small numpy allocations per edge -
+    O(n_edges) with heavy per-iteration overhead (e.g. ~3.9s on a ~52k-face
+    mesh). ``fix_mesh_winding`` is a Rust port of the same BFS-consistency
+    algorithm; ``fix_inversion`` (the volume-sign flip check) is already
+    vectorized numpy in trimesh, so it's left as-is.
+    """
+    mesh.faces = np.array(fix_mesh_winding(mesh.faces.tolist()), dtype=mesh.faces.dtype)
+    trimesh.repair.fix_inversion(mesh, multibody=False)
 
 
 def _project_to_best_fit_plane(
@@ -751,40 +787,50 @@ def stitch_ccta_to_intravascular(
     boundary-ring plane and the IV plane form an angle ≥ ``ostium_angle_threshold_deg``
     (default 45°).
     """
-    iv_mesh = iv_mesh.downsample(n_points_iv_cont)
-    iv_mesh_points = [
-        (p.x, p.y, p.z) for frame in iv_mesh.frames for p in frame.lumen.points
-    ]
+    _timings: list = []
+
+    with _timed("downsample iv_mesh", _timings):
+        iv_mesh = iv_mesh.downsample(n_points_iv_cont)
+        iv_mesh_points = [
+            (p.x, p.y, p.z) for frame in iv_mesh.frames for p in frame.lumen.points
+        ]
     proximal_centroid = iv_mesh.frames[0].centroid
     distal_centroid = iv_mesh.frames[-1].centroid
     proximal_points = iv_mesh.frames[0].lumen.points
     distal_points = iv_mesh.frames[-1].lumen.points
 
-    prox_boundary_pts, dist_boundary_pts, mesh = _prepare_prox_dist_boundary_pts(
-        mesh,
-        results,
-        proximal_centroid,
-        distal_centroid,
-        proximal_is_ostium=proximal_is_ostium,
-        proximal_iv_frame_pts=iv_mesh.frames[0].lumen.points,
-        clamp_overshoot=clamp_overshoot,
-    )
+    with _timed("_prepare_prox_dist_boundary_pts (total)", _timings):
+        prox_boundary_pts, dist_boundary_pts, mesh = _prepare_prox_dist_boundary_pts(
+            mesh,
+            results,
+            proximal_centroid,
+            distal_centroid,
+            proximal_is_ostium=proximal_is_ostium,
+            proximal_iv_frame_pts=iv_mesh.frames[0].lumen.points,
+            clamp_overshoot=clamp_overshoot,
+            _timings=_timings,
+        )
     prox_point_step = len(proximal_points) // len(prox_boundary_pts)
     dist_point_step = len(distal_points) // len(dist_boundary_pts)
 
     # Adjust start point
-    if prox_start_mode == "highest_z" or dist_start_mode == "highest_z":
-        iv_mesh = iv_mesh.sort_frame_points()
-        proximal_points = iv_mesh.frames[0].lumen.points
-        distal_points = iv_mesh.frames[-1].lumen.points
-    if prox_start_mode == "highest_z":
-        prox_boundary_pts = _adjust_start_point_by_z(prox_boundary_pts)
-    else:
-        prox_boundary_pts = _rotate_to_nearest_iv(prox_boundary_pts, proximal_points[0])
-    if dist_start_mode == "highest_z":
-        dist_boundary_pts = _adjust_start_point_by_z(dist_boundary_pts)
-    else:
-        dist_boundary_pts = _rotate_to_nearest_iv(dist_boundary_pts, distal_points[0])
+    with _timed("rotate/adjust start point", _timings):
+        if prox_start_mode == "highest_z" or dist_start_mode == "highest_z":
+            iv_mesh = iv_mesh.sort_frame_points()
+            proximal_points = iv_mesh.frames[0].lumen.points
+            distal_points = iv_mesh.frames[-1].lumen.points
+        if prox_start_mode == "highest_z":
+            prox_boundary_pts = _adjust_start_point_by_z(prox_boundary_pts)
+        else:
+            prox_boundary_pts = _rotate_to_nearest_iv(
+                prox_boundary_pts, proximal_points[0]
+            )
+        if dist_start_mode == "highest_z":
+            dist_boundary_pts = _adjust_start_point_by_z(dist_boundary_pts)
+        else:
+            dist_boundary_pts = _rotate_to_nearest_iv(
+                dist_boundary_pts, distal_points[0]
+            )
 
     # Compute the vessel axis so each patch can be flipped to face outward,
     # and also used as the consistent reference normal for direction checking.
@@ -798,44 +844,56 @@ def stitch_ccta_to_intravascular(
 
     # Check / fix winding direction of each boundary ring vs its IV ring
     # independently, using the method that matches the start-point strategy.
-    if prox_start_mode == "highest_z":
-        prox_boundary_pts = _fix_ring_direction_by_winding(
-            prox_boundary_pts, proximal_points
-        )
-    else:
-        prox_boundary_pts = _fix_ring_direction_by_distance(
-            prox_boundary_pts, proximal_points, prox_point_step
-        )
+    with _timed("fix ring direction", _timings):
+        if prox_start_mode == "highest_z":
+            prox_boundary_pts = _fix_ring_direction_by_winding(
+                prox_boundary_pts, proximal_points
+            )
+        else:
+            prox_boundary_pts = _fix_ring_direction_by_distance(
+                prox_boundary_pts, proximal_points, prox_point_step
+            )
 
-    if dist_start_mode == "highest_z":
-        dist_boundary_pts = _fix_ring_direction_by_winding(
-            dist_boundary_pts, distal_points
-        )
-    else:
-        dist_boundary_pts = _fix_ring_direction_by_distance(
-            dist_boundary_pts, distal_points, dist_point_step
-        )
+        if dist_start_mode == "highest_z":
+            dist_boundary_pts = _fix_ring_direction_by_winding(
+                dist_boundary_pts, distal_points
+            )
+        else:
+            dist_boundary_pts = _fix_ring_direction_by_distance(
+                dist_boundary_pts, distal_points, dist_point_step
+            )
 
     # Step 3: stitch each boundary ring to its IV ring
-    prox_patch = _stitch_boundary_ring(
-        prox_boundary_pts, proximal_points, prox_point_step, prox_outward
-    )
-    dist_patch = _stitch_boundary_ring(
-        dist_boundary_pts, distal_points, dist_point_step, dist_outward
-    )
-    test_mesh = geometry_to_trimesh(iv_mesh)
-    test_mesh.update_faces(test_mesh.unique_faces())
-    test_mesh.update_faces(test_mesh.nondegenerate_faces())
-    test_mesh.fix_normals()
-    mesh = trimesh.util.concatenate([mesh, prox_patch, dist_patch, test_mesh])
-    trimesh.tol.merge = 0.001
-    mesh.merge_vertices()
-    if not mesh.is_watertight:
-        mesh.fill_holes()
-    mesh.update_faces(mesh.unique_faces())
-    mesh.update_faces(mesh.nondegenerate_faces())
-    mesh.remove_unreferenced_vertices()
-    mesh.fix_normals()
+    with _timed("_stitch_boundary_ring (prox+dist)", _timings):
+        prox_patch = _stitch_boundary_ring(
+            prox_boundary_pts, proximal_points, prox_point_step, prox_outward
+        )
+        dist_patch = _stitch_boundary_ring(
+            dist_boundary_pts, distal_points, dist_point_step, dist_outward
+        )
+    with _timed("geometry_to_trimesh + face cleanup", _timings):
+        test_mesh = geometry_to_trimesh(iv_mesh)
+        test_mesh.update_faces(test_mesh.unique_faces())
+        test_mesh.update_faces(test_mesh.nondegenerate_faces())
+        _fast_fix_normals(test_mesh)
+    with _timed("  trimesh.util.concatenate", _timings):
+        mesh = trimesh.util.concatenate([mesh, prox_patch, dist_patch, test_mesh])
+    with _timed("  merge_vertices", _timings):
+        trimesh.tol.merge = 0.001
+        mesh.merge_vertices()
+    with _timed("  is_watertight check + fill_holes", _timings):
+        if not mesh.is_watertight:
+            mesh.fill_holes()
+    with _timed("  update_faces(unique_faces)", _timings):
+        mesh.update_faces(mesh.unique_faces())
+    with _timed("  update_faces(nondegenerate_faces)", _timings):
+        mesh.update_faces(mesh.nondegenerate_faces())
+    with _timed("  remove_unreferenced_vertices", _timings):
+        mesh.remove_unreferenced_vertices()
+    with _timed("  fix_normals", _timings):
+        _fast_fix_normals(mesh)
+
+    _print_timing_summary(_timings, "stitch_ccta_to_intravascular timing summary")
 
     results["prox_boundary_points"] = prox_boundary_pts
     results["dist_boundary_points"] = dist_boundary_pts
@@ -910,21 +968,24 @@ def _prepare_prox_dist_boundary_pts(
     proximal_iv_frame_pts=None,
     ostium_angle_threshold_deg: float = 45.0,
     clamp_overshoot: float = 1.0,
+    _timings: list | None = None,
 ) -> tuple[list, list, trimesh.Trimesh]:
-    proximal_boundary_pts = []
-    distal_boundary_pts = []
-    for pt in results["boundary_points"]:
-        distance_prox = np.linalg.norm(np.array(prox_centroid) - np.array(pt))
-        distance_dist = np.linalg.norm(np.array(dist_centroid) - np.array(pt))
-        if distance_prox <= distance_dist:
-            proximal_boundary_pts.append(pt)
-        else:
-            distal_boundary_pts.append(pt)
+    with _timed("  partition boundary_points prox/dist", _timings):
+        proximal_boundary_pts = []
+        distal_boundary_pts = []
+        for pt in results["boundary_points"]:
+            distance_prox = np.linalg.norm(np.array(prox_centroid) - np.array(pt))
+            distance_dist = np.linalg.norm(np.array(dist_centroid) - np.array(pt))
+            if distance_prox <= distance_dist:
+                proximal_boundary_pts.append(pt)
+            else:
+                distal_boundary_pts.append(pt)
 
     if proximal_is_ostium:
         # Project onto best-fit plane + Laplacian smooth.
-        prox_projected = _project_to_best_fit_plane(proximal_boundary_pts)
-        prox_boundary_pts_ord = _smooth_ring_laplacian(prox_projected)
+        with _timed("  project_to_best_fit_plane + smooth_ring_laplacian", _timings):
+            prox_projected = _project_to_best_fit_plane(proximal_boundary_pts)
+            prox_boundary_pts_ord = _smooth_ring_laplacian(prox_projected)
 
         # Final check for anomalous vessels: the aortic ostium is nearly
         # perpendicular to the coronary ostial plane, which can leave some
@@ -934,43 +995,50 @@ def _prepare_prox_dist_boundary_pts(
         iv_origin: np.ndarray | None = None
         iv_normal: np.ndarray | None = None
         clamping_applied = False
-        if proximal_iv_frame_pts is not None and len(prox_boundary_pts_ord) >= 3:
-            boundary_arr = np.array(prox_boundary_pts_ord, dtype=np.float64)
-            iv_arr = np.array(
-                [[p.x, p.y, p.z] for p in proximal_iv_frame_pts], dtype=np.float64
-            )
-            boundary_normal = _plane_normal_svd(boundary_arr)
-            iv_normal = _plane_normal_svd(iv_arr)
-            angle = _angle_between_planes_deg(boundary_normal, iv_normal)
-            if angle >= ostium_angle_threshold_deg:
-                iv_origin = np.array(prox_centroid, dtype=np.float64)
-                prox_boundary_pts_ord = _clamp_to_plane(
-                    prox_boundary_pts_ord,
-                    iv_origin,
-                    iv_normal,
-                    overshoot=clamp_overshoot,
+        with _timed("  plane-angle check + clamp_to_plane", _timings):
+            if proximal_iv_frame_pts is not None and len(prox_boundary_pts_ord) >= 3:
+                boundary_arr = np.array(prox_boundary_pts_ord, dtype=np.float64)
+                iv_arr = np.array(
+                    [[p.x, p.y, p.z] for p in proximal_iv_frame_pts], dtype=np.float64
                 )
-                clamping_applied = True
+                boundary_normal = _plane_normal_svd(boundary_arr)
+                iv_normal = _plane_normal_svd(iv_arr)
+                angle = _angle_between_planes_deg(boundary_normal, iv_normal)
+                if angle >= ostium_angle_threshold_deg:
+                    iv_origin = np.array(prox_centroid, dtype=np.float64)
+                    prox_boundary_pts_ord = _clamp_to_plane(
+                        prox_boundary_pts_ord,
+                        iv_origin,
+                        iv_normal,
+                        overshoot=clamp_overshoot,
+                    )
+                    clamping_applied = True
 
-        coord_to_idx = {tuple(v): i for i, v in enumerate(mesh.vertices)}
-        new_vertices = mesh.vertices.copy()
-        fixed_indices: set[int] = set()
-        for old_pt, new_pt in zip(proximal_boundary_pts, prox_boundary_pts_ord):
-            idx = coord_to_idx.get(tuple(old_pt))
-            if idx is not None:
-                new_vertices[idx] = new_pt
-                fixed_indices.add(idx)
-        mesh = trimesh.Trimesh(vertices=new_vertices, faces=mesh.faces, process=False)
+        with _timed("  rebuild mesh with clamped prox vertices", _timings):
+            coord_to_idx = {tuple(v): i for i, v in enumerate(mesh.vertices)}
+            new_vertices = mesh.vertices.copy()
+            fixed_indices: set[int] = set()
+            for old_pt, new_pt in zip(proximal_boundary_pts, prox_boundary_pts_ord):
+                idx = coord_to_idx.get(tuple(old_pt))
+                if idx is not None:
+                    new_vertices[idx] = new_pt
+                    fixed_indices.add(idx)
+            mesh = trimesh.Trimesh(
+                vertices=new_vertices, faces=mesh.faces, process=False
+            )
 
         if clamping_applied and fixed_indices:
             assert iv_origin is not None and iv_normal is not None
-            mesh = _enforce_layer_gap_from_plane(
-                mesh, fixed_indices, iv_origin, iv_normal
-            )
+            with _timed("  _enforce_layer_gap_from_plane", _timings):
+                mesh = _enforce_layer_gap_from_plane(
+                    mesh, fixed_indices, iv_origin, iv_normal
+                )
     else:
-        prox_boundary_pts_ord = order_points_list(mesh, proximal_boundary_pts)
+        with _timed("  order_points_list (proximal)", _timings):
+            prox_boundary_pts_ord = order_points_list(mesh, proximal_boundary_pts)
 
-    dist_boundary_pts_ord = order_points_list(mesh, distal_boundary_pts)
+    with _timed("  order_points_list (distal)", _timings):
+        dist_boundary_pts_ord = order_points_list(mesh, distal_boundary_pts)
 
     return prox_boundary_pts_ord, dist_boundary_pts_ord, mesh
 

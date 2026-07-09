@@ -74,6 +74,7 @@ fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<(
         m.clone()
     )?)?;
     m.add_function(wrap_pyfunction!(ccta_py::build_adjacency_map, m.clone())?)?;
+    m.add_function(wrap_pyfunction!(ccta_py::fix_mesh_winding, m.clone())?)?;
     m.add_function(wrap_pyfunction!(ccta_py::smooth_mesh_labels, m.clone())?)?;
     m.add_function(wrap_pyfunction!(ccta_py::discretize_vessel, m.clone())?)?;
     m.add_function(wrap_pyfunction!(

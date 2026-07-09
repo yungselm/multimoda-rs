@@ -34,6 +34,7 @@ from multimodars.multimodars import (
 from multimodars.ccta.manipulating import (
     _clamp_to_plane,
     _enforce_layer_gap_from_plane,
+    _fast_fix_normals,
     _fix_ring_direction_by_distance,
     _prepare_prox_dist_boundary_pts,
     _rotate_to_nearest_iv,
@@ -316,6 +317,45 @@ class TestFinalReclassification:
             "lca_removed_points",
         ):
             assert key in new
+
+
+# ===========================================================================
+# manipulating._fast_fix_normals
+# (Rust-backed drop-in replacement for trimesh.Trimesh.fix_normals(), via
+# multimodars.multimodars.fix_mesh_winding)
+# ===========================================================================
+
+
+class TestFastFixNormals:
+    def test_matches_trimesh_on_inconsistent_quad(self):
+        """Same quad, split with one face deliberately wound the wrong way."""
+        verts = np.array(
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [0.0, 1.0, 0.0]]
+        )
+        faces = np.array([[0, 1, 2], [2, 0, 3]])
+
+        ours = trimesh.Trimesh(vertices=verts, faces=faces.copy(), process=False)
+        _fast_fix_normals(ours)
+
+        reference = trimesh.Trimesh(vertices=verts, faces=faces.copy(), process=False)
+        reference.fix_normals()
+
+        assert ours.faces.tolist() == reference.faces.tolist()
+
+    def test_already_consistent_mesh_unchanged(self):
+        """A closed icosphere is already winding-consistent; faces shouldn't move."""
+        mesh = trimesh.creation.icosphere(subdivisions=1)
+        before = mesh.faces.copy()
+        _fast_fix_normals(mesh)
+        assert mesh.faces.tolist() == before.tolist()
+
+    def test_flips_inverted_sphere_outward(self):
+        """A sphere with all faces flipped inward should end up outward-facing."""
+        mesh = trimesh.creation.icosphere(subdivisions=1)
+        mesh.invert()
+        assert mesh.volume < 0.0
+        _fast_fix_normals(mesh)
+        assert mesh.volume > 0.0
 
 
 # ===========================================================================

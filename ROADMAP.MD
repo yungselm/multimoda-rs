@@ -190,6 +190,51 @@ impact:
 - [] `remove_occluded_points_ray_triangle_rust` clones both centerlines twice (once explicitly,
   once again inside `check_centerline`) just to sort them — cheap to avoid, minor win.
 
+## Full-pipeline re-profile + `stitch_ccta_to_intravascular` fix (2026-07-09)
+
+Re-ran the full `fullworkflow.py` under a release build after batch A + B1 + B5 landed.
+New bottleneck order (~27.2s total, down from the original 189.9s baseline):
+
+| Step | Time |
+|---|---|
+| `fix_and_remesh_stitched_mesh` | 17.359s |
+| `stitch_ccta_to_intravascular` | 4.090s |
+| `align_combined` | 2.196s |
+| `label_geometry` (final/initial) | 0.890s / 0.808s |
+| `from_file_singlepair` | 0.626s |
+| everything else | <0.22s each |
+
+This fully confirmed skipping B2 and holding B3/B4: `discretize_vessel_tree` (contains the B3
+`voronoi_partition` target) dropped to 0.203s and the B4 `scale_coronary.rs` sweep functions
+combined to 0.157s, purely from the release build — nothing left to fix there. Marked both
+resolved-by-context above; B2 marked declined (Pass A dropped to 0.042-0.044s on its own, and
+the nested-loop form is more readable than a BVH-pruned version — not worth the complexity for
+a step that isn't slow anymore).
+
+- [x] `stitch_ccta_to_intravascular` (`manipulating.py`) — **FIXED:** added internal `_timed`
+  instrumentation (same pattern as `label_geometry`) and found 95% of its 4.1-4.3s cost was one
+  call: `mesh.fix_normals()` on the freshly-concatenated mesh (~26k verts, 52k faces). Traced
+  into trimesh's own source (`trimesh/repair.py` v4.8.3) — `fix_winding` does a Python/NetworkX
+  BFS over the face-adjacency graph with several small numpy allocations per edge (~78k edges
+  here): the exact same "Python loop + per-item numpy overhead" anti-pattern already fixed
+  elsewhere in this module today, just living inside a third-party library instead of our code
+  (unlike `fix_and_remesh_stitched_mesh`, which delegates to compiled pymeshlab and was left
+  alone). Added `fix_mesh_winding` — a faithful Rust port of the same BFS-consistency algorithm
+  — in `ccta_py.rs`, verified byte-for-bit identical output against trimesh's actual
+  `fix_winding` on both a consistent and an inconsistent test case, plus against a real
+  `icosphere` mesh. Wired in via a new `_fast_fix_normals()` helper (Rust winding fix +
+  trimesh's own cheap/vectorized `fix_inversion`) replacing both `fix_normals()` calls in
+  `stitch_ccta_to_intravascular`. Result: `fix_normals` 3.898s → 0.105s (~37x);
+  `stitch_ccta_to_intravascular` total 4.1-4.3s → **0.444s** (~9-10x). Full pipeline now
+  **~23.7s** (~8x under the original baseline). `fix_and_remesh_stitched_mesh` (17.6s,
+  pymeshlab, left alone per instruction) is now ~74% of total runtime and the only large item
+  left.
+- [] `fix_mesh_winding` is general mesh-topology logic (pure `faces` indices, no coordinates
+  needed) — `fixing_functions.py:222`'s `mesh_remeshed.fix_normals()` inside
+  `fix_and_remesh_stitched_mesh` calls the same slow trimesh path on an even bigger mesh
+  (114k faces post-remesh) and could reuse this fix directly. Deliberately **not done** —
+  out of scope per instruction to leave `fix_and_remesh_stitched_mesh` alone this pass.
+
 # Mesh combination (v0.3.0/0.4.0)
 ## New/improved features
 - [] `numpy_to_report` function that allows to read in lists for the four variables of interest (frame, phase, measurement_1, measurement_2)
