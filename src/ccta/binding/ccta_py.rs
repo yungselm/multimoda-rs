@@ -1,5 +1,5 @@
 // src/ccta/binding/ccta_py.rs
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::ccta::adjust_mesh::label_coronary;
 use crate::ccta::adjust_mesh::label_coronary::Triangle;
@@ -11,6 +11,13 @@ use pyo3::prelude::*;
 
 type Point3D = (f64, f64, f64);
 type TriangleTuple = (Point3D, Point3D, Point3D);
+type FiveRegionPointLists = (
+    Vec<Point3D>,
+    Vec<Point3D>,
+    Vec<Point3D>,
+    Vec<Point3D>,
+    Vec<Point3D>,
+);
 
 /// Find points bounded by spheres along a coronary vessel centerline.
 ///
@@ -121,6 +128,115 @@ pub fn remove_occluded_points_ray_triangle(
         step_size_mm,
     );
     Ok(result)
+}
+
+/// Find mesh faces that reference any vertex coincident (within `tol`) with one of
+/// `points`.
+///
+/// Parameters
+/// ----------
+/// vertices : list of tuple of float
+///     Mesh vertex coordinates, e.g. ``mesh.vertices.tolist()``.
+/// faces : list of list of int
+///     Mesh face vertex-index triples, e.g. ``mesh.faces.tolist()``.
+/// points : list of tuple of float
+///     Query points to match against mesh vertices (exact/near-exact matches
+///     expected, within `tol`), e.g. output of
+///     :func:`find_centerline_bounded_points`.
+/// tol : float, optional
+///     Distance tolerance for vertex matching.  Default is ``1e-6``.
+///
+/// Returns
+/// -------
+/// faces_found : list of tuple of tuple of float
+///     Triangle faces as ``((v0x, v0y, v0z), (v1x, v1y, v1z), (v2x, v2y, v2z))``
+///     triples, ready to pass to :func:`remove_occluded_points_ray_triangle`.
+#[pyfunction]
+#[pyo3(signature = (vertices, faces, points, tol = 1e-6))]
+pub fn find_faces_near_points(
+    vertices: Vec<Point3D>,
+    faces: Vec<[usize; 3]>,
+    points: Vec<Point3D>,
+    tol: f64,
+) -> PyResult<Vec<TriangleTuple>> {
+    let triangles = label_coronary::find_faces_near_points(&vertices, &faces, &points, tol);
+    let result: Vec<TriangleTuple> = triangles.into_iter().map(|t| (t.v0, t.v1, t.v2)).collect();
+    Ok(result)
+}
+
+/// Vertices present in neither `points_a` nor `points_b` (exact-match set difference).
+///
+/// Parameters
+/// ----------
+/// vertices : list of tuple of float
+///     Mesh vertex coordinates, e.g. ``mesh.vertices.tolist()``.
+/// points_a : list of tuple of float
+///     First set of vertex-derived points to exclude.
+/// points_b : list of tuple of float
+///     Second set of vertex-derived points to exclude.
+///
+/// Returns
+/// -------
+/// aortic_points : list of tuple of float
+///     Vertices from *vertices* that are not present in *points_a* or *points_b*.
+#[pyfunction]
+pub fn find_aortic_points(
+    vertices: Vec<Point3D>,
+    points_a: Vec<Point3D>,
+    points_b: Vec<Point3D>,
+) -> PyResult<Vec<Point3D>> {
+    Ok(label_coronary::find_aortic_points(
+        &vertices, &points_a, &points_b,
+    ))
+}
+
+/// Refine vertex labels using a mesh adjacency map.
+///
+/// Applies two adjacency-based correction rules:
+///
+/// * Logic A - an isolated RCA/LCA vertex (no same-label neighbours) is
+///   reassigned to the aorta class.
+/// * Logic B - a vertex removed by occlusion detection but whose neighbours are
+///   predominantly (> 70%) the corresponding coronary label is restored to that
+///   label.
+///
+/// Parameters
+/// ----------
+/// vertices : list of tuple of float
+///     Mesh vertex coordinates, e.g. ``mesh.vertices.tolist()``.
+/// faces : list of list of int
+///     Mesh face vertex-index triples, e.g. ``mesh.faces.tolist()``.
+/// rca_points, lca_points, rca_removed_points, lca_removed_points : list of tuple of float
+///     Current per-region vertex-derived point lists.
+///
+/// Returns
+/// -------
+/// aorta_points, rca_points, lca_points, rca_removed_points, lca_removed_points : list of tuple of float
+///     The five region point lists after adjacency-based label smoothing.
+#[pyfunction]
+pub fn final_reclassification(
+    vertices: Vec<Point3D>,
+    faces: Vec<[usize; 3]>,
+    rca_points: Vec<Point3D>,
+    lca_points: Vec<Point3D>,
+    rca_removed_points: Vec<Point3D>,
+    lca_removed_points: Vec<Point3D>,
+) -> PyResult<FiveRegionPointLists> {
+    let result = label_coronary::final_reclassification(
+        &vertices,
+        &faces,
+        &rca_points,
+        &lca_points,
+        &rca_removed_points,
+        &lca_removed_points,
+    );
+    Ok((
+        result.aorta_points,
+        result.rca_points,
+        result.lca_points,
+        result.rca_removed_points,
+        result.lca_removed_points,
+    ))
 }
 
 /// Adjust the vessel diameter by morphing points outward or inward along the centerline.
@@ -403,6 +519,119 @@ pub fn build_adjacency_map(faces: Vec<[usize; 3]>) -> HashMap<usize, HashSet<usi
     adjacency
 }
 
+/// Fix face winding so that every pair of adjacent faces traverses their
+/// shared edge in opposite directions (consistent orientation).
+///
+/// Faithful port of `trimesh.repair.fix_winding` — a BFS over the
+/// face-adjacency graph, once per connected component, propagating a
+/// consistent orientation outward from an arbitrary root face per component.
+/// trimesh's own implementation does this as a Python/NetworkX loop over
+/// every face-adjacency edge with several small numpy allocations per
+/// iteration; this Rust version does the same traversal without that
+/// per-edge interpreter overhead.
+///
+/// Parameters
+/// ----------
+/// faces : list of list of int
+///     Mesh face vertex-index triples, e.g. ``mesh.faces.tolist()``.
+///
+/// Returns
+/// -------
+/// faces : list of list of int
+///     The same faces, each either left as-is or with its vertex order
+///     reversed so that winding is consistent within each connected
+///     component of the mesh.
+#[pyfunction]
+pub fn fix_mesh_winding(faces: Vec<[usize; 3]>) -> Vec<[usize; 3]> {
+    let n_faces = faces.len();
+    if n_faces == 0 {
+        return faces;
+    }
+
+    // (face_idx, edge_start, edge_end) - a face's own directed traversal of an edge.
+    type FaceDirectedEdge = (usize, usize, usize);
+    // (neighbor_face, this_face's_directed_edge, neighbor's_directed_edge)
+    type FaceAdjacencyEntry = (usize, (usize, usize), (usize, usize));
+
+    // For each undirected edge, collect the owning faces along with each
+    // face's own directed (original-order) traversal of that edge.
+    let mut edge_owners: HashMap<(usize, usize), Vec<FaceDirectedEdge>> = HashMap::new();
+    for (fi, face) in faces.iter().enumerate() {
+        let directed_edges = [(face[0], face[1]), (face[1], face[2]), (face[2], face[0])];
+        for &(u, v) in &directed_edges {
+            let key = if u < v { (u, v) } else { (v, u) };
+            edge_owners.entry(key).or_default().push((fi, u, v));
+        }
+    }
+
+    // Face adjacency: only edges owned by exactly 2 faces count (matches
+    // trimesh's `face_adjacency`, which drops boundary/non-manifold edges).
+    let mut adjacency: HashMap<usize, Vec<FaceAdjacencyEntry>> = HashMap::new();
+    for owners in edge_owners.values() {
+        if owners.len() != 2 {
+            continue;
+        }
+        let (fa, ua, va) = owners[0];
+        let (fb, ub, vb) = owners[1];
+        adjacency
+            .entry(fa)
+            .or_default()
+            .push((fb, (ua, va), (ub, vb)));
+        adjacency
+            .entry(fb)
+            .or_default()
+            .push((fa, (ub, vb), (ua, va)));
+    }
+
+    let mut flipped = vec![false; n_faces];
+    let mut visited = vec![false; n_faces];
+
+    for start in 0..n_faces {
+        if visited[start] {
+            continue;
+        }
+        visited[start] = true;
+        let mut queue: VecDeque<usize> = VecDeque::new();
+        queue.push_back(start);
+
+        while let Some(current) = queue.pop_front() {
+            let Some(neighbors) = adjacency.get(&current) else {
+                continue;
+            };
+            for &(neighbor, current_edge, neighbor_edge) in neighbors {
+                if visited[neighbor] {
+                    continue;
+                }
+                // Current face's directed edge, accounting for its own flip state.
+                let current_dir = if flipped[current] {
+                    (current_edge.1, current_edge.0)
+                } else {
+                    current_edge
+                };
+                // Same starting vertex => both faces traverse the shared edge
+                // in the same direction => inconsistent => flip the neighbor.
+                if current_dir.0 == neighbor_edge.0 {
+                    flipped[neighbor] = true;
+                }
+                visited[neighbor] = true;
+                queue.push_back(neighbor);
+            }
+        }
+    }
+
+    faces
+        .into_iter()
+        .enumerate()
+        .map(|(i, face)| {
+            if flipped[i] {
+                [face[2], face[1], face[0]]
+            } else {
+                face
+            }
+        })
+        .collect()
+}
+
 /// Discretize a coronary vessel into uniform cross-sectional contours.
 ///
 /// Walks ``branch_id`` of ``centerline`` at uniform arc-length intervals of
@@ -633,4 +862,54 @@ pub fn discretize_vessel_tree(
     };
 
     Ok(PyDiscretizedVesselTree::from(tree))
+}
+
+#[cfg(test)]
+mod fix_mesh_winding_tests {
+    use super::*;
+
+    #[test]
+    fn test_already_consistent_quad_is_unchanged() {
+        // Quad 0,1,2,3 split into two triangles with standard CCW winding:
+        // shared edge {0,2} is (2,0) in face 0 and (0,2) in face 1 - opposite
+        // directions, already consistent.
+        let faces = vec![[0, 1, 2], [0, 2, 3]];
+        let result = fix_mesh_winding(faces.clone());
+        assert_eq!(result, faces);
+    }
+
+    #[test]
+    fn test_inconsistent_pair_gets_second_face_flipped() {
+        // Face 1 traverses the shared edge {0,2} as (2,0), same direction as
+        // face 0's (2,0) -> inconsistent -> face 1 must be flipped.
+        let faces = vec![[0, 1, 2], [2, 0, 3]];
+        let result = fix_mesh_winding(faces);
+        assert_eq!(result[0], [0, 1, 2]); // root face untouched
+        assert_eq!(result[1], [3, 0, 2]); // reversed
+    }
+
+    #[test]
+    fn test_isolated_faces_with_no_shared_edges_unchanged() {
+        let faces = vec![[0, 1, 2], [5, 6, 7]];
+        let result = fix_mesh_winding(faces.clone());
+        assert_eq!(result, faces);
+    }
+
+    #[test]
+    fn test_empty_input_returns_empty() {
+        let result = fix_mesh_winding(vec![]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_bfs_propagates_across_a_triangle_fan() {
+        // Fan of 3 triangles around a shared centre vertex 0, all originally
+        // wound the same way as seen from +z (0,1,2), (0,2,3), (0,3,4) - i.e.
+        // each shares an edge with the next in a CONSISTENT fan, so nothing
+        // should need flipping; this checks BFS visits every face in one
+        // component without spuriously flipping consistent faces.
+        let faces = vec![[0, 1, 2], [0, 2, 3], [0, 3, 4]];
+        let result = fix_mesh_winding(faces.clone());
+        assert_eq!(result, faces);
+    }
 }

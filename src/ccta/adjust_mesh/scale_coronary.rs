@@ -1,4 +1,5 @@
 use crate::types::native::{Centerline, CenterlinePoint, Frame};
+use nalgebra::Point3;
 use rayon::prelude::*;
 use std::collections::HashSet;
 
@@ -13,7 +14,6 @@ pub fn centerline_based_wall_diameter_optimization(
         return 0.0;
     }
 
-    // find closest centerline point
     let closest_cl = match centerline.points.iter().min_by(|a, b| {
         let dist_a = super::calculate_squared_distance(*a, ref_point_coronary);
         let dist_b = super::calculate_squared_distance(*b, ref_point_coronary);
@@ -36,31 +36,28 @@ pub fn centerline_based_wall_diameter_optimization(
         None => return 0.0,
     };
 
-    // vector centerline point to coronary point
-    let vector = (
-        ref_point_coronary.0 - closest_cl.contour_point.x,
-        ref_point_coronary.1 - closest_cl.contour_point.y,
-        ref_point_coronary.2 - closest_cl.contour_point.z,
+    let ref_point = Point3::new(
+        ref_point_coronary.0,
+        ref_point_coronary.1,
+        ref_point_coronary.2,
     );
+    let closest_cl_point = Point3::new(
+        closest_cl.contour_point.x,
+        closest_cl.contour_point.y,
+        closest_cl.contour_point.z,
+    );
+    let closest_aortic_point = Point3::new(closest_aortic.0, closest_aortic.1, closest_aortic.2);
 
-    let magnitude = (vector.0 * vector.0 + vector.1 * vector.1 + vector.2 * vector.2).sqrt();
-    if magnitude == 0.0 {
+    // vector centerline point to coronary point
+    let vector = ref_point - closest_cl_point;
+    let Some(unit) = vector.try_normalize(0.0) else {
         return 0.0;
-    }
-    let unit = (
-        vector.0 / magnitude,
-        vector.1 / magnitude,
-        vector.2 / magnitude,
-    );
+    };
 
     // project (ref_point_coronary - closest_aortic) onto unit direction
     // minimizes ||closest_aortic + t*unit - ref_point_coronary||², constrained t >= 0
-    let to_ref = (
-        ref_point_coronary.0 - closest_aortic.0,
-        ref_point_coronary.1 - closest_aortic.1,
-        ref_point_coronary.2 - closest_aortic.2,
-    );
-    let t = to_ref.0 * unit.0 + to_ref.1 * unit.1 + to_ref.2 * unit.2;
+    let to_ref = ref_point - closest_aortic_point;
+    let t = to_ref.dot(&unit);
 
     t.max(0.0)
 }
@@ -227,29 +224,19 @@ pub fn centerline_based_diameter_morphing(
         .par_iter()
         .map(|point| {
             let closest_cl_point = find_closest_centerline_point_optimized(centerline, *point);
-
-            let vector = (
-                point.0 - closest_cl_point.contour_point.x,
-                point.1 - closest_cl_point.contour_point.y,
-                point.2 - closest_cl_point.contour_point.z,
+            let p = Point3::new(point.0, point.1, point.2);
+            let cl_point = Point3::new(
+                closest_cl_point.contour_point.x,
+                closest_cl_point.contour_point.y,
+                closest_cl_point.contour_point.z,
             );
 
-            let magnitude =
-                (vector.0 * vector.0 + vector.1 * vector.1 + vector.2 * vector.2).sqrt();
-
-            if magnitude > 0.0 {
-                let normalized_vector = (
-                    vector.0 / magnitude,
-                    vector.1 / magnitude,
-                    vector.2 / magnitude,
-                );
-                (
-                    point.0 + normalized_vector.0 * diameter_adjustment_mm,
-                    point.1 + normalized_vector.1 * diameter_adjustment_mm,
-                    point.2 + normalized_vector.2 * diameter_adjustment_mm,
-                )
-            } else {
-                *point
+            match (p - cl_point).try_normalize(0.0) {
+                Some(unit) => {
+                    let moved = p + unit * diameter_adjustment_mm;
+                    (moved.x, moved.y, moved.z)
+                }
+                None => *point,
             }
         })
         .collect()
@@ -334,10 +321,7 @@ fn find_cl_points_in_range(
 
     for point in points.iter() {
         for cl_point in centerline.points.iter() {
-            let dx = point.0 - cl_point.contour_point.x;
-            let dy = point.1 - cl_point.contour_point.y;
-            let dz = point.2 - cl_point.contour_point.z;
-            let distance_squared = dx * dx + dy * dy + dz * dz;
+            let distance_squared = super::calculate_squared_distance(point, cl_point);
             if distance_squared <= search_radius * search_radius {
                 selected_points.push(cl_point);
             }
@@ -365,36 +349,40 @@ pub fn clean_up_non_section_points(
     let mut cleaned_points = Vec::new();
     let mut reassigned_points = reference_points.clone();
 
+    if points_to_cleanup.is_empty() {
+        return (cleaned_points, reassigned_points);
+    }
+
+    // R-trees over both point sets: each point's ref/self neighbor counts then
+    // cost O(log n + k) instead of a full linear scan, so the whole function is
+    // O((P+R) log(P+R)) instead of O(P * (P+R)).
+    let ref_tree = rstar::RTree::bulk_load(
+        reference_points
+            .iter()
+            .map(|p| [p.0, p.1, p.2])
+            .collect::<Vec<_>>(),
+    );
+    let cleanup_tree = rstar::RTree::bulk_load(
+        points_to_cleanup
+            .iter()
+            .map(|p| [p.0, p.1, p.2])
+            .collect::<Vec<_>>(),
+    );
+
     for point in points_to_cleanup.iter() {
-        let mut ref_neighbors = 0;
-        let mut total_neighbors = 0;
+        let query = [point.0, point.1, point.2];
 
-        for ref_point in reference_points.iter() {
-            let dx = point.0 - ref_point.0;
-            let dy = point.1 - ref_point.1;
-            let dz = point.2 - ref_point.2;
-            let distance_squared = dx * dx + dy * dy + dz * dz;
-
-            if distance_squared <= neighborhood_radius_sq {
-                ref_neighbors += 1;
-                total_neighbors += 1;
-            }
-        }
-
-        for other_point in points_to_cleanup.iter() {
-            if std::ptr::eq(point, other_point) {
-                continue; // Skip the point itself
-            }
-
-            let dx = point.0 - other_point.0;
-            let dy = point.1 - other_point.1;
-            let dz = point.2 - other_point.2;
-            let distance_squared = dx * dx + dy * dy + dz * dz;
-
-            if distance_squared <= neighborhood_radius_sq {
-                total_neighbors += 1;
-            }
-        }
+        let ref_neighbors = ref_tree
+            .locate_within_distance(query, neighborhood_radius_sq)
+            .count();
+        // The point itself is always within its own radius, so subtract 1 to
+        // match the original "skip self" behavior (duplicate points at the same
+        // coordinate still count as neighbors, exactly one instance is excluded).
+        let self_neighbors = cleanup_tree
+            .locate_within_distance(query, neighborhood_radius_sq)
+            .count()
+            .saturating_sub(1);
+        let total_neighbors = ref_neighbors + self_neighbors;
 
         // Decision logic: if most neighbors are reference points, reassign
         if total_neighbors > 0 {

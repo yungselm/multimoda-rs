@@ -9,12 +9,27 @@ from ..multimodars import (
     PyFrame,
     PyCenterline,
     build_adjacency_map,
+    fix_mesh_winding,
     adjust_diameter_centerline_morphing_simple,
     find_proximal_distal_scaling,
     find_aortic_scaling,
     find_aortic_wall_scaling as _find_aortic_wall_scaling,
 )
 from .._converters import geometry_to_trimesh
+
+
+def _fast_fix_normals(mesh: trimesh.Trimesh) -> None:
+    """Drop-in replacement for ``trimesh.Trimesh.fix_normals()``.
+
+    trimesh's own ``fix_winding`` does a Python/NetworkX BFS over the
+    face-adjacency graph with several small numpy allocations per edge -
+    O(n_edges) with heavy per-iteration overhead (e.g. ~3.9s on a ~52k-face
+    mesh). ``fix_mesh_winding`` is a Rust port of the same BFS-consistency
+    algorithm; ``fix_inversion`` (the volume-sign flip check) is already
+    vectorized numpy in trimesh, so it's left as-is.
+    """
+    mesh.faces = np.array(fix_mesh_winding(mesh.faces.tolist()), dtype=mesh.faces.dtype)
+    trimesh.repair.fix_inversion(mesh, multibody=False)
 
 
 def _project_to_best_fit_plane(
@@ -826,7 +841,7 @@ def stitch_ccta_to_intravascular(
     test_mesh = geometry_to_trimesh(iv_mesh)
     test_mesh.update_faces(test_mesh.unique_faces())
     test_mesh.update_faces(test_mesh.nondegenerate_faces())
-    test_mesh.fix_normals()
+    _fast_fix_normals(test_mesh)
     mesh = trimesh.util.concatenate([mesh, prox_patch, dist_patch, test_mesh])
     trimesh.tol.merge = 0.001
     mesh.merge_vertices()
@@ -835,7 +850,7 @@ def stitch_ccta_to_intravascular(
     mesh.update_faces(mesh.unique_faces())
     mesh.update_faces(mesh.nondegenerate_faces())
     mesh.remove_unreferenced_vertices()
-    mesh.fix_normals()
+    _fast_fix_normals(mesh)
 
     results["prox_boundary_points"] = prox_boundary_pts
     results["dist_boundary_points"] = dist_boundary_pts

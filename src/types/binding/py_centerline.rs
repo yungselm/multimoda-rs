@@ -94,8 +94,9 @@ impl PyCenterline {
     ///
     /// Points whose mutual distance is ≤ ``spacing_tolerance × median_nn_spacing``
     /// are considered spatially consecutive regardless of their original array
-    /// order.  The largest connected group becomes branch 0 (main vessel);
-    /// further groups are numbered by descending size.
+    /// order.  The longest path through the resulting tree (by arc length, via
+    /// a double-BFS diameter search) becomes branch 0 (main vessel); remaining
+    /// connected components are numbered by descending point count.
     ///
     /// Parameters
     /// ----------

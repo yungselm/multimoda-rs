@@ -87,7 +87,6 @@ class PyContourPoint:
     def __repr__(self) -> str: ...
     def __str__(self) -> str: ...
 
-
 class PyContour:
     """A closed 3-D contour consisting of ordered contour points.
 
@@ -143,7 +142,6 @@ class PyContour:
     def translate(self, dx: float, dy: float, dz: float) -> PyContour: ...
     def sort_contour_points(self) -> PyContour: ...
 
-
 class PyRecord:
     """Per-frame measurement record.
 
@@ -172,7 +170,6 @@ class PyRecord:
         measurement_2: float | None,
     ) -> None: ...
     def __repr__(self) -> str: ...
-
 
 class PyFrame:
     """A single intravascular imaging frame.
@@ -210,7 +207,6 @@ class PyFrame:
     def translate(self, dx: float, dy: float, dz: float) -> PyFrame: ...
     def sort_frame_points(self) -> PyFrame: ...
 
-
 class PyGeometry:
     """A full intravascular imaging geometry (sequence of frames).
 
@@ -242,7 +238,6 @@ class PyGeometry:
     def downsample(self, n_points: int) -> PyGeometry: ...
     def sort_frame_points(self) -> PyGeometry: ...
 
-
 class PyGeometryPair:
     """A diastolic/systolic geometry pair.
 
@@ -260,14 +255,13 @@ class PyGeometryPair:
     geom_b: PyGeometry
     label: str
 
-    def __init__(
-        self, geom_a: PyGeometry, geom_b: PyGeometry, label: str
-    ) -> None: ...
+    def __init__(self, geom_a: PyGeometry, geom_b: PyGeometry, label: str) -> None: ...
     def __repr__(self) -> str: ...
     def get_summary(
         self,
-    ) -> tuple[tuple[tuple[float, float, float], tuple[float, float, float]], list[list[float]]]: ...
-
+    ) -> tuple[
+        tuple[tuple[float, float, float], tuple[float, float, float]], list[list[float]]
+    ]: ...
 
 class PyCenterlinePoint:
     """A point on a vessel centerline with its local normal vector.
@@ -296,7 +290,6 @@ class PyCenterlinePoint:
     ) -> None: ...
     def __repr__(self) -> str: ...
     def __str__(self) -> str: ...
-
 
 class PyCenterline:
     """A vessel centerline consisting of ordered centerline points.
@@ -338,6 +331,7 @@ class PyCenterline:
             0-indexed positions within the branch (suitable for ``split_branch``).
         """
         ...
+
     def split_branch(self, branch_id: int, local_pos: int) -> PyCenterline:
         """Split a branch at a local position and return the updated centerline.
 
@@ -352,6 +346,7 @@ class PyCenterline:
             ``find_sharp_angles``).
         """
         ...
+
     def merge_branches(self, branch_id_a: int, branch_id_b: int) -> PyCenterline:
         """Merge two branches into one and return the updated centerline.
 
@@ -435,7 +430,6 @@ class PyCenterline:
         """
         ...
 
-
 class PyInputData:
     """Intravascular imaging input data for one cardiac phase.
 
@@ -517,8 +511,6 @@ def from_file_full(
     PyGeometryPair,
     tuple[_AlignLog, _AlignLog, _AlignLog, _AlignLog],
 ]: ...
-
-
 def from_file_doublepair(
     input_path_ab: str,
     input_path_cd: str,
@@ -543,8 +535,6 @@ def from_file_doublepair(
     PyGeometryPair,
     tuple[_AlignLog, _AlignLog, _AlignLog, _AlignLog],
 ]: ...
-
-
 def from_file_singlepair(
     input_path: str,
     labels: list[str] = ...,
@@ -563,8 +553,6 @@ def from_file_singlepair(
     smooth: bool = ...,
     postprocessing: bool = ...,
 ) -> tuple[PyGeometryPair, tuple[_AlignLog, _AlignLog]]: ...
-
-
 def from_file_single(
     input_path: str,
     labels: list[str] = ...,
@@ -582,7 +570,6 @@ def from_file_single(
     bruteforce: bool = ...,
     smooth: bool = ...,
 ) -> tuple[PyGeometry, _AlignLog]: ...
-
 
 # ---------------------------------------------------------------------------
 # Processing functions — from PyInputData arrays
@@ -617,8 +604,6 @@ def from_array_full(
     PyGeometryPair,
     tuple[_AlignLog, _AlignLog, _AlignLog, _AlignLog],
 ]: ...
-
-
 def from_array_doublepair(
     input_data_a: PyInputData,
     input_data_b: PyInputData,
@@ -644,8 +629,6 @@ def from_array_doublepair(
     PyGeometryPair,
     tuple[_AlignLog, _AlignLog, _AlignLog, _AlignLog],
 ]: ...
-
-
 def from_array_singlepair(
     input_data_a: PyInputData,
     input_data_b: PyInputData,
@@ -664,8 +647,6 @@ def from_array_singlepair(
     smooth: bool = ...,
     postprocessing: bool = ...,
 ) -> tuple[PyGeometryPair, tuple[_AlignLog, _AlignLog]]: ...
-
-
 def from_array_single(
     input_data: PyInputData,
     step_rotation_deg: float = ...,
@@ -681,7 +662,6 @@ def from_array_single(
     bruteforce: bool = ...,
     smooth: bool = ...,
 ) -> tuple[PyGeometry, _AlignLog]: ...
-
 
 # ---------------------------------------------------------------------------
 # Alignment functions
@@ -702,8 +682,6 @@ def align_three_point(
     case_name: str = ...,
     align_wall_anomalous: bool = ...,
 ) -> tuple[PyGeometryPair | PyGeometry, PyCenterline]: ...
-
-
 def align_manual(
     centerline: PyCenterline,
     geometry: PyGeometryPair | PyGeometry,
@@ -717,8 +695,6 @@ def align_manual(
     case_name: str = ...,
     align_wall_anomalous: bool = ...,
 ) -> tuple[PyGeometryPair | PyGeometry, PyCenterline]: ...
-
-
 def align_combined(
     centerline: PyCenterline,
     geometry: PyGeometryPair | PyGeometry,
@@ -738,7 +714,6 @@ def align_combined(
     align_wall_anomalous: bool = ...,
 ) -> tuple[PyGeometryPair | PyGeometry, PyCenterline]: ...
 
-
 # ---------------------------------------------------------------------------
 # OBJ export
 # ---------------------------------------------------------------------------
@@ -751,13 +726,11 @@ def to_obj(
     filename_prefix: str = ...,
 ) -> None: ...
 
-
 # ---------------------------------------------------------------------------
 # VTP centerline reader
 # ---------------------------------------------------------------------------
 
 def read_centerline_vtp(path: str) -> PyCenterline: ...
-
 
 # ---------------------------------------------------------------------------
 # CCTA mesh labelling and scaling functions
@@ -768,18 +741,20 @@ def remove_occluded_points_ray_triangle(
     centerline_aorta: PyCenterline,
     range_coronary: int,
     points: list[tuple[float, float, float]],
-    faces: list[tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]],
+    faces: list[
+        tuple[
+            tuple[float, float, float],
+            tuple[float, float, float],
+            tuple[float, float, float],
+        ]
+    ],
     step_size_mm: float,
 ) -> list[tuple[float, float, float]]: ...
-
-
 def adjust_diameter_centerline_morphing_simple(
     centerline: PyCenterline,
     points: list[tuple[float, float, float]],
     diameter_adjustment_mm: float,
 ) -> list[tuple[float, float, float]]: ...
-
-
 def find_points_by_cl_region(
     centerline: PyCenterline,
     frames: list[PyFrame],
@@ -789,16 +764,12 @@ def find_points_by_cl_region(
     list[tuple[float, float, float]],
     list[tuple[float, float, float]],
 ]: ...
-
-
 def clean_outlier_points(
     points_to_cleanup: list[tuple[float, float, float]],
     reference_points: list[tuple[float, float, float]],
     neighborhood_radius: float,
     min_neigbor_ratio: float,
 ) -> tuple[list[tuple[float, float, float]], list[tuple[float, float, float]]]: ...
-
-
 def find_proximal_distal_scaling(
     anomalous_points: list[tuple[float, float, float]],
     n_proximal: int,
@@ -807,41 +778,63 @@ def find_proximal_distal_scaling(
     proximal_reference: list[tuple[float, float, float]],
     distal_reference: list[tuple[float, float, float]],
 ) -> tuple[float, float]: ...
-
-
 def find_aortic_scaling(
     intramural_points: list[tuple[float, float, float]],
     reference_points: list[tuple[float, float, float]],
     centerline: PyCenterline,
 ) -> float: ...
-
-
 def find_aortic_wall_scaling(
     centerline: PyCenterline,
     ref_pt_coronary: tuple[float, float, float],
     aortic_pts: list[tuple[float, float, float]],
 ) -> float: ...
-
-
 def find_centerline_bounded_points_simple(
     centerline: PyCenterline,
     points: list[tuple[float, float, float]],
     radius: float,
 ) -> list[tuple[float, float, float]]: ...
-
-
+def find_faces_near_points(
+    vertices: list[tuple[float, float, float]],
+    faces: list[list[int]],
+    points: list[tuple[float, float, float]],
+    tol: float = ...,
+) -> list[
+    tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ]
+]: ...
+def find_aortic_points(
+    vertices: list[tuple[float, float, float]],
+    points_a: list[tuple[float, float, float]],
+    points_b: list[tuple[float, float, float]],
+) -> list[tuple[float, float, float]]: ...
+def final_reclassification(
+    vertices: list[tuple[float, float, float]],
+    faces: list[list[int]],
+    rca_points: list[tuple[float, float, float]],
+    lca_points: list[tuple[float, float, float]],
+    rca_removed_points: list[tuple[float, float, float]],
+    lca_removed_points: list[tuple[float, float, float]],
+) -> tuple[
+    list[tuple[float, float, float]],
+    list[tuple[float, float, float]],
+    list[tuple[float, float, float]],
+    list[tuple[float, float, float]],
+    list[tuple[float, float, float]],
+]: ...
 def build_adjacency_map(
     faces: list[list[int]],
 ) -> dict[int, set[int]]: ...
-
-
+def fix_mesh_winding(
+    faces: list[list[int]],
+) -> list[list[int]]: ...
 def smooth_mesh_labels(
     labels: list[int],
     adjacency_map: dict[int, set[int]],
     iterations: int,
 ) -> list[int]: ...
-
-
 def discretize_vessel(
     centerline: PyCenterline,
     points: list[tuple[float, float, float]],
@@ -850,14 +843,12 @@ def discretize_vessel(
     n_points: int = ...,
 ) -> list[PyContour]: ...
 
-
 # (main_ref, counter_clock_ref, clock_ref) — each is an (x, y, z) tuple.
 _RefTriplet = tuple[
     tuple[float, float, float],
     tuple[float, float, float],
     tuple[float, float, float],
 ]
-
 
 class PyDiscretizedVesselTree:
     """Fully discretized coronary vessel tree.
@@ -899,7 +890,6 @@ class PyDiscretizedVesselTree:
 
     def __repr__(self) -> str: ...
     def calculate_ref_pts(self) -> None: ...
-
 
 def discretize_vessel_tree(
     ao_cl: PyCenterline,

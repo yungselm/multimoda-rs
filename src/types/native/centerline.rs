@@ -212,9 +212,9 @@ impl Centerline {
         adj_map: &[Vec<usize>],
         n_points: usize,
     ) -> (Vec<usize>, Vec<Vec<usize>>) {
-        // Double BFS on the tree to find the diameter (longest path = main branch).
-        let (a, _) = Self::bfs_farthest(adj_map, n_points, 0);
-        let (b, prev) = Self::bfs_farthest(adj_map, n_points, a);
+        // Double BFS on the tree to find the diameter (longest path by arc length = main branch).
+        let (a, _) = self.bfs_farthest(adj_map, n_points, 0);
+        let (b, prev) = self.bfs_farthest(adj_map, n_points, a);
         let main_path = Self::trace_path(b, a, &prev);
 
         let mut in_main_branch = vec![false; n_points];
@@ -247,18 +247,29 @@ impl Centerline {
         (main_path, side_components)
     }
 
-    /// BFS from `start`; returns the farthest reachable node and a predecessor array.
-    fn bfs_farthest(adj: &[Vec<usize>], n: usize, start: usize) -> (usize, Vec<Option<usize>>) {
-        let mut dist = vec![usize::MAX; n];
+    /// BFS from `start` over the tree, accumulating real arc-length distance
+    /// (not hop count) so that non-uniformly sampled branches don't skew
+    /// which node is found to be "farthest". Returns the farthest reachable
+    /// node and a predecessor array.
+    fn bfs_farthest(
+        &self,
+        adj: &[Vec<usize>],
+        n: usize,
+        start: usize,
+    ) -> (usize, Vec<Option<usize>>) {
+        let mut dist = vec![f64::INFINITY; n];
         let mut prev: Vec<Option<usize>> = vec![None; n];
         let mut q = std::collections::VecDeque::new();
-        dist[start] = 0;
+        dist[start] = 0.0;
         q.push_back(start);
         let mut farthest = start;
         while let Some(u) = q.pop_front() {
             for &v in &adj[u] {
-                if dist[v] == usize::MAX {
-                    dist[v] = dist[u] + 1;
+                if dist[v].is_infinite() {
+                    dist[v] = dist[u]
+                        + self.points[u]
+                            .contour_point
+                            .distance_to(&self.points[v].contour_point);
                     prev[v] = Some(u);
                     q.push_back(v);
                     if dist[v] > dist[farthest] {

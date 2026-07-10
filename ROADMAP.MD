@@ -1,86 +1,64 @@
 # Python package that has one purpose: Combining any intravascular image modality with CCTA meshes.
 
 # Optimizations
-- [] Optimize the ray intersection algorithm
-- [] Better parallelization strategy for frames alignment by processing in batches (frames only have to be aligned relative to each other not sequentially)
 
-## `label_geometry` scales badly with vertex count — profiling results (2026-07-09)
+Performance pass on `label_geometry` / `stitch_ccta_to_intravascular` (2026-07-09): full
+pipeline dropped from ~190s to ~24s (release build). Full before/after numbers and root causes
+are in the CHANGELOG. Considered this pass **closed** after two follow-up investigations both
+came back negative-or-marginal — see below. A first round of candidates (`voronoi_partition`,
+the `scale_coronary.rs` sweep functions, and the ray-triangle intersection pass) were dropped
+earlier the same way, after re-profiling under a release build showed they were never real
+bottlenecks.
 
-**Top-level timings, full `fullworkflow.py` run (189.9s total):**
+- [x] ~~`fix_mesh_winding` reuse in `fix_and_remesh_stitched_mesh`~~ — **INVESTIGATED, NOT A
+  BOTTLENECK (2026-07-09):** timed both `mesh_remeshed.fix_normals()` calls in
+  `fixing_functions.py` against the real dataset — 0.161s out of 18.5s total, negligible.
+  Reason: `trimesh.repair.fix_winding` early-exits when `mesh.is_winding_consistent` is already
+  `True`, and pymeshlab's isotropic remeshing produces globally consistent winding by
+  construction — unlike `stitch_ccta_to_intravascular`'s case, where concatenating several
+  separately-oriented mesh pieces genuinely breaks consistency and triggers the expensive BFS.
+  `fix_and_remesh_stitched_mesh`'s cost is confirmed to be pymeshlab's own C++ work, not a
+  hidden Python bottleneck — the original call to leave it alone was correct.
+- [x] ~~`remove_labeled_points_from_mesh` / `keep_labeled_points_from_mesh`~~ — **INVESTIGATED,
+  NOT WORTH IT (2026-07-09):** confirmed real (same shape of pure-Python full-mesh adjacency
+  loop as `_final_reclassification`) but only 0.211s of ~24s total (<1%), and
+  `keep_labeled_points_from_mesh` isn't even called by the real workflow. Deliberately left
+  alone — diminishing returns past this point in the pipeline.
+- [] Cross-file `coord_to_idx` (float-tuple-keyed vertex dict) gets rebuilt from scratch ~10
+  times across a full label→scale→stitch pipeline run with no caching — architecture/caching
+  cleanup rather than an algorithmic fix; independent of build type.
+- [] `manual_hole_fill` (`fixing_functions.py`) rebuilds `coord_to_idx` and `build_adjacency_map`
+  from scratch on every hole/boundary loop instead of once outside the loop.
+- [x] ~~`discretize_vessel_tree`'s side-branch loop wasn't parallelized with rayon~~ —
+  **FIXED (2026-07-09):** `rca_branches` / `lca_branches` in
+  `src/ccta/discretizing/vessel_tree.rs` now use `.par_iter()` instead of `.iter()`
+  (`discretize_vessel_rs` is a pure function over `&Centerline` + owned data, safe to
+  parallelize). No measurable win on the reference dataset (only ~4-9 side branches), but ready
+  for larger vessel trees. Verified: same output values end to end, 175 Rust + 100 Python tests
+  pass.
+- [x] ~~`remove_occluded_points_ray_triangle_rust` clones both centerlines twice~~ —
+  **FIXED (2026-07-09):** `check_centerline` now takes `&Centerline` instead of an owned
+  `Centerline`, removing the caller-side `.clone()` at both call sites in
+  `label_coronary.rs`; the one remaining `points.clone()` inside `check_centerline` is the only
+  clone actually needed (to sort into a new order without mutating the caller's centerline).
 
-| Step | Time |
-|---|---|
-| `label_geometry` (final, 57,248 verts) | 95.1s |
-| `label_geometry` (initial, 25,171 verts) | 38.6s |
-| `fix_and_remesh_stitched_mesh` | 17.6-17.8s |
-| `align_combined` | 16.1s |
-| `prepare_centerlines` | 5.3-5.8s |
-| `stitch_ccta_to_intravascular` | 4.5s |
-| `discretize_vessel_tree` | 4.3-4.5s |
-| `label_branches` | 2.4s |
-| `from_file_singlepair` | 1.8s |
-| `find_sharp_angles` | 1.7s |
-| `remove_labeled_points_from_mesh` | 0.5s |
-| `label_anomalous_region` | 0.25s |
-| everything else (scaling/sync steps, exports, etc.) | <0.11s each |
+# Correctness fixes
 
-**Internal breakdown of `label_geometry` (initial call → final call):**
-
-| Sub-step | Initial (25,171 verts) | Final (57,248 verts) | Input growth | Time growth |
-|---|---|---|---|---|
-| `find_centerline_bounded_points_simple` (Rust, rca+lca) | 22.4s | 51.1s | ~2.4-2.8x points | 2.3x |
-| `_find_faces_for_points` (Python, via `_prepare_faces_for_rust`) | 3.1s | 19.5s | 2.8x points | 6.2x |
-| `remove_occluded_points_ray_triangle` (Rust) | 4.4s | 11.3s | ~2.8x points | 2.5x |
-| `clean_outlier_points` — lca (Rust) | 0.73s | 3.71s | 2.4x points | 5.1x |
-| `clean_outlier_points` — rca (Rust) | 0.54s | 3.48s | 2.9x points | 6.4x |
-| removed-points diff (`p for p in a if p not in b`, Python) | 0.18s | 1.45s | 2.8x points | 8.0x |
-| `_final_reclassification` (Python, loop over mesh vertices) | 0.57s | 1.36s | 2.3x verts | 2.4x |
-| `plot_results_key` (control_plot rendering) | 5.9s | 2.4s | — | n/a |
-
-Timed a full `fullworkflow.py` run end to end (`examples/fullworkflow copy.py`, timers added
-per top-level call) plus internal timers inside `label_geometry`
-(`multimodars/ccta/labeling.py`). `label_geometry` is called twice —
-once on the raw CCTA mesh (25,171 verts) and once on the remeshed mesh after
-`fix_and_remesh_stitched_mesh` (57,248 verts, ~2.3x more vertices) — and cost jumped from
-38.6s to 95.1s, i.e. worse than linear in vertex count. Breakdown of the internal timers
-(initial call → final call):
-
-- [] `find_centerline_bounded_points_simple` (Rust, rca+lca combined): 22.4s → 51.1s.
-  Largest single cost in both calls; roughly linear with `points_list × centerline points`,
-  but still the top target for algorithmic improvement (spatial index instead of brute rolling
-  sphere check).
-- [] `_find_faces_for_points` (called via `_prepare_faces_for_rust`, pure Python in
-  `labeling.py`): 3.1s → 19.5s — a 6.2x increase for only a 2.8x increase in input points.
-  Root cause: for every occlusion-candidate point it computes `np.linalg.norm(verts - p,
-  axis=1)` over **all** mesh vertices to find the nearest one — O(points_found × n_vertices).
-  Should build a `scipy.spatial.cKDTree` (or reuse a vertex-coordinate hash map, since matches
-  are expected to be exact/near-exact) once per call instead of a per-point full-mesh scan.
-- [] `remove_occluded_points_ray_triangle` (Rust): 4.4s → 11.3s — scales with input size as
-  expected, not currently a priority.
-- [] `rca_removed_points` / `lca_removed_points` diff (`p for p in a if p not in b`, pure
-  Python in `labeling.py`): 0.18s → 1.45s (8x for a 2.8x input increase). `b` is a plain list,
-  so `not in` is a linear scan — O(n × m). Trivial fix: convert `final_rca_points_found` to a
-  `set` before the membership test.
-- [] `clean_outlier_points` (Rust, called twice per `label_geometry` call): lca 0.73s → 3.71s,
-  rca 0.54s → 3.48s — roughly quadratic in point count (~5-6x time for ~2.4-2.9x more points),
-  suggesting a brute-force nearest-neighbor search inside the Rust implementation with no
-  spatial index.
-- [] `_final_reclassification` (pure Python loop over every mesh vertex in
-  `labeling.py`): 0.57s → 1.36s — scales roughly linearly with vertex count, acceptable for now
-  but a candidate to push into Rust if further mesh sizes grow.
-
-Net: three separate near-quadratic hot spots (`_find_faces_for_points`,
-the removed-points diff, and `clean_outlier_points`) compound with the already-large linear
-cost of `find_centerline_bounded_points_simple`, which is why `label_geometry` more than
-doubles in time for a ~2.3x increase in mesh vertices. Fixing the two pure-Python spots
-(KD-tree lookup + set-based diff) is low-risk/high-value; `clean_outlier_points` and
-`find_centerline_bounded_points_simple` need attention on the Rust side.
-
-Other steps outside `label_geometry` worth noting from the same profiling run (not
-investigated further yet): `fix_and_remesh_stitched_mesh` 17.6-17.8s, `align_combined`
-16.1s, `prepare_centerlines` 5.3-5.8s, `stitch_ccta_to_intravascular` 4.5s,
-`discretize_vessel_tree` 4.3-4.5s, `label_branches` 2.4s, `find_sharp_angles` 1.7s — all far
-below the `label_geometry` cost but candidates if the workflow needs to get faster overall.
+- [x] ~~VTP branch-0 ("main vessel") elected by point count instead of arc length~~ — **FIXED
+  (2026-07-09):** `read_centerline_vtp` (`src/intravascular/io/input.rs`) sorted VTK `Lines`
+  cells by raw point count to decide `branch_id = 0`; on VTP exports with non-uniform per-branch
+  sampling density, a physically shorter side branch with more points could out-rank the true
+  main vessel. Now sorts by summed 3D arc length instead. `cleanup_vtp_data`'s overlap-trimming
+  only ever trims branches *against* `branches[0]` and never trims `branches[0]` itself, so a
+  wrong branch-0 election silently truncated the true main vessel's proximal segment while
+  leaving the wrongly-elected branch untouched — this was the root cause of reference-point
+  selection only working near the first side branch, and of visibly uneven/duplicated centerline
+  spacing after `cleanup_vtp_data(smooth=True)`. Applied the same fix (arc length instead of hop
+  count) to `calculate_branches`'s tree-diameter BFS (`Centerline::bfs_farthest`), used by the
+  non-VTP/CSV branch-detection path, since it had the identical category of bug. Added a
+  regression test (`test_read_centerline_vtp_picks_longest_by_arc_length_not_point_count`)
+  constructing a short-but-dense vs. long-but-sparse line pair; confirmed the long line now wins
+  branch 0. All 176 Rust tests pass.
 
 # Mesh combination (v0.3.0/0.4.0)
 ## New/improved features

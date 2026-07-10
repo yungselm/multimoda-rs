@@ -2,15 +2,19 @@ from __future__ import annotations
 
 
 from pathlib import Path
+from typing import Any
 import trimesh
 import numpy as np
 
 from ..multimodars import (
     find_centerline_bounded_points_simple,
+    find_faces_near_points,
+    find_aortic_points,
+    final_reclassification,
     remove_occluded_points_ray_triangle,
     clean_outlier_points,
-    build_adjacency_map,
     find_points_by_cl_region,
+    build_adjacency_map,
     PyCenterline,
 )
 from .._converters import numpy_to_centerline
@@ -157,6 +161,7 @@ def label_geometry(
             raise
 
     points_list = [tuple(vertex) for vertex in mesh.vertices.tolist()]
+    mesh_faces_list = mesh.faces.tolist()
 
     # Rust implementation using a rolling sphere with fixed radius
     rca_points_found = find_centerline_bounded_points_simple(
@@ -174,8 +179,8 @@ def label_geometry(
 
     if anomalous_rca:
         print("Applying occlusion removal for anomalous RCA...")
-        rca_faces_for_rust = _prepare_faces_for_rust(
-            mesh, points=rca_points_found, tol=tolerance_float
+        rca_faces_for_rust = find_faces_near_points(
+            points_list, mesh_faces_list, rca_points_found, tolerance_float
         )
         # Rust implementation, that creates ray between aortic and coronary centerline, and
         # removes faces if 3 consecutive faces are "pierced" by the ray
@@ -187,8 +192,9 @@ def label_geometry(
             faces=rca_faces_for_rust,
             step_size_mm=step_size_mm,
         )
+        final_rca_points_found_set = set(final_rca_points_found)
         rca_removed_points = [
-            p for p in rca_points_found if p not in final_rca_points_found
+            p for p in rca_points_found if p not in final_rca_points_found_set
         ]
         print(f"RCA: relabeled {len(rca_removed_points)} points in intramual course")
     else:
@@ -196,8 +202,8 @@ def label_geometry(
 
     if anomalous_lca:
         print("Applying occlusion removal for anomalous LCA...")
-        lca_faces_for_rust = _prepare_faces_for_rust(
-            mesh, points=lca_points_found, tol=tolerance_float
+        lca_faces_for_rust = find_faces_near_points(
+            points_list, mesh_faces_list, lca_points_found, tolerance_float
         )
         final_lca_points_found = remove_occluded_points_ray_triangle(
             centerline_coronary=cl_lca,
@@ -207,16 +213,17 @@ def label_geometry(
             faces=lca_faces_for_rust,
             step_size_mm=step_size_mm,
         )
+        final_lca_points_found_set = set(final_lca_points_found)
         lca_removed_points = [
-            p for p in lca_points_found if p not in final_lca_points_found
+            p for p in lca_points_found if p not in final_lca_points_found_set
         ]
         print(f"LCA: relabeled {len(lca_removed_points)} points in intramual course")
     else:
         final_lca_points_found = lca_points_found.copy()
 
     print("\nRemoving LCA and RCA island points...")
-    aortic_points = _find_aortic_points(
-        mesh.vertices, final_rca_points_found, final_lca_points_found
+    aortic_points = find_aortic_points(
+        points_list, final_rca_points_found, final_lca_points_found
     )
     print(f"length before: {len(final_lca_points_found)}")
     final_lca_points, final_aortic_points = clean_outlier_points(
@@ -225,8 +232,8 @@ def label_geometry(
     final_rca_points, _ = clean_outlier_points(
         final_rca_points_found, final_aortic_points, 2.0, 0.4
     )
-    final_aortic_points = _find_aortic_points(
-        mesh.vertices, final_rca_points, final_lca_points
+    final_aortic_points = find_aortic_points(
+        points_list, final_rca_points, final_lca_points
     )
     # add also the rca_removed points and lca_removed points to aortic points
     final_aortic_points = list(
@@ -234,7 +241,7 @@ def label_geometry(
     )
     print(f"length after: {len(final_lca_points)}")
 
-    results = {
+    results: dict[str, Any] = {
         "mesh": mesh,
         "aorta_points": final_aortic_points,
         "rca_points": final_rca_points_found,
@@ -245,7 +252,24 @@ def label_geometry(
 
     # final reclassification based on adjacency map
     print("\nApplying final reclassification based on adjacency map...")
-    new_results = _final_reclassification(results)
+    aorta_pts, rca_pts, lca_pts, rca_removed_pts, lca_removed_pts = (
+        final_reclassification(
+            points_list,
+            mesh_faces_list,
+            results["rca_points"],
+            results["lca_points"],
+            results["rca_removed_points"],
+            results["lca_removed_points"],
+        )
+    )
+    new_results: dict[str, Any] = {
+        "mesh": mesh,
+        "aorta_points": aorta_pts,
+        "rca_points": rca_pts,
+        "lca_points": lca_pts,
+        "rca_removed_points": rca_removed_pts,
+        "lca_removed_points": lca_removed_pts,
+    }
     print(f"aorta_points:{len(new_results['aorta_points'])}")
     print(f"rca_points:{len(new_results['rca_points'])}")
     print(f"lca_points:{len(new_results['lca_points'])}")
@@ -270,229 +294,64 @@ def label_geometry(
     return new_results, (cl_rca, cl_lca, cl_aorta)
 
 
-def _prepare_faces_for_rust(
-    mesh: trimesh.Trimesh, *, points=None, face_indices=None, tol: float = 1e-6
-):
-    """Convert selected mesh faces to the Rust-friendly format.
+def _keep_largest_connected_component(
+    mesh: trimesh.Trimesh, points: list[tuple[float, float, float]]
+) -> list[tuple[float, float, float]]:
+    """Keep only the largest mesh-connected component of *points*.
 
-    Parameters
-    ----------
-    mesh : trimesh.Trimesh
-        Source mesh whose faces will be converted.
-    points : list of tuple, optional
-        If provided and *face_indices* is ``None``, the face indices are
-        derived by finding which faces reference vertices closest to these
-        points (within *tol*).
-    face_indices : list of int, optional
-        Explicit list of face indices to convert.  When given, *points* is
-        ignored.  When both are ``None``, all faces are converted.
-    tol : float, optional
-        Distance tolerance for vertex matching when using *points*.
-        Default is ``1e-6``.
+    ``find_points_by_cl_region`` classifies points using coordinate-only
+    heuristics (nearest 3-D centerline point, axis-aligned proximal/distal
+    split) with no notion of mesh topology.  That can leave a handful of
+    points assigned to a region despite not being mesh-connected to its main
+    cluster ("islands") - e.g. a point geometrically close to the anomalous
+    segment but on a different, unconnected part of the vessel surface.
 
-    Returns
-    -------
-    list of tuple
-        Each element is a ``((x0,y0,z0), (x1,y1,z1), (x2,y2,z2))`` triple of
-        vertex coordinate tuples suitable for passing to Rust functions.
+    This restricts the mesh's face-adjacency graph to *points* and keeps
+    only the single largest connected component; the rest are dropped
+    (callers typically let dropped points fall through to a different
+    region via a complement/set-difference step, mirroring how
+    :func:`final_reclassification` reassigns isolated vertices to aorta).
     """
-    if face_indices is None:
-        if points is not None:
-            face_indices = _find_faces_for_points(mesh, points, tol=tol)
-        else:
-            face_indices = list(range(len(mesh.faces)))
+    if len(points) < 2:
+        return points
 
-    rust_faces = []
-    for fi in face_indices:
-        face = mesh.faces[fi]
-        v0 = tuple(map(float, mesh.vertices[face[0]]))
-        v1 = tuple(map(float, mesh.vertices[face[1]]))
-        v2 = tuple(map(float, mesh.vertices[face[2]]))
-        rust_faces.append((v0, v1, v2))
-    return rust_faces
+    coord_to_idx = {tuple(v): i for i, v in enumerate(mesh.vertices)}
+    point_indices = set()
+    for pt in points:
+        idx = coord_to_idx.get(tuple(pt))
+        if idx is not None:
+            point_indices.add(idx)
+    if not point_indices:
+        return points
 
-
-def _find_faces_for_points(mesh: trimesh.Trimesh, points_found, tol: float = 1e-6):
-    """Find face indices whose vertices are within tolerance of the given points.
-
-    For each point in *points_found* the nearest mesh vertex is located.
-    Any face that references at least one of those vertices is included in the
-    result.
-
-    Parameters
-    ----------
-    mesh : trimesh.Trimesh
-        Mesh to search.
-    points_found : array-like of shape (N, 3)
-        Query points.
-    tol : float, optional
-        Maximum distance from a query point to a mesh vertex for the vertex to
-        be considered a match.  Default is ``1e-6``.
-
-    Returns
-    -------
-    list of int
-        Indices into ``mesh.faces`` for all faces that contain at least one
-        matched vertex.  Returns an empty list when *points_found* is empty or
-        no vertices fall within *tol*.
-    """
-    points_array = np.asarray(points_found, dtype=np.float64)
-    if points_array.size == 0:
-        return []
-
-    found_vertex_indices = set()
-    verts = mesh.vertices
-
-    for p in points_array:
-        distances = np.linalg.norm(verts - p, axis=1)
-        closest_idx = int(np.argmin(distances))
-        if distances[closest_idx] <= tol:
-            found_vertex_indices.add(closest_idx)
-
-    if not found_vertex_indices:
-        return []
-
-    face_indices = []
-    for i, face in enumerate(mesh.faces):
-        if (
-            (face[0] in found_vertex_indices)
-            or (face[1] in found_vertex_indices)
-            or (face[2] in found_vertex_indices)
-        ):
-            face_indices.append(i)
-
-    return face_indices
-
-
-def _find_aortic_points(all_vertices, rca_points, lca_points):
-    """Return mesh vertices that belong neither to the RCA nor to the LCA region.
-
-    Parameters
-    ----------
-    all_vertices : array-like of shape (N, 3)
-        All vertex coordinates of the mesh.
-    rca_points : list of tuple
-        Vertices classified as RCA.
-    lca_points : list of tuple
-        Vertices classified as LCA.
-
-    Returns
-    -------
-    list of tuple
-        ``(x, y, z)`` tuples for vertices not present in *rca_points* or
-        *lca_points*.
-    """
-    rca_set = set(rca_points)
-    lca_set = set(lca_points)
-    aortic_points = [
-        tuple(vertex)
-        for vertex in all_vertices
-        if tuple(vertex) not in rca_set and tuple(vertex) not in lca_set
-    ]
-    return aortic_points
-
-
-def _final_reclassification(results: dict) -> dict:
-    """Refine vertex labels using a mesh adjacency map.
-
-    Applies two adjacency-based correction rules:
-
-    * **Logic A** - An isolated RCA or LCA vertex (no same-label neighbours) is
-      re-assigned to the aorta class.
-    * **Logic B** - A vertex that was removed by occlusion detection but whose
-      neighbours are predominantly (> 70 %) the corresponding coronary label is
-      restored to that label.
-
-    Parameters
-    ----------
-    results : dict
-        Dictionary produced by :func:`label_geometry` containing keys
-        ``"mesh"``, ``"rca_points"``, ``"lca_points"``,
-        ``"rca_removed_points"``, and ``"lca_removed_points"``.
-
-    Returns
-    -------
-    dict
-        Updated dictionary with the same keys as *results* plus
-        ``"aorta_points"``, with corrected point lists.
-    """
-    mesh = results["mesh"]
-    n_vertices = len(mesh.vertices)
-
-    # 1. Create a coordinate -> index map for fast lookup
-    coord_to_idx = {tuple(coord): i for i, coord in enumerate(mesh.vertices)}
-
-    # 2. Create the initial label array (Default to 0/Aorta)
-    labels = np.zeros(n_vertices, dtype=np.uint8)
-
-    # Labels based on existing result lists
-    for pt in results["rca_points"]:
-        if pt in coord_to_idx:
-            labels[coord_to_idx[pt]] = 1
-    for pt in results["lca_points"]:
-        if pt in coord_to_idx:
-            labels[coord_to_idx[pt]] = 2
-    for pt in results["rca_removed_points"]:
-        if pt in coord_to_idx:
-            labels[coord_to_idx[pt]] = 3
-    for pt in results["lca_removed_points"]:
-        if pt in coord_to_idx:
-            labels[coord_to_idx[pt]] = 4
-
-    # 3. Build Adjacency Map
     adj_map = build_adjacency_map(mesh.faces.tolist())
 
-    new_labels = labels.copy()
+    remaining = set(point_indices)
+    components: list[set[int]] = []
+    while remaining:
+        start = next(iter(remaining))
+        stack = [start]
+        component: set[int] = set()
+        while stack:
+            i = stack.pop()
+            if i in component:
+                continue
+            component.add(i)
+            for neighbor in adj_map.get(i, []):
+                if neighbor in remaining and neighbor not in component:
+                    stack.append(neighbor)
+        components.append(component)
+        remaining -= component
 
-    # 4. Apply logic
-    for i in range(n_vertices):
-        neighbors = list(adj_map.get(i, []))
-        if not neighbors:
-            continue
-
-        neighbor_labels = labels[neighbors]
-        current_label = labels[i]
-
-        # LOGIC A: Isolated RCA/LCA -> Aorta
-        if current_label == 1 and not np.any(neighbor_labels == 1):
-            new_labels[i] = 0
-        elif current_label == 2 and not np.any(neighbor_labels == 2):
-            new_labels[i] = 0
-
-        # LOGIC B: Removed RCA/LCA points with most neighbours RCA/LCA -> RCA/LCA
-        # If I am RCA_REMOVED(3) but MOST neighbors are NOT removed (e.g., they are RCA)
-        elif current_label == 3:
-            # "Most" here defined as > 70%
-            non_removed_neighbors = np.sum(neighbor_labels == 1)
-            if non_removed_neighbors > (len(neighbors) * 0.7):
-                new_labels[i] = 1
-
-        elif current_label == 4:
-            non_removed_neighbors = np.sum(neighbor_labels == 2)
-            if non_removed_neighbors > (len(neighbors) * 0.7):
-                new_labels[i] = 2
-
-    # 5. Convert back to coordinate lists for results dict
-    updated_results = {
-        "mesh": mesh,
-        "rca_points": [
-            tuple(mesh.vertices[i]) for i in range(n_vertices) if new_labels[i] == 1
-        ],
-        "lca_points": [
-            tuple(mesh.vertices[i]) for i in range(n_vertices) if new_labels[i] == 2
-        ],
-        "rca_removed_points": [
-            tuple(mesh.vertices[i]) for i in range(n_vertices) if new_labels[i] == 3
-        ],
-        "lca_removed_points": [
-            tuple(mesh.vertices[i]) for i in range(n_vertices) if new_labels[i] == 4
-        ],
-    }
-    updated_results["aorta_points"] = [
-        tuple(mesh.vertices[i]) for i in range(n_vertices) if new_labels[i] == 0
-    ]
-
-    return updated_results
+    largest = max(components, key=len)
+    if len(components) > 1:
+        dropped = len(point_indices) - len(largest)
+        print(
+            f"  _keep_largest_connected_component: kept {len(largest)}/"
+            f"{len(point_indices)} points ({len(components) - 1} island "
+            f"component(s), {dropped} point(s) dropped)"
+        )
+    return [tuple(mesh.vertices[i]) for i in largest]
 
 
 def label_anomalous_region(
@@ -533,11 +392,38 @@ def label_anomalous_region(
         * ``"distal_points"`` - vertices distal to the anomalous segment.
         * ``"anomalous_points"`` - vertices within the anomalous segment.
     """
-    proximal_points, distal_points, anomalous_points = find_points_by_cl_region(
-        centerline=centerline,
-        frames=frames,
-        points=results[results_key],
+    proximal_points_raw, distal_points_raw, anomalous_points_raw = (
+        find_points_by_cl_region(
+            centerline=centerline,
+            frames=frames,
+            points=results[results_key],
+        )
     )
+
+    mesh = results["mesh"]
+    proximal_points = _keep_largest_connected_component(mesh, proximal_points_raw)
+    distal_points = _keep_largest_connected_component(mesh, distal_points_raw)
+    anomalous_points = _keep_largest_connected_component(mesh, anomalous_points_raw)
+
+    # Island points dropped above are still nominally part of results[results_key]
+    # (e.g. rca_points), which would otherwise keep them out of the aorta_points
+    # complement below - stranding them in no region at all, so no scaling step
+    # ever touches them.  Reassign them fully to aorta by removing them from
+    # results[results_key] too, mirroring how final_reclassification's Logic A
+    # reassigns isolated vertices to aorta rather than leaving them ambiguous.
+    dropped_points = (
+        (set(proximal_points_raw) - set(proximal_points))
+        | (set(distal_points_raw) - set(distal_points))
+        | (set(anomalous_points_raw) - set(anomalous_points))
+    )
+    if dropped_points:
+        results[results_key] = [
+            p for p in results[results_key] if p not in dropped_points
+        ]
+        print(
+            f"  {len(dropped_points)} island point(s) reassigned from "
+            f"'{results_key}' sub-regions to aorta_points"
+        )
 
     results["proximal_points"] = proximal_points
     results["distal_points"] = distal_points
