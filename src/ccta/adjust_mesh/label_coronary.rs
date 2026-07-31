@@ -192,18 +192,22 @@ pub fn remove_occluded_points_ray_triangle_rust(
     filtered_points
 }
 
+/// Find mesh points that fall within a bounding sphere of any centerline point,
+/// using a single fixed `radius` (mm) for every centerline point.
 pub fn find_centerline_bounded_points(
     centerline: Centerline,
     points: &[(f64, f64, f64)],
     radius: f64,
-) -> Vec<(f64, f64, f64)> {
+) -> Result<Vec<(f64, f64, f64)>, String> {
     let checked_centerline = check_centerline(&centerline);
     if points.is_empty() || checked_centerline.points.is_empty() {
-        return Vec::new();
+        return Err(
+            "find_centerline_bounded_points failed because `Centerline` is empty".to_string(),
+        );
     }
 
-    // R-tree over the centerline points (the small side, typically ~1000 points):
-    // each mesh point then costs O(log M) instead of a scan over all M centerline
+    // R-tree over the centerline points (the small side, typically ~1000 points).
+    // Each mesh point then costs O(log M) instead of a scan over all M centerline
     // points, so the whole query is O(N log M) instead of O(N * M).
     let cl_coords: Vec<[f64; 3]> = checked_centerline
         .points
@@ -213,7 +217,7 @@ pub fn find_centerline_bounded_points(
     let tree = rstar::RTree::bulk_load(cl_coords);
 
     let radius_sq = radius * radius;
-    points
+    let result = points
         .iter()
         .filter(|p| {
             tree.locate_within_distance([p.0, p.1, p.2], radius_sq)
@@ -221,7 +225,9 @@ pub fn find_centerline_bounded_points(
                 .is_some()
         })
         .copied()
-        .collect()
+        .collect();
+
+    Ok(result)
 }
 
 /// Find mesh faces that reference any vertex coincident (within `tol`) with one of
@@ -497,7 +503,7 @@ mod test_find_cl_bounded_points {
             .cloned()
             .collect();
 
-        let result = find_centerline_bounded_points(cl, &all_points, 1.0);
+        let result = find_centerline_bounded_points(cl, &all_points, 1.0).unwrap();
 
         // The result should contain all the points that were inside our test spheres
         // Since our spheres have radius 1.0 and are centered at (0.5, 0.5, z),

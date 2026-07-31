@@ -49,6 +49,7 @@ type FiveRegionPointLists = (
 /// >>> bounded_points = mm.find_centerline_bounded_points(centerline, points, 2.0)
 /// >>> print(f"Found {len(bounded_points)} points inside vessel bounds")
 #[pyfunction]
+#[pyo3(signature = (centerline, points, radius))]
 pub fn find_centerline_bounded_points_simple(
     centerline: PyCenterline,
     points: Vec<Point3D>,
@@ -58,7 +59,8 @@ pub fn find_centerline_bounded_points_simple(
 
     // Call Rust function directly - no complex conversions needed
     let result_points =
-        label_coronary::find_centerline_bounded_points(rust_centerline, &points, radius);
+        label_coronary::find_centerline_bounded_points(rust_centerline, &points, radius)
+            .map_err(pyo3::exceptions::PyValueError::new_err)?;
 
     Ok(result_points)
 }

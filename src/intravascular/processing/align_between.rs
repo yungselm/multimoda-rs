@@ -79,8 +79,8 @@ pub fn align_between_geometries(
     println!(
         "Found best rotation of {:.2}° with parameters: \nrange: {:.2}° \nstep size: {:2.}°",
         best_rotation.to_degrees(),
-        &rot_deg,
-        &step_rot_deg,
+        rot_deg,
+        step_rot_deg,
     );
     println!(
         "Applied final translation: ({:2.}, {:.2}, {:.2}) mm",

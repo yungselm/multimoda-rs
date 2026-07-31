@@ -1406,7 +1406,8 @@ def find_centerline_bounded_points_simple(
     >>>
     >>> # Find points bounded by centerline spheres
     >>> bounded_points = mm.find_centerline_bounded_points(centerline, points, 2.0)
-    >>> print(f"Found {len(bounded_points)} points inside vessel bounds")"""
+    >>> print(f"Found {len(bounded_points)} points inside vessel bounds")
+    """
     return _find_centerline_bounded_points_simple(centerline, points, radius)
 
 
