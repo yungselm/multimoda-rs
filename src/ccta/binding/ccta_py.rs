@@ -30,14 +30,7 @@ type FiveRegionPointLists = (
 /// points : list of tuple of float
 ///     List of ``(x, y, z)`` point coordinates.
 /// radius : float
-///     Radius of the bounding spheres around each centerline point. Ignored when
-///     ``auto=True``.
-/// auto : bool, optional
-///     When ``True``, ignore `radius` and instead size each centerline point's
-///     bounding sphere from that point's own local vessel radius (with a 5%
-///     buffer). Requires a centerline whose points all carry a real (> 0) radius,
-///     e.g. one loaded via :func:`read_centerline_vtp`; raises ``ValueError``
-///     otherwise. Default is ``False``.
+///     Radius of the bounding spheres around each centerline point.
 ///
 /// Returns
 /// -------
@@ -56,18 +49,17 @@ type FiveRegionPointLists = (
 /// >>> bounded_points = mm.find_centerline_bounded_points(centerline, points, 2.0)
 /// >>> print(f"Found {len(bounded_points)} points inside vessel bounds")
 #[pyfunction]
-#[pyo3(signature = (centerline, points, radius, auto = false))]
+#[pyo3(signature = (centerline, points, radius))]
 pub fn find_centerline_bounded_points_simple(
     centerline: PyCenterline,
     points: Vec<Point3D>,
     radius: f64,
-    auto: bool,
 ) -> PyResult<Vec<Point3D>> {
     let rust_centerline = centerline.to_rust_centerline();
 
     // Call Rust function directly - no complex conversions needed
     let result_points =
-        label_coronary::find_centerline_bounded_points(rust_centerline, &points, radius, auto)
+        label_coronary::find_centerline_bounded_points(rust_centerline, &points, radius)
             .map_err(pyo3::exceptions::PyValueError::new_err)?;
 
     Ok(result_points)
