@@ -198,6 +198,14 @@ pub fn remove_occluded_points_ray_triangle_rust(
 /// `MaximumInscribedSphereRadius`).
 const AUTO_RADIUS_BUFFER: f64 = 1.05;
 
+/// Upper bound on a coronary vessel radius (mm). Centerlines passed into `auto`
+/// mode may carry aortic points mixed in with coronary ones; aortic radii are far
+/// larger than any real coronary radius, so points above this cutoff are treated
+/// as aorta and excluded from the auto sphere sizing (otherwise a handful of
+/// aortic points would balloon `max_threshold_sq` and get used as bounding-sphere
+/// centers themselves).
+const MAX_CORONARY_RADIUS_MM: f64 = 5.0;
+
 /// Find mesh points that fall within a bounding sphere of any centerline point.
 ///
 /// When `auto` is `false`, every centerline point uses the single fixed `radius`
@@ -235,9 +243,14 @@ pub fn find_centerline_bounded_points(
     // sphere per centerline point instead of using one fixed radius for the whole
     // vessel. Each mesh point then costs O(log M) instead of a scan over all M
     // centerline points, so the whole query is O(N log M) instead of O(N * M).
+    //
+    // In `auto` mode, points above `MAX_CORONARY_RADIUS_MM` are assumed to be
+    // aortic (mixed into the same centerline) and dropped entirely so they can't
+    // inflate the sphere sizing or serve as bounding-sphere centers themselves.
     let cl_coords: Vec<rstar::primitives::GeomWithData<[f64; 3], f64>> = checked_centerline
         .points
         .iter()
+        .filter(|p| !auto || p.radius <= MAX_CORONARY_RADIUS_MM)
         .map(|p| {
             rstar::primitives::GeomWithData::new(
                 [p.contour_point.x, p.contour_point.y, p.contour_point.z],
@@ -254,6 +267,7 @@ pub fn find_centerline_bounded_points(
         let max_threshold_sq = checked_centerline
             .points
             .iter()
+            .filter(|p| p.radius <= MAX_CORONARY_RADIUS_MM)
             .fold(0.0_f64, |acc, p| acc.max(p.radius * AUTO_RADIUS_BUFFER))
             .powi(2);
 
