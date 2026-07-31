@@ -31,7 +31,9 @@ def label_geometry(
     anomalous_lca: bool = False,
     n_points_intramural: int = 120,
     step_size_mm: float = 1.0,
-    bounding_sphere_radius_mm: float = 3.0,
+    auto_radius_vtp: bool = False,
+    bounding_sphere_radius_mm_rca: float = 3.0,
+    bounding_sphere_radius_mm_lca: float = 3.0,
     tolerance_float: float = 1e-6,
     control_plot: bool = True,
 ) -> tuple[dict, tuple[PyCenterline, PyCenterline, PyCenterline]]:
@@ -69,9 +71,15 @@ def label_geometry(
     step_size_mm : float, optional
         Step size in mm for iterating over coronary centerline points during
         occlusion removal.  Default is ``1.0`` mm.
-    bounding_sphere_radius_mm : float, optional
+    auto_radius_vtp : bool
+        Radius of the rolling sphere directly determined from the ``.vtp`` file.
+        If not loaded from ``.vtp`` will return ``Err``.  Default is ``False``.
+    bounding_sphere_radius_mm_rca : float, optional
         Radius in millimetres of the rolling sphere used to collect candidate
-        mesh vertices around each centerline point.  Default is ``3.0``.
+        mesh vertices around each centerline point of the rca.  Default is ``3.0``.
+    bounding_sphere_radius_mm_lca : float, optional
+        Radius in millimetres of the rolling sphere used to collect candidate
+        mesh vertices around each centerline point of the lca.  Default is ``3.0``.
     tolerance_float : float, optional
         Distance tolerance used when matching mesh vertices to points during
         face lookup.  Default is ``1e-6``.
@@ -163,12 +171,18 @@ def label_geometry(
     points_list = [tuple(vertex) for vertex in mesh.vertices.tolist()]
     mesh_faces_list = mesh.faces.tolist()
 
-    # Rust implementation using a rolling sphere with fixed radius
+    # Rust implementation using a rolling sphere with fixed/automatic radius
     rca_points_found = find_centerline_bounded_points_simple(
-        cl_rca, points_list, bounding_sphere_radius_mm
+        centerline=cl_rca,
+        points=points_list,
+        radius=bounding_sphere_radius_mm_rca,
+        auto=auto_radius_vtp,
     )
     lca_points_found = find_centerline_bounded_points_simple(
-        cl_lca, points_list, bounding_sphere_radius_mm
+        centerline=cl_lca,
+        points=points_list,
+        radius=bounding_sphere_radius_mm_lca,
+        auto=auto_radius_vtp,
     )
 
     print(f"\nRCA points found: {len(rca_points_found)}")

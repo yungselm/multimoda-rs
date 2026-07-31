@@ -1377,6 +1377,7 @@ def find_centerline_bounded_points_simple(
     centerline: PyCenterline,
     points: list[tuple[float, float, float]],
     radius: float,
+    auto: bool = False,
 ) -> list[tuple[float, float, float]]:
     """Find points bounded by spheres along a coronary vessel centerline.
 
@@ -1389,7 +1390,14 @@ def find_centerline_bounded_points_simple(
     points : list of tuple of float
         List of ``(x, y, z)`` point coordinates.
     radius : float
-        Radius of the bounding spheres around each centerline point.
+        Radius of the bounding spheres around each centerline point. Ignored
+        when ``auto=True``.
+    auto : bool, optional
+        When ``True``, ignore `radius` and instead size each centerline point's
+        bounding sphere from that point's own local vessel radius (with a 5%
+        buffer). Requires a centerline whose points all carry a real (> 0)
+        radius, e.g. one loaded via :func:`read_centerline_vtp`; raises
+        ``ValueError`` otherwise. Default is ``False``.
 
     Returns
     -------
@@ -1406,8 +1414,13 @@ def find_centerline_bounded_points_simple(
     >>>
     >>> # Find points bounded by centerline spheres
     >>> bounded_points = mm.find_centerline_bounded_points(centerline, points, 2.0)
-    >>> print(f"Found {len(bounded_points)} points inside vessel bounds")"""
-    return _find_centerline_bounded_points_simple(centerline, points, radius)
+    >>> print(f"Found {len(bounded_points)} points inside vessel bounds")
+    >>>
+    >>> # Or size spheres from the centerline's own per-point radius (VTP only)
+    >>> cl = mm.read_centerline_vtp("path/to/centerline.vtp")
+    >>> bounded_points = mm.find_centerline_bounded_points(cl, points, 0.0, auto=True)
+    """
+    return _find_centerline_bounded_points_simple(centerline, points, radius, auto)
 
 
 def find_proximal_distal_scaling(

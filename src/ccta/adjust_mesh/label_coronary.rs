@@ -192,36 +192,103 @@ pub fn remove_occluded_points_ray_triangle_rust(
     filtered_points
 }
 
+/// Buffer applied on top of each centerline point's own radius in `auto` mode, to
+/// account for the mesh surface sitting slightly outside the maximum inscribed
+/// sphere radius reported by the centerline source (e.g. VTP's
+/// `MaximumInscribedSphereRadius`).
+const AUTO_RADIUS_BUFFER: f64 = 1.05;
+
+/// Find mesh points that fall within a bounding sphere of any centerline point.
+///
+/// When `auto` is `false`, every centerline point uses the single fixed `radius`
+/// (mm), matching the previous behaviour.
+///
+/// When `auto` is `true`, `radius` is ignored and each centerline point instead
+/// uses its own `CenterlinePoint::radius` (local vessel radius) with a 5% buffer.
+/// This requires every point on `centerline` to carry a real (> 0) radius — e.g.
+/// centerlines loaded via `read_centerline_vtp`, which populates radius from the
+/// VTP's `MaximumInscribedSphereRadius` array. Centerlines built from bare (x, y, z)
+/// data (e.g. `numpy_to_centerline`) always have radius 0.0 and are rejected with
+/// an error rather than silently producing zero-radius (i.e. empty) spheres.
 pub fn find_centerline_bounded_points(
     centerline: Centerline,
     points: &[(f64, f64, f64)],
     radius: f64,
-) -> Vec<(f64, f64, f64)> {
+    auto: bool,
+) -> Result<Vec<(f64, f64, f64)>, String> {
     let checked_centerline = check_centerline(&centerline);
     if points.is_empty() || checked_centerline.points.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
-    // R-tree over the centerline points (the small side, typically ~1000 points):
-    // each mesh point then costs O(log M) instead of a scan over all M centerline
-    // points, so the whole query is O(N log M) instead of O(N * M).
-    let cl_coords: Vec<[f64; 3]> = checked_centerline
+    if auto && checked_centerline.points.iter().any(|p| p.radius <= 0.0) {
+        return Err(
+            "auto radius requested but centerline has one or more points with radius <= 0.0; \
+             load a centerline that carries real per-point radii (e.g. via read_centerline_vtp) \
+             or pass auto=false with a fixed radius"
+                .to_string(),
+        );
+    }
+
+    // R-tree over the centerline points (the small side, typically ~1000 points),
+    // tagged with each point's own radius so `auto` mode can size its bounding
+    // sphere per centerline point instead of using one fixed radius for the whole
+    // vessel. Each mesh point then costs O(log M) instead of a scan over all M
+    // centerline points, so the whole query is O(N log M) instead of O(N * M).
+    let cl_coords: Vec<rstar::primitives::GeomWithData<[f64; 3], f64>> = checked_centerline
         .points
         .iter()
-        .map(|p| [p.contour_point.x, p.contour_point.y, p.contour_point.z])
+        .map(|p| {
+            rstar::primitives::GeomWithData::new(
+                [p.contour_point.x, p.contour_point.y, p.contour_point.z],
+                p.radius,
+            )
+        })
         .collect();
     let tree = rstar::RTree::bulk_load(cl_coords);
 
-    let radius_sq = radius * radius;
-    points
-        .iter()
-        .filter(|p| {
-            tree.locate_within_distance([p.0, p.1, p.2], radius_sq)
-                .next()
-                .is_some()
-        })
-        .copied()
-        .collect()
+    let result = if auto {
+        // Bound the R-tree candidate lookup by the largest possible per-point
+        // threshold, then exact-check each candidate against its own radius —
+        // equivalent to "within some centerline point's own buffered sphere".
+        let max_threshold_sq = checked_centerline
+            .points
+            .iter()
+            .fold(0.0_f64, |acc, p| acc.max(p.radius * AUTO_RADIUS_BUFFER))
+            .powi(2);
+
+        points
+            .iter()
+            .filter(|p| {
+                let query = [p.0, p.1, p.2];
+                tree.locate_within_distance(query, max_threshold_sq)
+                    .any(|candidate| {
+                        let threshold = candidate.data * AUTO_RADIUS_BUFFER;
+                        let dist_sq: f64 = candidate
+                            .geom()
+                            .iter()
+                            .zip(query.iter())
+                            .map(|(a, b)| (a - b).powi(2))
+                            .sum();
+                        dist_sq <= threshold * threshold
+                    })
+            })
+            .copied()
+            .collect()
+    } else {
+        let radius_sq = radius * radius;
+        points
+            .iter()
+            .filter(|p| {
+                tree.locate_within_distance([p.0, p.1, p.2], radius_sq)
+                    .next()
+                    .is_some()
+            })
+            .copied()
+            .collect()
+    };
+
+    Ok(result)
 }
 
 /// Find mesh faces that reference any vertex coincident (within `tol`) with one of
@@ -497,7 +564,7 @@ mod test_find_cl_bounded_points {
             .cloned()
             .collect();
 
-        let result = find_centerline_bounded_points(cl, &all_points, 1.0);
+        let result = find_centerline_bounded_points(cl, &all_points, 1.0, false).unwrap();
 
         // The result should contain all the points that were inside our test spheres
         // Since our spheres have radius 1.0 and are centered at (0.5, 0.5, z),
@@ -519,6 +586,57 @@ mod test_find_cl_bounded_points {
                 "Unexpected point: {outside_point:?}"
             );
         }
+    }
+
+    fn cl_point_with_radius(z: f64, radius: f64) -> crate::types::native::CenterlinePoint {
+        crate::types::native::CenterlinePoint {
+            contour_point: ContourPoint {
+                frame_index: z as u32,
+                point_index: 0,
+                x: 0.5,
+                y: 0.5,
+                z,
+                aortic: false,
+            },
+            tangent: Vector3::new(0.0, 0.0, 1.0),
+            radius,
+            branch_id: 0,
+        }
+    }
+
+    #[test]
+    fn test_find_points_auto_radius_uses_per_point_sphere() {
+        // Centerline point at z=0.0 has a small radius (0.2 -> buffered 0.21), the
+        // one at z=1.0 has a large radius (1.0 -> buffered 1.05).
+        let cl = Centerline {
+            points: vec![
+                cl_point_with_radius(0.0, 0.2),
+                cl_point_with_radius(1.0, 1.0),
+            ],
+            branch_start_indices: vec![0],
+        };
+
+        // Just outside the small sphere but inside the large one's buffered radius.
+        let far_point = (0.5, 0.5, 1.9);
+        // Just outside both spheres.
+        let outside_point = (0.5, 0.5, -0.5);
+
+        let result =
+            find_centerline_bounded_points(cl, &[far_point, outside_point], 0.0, true).unwrap();
+
+        assert!(result.contains(&far_point));
+        assert!(!result.contains(&outside_point));
+    }
+
+    #[test]
+    fn test_find_points_auto_radius_rejects_zero_radius_centerline() {
+        let cl = Centerline {
+            points: vec![cl_point_with_radius(0.0, 0.0)],
+            branch_start_indices: vec![0],
+        };
+
+        let result = find_centerline_bounded_points(cl, &[(0.5, 0.5, 0.0)], 0.0, true);
+        assert!(result.is_err());
     }
 
     #[test]

@@ -97,7 +97,7 @@ impl InputData {
             ));
         };
 
-        for (_ctype, raw_name) in names.iter() {
+        for raw_name in names.values() {
             let name = raw_name.trim().to_lowercase();
             match name.as_str() {
                 "" | "lumen" => {}

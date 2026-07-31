@@ -792,6 +792,7 @@ def find_centerline_bounded_points_simple(
     centerline: PyCenterline,
     points: list[tuple[float, float, float]],
     radius: float,
+    auto: bool = ...,
 ) -> list[tuple[float, float, float]]: ...
 def find_faces_near_points(
     vertices: list[tuple[float, float, float]],

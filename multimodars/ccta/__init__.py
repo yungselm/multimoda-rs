@@ -26,7 +26,10 @@ def label(
     anomalous_rca: bool = False,
     anomalous_lca: bool = False,
     n_points_intramural: int = 120,
-    bounding_sphere_radius_mm: float = 3.0,
+    step_size_mm: float = 1.0,
+    auto_radius_vtp: bool = False,
+    bounding_sphere_radius_mm_rca: float = 3.0,
+    bounding_sphere_radius_mm_lca: float = 3.0,
     tolerance_float: float = 1e-6,
     control_plot: bool = True,
 ) -> tuple[dict, tuple[PyCenterline, PyCenterline, PyCenterline]]:
@@ -69,9 +72,21 @@ def label(
     n_points_intramural : int, optional
         Number of coronary centerline points examined during occlusion removal
         (the intramural segment length).  Default is ``120``.
-    bounding_sphere_radius_mm : float, optional
+    step_size_mm : float, optional
+        Step size in mm for iterating over coronary centerline points during
+        occlusion removal.  Default is ``1.0`` mm.
+    auto_radius_vtp : bool, optional
+        Determine the rolling sphere radius directly from the ``.vtp`` file
+        instead of using the fixed radii below.  If not loaded from ``.vtp``
+        this raises an error.  Default is ``False``.
+    bounding_sphere_radius_mm_rca : float, optional
         Radius in millimetres of the rolling sphere used to collect candidate
-        mesh vertices around each centerline point.  Default is ``3.0``.
+        mesh vertices around each centerline point of the RCA.  Default is
+        ``3.0``.
+    bounding_sphere_radius_mm_lca : float, optional
+        Radius in millimetres of the rolling sphere used to collect candidate
+        mesh vertices around each centerline point of the LCA.  Default is
+        ``3.0``.
     tolerance_float : float, optional
         Distance tolerance used when matching mesh vertices to points during
         face lookup.  Default is ``1e-6``.
@@ -108,7 +123,10 @@ def label(
         anomalous_rca,
         anomalous_lca,
         n_points_intramural,
-        bounding_sphere_radius_mm,
+        step_size_mm,
+        auto_radius_vtp,
+        bounding_sphere_radius_mm_rca,
+        bounding_sphere_radius_mm_lca,
         tolerance_float,
         control_plot,
     )
