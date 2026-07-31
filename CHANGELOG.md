@@ -3,6 +3,21 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.3] - 2026-07-31
+
+Original investigated the possibility to use the radius of the `.vtp` file to run the 
+rolling sphere algorithm. However, it was apparent that the radii are not precise, which
+led to holes in the labelling process. Therefor aborted and decided to just use two fixed
+sphere radii for LCA and RCA.
+
+### Changed
+- `find_centerline_bounded_points` now fails on empty centerlines
+- `label_geometry` now takes a seperate RCA and LCA radius as input.
+
+### Fixed
+- the pre-commit hook now references the version in the current .venv, otherwise resulted in 
+sporadic errors.
+
 ## [0.5.2] -2026-07-09
 
 ### Fixed
