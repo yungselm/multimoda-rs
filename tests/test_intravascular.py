@@ -200,7 +200,7 @@ class TestAlignManual:
         result, _, _ = align_manual(
             centerline,
             geometry_pair,
-            rotation_angle=286.0,
+            rotation_angle_deg=286.0,
             ref_point=AORTIC_REF_PT,
             write=False,
         )
@@ -210,7 +210,7 @@ class TestAlignManual:
         result, _, _ = align_manual(
             centerline,
             geom_a,
-            rotation_angle=286.0,
+            rotation_angle_deg=286.0,
             ref_point=AORTIC_REF_PT,
             write=False,
         )
@@ -221,14 +221,14 @@ class TestAlignManual:
         result_pair, _, _ = align_manual(
             centerline,
             geometry_pair,
-            rotation_angle=286.0,
+            rotation_angle_deg=286.0,
             ref_point=AORTIC_REF_PT,
             write=False,
         )
         result_geom, _, _ = align_manual(
             centerline,
             geom_a,
-            rotation_angle=286.0,
+            rotation_angle_deg=286.0,
             ref_point=AORTIC_REF_PT,
             write=False,
         )
@@ -241,14 +241,14 @@ class TestAlignManual:
         result_pair, _, _ = align_manual(
             centerline,
             geometry_pair,
-            rotation_angle=286.0,
+            rotation_angle_deg=286.0,
             ref_point=AORTIC_REF_PT,
             write=False,
         )
         result_geom, _, _ = align_manual(
             centerline,
             geom_a,
-            rotation_angle=286.0,
+            rotation_angle_deg=286.0,
             ref_point=AORTIC_REF_PT,
             write=False,
         )

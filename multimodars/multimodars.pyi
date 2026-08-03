@@ -685,7 +685,7 @@ def align_three_point(
 def align_manual(
     centerline: PyCenterline,
     geometry: PyGeometryPair | PyGeometry,
-    rotation_angle: float,
+    rotation_angle_deg: float,
     ref_point: tuple[float, float, float],
     write: bool = ...,
     watertight: bool = ...,

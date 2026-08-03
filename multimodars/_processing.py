@@ -1103,7 +1103,7 @@ def align_three_point(
 def align_manual(
     centerline: PyCenterline,
     geometry: PyGeometryPair | PyGeometry,
-    rotation_angle: float,
+    rotation_angle_deg: float,
     ref_point: tuple[float, float, float],
     write: bool = False,
     watertight: bool = True,
@@ -1125,8 +1125,8 @@ def align_manual(
         Centerline of the vessel.
     geometry : PyGeometryPair or PyGeometry
         Single geometry or diastolic/systolic geometry pair to align.
-    rotation_angle : float
-        Rotation angle in radians to apply.
+    rotation_angle_deg : float
+        Rotation angle in degrees to apply.
     ref_point : tuple of float
         ``(x, y, z)`` reference point on the centerline.
     write : bool, optional
@@ -1156,13 +1156,13 @@ def align_manual(
         Resampled centerline.
     total_rotation_deg : float
         Rotation, in degrees, that was applied to align the geometry
-        (equal to *rotation_angle*).
+        (equal to *rotation_angle_deg*).
 
     Examples
     --------
     >>> import multimodars as mm
     >>> result, cl, total_rotation_deg = mm.align_manual(
-    ...     centerline, geometry_pair, rotation_angle=1.57, ref_point=(1.0, 2.0, 3.0)
+    ...     centerline, geometry_pair, rotation_angle_deg=90.0, ref_point=(1.0, 2.0, 3.0)
     ... )
     """
     if contour_types is None:
@@ -1170,7 +1170,7 @@ def align_manual(
     return _align_manual(
         centerline,
         geometry,
-        rotation_angle,
+        rotation_angle_deg,
         ref_point,
         write,
         watertight,
