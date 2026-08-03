@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.6] - 2026-08-03
+
+### Changed
+- type stubs were not up to date resulting in `align_manual`still giving the impression to work
+ with radians instead of degree
+
 ## [0.5.5] - 2026-08-03
 
 ### Fixed
