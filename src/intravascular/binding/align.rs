@@ -153,8 +153,8 @@ pub fn align_three_point(
 ///     Centerline of the vessel.
 /// geometry : PyGeometry or PyGeometryPair
 ///     Single geometry or diastolic/systolic geometry pair to align.
-/// rotation_angle : float
-///     Rotation angle in radians to apply.
+/// rotation_angle_deg : float
+///     Rotation angle in degree to apply.
 /// ref_point : tuple of float
 ///     ``(x, y, z)`` reference point on the centerline.
 /// write : bool, optional
@@ -191,7 +191,7 @@ pub fn align_three_point(
     signature = (
         centerline,
         geometry,
-        rotation_angle,
+        rotation_angle_deg,
         ref_point,
         write=false,
         watertight=true,
@@ -206,7 +206,7 @@ pub fn align_manual(
     py: Python<'_>,
     centerline: PyCenterline,
     geometry: Bound<'_, PyAny>,
-    rotation_angle: f64,
+    rotation_angle_deg: f64,
     ref_point: (f64, f64, f64),
     write: bool,
     watertight: bool,
@@ -224,7 +224,7 @@ pub fn align_manual(
         let (result_rs, cl) = align_manual_rs(
             cl_rs,
             geom_pair.to_rust_geometry_pair(),
-            rotation_angle,
+            rotation_angle_deg,
             ref_point,
             write,
             watertight,
@@ -241,7 +241,7 @@ pub fn align_manual(
         let (result_rs, cl) = align_manual_rs(
             cl_rs,
             geom.to_rust_geometry()?,
-            rotation_angle,
+            rotation_angle_deg,
             ref_point,
             write,
             watertight,
