@@ -46,11 +46,13 @@ use pyo3::prelude::*;
 ///     Aligned geometry, matching the type of the input.
 /// centerline : PyCenterline
 ///     Resampled centerline.
+/// total_rotation_deg : float
+///     Rotation, in degrees, that was applied to align the geometry.
 ///
 /// Examples
 /// --------
 /// >>> import multimodars as mm
-/// >>> result, cl = mm.align_three_point(
+/// >>> result, cl, total_rotation_deg = mm.align_three_point(
 /// ...     centerline,
 /// ...     geometry_pair,
 /// ...     (12.2605, -201.3643, 1751.0554),
@@ -90,14 +92,14 @@ pub fn align_three_point(
     contour_types: Vec<PyContourType>,
     case_name: &str,
     align_wall_anomalous: bool,
-) -> PyResult<(Py<PyAny>, PyCenterline)> {
+) -> PyResult<(Py<PyAny>, PyCenterline, f64)> {
     let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
     let cl_rs = centerline.to_rust_centerline();
     let angle_step = angle_step_deg.to_radians();
 
     if let Ok(geom_pair) = geometry.extract::<PyGeometryPair>() {
-        let (result_rs, cl) = align_three_point_rs(
+        let (result_rs, cl, total_rotation) = align_three_point_rs(
             cl_rs,
             geom_pair.to_rust_geometry_pair(),
             main_ref_pt,
@@ -114,9 +116,13 @@ pub fn align_three_point(
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         let py_result: PyGeometryPair = result_rs.into();
-        Ok((Py::new(py, py_result)?.into_any(), cl.into()))
+        Ok((
+            Py::new(py, py_result)?.into_any(),
+            cl.into(),
+            total_rotation.to_degrees(),
+        ))
     } else if let Ok(geom) = geometry.extract::<PyGeometry>() {
-        let (result_rs, cl) = align_three_point_rs(
+        let (result_rs, cl, total_rotation) = align_three_point_rs(
             cl_rs,
             geom.to_rust_geometry()?,
             main_ref_pt,
@@ -133,7 +139,11 @@ pub fn align_three_point(
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         let py_result: PyGeometry = result_rs.into();
-        Ok((Py::new(py, py_result)?.into_any(), cl.into()))
+        Ok((
+            Py::new(py, py_result)?.into_any(),
+            cl.into(),
+            total_rotation.to_degrees(),
+        ))
     } else {
         Err(pyo3::exceptions::PyTypeError::new_err(
             "geometry must be a PyGeometry or PyGeometryPair",
@@ -179,11 +189,14 @@ pub fn align_three_point(
 ///     Aligned geometry, matching the type of the input.
 /// centerline : PyCenterline
 ///     Resampled centerline.
+/// total_rotation_deg : float
+///     Rotation, in degrees, that was applied to align the geometry
+///     (equal to *rotation_angle_deg*).
 ///
 /// Examples
 /// --------
 /// >>> import multimodars as mm
-/// >>> result, cl = mm.align_manual(
+/// >>> result, cl, total_rotation_deg = mm.align_manual(
 /// ...     centerline, geometry_pair, rotation_angle=1.57, ref_point=(1.0, 2.0, 3.0)
 /// ... )
 #[pyfunction]
@@ -215,13 +228,13 @@ pub fn align_manual(
     contour_types: Vec<PyContourType>,
     case_name: &str,
     align_wall_anomalous: bool,
-) -> PyResult<(Py<PyAny>, PyCenterline)> {
+) -> PyResult<(Py<PyAny>, PyCenterline, f64)> {
     let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
     let cl_rs = centerline.to_rust_centerline();
 
     if let Ok(geom_pair) = geometry.extract::<PyGeometryPair>() {
-        let (result_rs, cl) = align_manual_rs(
+        let (result_rs, cl, total_rotation) = align_manual_rs(
             cl_rs,
             geom_pair.to_rust_geometry_pair(),
             rotation_angle_deg,
@@ -236,9 +249,13 @@ pub fn align_manual(
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         let py_result: PyGeometryPair = result_rs.into();
-        Ok((Py::new(py, py_result)?.into_any(), cl.into()))
+        Ok((
+            Py::new(py, py_result)?.into_any(),
+            cl.into(),
+            total_rotation.to_degrees(),
+        ))
     } else if let Ok(geom) = geometry.extract::<PyGeometry>() {
-        let (result_rs, cl) = align_manual_rs(
+        let (result_rs, cl, total_rotation) = align_manual_rs(
             cl_rs,
             geom.to_rust_geometry()?,
             rotation_angle_deg,
@@ -253,7 +270,11 @@ pub fn align_manual(
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         let py_result: PyGeometry = result_rs.into();
-        Ok((Py::new(py, py_result)?.into_any(), cl.into()))
+        Ok((
+            Py::new(py, py_result)?.into_any(),
+            cl.into(),
+            total_rotation.to_degrees(),
+        ))
     } else {
         Err(pyo3::exceptions::PyTypeError::new_err(
             "geometry must be a PyGeometry or PyGeometryPair",
@@ -311,11 +332,14 @@ pub fn align_manual(
 ///     Aligned geometry, matching the type of the input.
 /// centerline : PyCenterline
 ///     Resampled centerline.
+/// total_rotation_deg : float
+///     Total rotation, in degrees, that was applied (initial three-point
+///     rotation plus the Hausdorff refinement delta).
 ///
 /// Examples
 /// --------
 /// >>> import multimodars as mm
-/// >>> result, cl = mm.align_combined(
+/// >>> result, cl, total_rotation_deg = mm.align_combined(
 /// ...     centerline,
 /// ...     geometry_pair,
 /// ...     (12.2605, -201.3643, 1751.0554),
@@ -362,7 +386,7 @@ pub fn align_combined(
     contour_types: Vec<PyContourType>,
     case_name: &str,
     align_wall_anomalous: bool,
-) -> PyResult<(Py<PyAny>, PyCenterline)> {
+) -> PyResult<(Py<PyAny>, PyCenterline, f64)> {
     let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
     let cl_rs = centerline.to_rust_centerline();
@@ -370,7 +394,7 @@ pub fn align_combined(
     let angle_range = angle_range_deg.to_radians();
 
     if let Ok(geom_pair) = geometry.extract::<PyGeometryPair>() {
-        let (result_rs, cl) = align_combined_rs(
+        let (result_rs, cl, total_rotation) = align_combined_rs(
             cl_rs,
             geom_pair.to_rust_geometry_pair(),
             main_ref_pt,
@@ -390,9 +414,13 @@ pub fn align_combined(
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         let py_result: PyGeometryPair = result_rs.into();
-        Ok((Py::new(py, py_result)?.into_any(), cl.into()))
+        Ok((
+            Py::new(py, py_result)?.into_any(),
+            cl.into(),
+            total_rotation.to_degrees(),
+        ))
     } else if let Ok(geom) = geometry.extract::<PyGeometry>() {
-        let (result_rs, cl) = align_combined_rs(
+        let (result_rs, cl, total_rotation) = align_combined_rs(
             cl_rs,
             geom.to_rust_geometry()?,
             main_ref_pt,
@@ -412,7 +440,11 @@ pub fn align_combined(
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         let py_result: PyGeometry = result_rs.into();
-        Ok((Py::new(py, py_result)?.into_any(), cl.into()))
+        Ok((
+            Py::new(py, py_result)?.into_any(),
+            cl.into(),
+            total_rotation.to_degrees(),
+        ))
     } else {
         Err(pyo3::exceptions::PyTypeError::new_err(
             "geometry must be a PyGeometry or PyGeometryPair",

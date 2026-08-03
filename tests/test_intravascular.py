@@ -94,7 +94,7 @@ def centerline():
 
 class TestAlignThreePoint:
     def test_pair_returns_geometry_pair(self, centerline, geometry_pair):
-        result, _ = align_three_point(
+        result, _, _ = align_three_point(
             centerline,
             geometry_pair,
             AORTIC_REF_PT,
@@ -105,7 +105,7 @@ class TestAlignThreePoint:
         assert isinstance(result, PyGeometryPair)
 
     def test_single_returns_geometry(self, centerline, geom_a):
-        result, _ = align_three_point(
+        result, _, _ = align_three_point(
             centerline,
             geom_a,
             AORTIC_REF_PT,
@@ -117,7 +117,7 @@ class TestAlignThreePoint:
 
     def test_pair_geom_a_matches_single(self, centerline, geom_a, geometry_pair):
         """Aligning geom_a alone must produce the same points as geom_a inside a pair."""
-        result_pair, _ = align_three_point(
+        result_pair, _, _ = align_three_point(
             centerline,
             geometry_pair,
             AORTIC_REF_PT,
@@ -125,7 +125,7 @@ class TestAlignThreePoint:
             LOWER_REF_PT,
             write=False,
         )
-        result_geom, _ = align_three_point(
+        result_geom, _, _ = align_three_point(
             centerline,
             geom_a,
             AORTIC_REF_PT,
@@ -138,7 +138,7 @@ class TestAlignThreePoint:
         np.testing.assert_allclose(pts_pair, pts_geom, atol=1e-10)
 
     def test_resampled_centerlines_match(self, centerline, geom_a, geometry_pair):
-        _, cl_pair = align_three_point(
+        _, cl_pair, _ = align_three_point(
             centerline,
             geometry_pair,
             AORTIC_REF_PT,
@@ -146,7 +146,7 @@ class TestAlignThreePoint:
             LOWER_REF_PT,
             write=False,
         )
-        _, cl_geom = align_three_point(
+        _, cl_geom, _ = align_three_point(
             centerline,
             geom_a,
             AORTIC_REF_PT,
@@ -170,7 +170,7 @@ class TestAlignThreePoint:
 
     def test_frame_count_preserved(self, centerline, geom_a, geometry_pair):
         n_frames = len(geom_a.frames)
-        result_pair, _ = align_three_point(
+        result_pair, _, _ = align_three_point(
             centerline,
             geometry_pair,
             AORTIC_REF_PT,
@@ -178,7 +178,7 @@ class TestAlignThreePoint:
             LOWER_REF_PT,
             write=False,
         )
-        result_geom, _ = align_three_point(
+        result_geom, _, _ = align_three_point(
             centerline,
             geom_a,
             AORTIC_REF_PT,
@@ -197,7 +197,7 @@ class TestAlignThreePoint:
 
 class TestAlignManual:
     def test_pair_returns_geometry_pair(self, centerline, geometry_pair):
-        result, _ = align_manual(
+        result, _, _ = align_manual(
             centerline,
             geometry_pair,
             rotation_angle=286.0,
@@ -207,7 +207,7 @@ class TestAlignManual:
         assert isinstance(result, PyGeometryPair)
 
     def test_single_returns_geometry(self, centerline, geom_a):
-        result, _ = align_manual(
+        result, _, _ = align_manual(
             centerline,
             geom_a,
             rotation_angle=286.0,
@@ -218,14 +218,14 @@ class TestAlignManual:
 
     def test_pair_geom_a_matches_single(self, centerline, geom_a, geometry_pair):
         """Aligning geom_a alone must produce the same points as geom_a inside a pair."""
-        result_pair, _ = align_manual(
+        result_pair, _, _ = align_manual(
             centerline,
             geometry_pair,
             rotation_angle=286.0,
             ref_point=AORTIC_REF_PT,
             write=False,
         )
-        result_geom, _ = align_manual(
+        result_geom, _, _ = align_manual(
             centerline,
             geom_a,
             rotation_angle=286.0,
@@ -238,14 +238,14 @@ class TestAlignManual:
 
     def test_frame_count_preserved(self, centerline, geom_a, geometry_pair):
         n_frames = len(geom_a.frames)
-        result_pair, _ = align_manual(
+        result_pair, _, _ = align_manual(
             centerline,
             geometry_pair,
             rotation_angle=286.0,
             ref_point=AORTIC_REF_PT,
             write=False,
         )
-        result_geom, _ = align_manual(
+        result_geom, _, _ = align_manual(
             centerline,
             geom_a,
             rotation_angle=286.0,

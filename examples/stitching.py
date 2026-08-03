@@ -38,7 +38,7 @@ results, (rca_cl, lca_cl, ao_cl) = mm.label_geometry(
     control_plot=False,
 )
 
-aligned, resampled_cl = mm.align_combined(
+aligned, resampled_cl, total_rotation_deg = mm.align_combined(
     rca_cl,
     rest,
     (12.2605, -201.3643, 1751.0554),

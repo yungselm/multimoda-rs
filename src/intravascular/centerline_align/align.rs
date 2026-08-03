@@ -74,7 +74,7 @@ pub fn align_three_point_rs<T: Processable>(
     contour_types: Vec<ContourType>,
     case_name: &str,
     align_wall_anomalous: bool,
-) -> anyhow::Result<(T, Centerline)> {
+) -> anyhow::Result<(T, Centerline, f64)> {
     let resampled_centerline =
         super::preprocessing::preprocess_centerline(centerline, target.primary_geometry())
             .map_err(|e| anyhow!("Couldn't resample the centerline: {e}"))?;
@@ -89,7 +89,7 @@ pub fn align_three_point_rs<T: Processable>(
         .ok_or_else(|| anyhow!("missing reference point"))?;
     let cl_ref_idx = resampled_centerline.find_reference_cl_point_idx(&main_ref_pt);
 
-    let best_rot = best_rotation_three_point(
+    let total_rotation = best_rotation_three_point(
         &target.primary_geometry().frames[ref_idx].lumen,
         ref_point,
         main_ref_pt,
@@ -99,7 +99,7 @@ pub fn align_three_point_rs<T: Processable>(
         &resampled_centerline.points[cl_ref_idx],
     );
 
-    target = rotate_by_best_rotation(target, best_rot);
+    target = rotate_by_best_rotation(target, total_rotation);
     target = apply_transformations(target, &resampled_centerline, &main_ref_pt);
 
     if align_wall_anomalous {
@@ -120,7 +120,7 @@ pub fn align_three_point_rs<T: Processable>(
         target
     };
 
-    Ok((target, resampled_centerline))
+    Ok((target, resampled_centerline, total_rotation))
 }
 
 pub fn align_manual_rs<T: Processable>(
@@ -135,12 +135,13 @@ pub fn align_manual_rs<T: Processable>(
     contour_types: Vec<ContourType>,
     case_name: &str,
     align_wall_anomalous: bool,
-) -> anyhow::Result<(T, Centerline)> {
+) -> anyhow::Result<(T, Centerline, f64)> {
     let resampled_centerline =
         super::preprocessing::preprocess_centerline(centerline, target.primary_geometry())
             .map_err(|e| anyhow!("Couldn't resample the centerline: {e}"))?;
 
-    target = rotate_by_best_rotation(target, rotation_angle_deg.to_radians());
+    let total_rotation = rotation_angle_deg.to_radians();
+    target = rotate_by_best_rotation(target, total_rotation);
     target = apply_transformations(target, &resampled_centerline, &ref_pt);
 
     if align_wall_anomalous {
@@ -161,7 +162,7 @@ pub fn align_manual_rs<T: Processable>(
         target
     };
 
-    Ok((target, resampled_centerline))
+    Ok((target, resampled_centerline, total_rotation))
 }
 
 /// Combined alignment with three-point initialization and Hausdorff refinement
@@ -182,7 +183,7 @@ pub fn align_combined_rs<T: Processable>(
     contour_types: Vec<ContourType>,
     case_name: &str,
     align_wall_anomalous: bool,
-) -> anyhow::Result<(T, Centerline)> {
+) -> anyhow::Result<(T, Centerline, f64)> {
     let original = target.clone();
 
     println!("\nStep 1: Finding initial rotation via three-point method");
@@ -280,7 +281,7 @@ pub fn align_combined_rs<T: Processable>(
         final_target
     };
 
-    Ok((final_target, resampled_centerline))
+    Ok((final_target, resampled_centerline, total_rotation))
 }
 
 // /// Simpler combined alignment that doesn't double-rotate

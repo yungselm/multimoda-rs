@@ -1021,7 +1021,7 @@ def align_three_point(
     contour_types: list[PyContourType] | None = None,
     case_name: str = "None",
     align_wall_anomalous: bool = False,
-) -> tuple[PyGeometryPair | PyGeometry, PyCenterline]:
+) -> tuple[PyGeometryPair | PyGeometry, PyCenterline, float]:
     """Align a geometry (or geometry pair) to the centerline using three reference points.
 
     Creates centerline-aligned meshes based on three anatomical reference points
@@ -1067,11 +1067,13 @@ def align_three_point(
         Aligned geometry, matching the type of the input.
     centerline : PyCenterline
         Resampled centerline.
+    total_rotation_deg : float
+        Rotation, in degrees, that was applied to align the geometry.
 
     Examples
     --------
     >>> import multimodars as mm
-    >>> result, cl = mm.align_three_point(
+    >>> result, cl, total_rotation_deg = mm.align_three_point(
     ...     centerline,
     ...     geometry_pair,
     ...     (12.2605, -201.3643, 1751.0554),
@@ -1110,7 +1112,7 @@ def align_manual(
     contour_types: list[PyContourType] | None = None,
     case_name: str = "None",
     align_wall_anomalous: bool = False,
-) -> tuple[PyGeometryPair | PyGeometry, PyCenterline]:
+) -> tuple[PyGeometryPair | PyGeometry, PyCenterline, float]:
     """Align a geometry (or geometry pair) to the centerline using a manual rotation angle.
 
     Creates centerline-aligned meshes using an explicit rotation angle and a
@@ -1152,11 +1154,14 @@ def align_manual(
         Aligned geometry, matching the type of the input.
     centerline : PyCenterline
         Resampled centerline.
+    total_rotation_deg : float
+        Rotation, in degrees, that was applied to align the geometry
+        (equal to *rotation_angle*).
 
     Examples
     --------
     >>> import multimodars as mm
-    >>> result, cl = mm.align_manual(
+    >>> result, cl, total_rotation_deg = mm.align_manual(
     ...     centerline, geometry_pair, rotation_angle=1.57, ref_point=(1.0, 2.0, 3.0)
     ... )
     """
@@ -1194,7 +1199,7 @@ def align_combined(
     contour_types: list[PyContourType] | None = None,
     case_name: str = "None",
     align_wall_anomalous: bool = False,
-) -> tuple[PyGeometryPair | PyGeometry, PyCenterline]:
+) -> tuple[PyGeometryPair | PyGeometry, PyCenterline, float]:
     """Align a geometry (or geometry pair) using three reference points and Hausdorff refinement.
 
     Creates centerline-aligned meshes using three anatomical reference points
@@ -1248,11 +1253,14 @@ def align_combined(
         Aligned geometry, matching the type of the input.
     centerline : PyCenterline
         Resampled centerline.
+    total_rotation_deg : float
+        Total rotation, in degrees, that was applied (initial three-point
+        rotation plus the Hausdorff refinement delta).
 
     Examples
     --------
     >>> import multimodars as mm
-    >>> result, cl = mm.align_combined(
+    >>> result, cl, total_rotation_deg = mm.align_combined(
     ...     centerline,
     ...     geometry_pair,
     ...     (12.2605, -201.3643, 1751.0554),

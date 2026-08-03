@@ -76,7 +76,7 @@ rest, stress, dia, sys, _ = mm.from_file_full(
 # Align geometry onto a CCTA-derived centerline
 cl_raw = np.genfromtxt("examples/data/centerline_raw.csv", delimiter=",")
 centerline = mm.numpy_to_centerline(cl_raw)
-aligned_pair, cl_resampled = mm.align_three_point(
+aligned_pair, cl_resampled, total_rotation_deg = mm.align_three_point(
     centerline, rest,
     main_ref_pt=(12.2605, -201.3643, 1751.0554),
     counterclockwise_ref_pt=(11.7567, -202.1920, 1754.7975),

@@ -56,7 +56,7 @@ rest, (dia_logs, sys_logs) = mm.from_file_singlepair(
 ref_points = tree.rca_references[0]
 
 rca_cl_main = rca_cl.get_branch(0)  # alignment needs single-branch CL
-aligned, resampled_cl = mm.align_combined(
+aligned, resampled_cl, total_rotation_deg = mm.align_combined(
     rca_cl_main,
     rest,
     ref_points[0],  # aortic reference point

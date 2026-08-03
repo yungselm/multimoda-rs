@@ -3,6 +3,14 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.5] - 2026-08-03
+
+### Fixed
+- `align_manual` no explicitly states `rotation_angle_deg` instead of `rotation_angle`
+
+## Changed
+- `align_manual`, `align_combined` and `align_three_points` all return their rotation angle now.
+
 ## [0.5.4] - 2026-08-03 Hotfix
 Hotfix of `discretize_vessel_tree()` function, did not include the `removed_rca_points` resulting in weird geometries.
 
