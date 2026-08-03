@@ -3,6 +3,9 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.4] - 2026-08-03 Hotfix
+Hotfix of `discretize_vessel_tree()` function, did not include the `removed_rca_points` resulting in weird geometries.
+
 ## [0.5.3] - 2026-07-31
 
 Original investigated the possibility to use the radius of the `.vtp` file to run the 

@@ -176,7 +176,7 @@ def discretize_vessel_tree(
     PyDiscretizedVesselTree
         Fully populated vessel tree including orientation reference triplets.
     """
-    points_ao = results_dict["aorta_points"]
+    points_ao = results_dict["aorta_points"] + results_dict["rca_removed_points"]
     points_rca_main = results_dict["rca_points_main"]
     points_lca_main = results_dict["lca_points_main"]
     side_rca = _extract_side_branches(results_dict, "rca_points")
