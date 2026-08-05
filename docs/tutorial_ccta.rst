@@ -47,9 +47,10 @@ steps.
         path_centerline_rca="data/centerline_rca_short.csv",
         path_centerline_lca="data/centerline_lca.csv",
         bounding_sphere_radius_mm=3.0,
-        n_points_intramural=100,
-        anomalous_rca=True,
-        anomalous_lca=False,
+        n_points_takeoff_rca=100,
+        n_points_takeoff_lca=100,
+        acute_takeoff_rca=True,
+        acute_takeoff_lca=False,
         control_plot=False,
     )
 
@@ -65,7 +66,7 @@ In the first step, a rolling sphere is propagated along the coronary centerlines
 
    Rolling sphere applied for the case of an R-AAOCA, demonstrating incorrect labeling caused by the elliptic vessel cross-section. Left: 3-D view; right: schematic illustration.
 
-To address this limitation, a ray-casting algorithm is employed. A ray is cast from each aortic centerline point toward each of the ``n_points_intramural`` proximal coronary centerline points. When a ray intersects three mesh faces, the first intersected face is added to an occlusion set. All RCA vertices that are topologically connected to any face in this set are subsequently reclassified as ``aortic_points`` and recorded in ``rca_removed_points``, removing them from the ``rca_points`` label. The identical procedure is applied symmetrically when ``anomalous_lca=True``.
+To address this limitation, a ray-casting algorithm is employed. A ray is cast from each aortic centerline point toward each of the ``n_points_takeoff_rca`` proximal coronary centerline points. When a ray intersects three mesh faces, the first intersected face is added to an occlusion set. All RCA vertices that are topologically connected to any face in this set are subsequently reclassified as ``aortic_points`` and recorded in ``rca_removed_points``, removing them from the ``rca_points`` label. The identical procedure is applied symmetrically when ``acute_takeoff_lca=True``, using ``n_points_takeoff_lca``. This same mechanism also applies more generally to any acute-angle ostium where the coronary and aortic walls overlap, not only intramural-course anomalies.
 
 .. list-table::
    :widths: 50 50
@@ -92,15 +93,17 @@ on the mesh surface.
   labeling pass.  Larger values cast a wider net and capture more distant vertices; smaller
   values are more conservative.  The default of 3.5 mm works for most datasets; adjust
   downward if neighboring structures are incorrectly captured.
-- ``n_points_intramural``: number of centerline points used to define the end of the
-  intramural segment.  When uncertain, keep this value large; the anomalous-region labeling
-  in step 3 will refine the boundary.
-- ``anomalous_rca`` / ``anomalous_lca``: when ``True``, the algorithm removes incorrectly
-  labeled intramural points from the respective vessel and reassigns them to
-  ``"rca_removed_points"`` / ``"lca_removed_points"``.  Set to ``False`` for normal coronary
-  anatomy.
+- ``n_points_takeoff_rca`` / ``n_points_takeoff_lca``: number of centerline points used to
+  define the end of the overlapping/intramural segment, set independently per vessel.  When
+  uncertain, keep this value large; the anomalous-region labeling in step 3 will refine the
+  boundary.
+- ``acute_takeoff_rca`` / ``acute_takeoff_lca``: when ``True``, the algorithm removes incorrectly
+  labeled points overlapping the aortic wall near an acute-angle takeoff from the respective
+  vessel and reassigns them to ``"rca_removed_points"`` / ``"lca_removed_points"``.  Set to
+  ``False`` for normal coronary anatomy.
 - ``control_plot``: opens an interactive 3-D scene to inspect the labeling result.  Set to
-  ``True`` when tuning ``bounding_sphere_radius_mm`` or ``n_points_intramural``.
+  ``True`` when tuning ``bounding_sphere_radius_mm`` or ``n_points_takeoff_rca`` /
+  ``n_points_takeoff_lca``.
 
 .. image:: ./figures/initial_labeling.jpg
    :alt: Example initial labeling figure
@@ -672,9 +675,10 @@ biomechanical simulation or further analysis:
         path_centerline_rca="data/centerline_rca_short.csv",
         path_centerline_lca="data/centerline_lca.csv",
         bounding_sphere_radius_mm=3.0,
-        n_points_intramural=100,
-        anomalous_rca=True,
-        anomalous_lca=False,
+        n_points_takeoff_rca=100,
+        n_points_takeoff_lca=100,
+        acute_takeoff_rca=True,
+        acute_takeoff_lca=False,
         control_plot=True,
     )
 

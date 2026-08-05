@@ -130,7 +130,7 @@ by (a) replacing the brute-force searches with R-tree spatial indexes (`rstar
 <https://docs.rs/rstar>`_) and (b) moving the remaining hot pure-Python loops into Rust.
 
 **Test setup** — reference dataset ``NARCO_119.stl`` (25,171 vertices, 50,338 faces) with
-matched aorta/RCA/LCA centerlines, ``anomalous_rca=True``.  All "before"/"after" pairs below
+matched aorta/RCA/LCA centerlines, ``acute_takeoff_rca=True``.  All "before"/"after" pairs below
 were measured on identical input; the two rows marked with † also benefited from a debug →
 release Rust build correction found partway through the optimization pass, so their ratio
 somewhat overstates the isolated algorithmic contribution — every other row is a fair

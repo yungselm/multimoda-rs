@@ -23,9 +23,10 @@ def label(
     path_centerline_rca: Path | str | PyCenterline,
     path_centerline_lca: Path | str | PyCenterline,
     aligned_frames: list[PyFrame],
-    anomalous_rca: bool = False,
-    anomalous_lca: bool = False,
-    n_points_intramural: int = 120,
+    acute_takeoff_rca: bool = False,
+    acute_takeoff_lca: bool = False,
+    n_points_takeoff_rca: int = 120,
+    n_points_takeoff_lca: int = 120,
     step_size_mm: float = 1.0,
     bounding_sphere_radius_mm_rca: float = 3.0,
     bounding_sphere_radius_mm_lca: float = 3.0,
@@ -35,12 +36,15 @@ def label(
     """Label CCTA mesh vertices as aorta, RCA, or LCA using centerline-based region detection.
 
     Loads a 3-D surface mesh and three centerlines (aorta, RCA, LCA), then assigns
-    each mesh vertex to one of the anatomical regions. For anomalous vessels an
-    additional occlusion-removal step uses ray-triangle intersection to strip
-    intramural segments, followed by adjacency-map reclassification to clean up
-    isolated mis-labelled vertices. Herfore, a ray is cast from every aorta point to the centerline
-    points of the anomalous section and if 3 faces are intersected by the ray the points from
-    the first face must correspond to the intramural section.
+    each mesh vertex to one of the anatomical regions. For vessels with an acute
+    takeoff angle from the aorta (e.g. an anomalous intramural course, or simply
+    an acute ostium where the coronary and aortic walls overlap) an additional
+    occlusion-removal step uses ray-triangle intersection to strip the overlapping
+    points, followed by adjacency-map reclassification to clean up isolated
+    mis-labelled vertices. Herfore, a ray is cast from every aorta point to the
+    centerline points of the coronary near the ostium and if 3 faces are
+    intersected by the ray the points from the first face must correspond to the
+    overlapping/intramural section.
 
     Additionally partition a coronary region into proximal, anomalous, and distal sub-regions.
 
@@ -62,15 +66,19 @@ def label(
         Path to a CSV file containing the LCA centerline.
     aligned_frames : list of PyFrame
         Ordered list of intravascular imaging frames for the vessel.
-    anomalous_rca : bool, optional
+    acute_takeoff_rca : bool, optional
         When ``True`` applies ray-triangle occlusion removal to the RCA region
-        to handle anomalous (intramural) courses.  Default is ``False``.
-    anomalous_lca : bool, optional
-        When ``True`` applies ray-triangle occlusion removal to the LCA region.
-        Default is ``False``.
-    n_points_intramural : int, optional
-        Number of coronary centerline points examined during occlusion removal
-        (the intramural segment length).  Default is ``120``.
+        to strip points overlapping the aortic wall near an acute-angle takeoff
+        (e.g. anomalous/intramural courses).  Default is ``False``.
+    acute_takeoff_lca : bool, optional
+        When ``True`` applies ray-triangle occlusion removal to the LCA region,
+        same as *acute_takeoff_rca* but for the LCA.  Default is ``False``.
+    n_points_takeoff_rca : int, optional
+        Number of RCA centerline points examined during occlusion removal
+        (the overlapping/intramural segment length).  Default is ``120``.
+    n_points_takeoff_lca : int, optional
+        Number of LCA centerline points examined during occlusion removal
+        (the overlapping/intramural segment length).  Default is ``120``.
     step_size_mm : float, optional
         Step size in mm for iterating over coronary centerline points during
         occlusion removal.  Default is ``1.0`` mm.
@@ -111,22 +119,23 @@ def label(
         files, after printing a descriptive message.
     """
     results, (rca_cl, lca_cl, ao_cl) = labeling.label_geometry(
-        path_ccta_geometry,
-        path_centerline_aorta,
-        path_centerline_rca,
-        path_centerline_lca,
-        anomalous_rca,
-        anomalous_lca,
-        n_points_intramural,
-        step_size_mm,
-        bounding_sphere_radius_mm_rca,
-        bounding_sphere_radius_mm_lca,
-        tolerance_float,
-        control_plot,
+        path_ccta_geometry=path_ccta_geometry,
+        path_centerline_aorta=path_centerline_aorta,
+        path_centerline_rca=path_centerline_rca,
+        path_centerline_lca=path_centerline_lca,
+        acute_takeoff_rca=acute_takeoff_rca,
+        acute_takeoff_lca=acute_takeoff_lca,
+        n_points_takeoff_rca=n_points_takeoff_rca,
+        n_points_takeoff_lca=n_points_takeoff_lca,
+        step_size_mm=step_size_mm,
+        bounding_sphere_radius_mm_rca=bounding_sphere_radius_mm_rca,
+        bounding_sphere_radius_mm_lca=bounding_sphere_radius_mm_lca,
+        tolerance_float=tolerance_float,
+        control_plot=control_plot,
     )
 
-    if anomalous_rca or anomalous_lca:
-        if anomalous_rca:
+    if acute_takeoff_rca or acute_takeoff_lca:
+        if acute_takeoff_rca:
             key = "rca_points"
             cl = rca_cl
         else:

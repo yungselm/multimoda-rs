@@ -1222,7 +1222,7 @@ def _stitch_boundary_ring(
         # Winding is reversed vs the naive (b, b_next, mid) order so that the
         # shared edges with the adjacent fan triangles are traversed in opposite
         # directions — the requirement for consistent outward normals.
-        faces.append((b_next, b, n_boundary + mid))
+        faces.append((b_next, b, n_boundary + (mid % n_iv)))
 
         iv_start = iv_end
 

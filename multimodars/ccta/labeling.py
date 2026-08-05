@@ -27,9 +27,10 @@ def label_geometry(
     path_centerline_aorta: Path | str | PyCenterline,
     path_centerline_rca: Path | str | PyCenterline,
     path_centerline_lca: Path | str | PyCenterline,
-    anomalous_rca: bool = False,
-    anomalous_lca: bool = False,
-    n_points_intramural: int = 120,
+    acute_takeoff_rca: bool = False,
+    acute_takeoff_lca: bool = False,
+    n_points_takeoff_rca: int = 120,
+    n_points_takeoff_lca: int = 120,
     step_size_mm: float = 1.0,
     bounding_sphere_radius_mm_rca: float = 3.0,
     bounding_sphere_radius_mm_lca: float = 3.0,
@@ -39,12 +40,15 @@ def label_geometry(
     """Label CCTA mesh vertices as aorta, RCA, or LCA using centerline-based region detection.
 
     Loads a 3-D surface mesh and three centerlines (aorta, RCA, LCA), then assigns
-    each mesh vertex to one of the anatomical regions. For anomalous vessels an
-    additional occlusion-removal step uses ray-triangle intersection to strip
-    intramural segments, followed by adjacency-map reclassification to clean up
-    isolated mis-labelled vertices. Herfore, a ray is cast from every aorta point to the centerline
-    points of the anomalous section and if 3 faces are intersected by the ray the points from
-    the first face must correspond to the intramural section.
+    each mesh vertex to one of the anatomical regions. For vessels with an acute
+    takeoff angle from the aorta (e.g. an anomalous intramural course, or simply
+    an acute ostium where the coronary and aortic walls overlap) an additional
+    occlusion-removal step uses ray-triangle intersection to strip the overlapping
+    points, followed by adjacency-map reclassification to clean up isolated
+    mis-labelled vertices. Herfore, a ray is cast from every aorta point to the
+    centerline points of the coronary near the ostium and if 3 faces are
+    intersected by the ray the points from the first face must correspond to the
+    overlapping/intramural section.
 
     Parameters
     ----------
@@ -58,15 +62,19 @@ def label_geometry(
         Path to a CSV file containing the RCA centerline.
     path_centerline_lca : Path or str
         Path to a CSV file containing the LCA centerline.
-    anomalous_rca : bool, optional
+    acute_takeoff_rca : bool, optional
         When ``True`` applies ray-triangle occlusion removal to the RCA region
-        to handle anomalous (intramural) courses.  Default is ``False``.
-    anomalous_lca : bool, optional
-        When ``True`` applies ray-triangle occlusion removal to the LCA region.
-        Default is ``False``.
-    n_points_intramural : int, optional
-        Number of coronary centerline points examined during occlusion removal
-        (the intramural segment length).  Default is ``120``.
+        to strip points overlapping the aortic wall near an acute-angle takeoff
+        (e.g. anomalous/intramural courses).  Default is ``False``.
+    acute_takeoff_lca : bool, optional
+        When ``True`` applies ray-triangle occlusion removal to the LCA region,
+        same as *acute_takeoff_rca* but for the LCA.  Default is ``False``.
+    n_points_takeoff_rca : int, optional
+        Number of RCA centerline points examined during occlusion removal
+        (the overlapping/intramural segment length).  Default is ``120``.
+    n_points_takeoff_lca : int, optional
+        Number of LCA centerline points examined during occlusion removal
+        (the overlapping/intramural segment length).  Default is ``120``.
     step_size_mm : float, optional
         Step size in mm for iterating over coronary centerline points during
         occlusion removal.  Default is ``1.0`` mm.
@@ -185,8 +193,8 @@ def label_geometry(
     rca_removed_points = []
     lca_removed_points = []
 
-    if anomalous_rca:
-        print("Applying occlusion removal for anomalous RCA...")
+    if acute_takeoff_rca:
+        print("Applying occlusion removal for acute-takeoff RCA...")
         rca_faces_for_rust = find_faces_near_points(
             points_list, mesh_faces_list, rca_points_found, tolerance_float
         )
@@ -195,7 +203,7 @@ def label_geometry(
         final_rca_points_found = remove_occluded_points_ray_triangle(
             centerline_coronary=cl_rca,
             centerline_aorta=cl_aorta,
-            range_coronary=n_points_intramural,
+            range_coronary=n_points_takeoff_rca,
             points=rca_points_found,
             faces=rca_faces_for_rust,
             step_size_mm=step_size_mm,
@@ -208,15 +216,15 @@ def label_geometry(
     else:
         final_rca_points_found = rca_points_found.copy()
 
-    if anomalous_lca:
-        print("Applying occlusion removal for anomalous LCA...")
+    if acute_takeoff_lca:
+        print("Applying occlusion removal for acute-takeoff LCA...")
         lca_faces_for_rust = find_faces_near_points(
             points_list, mesh_faces_list, lca_points_found, tolerance_float
         )
         final_lca_points_found = remove_occluded_points_ray_triangle(
             centerline_coronary=cl_lca,
             centerline_aorta=cl_aorta,
-            range_coronary=n_points_intramural,
+            range_coronary=n_points_takeoff_lca,
             points=lca_points_found,
             faces=lca_faces_for_rust,
             step_size_mm=step_size_mm,

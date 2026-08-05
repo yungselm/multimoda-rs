@@ -24,9 +24,10 @@ results, (rca_cl, lca_cl, ao_cl) = mm.label_geometry(
     path_centerline_lca=lca_cl,
     bounding_sphere_radius_mm_rca=3.0,
     bounding_sphere_radius_mm_lca=3.0,
-    n_points_intramural=100,
-    anomalous_rca=True,
-    anomalous_lca=False,
+    n_points_takeoff_rca=100,
+    n_points_takeoff_lca=100,
+    acute_takeoff_rca=True,
+    acute_takeoff_lca=False,
     control_plot=True,
 )
 
@@ -160,8 +161,9 @@ results_final, (rca_cl_f, lca_cl_f, ao_cl_f) = mm.label_geometry(
     path_centerline_lca="../data/centerline_lca.csv",
     bounding_sphere_radius_mm_rca=3.0,
     bounding_sphere_radius_mm_lca=3.0,
-    n_points_intramural=100,
-    anomalous_rca=True,
-    anomalous_lca=False,
+    n_points_takeoff_rca=100,
+    n_points_takeoff_lca=100,
+    acute_takeoff_rca=True,
+    acute_takeoff_lca=False,
     control_plot=True,
 )

@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.7] - 2026-08-05
+
+### Changed
+- `label`/`label_geometry` split `n_points_intramural` into separate `n_points_takeoff_rca` and `n_points_takeoff_lca` parameters, so the occlusion-removal range can be tuned independently per vessel.
+- Renamed `anomalous_rca`/`anomalous_lca` to `acute_takeoff_rca`/`acute_takeoff_lca` (and `n_points_intramural_rca`/`n_points_intramural_lca` to `n_points_takeoff_rca`/`n_points_takeoff_lca`) — the occlusion-removal step also applies to normal coronaries with an acute-angle ostium, not only anomalous/intramural courses, so "anomalous" no longer described the parameter accurately.
+
+### Fixed
+- `_stitch_boundary_ring` could reference an out-of-range IV vertex index (`mid == n_iv`) when
+  there are more CCTA boundary vertices than IV lumen points; the bridging-triangle index is
+  now wrapped with `mid % n_iv`.
+
 ## [0.5.6] - 2026-08-03
 
 ### Changed
