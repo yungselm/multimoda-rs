@@ -384,15 +384,18 @@ pub fn final_reclassification(
     reclassify_minority_components(&adjacency, &labels, &mut new_labels, 1, &[0]); // RCA islands -> aorta
     reclassify_minority_components(&adjacency, &labels, &mut new_labels, 2, &[0]); // LCA islands -> aorta
 
-    // LOGIC B: a removed RCA/LCA point is restored if its connected-component's
-    // external boundary is >70% the corresponding coronary label. Evaluated per
-    // component rather than per vertex, so a whole falsely-removed contiguous
-    // patch (whose members mostly neighbour each other, not real RCA/LCA
-    // vertices) is judged against its true external boundary instead of being
-    // masked by its own interior. A single-vertex component reduces to the
-    // original per-vertex check.
-    restore_removed_components(&adjacency, &labels, &mut new_labels, 3, 1);
-    restore_removed_components(&adjacency, &labels, &mut new_labels, 4, 2);
+    // LOGIC B: a removed RCA/LCA point is restored via majority-vote label
+    // propagation from the mesh boundary - starting from each point's own
+    // directly-adjacent real RCA/LCA vs "other" neighbours and spreading
+    // inward round by round, so points near the true RCA border resolve to
+    // RCA while points on the far, aorta-facing side of the SAME connected
+    // removed patch correctly stay removed, without needing the whole patch
+    // to share one aggregate majority. Ties (a point receiving equal
+    // evidence from both sides in the same round) stay removed - the
+    // conservative default. A single directly-resolved vertex is the
+    // zero-propagation-rounds special case.
+    restore_removed_by_propagation(&adjacency, &labels, &mut new_labels, 3, 1);
+    restore_removed_by_propagation(&adjacency, &labels, &mut new_labels, 4, 2);
 
     let mut result = ReclassifiedLabels {
         aorta_points: Vec::new(),
@@ -519,13 +522,25 @@ fn reclassify_minority_components(
     }
 }
 
-/// Restores whole connected components of `removed_label` vertices to
-/// `target_label` when their external boundary is >70% `target_label`,
-/// mirroring the original per-vertex Logic B threshold but evaluated over the
-/// whole falsely-removed blob at once. Components with an empty boundary
-/// (no external mesh connectivity at all) are left untouched, matching the
-/// original per-vertex `neighbors.is_empty()` guard.
-fn restore_removed_components(
+/// Restores connected `removed_label` vertices to `target_label` via
+/// majority-vote label propagation rather than a single whole-component
+/// vote: a genuinely mixed removed patch (one face hugging the real
+/// coronary lumen, another hugging the aortic wall, mesh-connected through
+/// the same fold) is resolved sub-region by sub-region instead of being
+/// judged as one atomic blob.
+///
+/// Round 0: every removed vertex tallies its directly-adjacent REAL
+/// (non-removed) neighbours - how many are `target_label` vs anything else
+/// ("other"). A strict majority decides it immediately. Every following
+/// round, each vertex decided in the *previous* round contributes one vote
+/// to its still-undecided removed neighbours; a whole round's
+/// contributions are applied together before checking for new majorities,
+/// so a vertex genuinely equidistant from both sides (one vote of each in
+/// the same round) ties and stays undecided - deterministic regardless of
+/// processing order. Vertices that never accumulate a majority (including
+/// a fully mesh-isolated removed component with no real neighbours at all)
+/// are left unchanged.
+fn restore_removed_by_propagation(
     adjacency: &HashMap<usize, HashSet<usize>>,
     labels: &[u8],
     new_labels: &mut [u8],
@@ -538,20 +553,78 @@ fn restore_removed_components(
         .filter(|&(_, &l)| l == removed_label)
         .map(|(i, _)| i)
         .collect();
+    if subset.is_empty() {
+        return;
+    }
 
-    for component in connected_components(adjacency, &subset) {
-        let boundary = component_boundary(adjacency, &component);
-        if boundary.is_empty() {
-            continue;
-        }
-        let target_count = boundary
-            .iter()
-            .filter(|&&n| labels[n] == target_label)
-            .count();
-        if (target_count as f64) > (boundary.len() as f64 * 0.7) {
-            for &i in &component {
-                new_labels[i] = target_label;
+    let mut target_count: HashMap<usize, usize> = HashMap::with_capacity(subset.len());
+    let mut other_count: HashMap<usize, usize> = HashMap::with_capacity(subset.len());
+    let mut decided: HashMap<usize, bool> = HashMap::new(); // true = resolved to target_label
+
+    for &v in &subset {
+        let mut t = 0usize;
+        let mut o = 0usize;
+        if let Some(neighbors) = adjacency.get(&v) {
+            for &nb in neighbors {
+                if subset.contains(&nb) {
+                    continue;
+                }
+                if labels[nb] == target_label {
+                    t += 1;
+                } else {
+                    o += 1;
+                }
             }
+        }
+        target_count.insert(v, t);
+        other_count.insert(v, o);
+    }
+
+    let mut frontier: Vec<usize> = Vec::new();
+    for &v in &subset {
+        let (t, o) = (target_count[&v], other_count[&v]);
+        if t != o && (t > 0 || o > 0) {
+            decided.insert(v, t > o);
+            frontier.push(v);
+        }
+    }
+
+    while !frontier.is_empty() {
+        let mut increments: HashMap<usize, (usize, usize)> = HashMap::new();
+        for &v in &frontier {
+            let is_target = decided[&v];
+            let Some(neighbors) = adjacency.get(&v) else {
+                continue;
+            };
+            for &nb in neighbors {
+                if !subset.contains(&nb) || decided.contains_key(&nb) {
+                    continue;
+                }
+                let entry = increments.entry(nb).or_insert((0, 0));
+                if is_target {
+                    entry.0 += 1;
+                } else {
+                    entry.1 += 1;
+                }
+            }
+        }
+
+        let mut next_frontier = Vec::new();
+        for (v, (dt, do_)) in increments {
+            *target_count.get_mut(&v).unwrap() += dt;
+            *other_count.get_mut(&v).unwrap() += do_;
+            let (t, o) = (target_count[&v], other_count[&v]);
+            if t != o {
+                decided.insert(v, t > o);
+                next_frontier.push(v);
+            }
+        }
+        frontier = next_frontier;
+    }
+
+    for (&v, &is_target) in &decided {
+        if is_target {
+            new_labels[v] = target_label;
         }
     }
 }
@@ -913,7 +986,7 @@ mod test_find_cl_bounded_points {
         }
     }
 
-    // Fixture for the component-level Logic B tests: two removed vertices (1, 2)
+    // Fixture for the Logic B propagation tests: two removed vertices (1, 2)
     // sharing an aorta neighbour (0) but each also touching two distinct
     // "outer" vertices (3,4 for vertex 1; 5,6 for vertex 2), plus a fully
     // isolated removed pair (7, 8) with no external connectivity at all.
@@ -922,10 +995,9 @@ mod test_find_cl_bounded_points {
     //         \ /                   \ /
     //          1 --- 0 (aorta) --- 2          7 === 8 (isolated island)
     //
-    // vertex 1's own neighbours are {0, 2, 3, 4} (2 of which would need to be
-    // RCA to clear the old 70% per-vertex threshold), and likewise for vertex
-    // 2 — but the *component* {1, 2}'s combined external boundary is
-    // {0, 3, 4, 5, 6}, only one of which (0) is aorta.
+    // vertex 1's own neighbours are {0, 2, 3, 4} and vertex 2's are
+    // {0, 1, 5, 6} - each has its own direct real-neighbour tally, resolved
+    // independently in round 0 of the propagation.
     fn restore_blob_fixture() -> GridMeshFixture {
         let vertices: Vec<(f64, f64, f64)> = (0..9).map(|i| (i as f64, 0.0, 0.0)).collect();
         let faces = vec![[1, 0, 2], [1, 3, 4], [2, 5, 6], [7, 8, 7]];
@@ -933,12 +1005,12 @@ mod test_find_cl_bounded_points {
     }
 
     #[test]
-    fn test_final_reclassification_restores_whole_component_when_per_vertex_would_fail() {
+    fn test_final_reclassification_restores_via_local_majority() {
         let (vertices, faces) = restore_blob_fixture();
-        // Each of 1 and 2 individually has only 2/4 = 50% RCA neighbours
-        // (the old per-vertex check would leave both removed), but the
-        // component {1, 2}'s combined boundary {0, 3, 4, 5, 6} is 4/5 = 80%
-        // RCA -> the whole blob should restore.
+        // Vertex 1's real neighbours are {0(aorta), 3(RCA), 4(RCA)} - 2/3
+        // RCA, a local majority that decides it directly in round 0, with
+        // no need to consult the rest of the component. Same for vertex 2
+        // via {0(aorta), 5(RCA), 6(RCA)}.
         let rca_points = vec![vertices[3], vertices[4], vertices[5], vertices[6]];
         let rca_removed_points = vec![vertices[1], vertices[2]];
         let result = final_reclassification(
@@ -955,13 +1027,14 @@ mod test_find_cl_bounded_points {
     }
 
     #[test]
-    fn test_final_reclassification_keeps_component_removed_when_boundary_majority_aorta() {
+    fn test_final_reclassification_keeps_removed_when_local_majority_aorta() {
         let (vertices, faces) = restore_blob_fixture();
-        // Only vertices 3 and 4 are RCA; 5 and 6 default to aorta, so the
-        // component {1, 2}'s boundary {0, 3, 4, 5, 6} is only 2/5 = 40% RCA
-        // -> the blob must stay removed (a genuine occlusion, not a false
-        // positive).
-        let rca_points = vec![vertices[3], vertices[4]];
+        // Only vertices 4 and 6 are RCA (one per removed vertex); 0, 3 and 5
+        // default to aorta, so vertex 1's real neighbours {0(aorta),
+        // 3(aorta), 4(RCA)} and vertex 2's {0(aorta), 5(aorta), 6(RCA)} are
+        // each individually 2/3 aorta -> both stay removed (a genuine
+        // occlusion, not a false positive).
+        let rca_points = vec![vertices[4], vertices[6]];
         let rca_removed_points = vec![vertices[1], vertices[2]];
         let result = final_reclassification(
             &vertices,
@@ -981,11 +1054,49 @@ mod test_find_cl_bounded_points {
     fn test_final_reclassification_keeps_fully_isolated_component_removed() {
         let (vertices, faces) = restore_blob_fixture();
         // Vertices 7 and 8 are only adjacent to each other, with zero
-        // external mesh connectivity -> an empty boundary means there is
-        // nothing to judge majority against, so they must stay removed.
+        // external mesh connectivity -> neither ever has a real neighbour to
+        // seed round 0, so no propagation ever starts and both stay removed.
         let rca_removed_points = vec![vertices[7], vertices[8]];
         let result = final_reclassification(&vertices, &faces, &[], &[], &rca_removed_points, &[]);
         assert!(result.rca_removed_points.contains(&vertices[7]));
         assert!(result.rca_removed_points.contains(&vertices[8]));
+    }
+
+    // Fixture for the multi-round propagation test: a simple 6-vertex chain
+    // 0(aorta) - 1(removed) - 2(removed) - 3(removed) - 4(removed) - 5(RCA).
+    // Vertices 2 and 3 have zero direct real neighbours - they can only be
+    // resolved by inheriting evidence from 1 and 4 respectively in round 1.
+    // This is a minimal abstraction of a real intramural "box" patch: one
+    // connected removed component with a large aorta-facing face and a
+    // smaller RCA-facing face, joined through the same fold. The old
+    // whole-component vote saw one aorta neighbour and one RCA neighbour
+    // (50/50) and would have left all four removed; propagation correctly
+    // splits the chain instead.
+    fn chain_fixture() -> GridMeshFixture {
+        let vertices: Vec<(f64, f64, f64)> = (0..6).map(|i| (i as f64, 0.0, 0.0)).collect();
+        // Degenerate (repeated-vertex) triangles, one per desired edge, so
+        // the graph is exactly the path 0-1-2-3-4-5 with no incidental
+        // extra edges from grouping three vertices per face.
+        let faces = vec![[0, 1, 1], [1, 2, 2], [2, 3, 3], [3, 4, 4], [4, 5, 5]];
+        (vertices, faces)
+    }
+
+    #[test]
+    fn test_final_reclassification_splits_chain_by_propagation() {
+        let (vertices, faces) = chain_fixture();
+        let rca_points = vec![vertices[5]];
+        let rca_removed_points = vec![vertices[1], vertices[2], vertices[3], vertices[4]];
+        let result = final_reclassification(
+            &vertices,
+            &faces,
+            &rca_points,
+            &[],
+            &rca_removed_points,
+            &[],
+        );
+        assert!(result.rca_removed_points.contains(&vertices[1]));
+        assert!(result.rca_removed_points.contains(&vertices[2]));
+        assert!(result.rca_points.contains(&vertices[3]));
+        assert!(result.rca_points.contains(&vertices[4]));
     }
 }

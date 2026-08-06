@@ -108,14 +108,15 @@ def _make_hex_fan_mesh() -> trimesh.Trimesh:
 
 def _make_restore_blob_mesh() -> trimesh.Trimesh:
     """9 vertices, 3 triangular faces (plus one degenerate face to link an
-    isolated pair) - purpose-built to demonstrate component-level Logic B.
+    isolated pair) - purpose-built to demonstrate Logic B's majority-vote
+    label propagation.
 
     Vertex 0 (aorta) bridges removed vertices 1 and 2, each of which also
     touches two distinct "outer" vertices (3,4 for vertex 1; 5,6 for vertex
-    2). Vertex 1's own neighbours are {0,2,3,4} and vertex 2's own neighbours
-    are {0,1,5,6} - individually only 2/4 = 50% RCA at best - but the
-    *component* {1,2}'s combined external boundary {0,3,4,5,6} can be
-    4/5 = 80% RCA, which the old per-vertex-only check could never restore.
+    2). Vertex 1's own real neighbours are {0,3,4} and vertex 2's are
+    {0,5,6} - each resolved independently in round 0 by its own local
+    majority, plus a fully isolated removed pair (7, 8) with no external
+    connectivity at all.
     """
     verts = np.array([[i, 0.0, 0.0] for i in range(9)], dtype=float)
     faces = np.array([[1, 0, 2], [1, 3, 4], [2, 5, 6]])
@@ -149,6 +150,24 @@ def _make_island_mesh() -> trimesh.Trimesh:
     return trimesh.Trimesh(vertices=verts, faces=faces, process=False)
 
 
+def _make_chain_mesh() -> trimesh.Trimesh:
+    """6-vertex chain 0(aorta)-1(removed)-2(removed)-3(removed)-4(removed)-
+    5(RCA), purpose-built to demonstrate Logic B's multi-round propagation.
+
+    Vertices 2 and 3 have zero direct real neighbours - they can only be
+    resolved by inheriting evidence from 1 and 4 respectively. This is a
+    minimal abstraction of a real intramural "box" patch: one connected
+    removed component with a large aorta-facing face and a smaller
+    RCA-facing face, joined through the same fold.
+
+    Degenerate (repeated-vertex) faces, one per desired edge, so the graph
+    is exactly the path 0-1-2-3-4-5 with no incidental extra edges.
+    """
+    verts = np.array([[i, 0.0, 0.0] for i in range(6)], dtype=float)
+    faces = np.array([[0, 1, 1], [1, 2, 2], [2, 3, 3], [3, 4, 4], [4, 5, 5]])
+    return trimesh.Trimesh(vertices=verts, faces=faces, process=False)
+
+
 def _make_iv_pts(coords) -> list[PyContourPoint]:
     return [
         PyContourPoint(frame_index=0, point_index=i, x=x, y=y, z=z, aortic=False)
@@ -179,6 +198,11 @@ def restore_blob_mesh():
 @pytest.fixture
 def island_mesh():
     return _make_island_mesh()
+
+
+@pytest.fixture
+def chain_mesh():
+    return _make_chain_mesh()
 
 
 @pytest.fixture
@@ -352,19 +376,18 @@ class TestFinalReclassification:
         assert verts[4] not in new["rca_removed_points"]
 
     # ------------------------------------------------------------------
-    # Logic B (component-level): a whole falsely-removed contiguous blob is
-    # restored based on its combined external boundary, even when no single
-    # vertex in the blob individually clears the 70% per-vertex threshold.
+    # Logic B (majority-vote propagation): each removed vertex is judged
+    # against its own directly-adjacent real neighbours first; undecided
+    # vertices inherit evidence from already-resolved neighbours in
+    # synchronized rounds, so a genuinely mixed removed patch splits
+    # sub-region by sub-region instead of being judged as one atomic blob.
     # ------------------------------------------------------------------
 
-    def test_removed_blob_restored_when_per_vertex_check_would_fail(
-        self, restore_blob_mesh
-    ):
-        """Vertices 1 and 2 are each only 50% RCA by their own immediate
-        neighbours (the old per-vertex-only Logic B would leave both stuck
-        in rca_removed_points), but the connected component {1, 2}'s
-        combined boundary {0, 3, 4, 5, 6} is 80% RCA, so the whole blob
-        must be restored.
+    def test_restores_via_local_majority(self, restore_blob_mesh):
+        """Vertex 1's real neighbours are {0(aorta), 3(RCA), 4(RCA)} - 2/3
+        RCA, a local majority that decides it directly in round 0, with no
+        need to consult the rest of the component. Same for vertex 2 via
+        {0(aorta), 5(RCA), 6(RCA)}.
         """
         verts = [tuple(v) for v in restore_blob_mesh.vertices]
         new = self._call(
@@ -375,6 +398,43 @@ class TestFinalReclassification:
         assert verts[1] in new["rca_points"]
         assert verts[2] in new["rca_points"]
         assert not new["rca_removed_points"]
+
+    def test_keeps_removed_when_local_majority_aorta(self, restore_blob_mesh):
+        """Only vertices 4 and 6 are RCA (one per removed vertex); 0, 3 and 5
+        default to aorta, so vertex 1's real neighbours {0(aorta), 3(aorta),
+        4(RCA)} and vertex 2's {0(aorta), 5(aorta), 6(RCA)} are each
+        individually 2/3 aorta -> both stay removed (a genuine occlusion,
+        not a false positive).
+        """
+        verts = [tuple(v) for v in restore_blob_mesh.vertices]
+        new = self._call(
+            restore_blob_mesh,
+            rca=[verts[4], verts[6]],
+            rca_removed=[verts[1], verts[2]],
+        )
+        assert verts[1] in new["rca_removed_points"]
+        assert verts[2] in new["rca_removed_points"]
+        assert verts[1] not in new["rca_points"]
+        assert verts[2] not in new["rca_points"]
+
+    def test_splits_chain_by_propagation(self, chain_mesh):
+        """A single connected removed component (a chain
+        0(aorta)-1-2-3-4-5(RCA)) splits along its length: vertices 2 and 3
+        have zero direct real neighbours and only resolve by inheriting
+        evidence from 1 and 4 respectively in round 1. The old
+        whole-component vote saw one aorta neighbour and one RCA neighbour
+        (50/50) and would have left all four removed.
+        """
+        verts = [tuple(v) for v in chain_mesh.vertices]
+        new = self._call(
+            chain_mesh,
+            rca=[verts[5]],
+            rca_removed=[verts[1], verts[2], verts[3], verts[4]],
+        )
+        assert verts[1] in new["rca_removed_points"]
+        assert verts[2] in new["rca_removed_points"]
+        assert verts[3] in new["rca_points"]
+        assert verts[4] in new["rca_points"]
 
     # ------------------------------------------------------------------
     # Logic A (component-level): a small aorta component mesh-surrounded by
