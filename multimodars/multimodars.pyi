@@ -472,27 +472,32 @@ class PyCenterline:
         ...
 
     def orient_by_max_z(self) -> PyCenterline:
-        """Reverse the whole centerline if its highest-z point isn't at index 0.
+        """Reverse branch 0 if its highest-z point isn't already at its start.
 
-        For centerlines with no anatomical reference to orient against, e.g.
-        the aorta. Use ``orient_to_reference`` instead whenever one is
-        available. Only correct under the standard CT/DICOM convention where
-        z increases toward the head, so the aortic root/valve is the
-        highest-z point.
+        Only branch 0 is touched — side branches keep their own order, since
+        this answers "which end of the main vessel is proximal", not a
+        per-branch concern. For centerlines with no anatomical reference to
+        orient against, e.g. the aorta — use ``orient_to_reference`` instead
+        whenever one is available. Only correct under the standard CT/DICOM
+        convention where z increases toward the head, so the aortic
+        root/valve is the highest-z point.
 
         Returns
         -------
         PyCenterline
-            New centerline, reversed if necessary.
+            New centerline with branch 0 reversed if necessary.
         """
         ...
 
     def orient_to_reference(self, reference: PyCenterline) -> PyCenterline:
-        """Reverse the whole centerline so the end nearer `reference` is index 0.
+        """Reverse branch 0 so the end nearer `reference`'s branch 0 is its start.
 
-        Distance to `reference` is the minimum distance to any of its points,
-        not a single fixed point — e.g. for a coronary centerline, `reference`
-        would be the aorta centerline as a whole, not one ostium point.
+        Only branch 0 is touched on both sides — side branches of `self` keep
+        their own order, and any side branches `reference` has are ignored so
+        a stray one can't skew the distance check. Distance to `reference` is
+        the minimum distance to any point of its branch 0, not a single fixed
+        point — e.g. for a coronary centerline, `reference` would be the
+        aorta centerline, not one ostium point.
 
         Parameters
         ----------
@@ -503,7 +508,7 @@ class PyCenterline:
         Returns
         -------
         PyCenterline
-            New centerline, reversed if necessary.
+            New centerline with branch 0 reversed if necessary.
         """
         ...
 
@@ -758,7 +763,7 @@ def align_three_point(
     contour_types: list[PyContourType] | None = ...,
     case_name: str = ...,
     align_wall_anomalous: bool = ...,
-) -> tuple[PyGeometryPair | PyGeometry, PyCenterline, float]: ...
+) -> tuple[PyGeometryPair | PyGeometry, float, float]: ...
 def align_manual(
     centerline: PyCenterline,
     geometry: PyGeometryPair | PyGeometry,
@@ -771,7 +776,7 @@ def align_manual(
     contour_types: list[PyContourType] | None = ...,
     case_name: str = ...,
     align_wall_anomalous: bool = ...,
-) -> tuple[PyGeometryPair | PyGeometry, PyCenterline, float]: ...
+) -> tuple[PyGeometryPair | PyGeometry, float, float]: ...
 def align_combined(
     centerline: PyCenterline,
     geometry: PyGeometryPair | PyGeometry,
@@ -789,7 +794,7 @@ def align_combined(
     contour_types: list[PyContourType] | None = ...,
     case_name: str = ...,
     align_wall_anomalous: bool = ...,
-) -> tuple[PyGeometryPair | PyGeometry, PyCenterline, float]: ...
+) -> tuple[PyGeometryPair | PyGeometry, float, float]: ...
 
 # ---------------------------------------------------------------------------
 # OBJ export

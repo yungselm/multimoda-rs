@@ -37,7 +37,7 @@ def label_geometry(
     bounding_sphere_radius_mm_lca: float = 3.0,
     tolerance_float: float = 1e-6,
     control_plot: bool = True,
-) -> tuple[dict, tuple[PyCenterline, PyCenterline, PyCenterline]]:
+) -> dict:
     """Label CCTA mesh vertices as aorta, RCA, or LCA using centerline-based region detection.
 
     Loads a 3-D surface mesh and three centerlines (aorta, RCA, LCA), then assigns
@@ -59,9 +59,9 @@ def label_geometry(
     path_centerline_aorta : PyCenterline, Path, str, or numpy.ndarray
         Aortic centerline: a ``.vtp`` file path, a CSV file path (comma-delimited,
         columns: x, y, z, …), an existing ``PyCenterline``, or an array of points.
-        Orientation is normalised automatically (``orient_by_max_z`` for the aorta,
-        ``orient_to_reference`` against the aorta for RCA/LCA); prepare trimming,
-        resampling, branch extraction, and smoothing beforehand, e.g. with
+        Branch-0 orientation is normalised automatically (``orient_by_max_z`` for
+        the aorta, ``orient_to_reference`` against the aorta for RCA/LCA);
+        trim, resample, extract branches, and smooth it beforehand, e.g. with
         :func:`load_and_prepare_centerline`.
     path_centerline_rca : PyCenterline, Path, str, or numpy.ndarray
         RCA centerline, same accepted formats as *path_centerline_aorta*.
@@ -108,9 +108,6 @@ def label_geometry(
         * ``"rca_removed_points"`` - RCA vertices removed by occlusion detection.
         * ``"lca_removed_points"`` - LCA vertices removed by occlusion detection.
 
-    centerlines : tuple
-        A 3-tuple ``(cl_rca, cl_lca, cl_aorta)`` of ``PyCenterline`` objects.
-
     Raises
     ------
     Exception
@@ -141,7 +138,9 @@ def label_geometry(
     # Orient once, up front, so every downstream Rust call (rolling-sphere search,
     # occlusion removal, ...) can trust point order instead of re-deriving it itself.
     # The aorta has no upstream reference, so it falls back to the highest-z point;
-    # the coronaries orient toward the aorta as a whole (nearest point, not a fixed one).
+    # the coronaries orient toward the aorta's branch 0 (nearest point, not a fixed
+    # one). Only branch 0 of each centerline is touched — side branches are
+    # already correctly ordered relative to branch 0 by ``check_centerline``.
     cl_aorta = cl_aorta.orient_by_max_z()
     cl_rca = cl_rca.orient_to_reference(cl_aorta)
     cl_lca = cl_lca.orient_to_reference(cl_aorta)
@@ -267,7 +266,7 @@ def label_geometry(
             cl_aorta=cl_aorta,
         )
 
-    return new_results, (cl_rca, cl_lca, cl_aorta)
+    return new_results
 
 
 def _try_load_cl(

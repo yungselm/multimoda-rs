@@ -33,15 +33,15 @@ The goal of this module is to replace a section on the CCTA geometry with an int
 
 The entry point for the CCTA module is :func:`multimodars.label_geometry`, which reads a
 triangulated surface mesh (STL) together with centerline CSV files for the aorta, the right
-coronary artery (RCA), and the left coronary artery (LCA).  It returns a labeled results
-dictionary and three :class:`multimodars.PyCenterline` objects that are used in all subsequent
-steps.
+coronary artery (RCA), and the left coronary artery (LCA), and returns a labeled results
+dictionary.  It does not return or modify the centerlines you pass in — prepare and orient them
+yourself beforehand (see below) and reuse those same objects for every subsequent step.
 
 .. code-block:: python
 
     import multimodars as mm
 
-    results, (rca_cl, lca_cl, ao_cl) = mm.label_geometry(
+    results = mm.label_geometry(
         path_ccta_geometry="data/NARCO_119_noside.stl",
         path_centerline_aorta="data/centerline_aorta.csv",
         path_centerline_rca="data/centerline_rca_short.csv",
@@ -138,44 +138,39 @@ formats that don't already carry them (e.g. CSV), normalising branch ordering, a
     # CSV/array of points carries no branch information yet.
     rca_cl   = mm.load_and_prepare_centerline("data/centerline_rca_short.csv", name="RCA",   spacing_mm=1.0)
 
+``load_and_prepare_centerline`` handles branch structure but not orientation *between*
+centerlines (which end of the aorta/RCA/LCA is proximal).  Do that once, right after loading,
+and reuse the same oriented objects for every step below — ``label_geometry`` re-applies the
+same idempotent orientation internally but never hands the objects back:
+
+.. code-block:: python
+
+    aorta_cl = aorta_cl.orient_by_max_z()          # no reference available for the aorta itself
+    rca_cl   = rca_cl.orient_to_reference(aorta_cl)  # orient toward the aorta's branch 0
+    lca_cl   = lca_cl.orient_to_reference(aorta_cl)
+
 Pass the returned :class:`~multimodars.PyCenterline` objects directly to ``path_centerline_*``
 (instead of file-path strings).
 
 2. Prepare centerlines, detect branches, and discretize the vessel tree
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Before discretizing the vessel geometry, both coronary centerlines must have their branches
-detected and the surface-mesh points labeled by branch.  :func:`multimodars.prepare_centerlines`
-handles all of this in a single call: it runs ``calculate_branches`` and ``check_centerline``
-on each centerline, then calls :func:`multimodars.label_branches` so the ``results`` dictionary
-gains keys ``rca_points_main``, ``rca_points_side_1``, …, ``lca_points_main``,
-``lca_points_side_1``, …:
-
-**CSV path** - run full branch detection from scratch:
+Before discretizing the vessel geometry, the surface-mesh points must be labeled by branch.
+``rca_cl``/``lca_cl`` already have their branches computed and ordered by
+``load_and_prepare_centerline`` above, so :func:`multimodars.prepare_centerlines` only needs to
+call :func:`multimodars.label_branches` for each, so the ``results`` dictionary gains keys
+``rca_points_main``, ``rca_points_side_1``, …, ``lca_points_main``, ``lca_points_side_1``, …. It
+does not modify ``rca_cl``/``lca_cl`` in any way:
 
 .. code-block:: python
 
-    rca_cl, lca_cl, results = mm.prepare_centerlines(
+    results = mm.prepare_centerlines(
         rca_cl, lca_cl, results,
-        branch_sigma=2.0,
         control_plot=False,   # True opens a trimesh scene of the branch assignment
-    )
-
-**VTP path** - branch indices are already set; only ordering is normalised:
-
-.. code-block:: python
-
-    rca_cl, lca_cl, results = mm.prepare_centerlines(
-        rca_cl, lca_cl, results, vtp_data=True
     )
 
 **Parameter reference:**
 
-- ``branch_sigma``: Gaussian smoothing radius (mm) applied during branch detection.  Increase
-  if the algorithm over-segments a noisy centerline; decrease to preserve fine anatomical detail.
-  Ignored when ``vtp_data=True``.
-- ``vtp_data``: when ``True``, skip ``calculate_branches`` (branch indices are already populated
-  from the VTP file) and only run ``check_centerline`` to normalise branch ordering.
 - ``control_plot``: opens an interactive trimesh scene coloured by branch ID and showing the
   labelled surface points, so you can verify the assignment before discretizing.
 
@@ -227,7 +222,7 @@ used to initialize the three-point alignment in step 3:
 .. code-block:: python
 
     tree = mm.discretize_vessel_tree(
-        ao_cl, rca_cl, lca_cl,
+        aorta_cl, rca_cl, lca_cl,
         results,
         step_size=1.0,      # arc-length spacing between cross-sections in mm
         n_points=100,       # points per output contour ring
@@ -295,7 +290,7 @@ RCA ostium is available directly from the discretized tree:
     ref_points = tree.rca_references[0]   # triplet at the ostium (index 0)
     rca_cl_main = rca_cl.get_branch(0)    # alignment needs a single-branch centerline
 
-    aligned, resampled_cl = mm.align_combined(
+    aligned, spacing_mm, total_rotation_deg = mm.align_combined(
         rca_cl_main,
         rest,
         ref_points[0],                     # main reference point
@@ -307,6 +302,14 @@ RCA ostium is available directly from the discretized tree:
         watertight=False,
         output_dir="test",
     )
+
+``align_combined`` resamples ``rca_cl_main`` internally to match the intravascular frame
+spacing, but returns that spacing (``spacing_mm``) rather than the resampled centerline itself —
+apply it to other centerlines (e.g. the aorta) directly instead of re-deriving it:
+
+.. code-block:: python
+
+    aorta_cl = aorta_cl.resample(spacing_mm)
 
 **Parameter reference:**
 
@@ -383,7 +386,7 @@ intravascular geometry:
 
     aortic_scaling = mm.find_aorta_scaling(
         frames=aligned.geom_a.frames,
-        cl_aorta=ao_cl,
+        cl_aorta=aorta_cl,
         results=results,
     )
 
@@ -399,7 +402,7 @@ to round free-segment lumen:
 
     aortic_wall_scaling = mm.find_aortic_wall_scaling(
         frames=aligned.geom_a.frames,
-        cl_aorta=ao_cl,
+        cl_aorta=aorta_cl,
         results=results,
     )
 
@@ -659,7 +662,7 @@ biomechanical simulation or further analysis:
 
 .. code-block:: python
 
-    results, (rca_cl, lca_cl, ao_cl) = mm.label_geometry(
+    results = mm.label_geometry(
         path_ccta_geometry="fixed_mesh.stl",
         path_centerline_aorta="data/centerline_aorta.csv",
         path_centerline_rca="data/centerline_rca_short.csv",

@@ -328,30 +328,35 @@ impl PyCenterline {
         Ok(PyCenterline::from(&cl))
     }
 
-    /// Reverse the whole centerline if its point with the highest z-coordinate is
-    /// not already at index 0.
+    /// Reverse branch 0 if its highest-z point is not already at its start.
     ///
-    /// For centerlines with no anatomical reference to orient against, e.g. the
-    /// aorta. Use ``orient_to_reference`` instead whenever one is available. Only
-    /// correct under the standard CT/DICOM convention where z increases toward the
-    /// head, so the aortic root/valve is the highest-z point.
+    /// Only branch 0 is touched — side branches keep their own order, since this
+    /// answers "which end of the main vessel is proximal", not a per-branch
+    /// concern. For centerlines with no anatomical reference to orient against,
+    /// e.g. the aorta — use ``orient_to_reference`` instead whenever one is
+    /// available. Only correct under the standard CT/DICOM convention where z
+    /// increases toward the head, so the aortic root/valve is the highest-z point.
     ///
     /// Returns
     /// -------
     /// PyCenterline
-    ///     New centerline, reversed if necessary.
+    ///     New centerline with branch 0 reversed if necessary.
     pub fn orient_by_max_z(&self) -> PyResult<PyCenterline> {
         let mut cl = self.to_rust_centerline();
         cl.orient_by_max_z();
         Ok(PyCenterline::from(&cl))
     }
 
-    /// Reverse the whole centerline if its last point is closer to `reference`
-    /// than its first point is, so the end nearer `reference` becomes index 0.
+    /// Reverse branch 0 if its last point is closer to `reference`'s branch 0
+    /// than its first point is, so the end nearer `reference` becomes branch 0's
+    /// start.
     ///
-    /// Distance to `reference` is the minimum distance to any of its points, not a
-    /// single fixed point — e.g. for a coronary centerline, `reference` would be
-    /// the aorta centerline as a whole, not one ostium point.
+    /// Only branch 0 is touched on both sides — side branches of `self` keep
+    /// their own order, and any side branches `reference` has are ignored so a
+    /// stray one can't skew the distance check. Distance to `reference` is the
+    /// minimum distance to any point of its branch 0, not a single fixed point —
+    /// e.g. for a coronary centerline, `reference` would be the aorta centerline,
+    /// not one ostium point.
     ///
     /// Parameters
     /// ----------
@@ -361,7 +366,7 @@ impl PyCenterline {
     /// Returns
     /// -------
     /// PyCenterline
-    ///     New centerline, reversed if necessary.
+    ///     New centerline with branch 0 reversed if necessary.
     pub fn orient_to_reference(&self, reference: &PyCenterline) -> PyResult<PyCenterline> {
         let mut cl = self.to_rust_centerline();
         cl.orient_to_reference(&reference.to_rust_centerline());

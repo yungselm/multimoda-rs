@@ -9,10 +9,14 @@ use crate::types::native::{Centerline, CenterlinePoint, ContourPoint};
 /// Only branch-0 points are used for resampling — side branches (branch_id > 0) are
 /// stripped before processing so that `ensure_descending_z` and the arc-length
 /// calculation see only the main-vessel path.
+///
+/// Returns the resampled centerline alongside the spacing (mm) that was used, so
+/// callers can apply the same spacing to other centerlines via `Centerline::resample`
+/// instead of re-deriving it.
 pub fn preprocess_centerline(
     centerline: Centerline,
     ref_mesh: &Geometry,
-) -> Result<Centerline, &'static str> {
+) -> Result<(Centerline, f64), &'static str> {
     // Strip side-branch points so they cannot corrupt ensure_descending_z or the
     // cumulative arc-length (a side-branch tip with high z would trigger an erroneous
     // reversal of the entire array, placing the main-vessel reference at the end).
@@ -29,8 +33,7 @@ pub fn preprocess_centerline(
         branch_start_indices: vec![0],
     };
     ensure_descending_z(&mut cl);
-    let cl = resample_centerline_by_contours(&cl, ref_mesh)?;
-    Ok(cl)
+    resample_centerline_by_contours(&cl, ref_mesh)
 }
 
 fn ensure_descending_z(centerline: &mut Centerline) {
@@ -46,7 +49,7 @@ fn ensure_descending_z(centerline: &mut Centerline) {
 fn resample_centerline_by_contours(
     centerline: &Centerline,
     ref_mesh: &Geometry,
-) -> Result<Centerline, &'static str> {
+) -> Result<(Centerline, f64), &'static str> {
     if centerline.points.is_empty() {
         return Err("Centerline is empty");
     }
@@ -66,7 +69,7 @@ fn resample_centerline_by_contours(
         Some(s) => s,
         None => {
             eprintln!("resample_centerline_by_contours: invalid spacing computed, returning original centerline");
-            return Ok(centerline.clone());
+            return Ok((centerline.clone(), 0.0));
         }
     };
 
@@ -95,10 +98,13 @@ fn resample_centerline_by_contours(
     } else {
         vec![0]
     };
-    Ok(Centerline {
-        points: new_points,
-        branch_start_indices,
-    })
+    Ok((
+        Centerline {
+            points: new_points,
+            branch_start_indices,
+        },
+        spacing,
+    ))
 }
 
 fn cumulative_arc_length(centerline: &Centerline) -> Vec<f64> {

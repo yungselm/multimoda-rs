@@ -580,40 +580,54 @@ impl Centerline {
         self.rebuild_from_branches(branches);
     }
 
-    /// Reverse the whole centerline in place if the point with the highest
-    /// z-coordinate is not already at index 0.
+    /// Reverse branch 0 in place if its highest-z point is not already at its start.
     ///
+    /// Only branch 0 is touched — side branches keep their own order, since this
+    /// answers "which end of the main vessel is proximal", not a per-branch concern.
     /// Intended for a centerline with no anatomical reference to orient against
-    /// (e.g. the aorta) — use [`Centerline::orient_to_reference`] instead
-    /// whenever one is available. Only correct under the standard CT/DICOM
-    /// convention where z increases toward the head, so the aortic root/valve
-    /// is the highest-z point.
+    /// (e.g. the aorta) — use [`Centerline::orient_to_reference`] instead whenever
+    /// one is available. Only correct under the standard CT/DICOM convention where
+    /// z increases toward the head, so the aortic root/valve is the highest-z point.
     pub fn orient_by_max_z(&mut self) {
-        if Self::should_reverse_by_max_z(&self.points) {
-            self.reverse_in_place();
+        if self.branch_start_indices.is_empty() {
+            return;
         }
+        let mut branches = self.branches_as_vecs();
+        if Self::should_reverse_by_max_z(&branches[0]) {
+            branches[0].reverse();
+        }
+        self.rebuild_from_branches(branches);
     }
 
-    /// Reverse the whole centerline in place if its last point is closer to
-    /// `reference` than its first point is, so that the end nearer `reference`
-    /// becomes index 0.
+    /// Reverse branch 0 in place if its last point is closer to `reference`'s
+    /// branch 0 than its first point is, so the end nearer `reference` becomes
+    /// branch 0's start.
     ///
-    /// Distance to `reference` is the minimum distance to any of its points,
-    /// not a single fixed point — e.g. for a coronary centerline, `reference`
-    /// would be the aorta centerline as a whole, not one ostium point.
+    /// Only branch 0 is touched on both sides — side branches of `self` keep
+    /// their own order, and any side branches `reference` has are ignored so a
+    /// stray one can't skew the distance check. Distance to `reference` is the
+    /// minimum distance to any point of its branch 0, not a single fixed point —
+    /// e.g. for a coronary centerline, `reference` would be the aorta centerline,
+    /// not one ostium point.
     pub fn orient_to_reference(&mut self, reference: &Centerline) {
-        if Self::should_reverse_relative_to(&self.points, &reference.points) {
-            self.reverse_in_place();
+        if self.branch_start_indices.is_empty() {
+            return;
         }
+        let mut branches = self.branches_as_vecs();
+        if Self::should_reverse_relative_to(&branches[0], reference.branch_0()) {
+            branches[0].reverse();
+        }
+        self.rebuild_from_branches(branches);
     }
 
-    /// Reverse `self.points`, reassign sequential `point_index`, and recompute tangents.
-    fn reverse_in_place(&mut self) {
-        self.points.reverse();
-        for (i, p) in self.points.iter_mut().enumerate() {
-            p.contour_point.point_index = i as u32;
-        }
-        self.recompute_tangents();
+    /// Branch 0's points, or all points if `self` has no branch structure yet.
+    fn branch_0(&self) -> &[CenterlinePoint] {
+        let end = self
+            .branch_start_indices
+            .get(1)
+            .copied()
+            .unwrap_or(self.points.len());
+        &self.points[..end]
     }
 
     /// `true` if the point with the maximum z-coordinate in `points` is not at index 0.
@@ -1283,12 +1297,19 @@ mod centerline_tests {
     }
 
     #[test]
-    fn test_orient_by_max_z_reverses_when_needed() {
-        // Highest z (2.0) is at the end, must end up at index 0.
-        let mut cl = cl_from_coords(&[(0., 0., 0.), (0., 0., 1.), (0., 0., 2.)]);
+    fn test_orient_by_max_z_reverses_branch_0_only() {
+        // Highest z (2.0) is at the end of branch 0, must end up at its start;
+        // the side branch must be left completely untouched.
+        let main = &[(0., 0., 0.), (0., 0., 1.), (0., 0., 2.)];
+        let side = &[(0., 0., 2.), (5., 0., 2.)];
+        let mut cl = make_multi_branch(&[main, side]);
         cl.orient_by_max_z();
-        assert_eq!(cl.points[0].contour_point.z, 2.0);
-        assert_eq!(cl.points[2].contour_point.z, 0.0);
+
+        let branches = cl.branches_as_vecs();
+        assert_eq!(branches[0][0].contour_point.z, 2.0);
+        assert_eq!(branches[0][2].contour_point.z, 0.0);
+        assert_eq!(branches[1][0].contour_point.x, 0.0);
+        assert_eq!(branches[1][1].contour_point.x, 5.0);
         assert!(cl
             .points
             .iter()
@@ -1304,13 +1325,19 @@ mod centerline_tests {
     }
 
     #[test]
-    fn test_orient_to_reference_reverses_when_last_point_closer() {
-        // `cl`'s last point (10,0,0) is close to `reference`; its first point (0,0,0) is not.
-        let mut cl = cl_from_coords(&[(0., 0., 0.), (5., 0., 0.), (10., 0., 0.)]);
+    fn test_orient_to_reference_reverses_branch_0_only() {
+        // Branch 0's last point (10,0,0) is close to `reference`; its first (0,0,0) is not.
+        let main = &[(0., 0., 0.), (5., 0., 0.), (10., 0., 0.)];
+        let side = &[(0., 0., 0.), (0., 5., 0.)];
+        let mut cl = make_multi_branch(&[main, side]);
         let reference = cl_from_coords(&[(10., 1., 0.), (20., 1., 0.)]);
         cl.orient_to_reference(&reference);
-        assert_eq!(cl.points[0].contour_point.x, 10.0);
-        assert_eq!(cl.points[2].contour_point.x, 0.0);
+
+        let branches = cl.branches_as_vecs();
+        assert_eq!(branches[0][0].contour_point.x, 10.0);
+        assert_eq!(branches[0][2].contour_point.x, 0.0);
+        assert_eq!(branches[1][0].contour_point.x, 0.0);
+        assert_eq!(branches[1][1].contour_point.y, 5.0);
     }
 
     #[test]
@@ -1320,5 +1347,18 @@ mod centerline_tests {
         let reference = cl_from_coords(&[(10., 1., 0.), (20., 1., 0.)]);
         cl.orient_to_reference(&reference);
         assert_eq!(cl.points[0].contour_point.x, 10.0);
+    }
+
+    #[test]
+    fn test_orient_to_reference_ignores_references_side_branches() {
+        // `cl`'s first point (0,0,0) is already closest to `reference`'s branch 0.
+        // `reference` also has a side branch sitting right next to `cl`'s last
+        // point (10,0,0) — that must NOT cause a reversal.
+        let mut cl = cl_from_coords(&[(0., 0., 0.), (5., 0., 0.), (10., 0., 0.)]);
+        let ref_main = &[(0., 1., 0.), (1., 1., 0.)];
+        let ref_side = &[(10., 1., 0.), (11., 1., 0.)];
+        let reference = make_multi_branch(&[ref_main, ref_side]);
+        cl.orient_to_reference(&reference);
+        assert_eq!(cl.points[0].contour_point.x, 0.0);
     }
 }

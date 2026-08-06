@@ -19,9 +19,9 @@ if TYPE_CHECKING:
 # -------------------------------
 def label(
     path_ccta_geometry: Path | str | trimesh.Trimesh,
-    path_centerline_aorta: Path | str | PyCenterline,
-    path_centerline_rca: Path | str | PyCenterline,
-    path_centerline_lca: Path | str | PyCenterline,
+    path_centerline_aorta: Path | str | PyCenterline | np.ndarray,
+    path_centerline_rca: Path | str | PyCenterline | np.ndarray,
+    path_centerline_lca: Path | str | PyCenterline | np.ndarray,
     aligned_frames: list[PyFrame],
     acute_takeoff_rca: bool = False,
     acute_takeoff_lca: bool = False,
@@ -32,7 +32,7 @@ def label(
     bounding_sphere_radius_mm_lca: float = 3.0,
     tolerance_float: float = 1e-6,
     control_plot: bool = True,
-) -> tuple[dict, tuple[PyCenterline, PyCenterline, PyCenterline]]:
+) -> dict:
     """Label CCTA mesh vertices as aorta, RCA, or LCA using centerline-based region detection.
 
     Loads a 3-D surface mesh and three centerlines (aorta, RCA, LCA), then assigns
@@ -57,13 +57,15 @@ def label(
     path_ccta_geometry : Path or str
         Path to the CCTA surface mesh file (any format supported by
         :func:`multimodars.io.read_geometrical.read_mesh`).
-    path_centerline_aorta : Path or str
-        Path to a CSV file containing the aortic centerline (comma-delimited,
-        columns: x, y, z, …).
-    path_centerline_rca : Path or str
-        Path to a CSV file containing the RCA centerline.
-    path_centerline_lca : Path or str
-        Path to a CSV file containing the LCA centerline.
+    path_centerline_aorta : PyCenterline, Path, str, or numpy.ndarray
+        Aortic centerline: a ``.vtp`` file path, a CSV file path (comma-delimited,
+        columns: x, y, z, …), an existing ``PyCenterline``, or an array of points.
+        Trim, resample, extract branches, and smooth it beforehand, e.g. with
+        :func:`multimodars.load_and_prepare_centerline`.
+    path_centerline_rca : PyCenterline, Path, str, or numpy.ndarray
+        RCA centerline, same accepted formats as *path_centerline_aorta*.
+    path_centerline_lca : PyCenterline, Path, str, or numpy.ndarray
+        LCA centerline, same accepted formats as *path_centerline_aorta*.
     aligned_frames : list of PyFrame
         Ordered list of intravascular imaging frames for the vessel.
     acute_takeoff_rca : bool, optional
@@ -109,20 +111,29 @@ def label(
         * ``"rca_removed_points"`` - RCA vertices removed by occlusion detection.
         * ``"lca_removed_points"`` - LCA vertices removed by occlusion detection.
 
-    centerlines : tuple
-        A 3-tuple ``(cl_rca, cl_lca, cl_aorta)`` of ``PyCenterline`` objects.
-
     Raises
     ------
     Exception
         Re-raises any error that occurs while reading the mesh or centerline
         files, after printing a descriptive message.
     """
-    results, (rca_cl, lca_cl, ao_cl) = labeling.label_geometry(
+    # Resolve and orient centerlines once, locally, so the same oriented objects
+    # can be passed both to `label_geometry` (which re-applies the same
+    # idempotent orientation internally) and to `label_anomalous_region` below —
+    # `label_geometry` no longer returns centerlines, so it can't hand them back.
+    ao_cl = labeling._try_load_cl(path_centerline_aorta, "Aorta").orient_by_max_z()
+    rca_cl = labeling._try_load_cl(path_centerline_rca, "RCA").orient_to_reference(
+        ao_cl
+    )
+    lca_cl = labeling._try_load_cl(path_centerline_lca, "LCA").orient_to_reference(
+        ao_cl
+    )
+
+    results = labeling.label_geometry(
         path_ccta_geometry=path_ccta_geometry,
-        path_centerline_aorta=path_centerline_aorta,
-        path_centerline_rca=path_centerline_rca,
-        path_centerline_lca=path_centerline_lca,
+        path_centerline_aorta=ao_cl,
+        path_centerline_rca=rca_cl,
+        path_centerline_lca=lca_cl,
         acute_takeoff_rca=acute_takeoff_rca,
         acute_takeoff_lca=acute_takeoff_lca,
         n_points_takeoff_rca=n_points_takeoff_rca,
@@ -149,7 +160,7 @@ def label(
             results_key=key,
         )
 
-    return results, (rca_cl, lca_cl, ao_cl)
+    return results
 
 
 def scale(

@@ -137,8 +137,9 @@ class TestAlignThreePoint:
         pts_geom = _geom_to_points_array(result_geom)
         np.testing.assert_allclose(pts_pair, pts_geom, atol=1e-10)
 
-    def test_resampled_centerlines_match(self, centerline, geom_a, geometry_pair):
-        _, cl_pair, _ = align_three_point(
+    def test_resampled_spacing_matches(self, centerline, geom_a, geometry_pair):
+        """Aligning geom_a alone must derive the same resample spacing as inside a pair."""
+        _, spacing_pair, _ = align_three_point(
             centerline,
             geometry_pair,
             AORTIC_REF_PT,
@@ -146,7 +147,7 @@ class TestAlignThreePoint:
             LOWER_REF_PT,
             write=False,
         )
-        _, cl_geom, _ = align_three_point(
+        _, spacing_geom, _ = align_three_point(
             centerline,
             geom_a,
             AORTIC_REF_PT,
@@ -154,19 +155,7 @@ class TestAlignThreePoint:
             LOWER_REF_PT,
             write=False,
         )
-        pts_pair = np.array(
-            [
-                (p.contour_point.x, p.contour_point.y, p.contour_point.z)
-                for p in cl_pair.points
-            ]
-        )
-        pts_geom = np.array(
-            [
-                (p.contour_point.x, p.contour_point.y, p.contour_point.z)
-                for p in cl_geom.points
-            ]
-        )
-        np.testing.assert_allclose(pts_pair, pts_geom, atol=1e-10)
+        assert spacing_pair == pytest.approx(spacing_geom, abs=1e-10)
 
     def test_frame_count_preserved(self, centerline, geom_a, geometry_pair):
         n_frames = len(geom_a.frames)

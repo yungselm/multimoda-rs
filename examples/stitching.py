@@ -25,11 +25,18 @@ rca_cl = mm.numpy_to_centerline(rca_cl_raw)
 lca_cl = mm.numpy_to_centerline(lca_cl_raw)
 aorta_cl = mm.numpy_to_centerline(aorta_cl_raw)
 
-results, (rca_cl, lca_cl, ao_cl) = mm.label_geometry(
+# Orient once, locally, so these same oriented objects can be reused for every
+# downstream step below — label_geometry() re-applies the same idempotent
+# orientation internally but no longer returns centerlines.
+aorta_cl = aorta_cl.orient_by_max_z()
+rca_cl = rca_cl.orient_to_reference(aorta_cl)
+lca_cl = lca_cl.orient_to_reference(aorta_cl)
+
+results = mm.label_geometry(
     path_ccta_geometry="../data/NARCO_119.stl",
-    path_centerline_aorta="../data/centerline_aorta.csv",
-    path_centerline_rca="../data/centerline_rca_short.csv",
-    path_centerline_lca="../data/centerline_lca.csv",
+    path_centerline_aorta=aorta_cl,
+    path_centerline_rca=rca_cl,
+    path_centerline_lca=lca_cl,
     bounding_sphere_radius_mm_rca=3.0,
     bounding_sphere_radius_mm_lca=3.0,
     n_points_takeoff_rca=100,
@@ -39,7 +46,7 @@ results, (rca_cl, lca_cl, ao_cl) = mm.label_geometry(
     control_plot=False,
 )
 
-aligned, resampled_cl, total_rotation_deg = mm.align_combined(
+aligned, spacing_mm, total_rotation_deg = mm.align_combined(
     rca_cl,
     rest,
     (12.2605, -201.3643, 1751.0554),
@@ -51,6 +58,11 @@ aligned, resampled_cl, total_rotation_deg = mm.align_combined(
     watertight=False,
     output_dir="test",
 )
+
+# Resample the aorta to the same spacing align_combined derived from the frames,
+# instead of re-deriving it — keeps the two centerlines' point density consistent
+# for the scaling steps below.
+aorta_cl = aorta_cl.resample(spacing_mm)
 
 results = mm.label_anomalous_region(
     centerline=rca_cl,
@@ -68,13 +80,13 @@ prox_scaling, distal_scaling = mm.find_distal_and_proximal_scaling(
 
 aortic_scaling = mm.find_aorta_scaling(
     frames=aligned.geom_a.frames,
-    cl_aorta=ao_cl,
+    cl_aorta=aorta_cl,
     results=results,
 )
 
 aortic_wall_scaling = mm.find_aortic_wall_scaling(
     frames=aligned.geom_a.frames,
-    cl_aorta=ao_cl,
+    cl_aorta=aorta_cl,
     results=results,
 )
 
@@ -161,7 +173,7 @@ mm.export_section_stl(stitched, "aorta")
 mm.export_section_stl(stitched, "lca")
 mm.export_section_stl(stitched, "rca")
 
-results, (rca_cl, lca_cl, ao_cl) = mm.label_geometry(
+results = mm.label_geometry(
     path_ccta_geometry="../data/fixed_mesh.stl",
     path_centerline_aorta="../data/centerline_aorta.csv",
     path_centerline_rca="../data/centerline_rca_short.csv",
