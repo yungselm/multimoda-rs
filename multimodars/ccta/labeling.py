@@ -207,7 +207,7 @@ def label_geometry(
     results: dict[str, Any] = {
         "mesh": mesh,
         "aorta_points": final_aortic_points,
-        "rca_points": final_rca_points_found,
+        "rca_points": final_rca_points,
         "lca_points": final_lca_points,
         "rca_removed_points": rca_removed_points,
         "lca_removed_points": lca_removed_points,

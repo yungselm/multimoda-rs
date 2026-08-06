@@ -15,6 +15,11 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   points near the takeoff. Logic B is now evaluated per connected component: the whole blob is
   judged against its combined external boundary instead of each vertex's own neighbours (a
   single-vertex component reduces to the original check, so no regression there).
+- `label_geometry` built `final_rca_points` via `clean_outlier_points` but then discarded it,
+  writing the uncleaned `final_rca_points_found` into `results["rca_points"]` instead (LCA
+  correctly used its cleaned `final_lca_points`). This meant `clean_outlier_points`'s spatial
+  cleanup never took effect for RCA at all - its output was computed and immediately thrown away.
+  `results["rca_points"]` now uses `final_rca_points`.
 
 ### Internal
 - Added `connected_components`/`component_boundary` helpers in `label_coronary.rs`, shared between
