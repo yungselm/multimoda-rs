@@ -106,6 +106,22 @@ def _make_hex_fan_mesh() -> trimesh.Trimesh:
     return trimesh.Trimesh(vertices=verts, faces=faces, process=False)
 
 
+def _make_restore_blob_mesh() -> trimesh.Trimesh:
+    """9 vertices, 3 triangular faces (plus one degenerate face to link an
+    isolated pair) - purpose-built to demonstrate component-level Logic B.
+
+    Vertex 0 (aorta) bridges removed vertices 1 and 2, each of which also
+    touches two distinct "outer" vertices (3,4 for vertex 1; 5,6 for vertex
+    2). Vertex 1's own neighbours are {0,2,3,4} and vertex 2's own neighbours
+    are {0,1,5,6} - individually only 2/4 = 50% RCA at best - but the
+    *component* {1,2}'s combined external boundary {0,3,4,5,6} can be
+    4/5 = 80% RCA, which the old per-vertex-only check could never restore.
+    """
+    verts = np.array([[i, 0.0, 0.0] for i in range(9)], dtype=float)
+    faces = np.array([[1, 0, 2], [1, 3, 4], [2, 5, 6]])
+    return trimesh.Trimesh(vertices=verts, faces=faces, process=False)
+
+
 def _make_iv_pts(coords) -> list[PyContourPoint]:
     return [
         PyContourPoint(frame_index=0, point_index=i, x=x, y=y, z=z, aortic=False)
@@ -126,6 +142,11 @@ def grid_mesh():
 @pytest.fixture
 def hex_fan_mesh():
     return _make_hex_fan_mesh()
+
+
+@pytest.fixture
+def restore_blob_mesh():
+    return _make_restore_blob_mesh()
 
 
 @pytest.fixture
@@ -285,6 +306,31 @@ class TestFinalReclassification:
         )
         assert verts[4] in new["rca_points"]
         assert verts[4] not in new["rca_removed_points"]
+
+    # ------------------------------------------------------------------
+    # Logic B (component-level): a whole falsely-removed contiguous blob is
+    # restored based on its combined external boundary, even when no single
+    # vertex in the blob individually clears the 70% per-vertex threshold.
+    # ------------------------------------------------------------------
+
+    def test_removed_blob_restored_when_per_vertex_check_would_fail(
+        self, restore_blob_mesh
+    ):
+        """Vertices 1 and 2 are each only 50% RCA by their own immediate
+        neighbours (the old per-vertex-only Logic B would leave both stuck
+        in rca_removed_points), but the connected component {1, 2}'s
+        combined boundary {0, 3, 4, 5, 6} is 80% RCA, so the whole blob
+        must be restored.
+        """
+        verts = [tuple(v) for v in restore_blob_mesh.vertices]
+        new = self._call(
+            restore_blob_mesh,
+            rca=[verts[3], verts[4], verts[5], verts[6]],
+            rca_removed=[verts[1], verts[2]],
+        )
+        assert verts[1] in new["rca_points"]
+        assert verts[2] in new["rca_points"]
+        assert not new["rca_removed_points"]
 
     # ------------------------------------------------------------------
     # Invariants

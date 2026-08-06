@@ -521,6 +521,52 @@ pub fn build_adjacency_map(faces: Vec<[usize; 3]>) -> HashMap<usize, HashSet<usi
     adjacency
 }
 
+/// Keep only the largest mesh-connected component of `points`.
+///
+/// `points` is typically already restricted to some region (e.g. a
+/// proximal/distal/anomalous split) by coordinate-only heuristics with no
+/// notion of mesh topology, which can leave a handful of points assigned to
+/// a region despite not being mesh-connected to its main cluster
+/// ("islands"). This restricts the mesh's face-adjacency graph to `points`
+/// and keeps only the single largest connected component; the rest are
+/// dropped.
+///
+/// Matches the semantics of the pure-Python reference implementation this
+/// replaces: if `points` has fewer than 2 entries, or none of `points`
+/// matches a coordinate in `vertices`, it is returned unchanged.
+#[pyfunction]
+pub fn keep_largest_connected_component(
+    vertices: Vec<Point3D>,
+    faces: Vec<[usize; 3]>,
+    points: Vec<Point3D>,
+) -> PyResult<Vec<Point3D>> {
+    if points.len() < 2 {
+        return Ok(points);
+    }
+
+    let mut coord_to_idx: HashMap<(u64, u64, u64), usize> = HashMap::with_capacity(vertices.len());
+    for (i, v) in vertices.iter().enumerate() {
+        coord_to_idx.insert(label_coronary::bits_key(v), i);
+    }
+
+    let point_indices: HashSet<usize> = points
+        .iter()
+        .filter_map(|p| coord_to_idx.get(&label_coronary::bits_key(p)).copied())
+        .collect();
+    if point_indices.is_empty() {
+        return Ok(points);
+    }
+
+    let adjacency = build_adjacency_map(faces);
+    let components = label_coronary::connected_components(&adjacency, &point_indices);
+    let largest = components
+        .iter()
+        .max_by_key(|c| c.len())
+        .expect("point_indices is non-empty, so at least one component exists");
+
+    Ok(largest.iter().map(|&i| vertices[i]).collect())
+}
+
 /// Fix face winding so that every pair of adjacent faces traverses their
 /// shared edge in opposite directions (consistent orientation).
 ///
