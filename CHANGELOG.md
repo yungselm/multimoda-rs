@@ -6,50 +6,23 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [0.5.8] - 2026-08-06
 
 ### Fixed
-- `final_reclassification`'s Logic B (restoring points wrongly moved into `rca_removed_points`/
-  `lca_removed_points` by occlusion removal) only checked each vertex's own immediate neighbours
-  for a >70% same-label majority. A contiguous patch of falsely-removed points has mostly *other
-  removed* points as neighbours, not real RCA/LCA ones, so the per-vertex check could never clear
-  its own threshold for any vertex in the patch - leaving genuine coronary points permanently
-  stuck in `*_removed_points` and starving `discretize_vessel_tree`'s arc-length slices of surface
-  points near the takeoff. Logic B is now evaluated per connected component: the whole blob is
-  judged against its combined external boundary instead of each vertex's own neighbours (a
-  single-vertex component reduces to the original check, so no regression there).
-- `label_geometry` built `final_rca_points` via `clean_outlier_points` but then discarded it,
-  writing the uncleaned `final_rca_points_found` into `results["rca_points"]` instead (LCA
-  correctly used its cleaned `final_lca_points`). This meant `clean_outlier_points`'s spatial
-  cleanup never took effect for RCA at all - its output was computed and immediately thrown away.
-  `results["rca_points"]` now uses `final_rca_points`.
-- Fixing the point above exposed a latent bug in `clean_outlier_points`: it reassigns points to
-  `aorta_points` based purely on Euclidean neighbor density (2mm radius, 40% ratio), with no mesh
-  topology awareness. Near an acute takeoff, the aortic wall sits within that radius of a chunk of
-  RCA-candidate vertices, so a patch got reassigned to aorta even though, mesh-wise, it sat deep
-  inside the contiguous RCA patch rather than touching the real aorta body - an "island" of aorta
-  surrounded by RCA that `final_reclassification`'s old Logic A could never fix (it only ever
-  reclassified isolated RCA/LCA vertices to aorta, never the reverse). Logic A is now evaluated per
-  connected component in both directions: for a given label, every component except the single
-  largest (presumed the legitimate main body - always excluded, even when it's the only component,
-  since a real anatomical region must never be reclassified wholesale just because its boundary
-  happens to lean toward a neighbouring label) is reclassified if its external boundary is >70% a
-  neighbouring label. A single isolated vertex is the size-1 special case, so existing behaviour is
-  preserved for genuinely isolated points with proper surrounding context.
+- `final_reclassification`'s Logic B judged each removed vertex only by its own immediate
+  neighbours, so a contiguous falsely-removed patch - mostly bordered by other removed points, not
+  real RCA/LCA - could never clear the 70% restore threshold. Now evaluated per connected
+  component against its true external boundary.
+- `results["rca_points"]` was built from the uncleaned `final_rca_points_found` instead of
+  `clean_outlier_points`'s cleaned output (LCA was already correct) - RCA never got the spatial
+  cleanup pass at all.
+- That fix exposed a latent issue in `clean_outlier_points`: its purely Euclidean check (no mesh
+  topology) can carve an "island" of aorta out of the middle of the RCA patch near an acute
+  takeoff. Logic A now runs per connected component in both directions (aorta ↔ RCA/LCA), always
+  excluding each label's single largest component (the legitimate main body) from reclassification.
 
 ### Internal
-- Added `connected_components`/`component_boundary` helpers in `label_coronary.rs`, shared between
-  the new component-level Logic B and a new `keep_largest_connected_component` Rust binding.
-- Added `reclassify_minority_components` (`label_coronary.rs`), reusing the same
-  `connected_components`/`component_boundary` primitives for the new component-level Logic A.
-  Replaces the old inline per-vertex Logic A loop. Existing singleton-vertex tests updated to
-  include a proper larger same-label context elsewhere in the fixture (needed now that the single
-  largest component is always protected), plus 4 new tests covering aorta→RCA/LCA promotion, the
-  mixed-boundary no-op case, and the "largest component never reclassified" safety guarantee.
-- `_keep_largest_connected_component` (`labeling.py`) is now a thin call-through to
-  `keep_largest_connected_component` (Rust), replacing its pure-Python coordinate-dict + BFS
-  implementation. Same semantics (verified against the existing 5-case Python test suite), now
-  shared with the Logic B fix instead of duplicated.
-- Type stubs (`multimodars.pyi`) updated for `keep_largest_connected_component`.
-- New Rust tests (`label_coronary.rs`) and a Python regression test (`test_ccta.py`) covering the
-  blob-restoration bug directly.
+- New shared `connected_components`/`component_boundary` helpers and `reclassify_minority_components`
+  in `label_coronary.rs`, plus a `keep_largest_connected_component` Rust binding now backing
+  `_keep_largest_connected_component` (`labeling.py`).
+- New/updated Rust and Python tests covering both fixes.
 
 ## [0.5.7] - 2026-08-05
 
