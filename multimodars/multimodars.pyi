@@ -827,6 +827,11 @@ def final_reclassification(
 def build_adjacency_map(
     faces: list[list[int]],
 ) -> dict[int, set[int]]: ...
+def keep_largest_connected_component(
+    vertices: list[tuple[float, float, float]],
+    faces: list[list[int]],
+    points: list[tuple[float, float, float]],
+) -> list[tuple[float, float, float]]: ...
 def fix_mesh_winding(
     faces: list[list[int]],
 ) -> list[list[int]]: ...

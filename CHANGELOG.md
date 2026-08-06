@@ -3,6 +3,27 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.8] - 2026-08-06
+
+### Fixed
+- `final_reclassification`'s Logic B judged each removed vertex only by its own immediate
+  neighbours, so a contiguous falsely-removed patch - mostly bordered by other removed points, not
+  real RCA/LCA - could never clear the 70% restore threshold. Now evaluated per connected
+  component against its true external boundary.
+- `results["rca_points"]` was built from the uncleaned `final_rca_points_found` instead of
+  `clean_outlier_points`'s cleaned output (LCA was already correct) - RCA never got the spatial
+  cleanup pass at all.
+- That fix exposed a latent issue in `clean_outlier_points`: its purely Euclidean check (no mesh
+  topology) can carve an "island" of aorta out of the middle of the RCA patch near an acute
+  takeoff. Logic A now runs per connected component in both directions (aorta ↔ RCA/LCA), always
+  excluding each label's single largest component (the legitimate main body) from reclassification.
+
+### Internal
+- New shared `connected_components`/`component_boundary` helpers and `reclassify_minority_components`
+  in `label_coronary.rs`, plus a `keep_largest_connected_component` Rust binding now backing
+  `_keep_largest_connected_component` (`labeling.py`).
+- New/updated Rust and Python tests covering both fixes.
+
 ## [0.5.7] - 2026-08-05
 
 ### Changed

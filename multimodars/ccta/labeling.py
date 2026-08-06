@@ -14,7 +14,7 @@ from ..multimodars import (
     remove_occluded_points_ray_triangle,
     clean_outlier_points,
     find_points_by_cl_region,
-    build_adjacency_map,
+    keep_largest_connected_component,
     PyCenterline,
 )
 from .._converters import numpy_to_centerline
@@ -127,50 +127,11 @@ def label_geometry(
             print(f"Error reading CCTA mesh from {path_ccta_geometry}: {e}")
             raise
 
-    if isinstance(path_centerline_aorta, PyCenterline):
-        cl_aorta = path_centerline_aorta
-        print(f"Using provided aorta centerline: {len(cl_aorta.points)} points")
-    elif isinstance(path_centerline_aorta, np.ndarray):
-        cl_aorta = numpy_to_centerline(path_centerline_aorta)
-        print(f"Using provided aorta centerline: {len(cl_aorta.points)} points")
-    else:
-        try:
-            cl_aorta_raw = np.genfromtxt(path_centerline_aorta, delimiter=",")
-            cl_aorta = numpy_to_centerline(cl_aorta_raw)
-            print(f"Loaded aorta centerline: {len(cl_aorta.points)} points")
-        except Exception as e:
-            print(f"Error reading Aorta centerline from {path_centerline_aorta}: {e}")
-            raise
+    cl_aorta = _try_load_cl(path_centerline_aorta, "Aorta")
 
-    if isinstance(path_centerline_lca, PyCenterline):
-        cl_lca = path_centerline_lca
-        print(f"Using provided LCA centerline: {len(cl_lca.points)} points")
-    elif isinstance(path_centerline_lca, np.ndarray):
-        cl_lca = numpy_to_centerline(path_centerline_lca)
-        print(f"Using provided LCA centerline: {len(cl_lca.points)} points")
-    else:
-        try:
-            cl_lca_raw = np.genfromtxt(path_centerline_lca, delimiter=",")
-            cl_lca = numpy_to_centerline(cl_lca_raw)
-            print(f"Loaded LCA centerline: {len(cl_lca.points)} points")
-        except Exception as e:
-            print(f"Error reading LCA centerline from {path_centerline_lca}: {e}")
-            raise
+    cl_lca = _try_load_cl(path_centerline_lca, "LCA")
 
-    if isinstance(path_centerline_rca, PyCenterline):
-        cl_rca = path_centerline_rca
-        print(f"Using provided RCA centerline: {len(cl_rca.points)} points")
-    elif isinstance(path_centerline_rca, np.ndarray):
-        cl_rca = numpy_to_centerline(path_centerline_rca)
-        print(f"Using provided RCA centerline: {len(cl_rca.points)} points")
-    else:
-        try:
-            cl_rca_raw = np.genfromtxt(path_centerline_rca, delimiter=",")
-            cl_rca = numpy_to_centerline(cl_rca_raw)
-            print(f"Loaded RCA centerline: {len(cl_rca.points)} points")
-        except Exception as e:
-            print(f"Error reading RCA centerline from {path_centerline_rca}: {e}")
-            raise
+    cl_rca = _try_load_cl(path_centerline_rca, "RCA")
 
     points_list = [tuple(vertex) for vertex in mesh.vertices.tolist()]
     mesh_faces_list = mesh.faces.tolist()
@@ -194,46 +155,32 @@ def label_geometry(
     lca_removed_points = []
 
     if acute_takeoff_rca:
-        print("Applying occlusion removal for acute-takeoff RCA...")
-        rca_faces_for_rust = find_faces_near_points(
-            points_list, mesh_faces_list, rca_points_found, tolerance_float
+        rca_removed_points, final_rca_points_found = _apply_occlusion_removal(
+            n_points_takeoff_rca,
+            step_size_mm,
+            tolerance_float,
+            cl_aorta,
+            cl_rca,
+            points_list,
+            mesh_faces_list,
+            rca_points_found,
+            "RCA",
         )
-        # Rust implementation, that creates ray between aortic and coronary centerline, and
-        # removes faces if 3 consecutive faces are "pierced" by the ray
-        final_rca_points_found = remove_occluded_points_ray_triangle(
-            centerline_coronary=cl_rca,
-            centerline_aorta=cl_aorta,
-            range_coronary=n_points_takeoff_rca,
-            points=rca_points_found,
-            faces=rca_faces_for_rust,
-            step_size_mm=step_size_mm,
-        )
-        final_rca_points_found_set = set(final_rca_points_found)
-        rca_removed_points = [
-            p for p in rca_points_found if p not in final_rca_points_found_set
-        ]
-        print(f"RCA: relabeled {len(rca_removed_points)} points in intramual course")
     else:
         final_rca_points_found = rca_points_found.copy()
 
     if acute_takeoff_lca:
-        print("Applying occlusion removal for acute-takeoff LCA...")
-        lca_faces_for_rust = find_faces_near_points(
-            points_list, mesh_faces_list, lca_points_found, tolerance_float
+        lca_removed_points, final_lca_points_found = _apply_occlusion_removal(
+            n_points_takeoff_lca,
+            step_size_mm,
+            tolerance_float,
+            cl_aorta,
+            cl_lca,
+            points_list,
+            mesh_faces_list,
+            lca_points_found,
+            "LCA",
         )
-        final_lca_points_found = remove_occluded_points_ray_triangle(
-            centerline_coronary=cl_lca,
-            centerline_aorta=cl_aorta,
-            range_coronary=n_points_takeoff_lca,
-            points=lca_points_found,
-            faces=lca_faces_for_rust,
-            step_size_mm=step_size_mm,
-        )
-        final_lca_points_found_set = set(final_lca_points_found)
-        lca_removed_points = [
-            p for p in lca_points_found if p not in final_lca_points_found_set
-        ]
-        print(f"LCA: relabeled {len(lca_removed_points)} points in intramual course")
     else:
         final_lca_points_found = lca_points_found.copy()
 
@@ -260,7 +207,7 @@ def label_geometry(
     results: dict[str, Any] = {
         "mesh": mesh,
         "aorta_points": final_aortic_points,
-        "rca_points": final_rca_points_found,
+        "rca_points": final_rca_points,
         "lca_points": final_lca_points,
         "rca_removed_points": rca_removed_points,
         "lca_removed_points": lca_removed_points,
@@ -310,64 +257,53 @@ def label_geometry(
     return new_results, (cl_rca, cl_lca, cl_aorta)
 
 
-def _keep_largest_connected_component(
-    mesh: trimesh.Trimesh, points: list[tuple[float, float, float]]
-) -> list[tuple[float, float, float]]:
-    """Keep only the largest mesh-connected component of *points*.
+def _try_load_cl(path_centerline_aorta: PyCenterline | Path | str, name: str):
+    if isinstance(path_centerline_aorta, PyCenterline):
+        cl_aorta = path_centerline_aorta
+        print(f"Using provided {name} centerline: {len(cl_aorta.points)} points")
+    elif isinstance(path_centerline_aorta, np.ndarray):
+        cl_aorta = numpy_to_centerline(path_centerline_aorta)
+        print(f"Using provided {name} centerline: {len(cl_aorta.points)} points")
+    else:
+        try:
+            cl_aorta_raw = np.genfromtxt(path_centerline_aorta, delimiter=",")
+            cl_aorta = numpy_to_centerline(cl_aorta_raw)
+            print(f"Loaded {name} centerline: {len(cl_aorta.points)} points")
+        except Exception as e:
+            print(f"Error reading {name} centerline from {path_centerline_aorta}: {e}")
+            raise
+    return cl_aorta
 
-    ``find_points_by_cl_region`` classifies points using coordinate-only
-    heuristics (nearest 3-D centerline point, axis-aligned proximal/distal
-    split) with no notion of mesh topology.  That can leave a handful of
-    points assigned to a region despite not being mesh-connected to its main
-    cluster ("islands") - e.g. a point geometrically close to the anomalous
-    segment but on a different, unconnected part of the vessel surface.
 
-    This restricts the mesh's face-adjacency graph to *points* and keeps
-    only the single largest connected component; the rest are dropped
-    (callers typically let dropped points fall through to a different
-    region via a complement/set-difference step, mirroring how
-    :func:`final_reclassification` reassigns isolated vertices to aorta).
-    """
-    if len(points) < 2:
-        return points
-
-    coord_to_idx = {tuple(v): i for i, v in enumerate(mesh.vertices)}
-    point_indices = set()
-    for pt in points:
-        idx = coord_to_idx.get(tuple(pt))
-        if idx is not None:
-            point_indices.add(idx)
-    if not point_indices:
-        return points
-
-    adj_map = build_adjacency_map(mesh.faces.tolist())
-
-    remaining = set(point_indices)
-    components: list[set[int]] = []
-    while remaining:
-        start = next(iter(remaining))
-        stack = [start]
-        component: set[int] = set()
-        while stack:
-            i = stack.pop()
-            if i in component:
-                continue
-            component.add(i)
-            for neighbor in adj_map.get(i, []):
-                if neighbor in remaining and neighbor not in component:
-                    stack.append(neighbor)
-        components.append(component)
-        remaining -= component
-
-    largest = max(components, key=len)
-    if len(components) > 1:
-        dropped = len(point_indices) - len(largest)
-        print(
-            f"  _keep_largest_connected_component: kept {len(largest)}/"
-            f"{len(point_indices)} points ({len(components) - 1} island "
-            f"component(s), {dropped} point(s) dropped)"
-        )
-    return [tuple(mesh.vertices[i]) for i in largest]
+def _apply_occlusion_removal(
+    n_points_takeoff_rca: int,
+    step_size_mm: float,
+    tolerance_float: float,
+    cl_aorta: PyCenterline,
+    cl_rca: PyCenterline,
+    points_list: list[tuple[float, float, float]],
+    mesh_faces_list: list[list[int]],
+    rca_points_found: list[tuple[float, float, float]],
+    name: str,
+):
+    print(f"Applying occlusion removal for acute-takeoff {name}...")
+    rca_faces_for_rust = find_faces_near_points(
+        points_list, mesh_faces_list, rca_points_found, tolerance_float
+    )
+    final_rca_points_found = remove_occluded_points_ray_triangle(
+        centerline_coronary=cl_rca,
+        centerline_aorta=cl_aorta,
+        range_coronary=n_points_takeoff_rca,
+        points=rca_points_found,
+        faces=rca_faces_for_rust,
+        step_size_mm=step_size_mm,
+    )
+    final_rca_points_found_set = set(final_rca_points_found)
+    rca_removed_points = [
+        p for p in rca_points_found if p not in final_rca_points_found_set
+    ]
+    print(f"{name}: relabeled {len(rca_removed_points)} points in intramual course")
+    return rca_removed_points, final_rca_points_found
 
 
 def label_anomalous_region(
@@ -477,6 +413,29 @@ def label_anomalous_region(
         )
 
     return results
+
+
+def _keep_largest_connected_component(
+    mesh: trimesh.Trimesh, points: list[tuple[float, float, float]]
+) -> list[tuple[float, float, float]]:
+    """Keep only the largest mesh-connected component of *points*.
+
+    ``find_points_by_cl_region`` classifies points using coordinate-only
+    heuristics (nearest 3-D centerline point, axis-aligned proximal/distal
+    split) with no notion of mesh topology.  That can leave a handful of
+    points assigned to a region despite not being mesh-connected to its main
+    cluster ("islands") - e.g. a point geometrically close to the anomalous
+    segment but on a different, unconnected part of the vessel surface.
+
+    This restricts the mesh's face-adjacency graph to *points* and keeps
+    only the single largest connected component; the rest are dropped
+    (callers typically let dropped points fall through to a different
+    region via a complement/set-difference step, mirroring how
+    :func:`final_reclassification` reassigns isolated vertices to aorta).
+    """
+    return keep_largest_connected_component(
+        [tuple(v) for v in mesh.vertices], mesh.faces.tolist(), points
+    )
 
 
 def label_branches(
