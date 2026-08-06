@@ -285,6 +285,46 @@ impl PyCenterline {
         cl.check_centerline();
         Ok(PyCenterline::from(&cl))
     }
+
+    /// Reverse the whole centerline if its point with the highest z-coordinate is
+    /// not already at index 0.
+    ///
+    /// For centerlines with no anatomical reference to orient against, e.g. the
+    /// aorta. Use ``orient_to_reference`` instead whenever one is available. Only
+    /// correct under the standard CT/DICOM convention where z increases toward the
+    /// head, so the aortic root/valve is the highest-z point.
+    ///
+    /// Returns
+    /// -------
+    /// PyCenterline
+    ///     New centerline, reversed if necessary.
+    pub fn orient_by_max_z(&self) -> PyResult<PyCenterline> {
+        let mut cl = self.to_rust_centerline();
+        cl.orient_by_max_z();
+        Ok(PyCenterline::from(&cl))
+    }
+
+    /// Reverse the whole centerline if its last point is closer to `reference`
+    /// than its first point is, so the end nearer `reference` becomes index 0.
+    ///
+    /// Distance to `reference` is the minimum distance to any of its points, not a
+    /// single fixed point — e.g. for a coronary centerline, `reference` would be
+    /// the aorta centerline as a whole, not one ostium point.
+    ///
+    /// Parameters
+    /// ----------
+    /// reference : PyCenterline
+    ///     Centerline to orient towards (e.g. the aorta, for a coronary centerline).
+    ///
+    /// Returns
+    /// -------
+    /// PyCenterline
+    ///     New centerline, reversed if necessary.
+    pub fn orient_to_reference(&self, reference: &PyCenterline) -> PyResult<PyCenterline> {
+        let mut cl = self.to_rust_centerline();
+        cl.orient_to_reference(&reference.to_rust_centerline());
+        Ok(PyCenterline::from(&cl))
+    }
 }
 
 impl PyCenterline {

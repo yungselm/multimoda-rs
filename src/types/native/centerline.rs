@@ -565,50 +565,101 @@ impl Centerline {
 
         let mut branches = self.branches_as_vecs();
 
-        // --- Branch 0: highest-z point must be at index 0 ---
-        if !branches[0].is_empty() {
-            let max_z_idx = branches[0]
-                .iter()
-                .enumerate()
-                .max_by(|(_, a), (_, b)| {
-                    a.contour_point
-                        .z
-                        .partial_cmp(&b.contour_point.z)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                })
-                .map(|(i, _)| i)
-                .unwrap_or(0);
-            if max_z_idx != 0 {
-                branches[0].reverse();
-            }
+        if Self::should_reverse_by_max_z(&branches[0]) {
+            branches[0].reverse();
         }
 
-        // --- Side branches: first point must be the one closest to branch 0 ---
         for k in 1..n {
             if branches[k].is_empty() || branches[0].is_empty() {
                 continue;
             }
-
-            // Clone endpoints so we can borrow branches[0] freely afterwards.
-            let first_pt = branches[k][0].contour_point;
-            let last_pt = branches[k].last().unwrap().contour_point;
-
-            let dist_first = branches[0]
-                .iter()
-                .map(|p| p.contour_point.distance_to(&first_pt))
-                .fold(f64::INFINITY, f64::min);
-
-            let dist_last = branches[0]
-                .iter()
-                .map(|p| p.contour_point.distance_to(&last_pt))
-                .fold(f64::INFINITY, f64::min);
-
-            if dist_last < dist_first {
+            if Self::should_reverse_relative_to(&branches[k], &branches[0]) {
                 branches[k].reverse();
             }
         }
 
         self.rebuild_from_branches(branches);
+    }
+
+    /// Reverse the whole centerline in place if the point with the highest
+    /// z-coordinate is not already at index 0.
+    ///
+    /// Intended for a centerline with no anatomical reference to orient against
+    /// (e.g. the aorta) — use [`Centerline::orient_to_reference`] instead
+    /// whenever one is available. Only correct under the standard CT/DICOM
+    /// convention where z increases toward the head, so the aortic root/valve
+    /// is the highest-z point.
+    pub fn orient_by_max_z(&mut self) {
+        if Self::should_reverse_by_max_z(&self.points) {
+            self.reverse_in_place();
+        }
+    }
+
+    /// Reverse the whole centerline in place if its last point is closer to
+    /// `reference` than its first point is, so that the end nearer `reference`
+    /// becomes index 0.
+    ///
+    /// Distance to `reference` is the minimum distance to any of its points,
+    /// not a single fixed point — e.g. for a coronary centerline, `reference`
+    /// would be the aorta centerline as a whole, not one ostium point.
+    pub fn orient_to_reference(&mut self, reference: &Centerline) {
+        if Self::should_reverse_relative_to(&self.points, &reference.points) {
+            self.reverse_in_place();
+        }
+    }
+
+    /// Reverse `self.points`, reassign sequential `point_index`, and recompute tangents.
+    fn reverse_in_place(&mut self) {
+        self.points.reverse();
+        for (i, p) in self.points.iter_mut().enumerate() {
+            p.contour_point.point_index = i as u32;
+        }
+        self.recompute_tangents();
+    }
+
+    /// `true` if the point with the maximum z-coordinate in `points` is not at index 0.
+    fn should_reverse_by_max_z(points: &[CenterlinePoint]) -> bool {
+        if points.is_empty() {
+            return false;
+        }
+        let max_z_idx = points
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| {
+                a.contour_point
+                    .z
+                    .partial_cmp(&b.contour_point.z)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+        max_z_idx != 0
+    }
+
+    /// `true` if the last point of `points` is closer to `reference` (minimum distance
+    /// to any of its points) than the first point of `points` is.
+    fn should_reverse_relative_to(
+        points: &[CenterlinePoint],
+        reference: &[CenterlinePoint],
+    ) -> bool {
+        if points.is_empty() || reference.is_empty() {
+            return false;
+        }
+
+        let first_pt = points[0].contour_point;
+        let last_pt = points.last().unwrap().contour_point;
+
+        let dist_first = reference
+            .iter()
+            .map(|p| p.contour_point.distance_to(&first_pt))
+            .fold(f64::INFINITY, f64::min);
+
+        let dist_last = reference
+            .iter()
+            .map(|p| p.contour_point.distance_to(&last_pt))
+            .fold(f64::INFINITY, f64::min);
+
+        dist_last < dist_first
     }
 
     /// Remove the run-alongside-main-branch prefix from every side branch,
@@ -989,5 +1040,45 @@ mod centerline_tests {
         let branches = cl.branches_as_vecs();
         assert_eq!(branches.len(), 2);
         assert_eq!(branches[1].len(), 3, "no trimming when no overlap");
+    }
+
+    #[test]
+    fn test_orient_by_max_z_reverses_when_needed() {
+        // Highest z (2.0) is at the end, must end up at index 0.
+        let mut cl = cl_from_coords(&[(0., 0., 0.), (0., 0., 1.), (0., 0., 2.)]);
+        cl.orient_by_max_z();
+        assert_eq!(cl.points[0].contour_point.z, 2.0);
+        assert_eq!(cl.points[2].contour_point.z, 0.0);
+        assert!(cl
+            .points
+            .iter()
+            .enumerate()
+            .all(|(i, p)| p.contour_point.point_index == i as u32));
+    }
+
+    #[test]
+    fn test_orient_by_max_z_leaves_already_correct_untouched() {
+        let mut cl = cl_from_coords(&[(0., 0., 2.), (0., 0., 1.), (0., 0., 0.)]);
+        cl.orient_by_max_z();
+        assert_eq!(cl.points[0].contour_point.z, 2.0);
+    }
+
+    #[test]
+    fn test_orient_to_reference_reverses_when_last_point_closer() {
+        // `cl`'s last point (10,0,0) is close to `reference`; its first point (0,0,0) is not.
+        let mut cl = cl_from_coords(&[(0., 0., 0.), (5., 0., 0.), (10., 0., 0.)]);
+        let reference = cl_from_coords(&[(10., 1., 0.), (20., 1., 0.)]);
+        cl.orient_to_reference(&reference);
+        assert_eq!(cl.points[0].contour_point.x, 10.0);
+        assert_eq!(cl.points[2].contour_point.x, 0.0);
+    }
+
+    #[test]
+    fn test_orient_to_reference_leaves_already_correct_untouched() {
+        // `cl`'s first point (10,0,0) is already closest to `reference`.
+        let mut cl = cl_from_coords(&[(10., 0., 0.), (5., 0., 0.), (0., 0., 0.)]);
+        let reference = cl_from_coords(&[(10., 1., 0.), (20., 1., 0.)]);
+        cl.orient_to_reference(&reference);
+        assert_eq!(cl.points[0].contour_point.x, 10.0);
     }
 }

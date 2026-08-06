@@ -133,6 +133,14 @@ def label_geometry(
 
     cl_rca = _try_load_cl(path_centerline_rca, "RCA")
 
+    # Orient once, up front, so every downstream Rust call (rolling-sphere search,
+    # occlusion removal, ...) can trust point order instead of re-deriving it itself.
+    # The aorta has no upstream reference, so it falls back to the highest-z point;
+    # the coronaries orient toward the aorta as a whole (nearest point, not a fixed one).
+    cl_aorta = cl_aorta.orient_by_max_z()
+    cl_rca = cl_rca.orient_to_reference(cl_aorta)
+    cl_lca = cl_lca.orient_to_reference(cl_aorta)
+
     points_list = [tuple(vertex) for vertex in mesh.vertices.tolist()]
     mesh_faces_list = mesh.faces.tolist()
 

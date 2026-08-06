@@ -430,6 +430,42 @@ class PyCenterline:
         """
         ...
 
+    def orient_by_max_z(self) -> PyCenterline:
+        """Reverse the whole centerline if its highest-z point isn't at index 0.
+
+        For centerlines with no anatomical reference to orient against, e.g.
+        the aorta. Use ``orient_to_reference`` instead whenever one is
+        available. Only correct under the standard CT/DICOM convention where
+        z increases toward the head, so the aortic root/valve is the
+        highest-z point.
+
+        Returns
+        -------
+        PyCenterline
+            New centerline, reversed if necessary.
+        """
+        ...
+
+    def orient_to_reference(self, reference: PyCenterline) -> PyCenterline:
+        """Reverse the whole centerline so the end nearer `reference` is index 0.
+
+        Distance to `reference` is the minimum distance to any of its points,
+        not a single fixed point — e.g. for a coronary centerline, `reference`
+        would be the aorta centerline as a whole, not one ostium point.
+
+        Parameters
+        ----------
+        reference : PyCenterline
+            Centerline to orient towards (e.g. the aorta, for a coronary
+            centerline).
+
+        Returns
+        -------
+        PyCenterline
+            New centerline, reversed if necessary.
+        """
+        ...
+
 class PyInputData:
     """Intravascular imaging input data for one cardiac phase.
 
