@@ -20,10 +20,29 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   correctly used its cleaned `final_lca_points`). This meant `clean_outlier_points`'s spatial
   cleanup never took effect for RCA at all - its output was computed and immediately thrown away.
   `results["rca_points"]` now uses `final_rca_points`.
+- Fixing the point above exposed a latent bug in `clean_outlier_points`: it reassigns points to
+  `aorta_points` based purely on Euclidean neighbor density (2mm radius, 40% ratio), with no mesh
+  topology awareness. Near an acute takeoff, the aortic wall sits within that radius of a chunk of
+  RCA-candidate vertices, so a patch got reassigned to aorta even though, mesh-wise, it sat deep
+  inside the contiguous RCA patch rather than touching the real aorta body - an "island" of aorta
+  surrounded by RCA that `final_reclassification`'s old Logic A could never fix (it only ever
+  reclassified isolated RCA/LCA vertices to aorta, never the reverse). Logic A is now evaluated per
+  connected component in both directions: for a given label, every component except the single
+  largest (presumed the legitimate main body - always excluded, even when it's the only component,
+  since a real anatomical region must never be reclassified wholesale just because its boundary
+  happens to lean toward a neighbouring label) is reclassified if its external boundary is >70% a
+  neighbouring label. A single isolated vertex is the size-1 special case, so existing behaviour is
+  preserved for genuinely isolated points with proper surrounding context.
 
 ### Internal
 - Added `connected_components`/`component_boundary` helpers in `label_coronary.rs`, shared between
   the new component-level Logic B and a new `keep_largest_connected_component` Rust binding.
+- Added `reclassify_minority_components` (`label_coronary.rs`), reusing the same
+  `connected_components`/`component_boundary` primitives for the new component-level Logic A.
+  Replaces the old inline per-vertex Logic A loop. Existing singleton-vertex tests updated to
+  include a proper larger same-label context elsewhere in the fixture (needed now that the single
+  largest component is always protected), plus 4 new tests covering aorta→RCA/LCA promotion, the
+  mixed-boundary no-op case, and the "largest component never reclassified" safety guarantee.
 - `_keep_largest_connected_component` (`labeling.py`) is now a thin call-through to
   `keep_largest_connected_component` (Rust), replacing its pure-Python coordinate-dict + BFS
   implementation. Same semantics (verified against the existing 5-case Python test suite), now

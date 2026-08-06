@@ -122,6 +122,33 @@ def _make_restore_blob_mesh() -> trimesh.Trimesh:
     return trimesh.Trimesh(vertices=verts, faces=faces, process=False)
 
 
+def _make_island_mesh() -> trimesh.Trimesh:
+    """12 vertices - purpose-built to demonstrate component-level Logic A.
+
+    A 2-vertex candidate island {0,1} borders a 6-vertex cluster {2..7} on
+    one side, and a fully separate, larger 4-vertex cluster {8..11} has zero
+    connectivity to the rest (so it's always the "largest" component when
+    {0,1} is the subject label, and never itself when {2..7} is).
+
+    Vertex 0's neighbours: {1,2,3,4}; vertex 1's neighbours: {0,2,4,5}.
+    Combined external boundary of component {0,1} is exactly {2,3,4,5}.
+    """
+    verts = np.array([[i, 0.0, 0.0] for i in range(12)], dtype=float)
+    faces = np.array(
+        [
+            [0, 1, 2],
+            [1, 4, 5],
+            [0, 3, 4],
+            [2, 3, 6],
+            [4, 5, 7],
+            [6, 7, 3],
+            [8, 9, 10],
+            [8, 10, 11],
+        ]
+    )
+    return trimesh.Trimesh(vertices=verts, faces=faces, process=False)
+
+
 def _make_iv_pts(coords) -> list[PyContourPoint]:
     return [
         PyContourPoint(frame_index=0, point_index=i, x=x, y=y, z=z, aortic=False)
@@ -147,6 +174,11 @@ def hex_fan_mesh():
 @pytest.fixture
 def restore_blob_mesh():
     return _make_restore_blob_mesh()
+
+
+@pytest.fixture
+def island_mesh():
+    return _make_island_mesh()
 
 
 @pytest.fixture
@@ -273,17 +305,29 @@ class TestFinalReclassification:
     # ------------------------------------------------------------------
 
     def test_isolated_rca_becomes_aorta(self, grid_mesh):
-        """Vertex 0 labelled RCA; its neighbours (1, 3) are aorta → reclassified."""
+        """Vertex 0 labelled RCA; its neighbours (1, 3) are aorta → reclassified.
+
+        {6,7,8} form a separate, larger (size-3) RCA component elsewhere in
+        the grid, disconnected from vertex 0's {1,3} neighbourhood - needed
+        so vertex 0 is correctly the minority island rather than the sole
+        (and therefore protected) component.
+        """
         verts = [tuple(v) for v in grid_mesh.vertices]
-        new = self._call(grid_mesh, rca=[verts[0]])
+        new = self._call(grid_mesh, rca=[verts[0], verts[6], verts[7], verts[8]])
         assert verts[0] not in new["rca_points"]
         assert verts[0] in new["aorta_points"]
+        assert verts[6] in new["rca_points"]
+        assert verts[7] in new["rca_points"]
+        assert verts[8] in new["rca_points"]
 
     def test_isolated_lca_becomes_aorta(self, grid_mesh):
         verts = [tuple(v) for v in grid_mesh.vertices]
-        new = self._call(grid_mesh, lca=[verts[0]])
+        new = self._call(grid_mesh, lca=[verts[0], verts[6], verts[7], verts[8]])
         assert verts[0] not in new["lca_points"]
         assert verts[0] in new["aorta_points"]
+        assert verts[6] in new["lca_points"]
+        assert verts[7] in new["lca_points"]
+        assert verts[8] in new["lca_points"]
 
     def test_non_isolated_rca_stays(self, grid_mesh):
         """Vertex 0 and neighbour 1 are both RCA → vertex 0 keeps its label."""
@@ -331,6 +375,55 @@ class TestFinalReclassification:
         assert verts[1] in new["rca_points"]
         assert verts[2] in new["rca_points"]
         assert not new["rca_removed_points"]
+
+    # ------------------------------------------------------------------
+    # Logic A (component-level): a small aorta component mesh-surrounded by
+    # RCA/LCA is reclassified based on its boundary majority, but the single
+    # largest component of a label is always excluded, even when it's the
+    # only one - never reclassified wholesale.
+    # ------------------------------------------------------------------
+
+    def test_aorta_island_promoted_to_rca(self, island_mesh):
+        """{2..7} labelled RCA; {0,1} and {8..11} default to aorta. Aorta
+        splits into {0,1} (size 2) and {8..11} (size 4) - the larger is
+        excluded as the presumed main body, leaving {0,1}'s 100%-RCA
+        boundary {2,3,4,5} to promote it.
+        """
+        verts = [tuple(v) for v in island_mesh.vertices]
+        new = self._call(island_mesh, rca=verts[2:8])
+        assert verts[0] in new["rca_points"]
+        assert verts[1] in new["rca_points"]
+
+    def test_aorta_island_promoted_to_lca(self, island_mesh):
+        verts = [tuple(v) for v in island_mesh.vertices]
+        new = self._call(island_mesh, lca=verts[2:8])
+        assert verts[0] in new["lca_points"]
+        assert verts[1] in new["lca_points"]
+
+    def test_aorta_island_stays_when_boundary_mixed(self, island_mesh):
+        """{0,1}'s boundary {2,3,4,5} is split 2 RCA / 2 LCA - neither clears
+        70%, so the island must stay aorta.
+        """
+        verts = [tuple(v) for v in island_mesh.vertices]
+        new = self._call(island_mesh, rca=verts[2:4], lca=verts[4:6])
+        assert verts[0] in new["aorta_points"]
+        assert verts[1] in new["aorta_points"]
+        assert verts[0] not in new["rca_points"]
+        assert verts[0] not in new["lca_points"]
+
+    def test_largest_component_never_reclassified(self, island_mesh):
+        """{0,1,8..11} labelled RCA, leaving {2..7} as the sole aorta
+        component (no islands at all) - even though it borders RCA
+        extensively, it must never be reclassified: it's the (only, and
+        therefore always "largest") component, which is exactly the
+        catastrophic-mass-reclassification risk the "always exclude
+        largest" rule guards against.
+        """
+        verts = [tuple(v) for v in island_mesh.vertices]
+        new = self._call(island_mesh, rca=verts[0:2] + verts[8:12])
+        for v in verts[2:8]:
+            assert v in new["aorta_points"]
+            assert v not in new["rca_points"]
 
     # ------------------------------------------------------------------
     # Invariants

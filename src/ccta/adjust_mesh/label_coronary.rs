@@ -373,24 +373,16 @@ pub fn final_reclassification(
     let adjacency = build_adjacency_map(faces.to_vec());
 
     let mut new_labels = labels.clone();
-    for i in 0..n_vertices {
-        let Some(neighbors) = adjacency.get(&i) else {
-            continue;
-        };
-        if neighbors.is_empty() {
-            continue;
-        }
 
-        let current_label = labels[i];
-        let neighbor_labels: Vec<u8> = neighbors.iter().map(|&n| labels[n]).collect();
-
-        // LOGIC A: isolated RCA/LCA -> aorta
-        match current_label {
-            1 if !neighbor_labels.contains(&1) => new_labels[i] = 0,
-            2 if !neighbor_labels.contains(&2) => new_labels[i] = 0,
-            _ => {}
-        }
-    }
+    // LOGIC A: minority components of a label - excluding the single largest,
+    // presumed the legitimate main body - are reclassified to a neighbouring
+    // label when their external boundary is >70% that label. Generalizes the
+    // original per-vertex "isolated same-label neighbour" check to whole
+    // mesh-connected islands (a single-vertex island is the size-1 special
+    // case), symmetric to Logic B below.
+    reclassify_minority_components(&adjacency, &labels, &mut new_labels, 0, &[1, 2]); // aorta islands -> RCA/LCA
+    reclassify_minority_components(&adjacency, &labels, &mut new_labels, 1, &[0]); // RCA islands -> aorta
+    reclassify_minority_components(&adjacency, &labels, &mut new_labels, 2, &[0]); // LCA islands -> aorta
 
     // LOGIC B: a removed RCA/LCA point is restored if its connected-component's
     // external boundary is >70% the corresponding coronary label. Evaluated per
@@ -473,6 +465,58 @@ fn component_boundary(
         }
     }
     boundary
+}
+
+/// For every connected component of `subject_label` vertices except the
+/// single largest (presumed the legitimate main body of that label - always
+/// excluded, even when it is the only component, since a real anatomical
+/// region reliably forms one big connected body that must never be
+/// reclassified wholesale just because its aggregate boundary happens to
+/// lean toward one neighbouring label), checks whether the component's
+/// external boundary is >70% one of `target_labels` (checked in order; the
+/// first to clear the threshold wins) and, if so, reclassifies the whole
+/// component to that label.
+fn reclassify_minority_components(
+    adjacency: &HashMap<usize, HashSet<usize>>,
+    labels: &[u8],
+    new_labels: &mut [u8],
+    subject_label: u8,
+    target_labels: &[u8],
+) {
+    let subset: HashSet<usize> = labels
+        .iter()
+        .enumerate()
+        .filter(|&(_, &l)| l == subject_label)
+        .map(|(i, _)| i)
+        .collect();
+    if subset.is_empty() {
+        return;
+    }
+
+    let mut components = connected_components(adjacency, &subset);
+    let largest_idx = components
+        .iter()
+        .enumerate()
+        .max_by_key(|(_, c)| c.len())
+        .map(|(idx, _)| idx)
+        .expect("subset is non-empty, so at least one component exists");
+    components.remove(largest_idx);
+
+    for component in components {
+        let boundary = component_boundary(adjacency, &component);
+        if boundary.is_empty() {
+            continue;
+        }
+        for &target in target_labels {
+            let target_count = boundary.iter().filter(|&&n| labels[n] == target).count();
+            if (target_count as f64) > (boundary.len() as f64 * 0.7) {
+                for &i in &component {
+                    new_labels[i] = target;
+                }
+                break;
+            }
+        }
+    }
 }
 
 /// Restores whole connected components of `removed_label` vertices to
@@ -725,10 +769,17 @@ mod test_find_cl_bounded_points {
     fn test_final_reclassification_isolated_rca_becomes_aorta() {
         let (vertices, faces) = grid_mesh_fixture();
         // vertex 0 labelled RCA; its neighbours (1, 3) are aorta -> reclassified.
-        let rca_points = vec![vertices[0]];
+        // {6,7,8} form a separate, larger (size-3) RCA component elsewhere in the
+        // grid, disconnected from vertex 0's {1,3} neighbourhood - needed so
+        // vertex 0 is correctly the minority island rather than the sole (and
+        // therefore protected) component.
+        let rca_points = vec![vertices[0], vertices[6], vertices[7], vertices[8]];
         let result = final_reclassification(&vertices, &faces, &rca_points, &[], &[], &[]);
         assert!(!result.rca_points.contains(&vertices[0]));
         assert!(result.aorta_points.contains(&vertices[0]));
+        assert!(result.rca_points.contains(&vertices[6]));
+        assert!(result.rca_points.contains(&vertices[7]));
+        assert!(result.rca_points.contains(&vertices[8]));
     }
 
     #[test]
@@ -777,6 +828,89 @@ mod test_find_cl_bounded_points {
             + result.rca_removed_points.len()
             + result.lca_removed_points.len();
         assert_eq!(total, vertices.len());
+    }
+
+    // Fixture for the component-level Logic A tests: a 2-vertex candidate
+    // island {0,1} bordering a 6-vertex cluster {2..7} on one side, and a
+    // fully separate, larger 4-vertex cluster {8..11} with zero connectivity
+    // to the rest (so it's always the "largest" component when {0,1} is the
+    // subject label, and never itself when {2..7} is).
+    //
+    //   0 --- 2 --- 6            8 --- 9
+    //   |\    |     |            |     |
+    //   | 1 - 3 --- 7           11 --- 10
+    //   |/    |
+    //   4 --- 5
+    //
+    // vertex 0's neighbours: {1,2,3,4}; vertex 1's neighbours: {0,2,4,5}.
+    // Combined external boundary of component {0,1} is exactly {2,3,4,5}.
+    fn island_fixture() -> GridMeshFixture {
+        let vertices: Vec<(f64, f64, f64)> = (0..12).map(|i| (i as f64, 0.0, 0.0)).collect();
+        let faces = vec![
+            [0, 1, 2],
+            [1, 4, 5],
+            [0, 3, 4],
+            [2, 3, 6],
+            [4, 5, 7],
+            [6, 7, 3],
+            [8, 9, 10],
+            [8, 10, 11],
+        ];
+        (vertices, faces)
+    }
+
+    #[test]
+    fn test_final_reclassification_aorta_island_promoted_to_rca() {
+        let (vertices, faces) = island_fixture();
+        // {2..7} labelled RCA; {0,1} and {8..11} default to aorta. Aorta
+        // splits into {0,1} (size 2) and {8..11} (size 4) - the larger is
+        // excluded as the presumed main body, leaving {0,1}'s 100%-RCA
+        // boundary {2,3,4,5} to promote it.
+        let rca_points: Vec<_> = (2..8).map(|i| vertices[i]).collect();
+        let result = final_reclassification(&vertices, &faces, &rca_points, &[], &[], &[]);
+        assert!(result.rca_points.contains(&vertices[0]));
+        assert!(result.rca_points.contains(&vertices[1]));
+    }
+
+    #[test]
+    fn test_final_reclassification_aorta_island_promoted_to_lca() {
+        let (vertices, faces) = island_fixture();
+        let lca_points: Vec<_> = (2..8).map(|i| vertices[i]).collect();
+        let result = final_reclassification(&vertices, &faces, &[], &lca_points, &[], &[]);
+        assert!(result.lca_points.contains(&vertices[0]));
+        assert!(result.lca_points.contains(&vertices[1]));
+    }
+
+    #[test]
+    fn test_final_reclassification_aorta_island_stays_when_boundary_mixed() {
+        let (vertices, faces) = island_fixture();
+        // {0,1}'s boundary {2,3,4,5} is split 2 RCA / 2 LCA - neither clears
+        // 70%, so the island must stay aorta.
+        let rca_points = vec![vertices[2], vertices[3]];
+        let lca_points = vec![vertices[4], vertices[5]];
+        let result = final_reclassification(&vertices, &faces, &rca_points, &lca_points, &[], &[]);
+        assert!(result.aorta_points.contains(&vertices[0]));
+        assert!(result.aorta_points.contains(&vertices[1]));
+        assert!(!result.rca_points.contains(&vertices[0]));
+        assert!(!result.lca_points.contains(&vertices[0]));
+    }
+
+    #[test]
+    fn test_final_reclassification_largest_component_never_reclassified() {
+        let (vertices, faces) = island_fixture();
+        // {0,1,8..11} labelled RCA, leaving {2..7} as the sole aorta
+        // component (no islands at all) - even though it borders RCA
+        // extensively, it must never be reclassified: it's the (only, and
+        // therefore always "largest") component, which is exactly the
+        // catastrophic-mass-reclassification risk the "always exclude
+        // largest" rule guards against.
+        let mut rca_points = vec![vertices[0], vertices[1]];
+        rca_points.extend((8..12).map(|i| vertices[i]));
+        let result = final_reclassification(&vertices, &faces, &rca_points, &[], &[], &[]);
+        for v in &vertices[2..8] {
+            assert!(result.aorta_points.contains(v));
+            assert!(!result.rca_points.contains(v));
+        }
     }
 
     // Fixture for the component-level Logic B tests: two removed vertices (1, 2)
