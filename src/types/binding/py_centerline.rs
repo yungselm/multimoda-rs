@@ -228,44 +228,86 @@ impl PyCenterline {
         })
     }
 
-    /// Remove the run-alongside-main-branch prefix from every side branch,
-    /// optionally strip the inlet region from branch 0, and optionally smooth.
+    /// Remove the run-alongside-main-branch prefix duplicated by every side branch.
     ///
-    /// VTP files export every branch starting from the vessel origin, so side
-    /// branches share a common prefix with branch 0.  This method trims that
-    /// prefix from each side branch, keeping only the bifurcation junction and
-    /// the diverged portion.  Branches that overlap with branch 0 entirely are
-    /// dropped.  The trim threshold is one mean inter-point spacing of branch 0.
-    ///
-    /// Parameters
-    /// ----------
-    /// rm_start_mm : float, optional
-    ///     Arc-length in mm to remove from the start of branch 0 (the inlet
-    ///     region).  Set to ``0.0`` to leave branch 0 untouched.  Default ``5.0``.
-    /// smooth : bool, optional
-    ///     When ``True``, apply a per-branch Gaussian smoothing pass after all
-    ///     trimming.  Default ``False``.
-    /// smooth_sigma : float, optional
-    ///     Half-width of the Gaussian kernel in number of centerline points.
-    ///     A value of ``1.0`` is a gentle neighbourhood average; ``2–5`` removes
-    ///     noise while preserving the overall vessel path.  Ignored when
-    ///     ``smooth=False``.  Default ``2.5``.
+    /// Some centerline export formats (e.g. VTP) write every branch starting from
+    /// the vessel origin, so side branches share a common prefix with branch 0.
+    /// This trims that prefix from each side branch, keeping only the bifurcation
+    /// junction and the diverged portion. Branches that overlap with branch 0
+    /// entirely are dropped. The trim threshold is one mean inter-point spacing
+    /// of branch 0.
     ///
     /// Returns
     /// -------
     /// PyCenterline
-    ///     New centerline with overlapping prefixes removed from all side
-    ///     branches, the inlet trimmed from branch 0 if requested, and
-    ///     positions smoothed if requested.
-    #[pyo3(signature = (rm_start_mm = 5.0, smooth = false, smooth_sigma = 2.5))]
-    pub fn cleanup_vtp_data(
-        &self,
-        rm_start_mm: f64,
-        smooth: bool,
-        smooth_sigma: f64,
-    ) -> PyResult<PyCenterline> {
+    ///     New centerline with overlapping prefixes removed from all side branches.
+    pub fn remove_branch_overlap(&self) -> PyResult<PyCenterline> {
         let mut cl = self.to_rust_centerline();
-        cl.cleanup_vtp_data(rm_start_mm, smooth, smooth_sigma);
+        cl.remove_branch_overlap();
+        Ok(PyCenterline::from(&cl))
+    }
+
+    /// Trim `mm` of arc length off the start of branch 0.
+    ///
+    /// Useful when the main branch starts at the aortic inlet and the proximal
+    /// region is outside the region of interest.
+    ///
+    /// Parameters
+    /// ----------
+    /// mm : float
+    ///     Arc-length in mm to remove from the start of branch 0.
+    ///
+    /// Returns
+    /// -------
+    /// PyCenterline
+    ///     New centerline with the inlet trimmed from branch 0.
+    pub fn trim_start(&self, mm: f64) -> PyResult<PyCenterline> {
+        let mut cl = self.to_rust_centerline();
+        cl.trim_start(mm);
+        Ok(PyCenterline::from(&cl))
+    }
+
+    /// Resample every branch independently to even arc-length spacing.
+    ///
+    /// Interior points are linearly interpolated (position and radius) between
+    /// the two nearest original points; tangents are recomputed afterwards. No
+    /// interpolation occurs across a bifurcation.
+    ///
+    /// Parameters
+    /// ----------
+    /// spacing_mm : float
+    ///     Target arc-length spacing in mm between consecutive points.
+    ///
+    /// Returns
+    /// -------
+    /// PyCenterline
+    ///     New centerline resampled to even spacing per branch.
+    pub fn resample(&self, spacing_mm: f64) -> PyResult<PyCenterline> {
+        let mut cl = self.to_rust_centerline();
+        cl.resample(spacing_mm);
+        Ok(PyCenterline::from(&cl))
+    }
+
+    /// Smooth centerline positions with a Gaussian kernel (per branch).
+    ///
+    /// `sigma` is the half-width in number of centerline points. A value of
+    /// ``1.0`` is a gentle neighbourhood average; ``2–5`` removes noise while
+    /// keeping the overall vessel path; larger values heavily round corners.
+    /// Branches are processed independently so no smoothing bleeds across a
+    /// bifurcation.
+    ///
+    /// Parameters
+    /// ----------
+    /// sigma : float
+    ///     Half-width of the Gaussian kernel in number of centerline points.
+    ///
+    /// Returns
+    /// -------
+    /// PyCenterline
+    ///     New centerline with smoothed positions and recomputed tangents.
+    pub fn smooth(&self, sigma: f64) -> PyResult<PyCenterline> {
+        let mut cl = self.to_rust_centerline();
+        cl.smooth(sigma);
         Ok(PyCenterline::from(&cl))
     }
 

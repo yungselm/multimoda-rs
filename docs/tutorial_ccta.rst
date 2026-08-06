@@ -120,36 +120,26 @@ The returned ``results`` dictionary contains:
   the RCA label: ``[(x, y, z), ...]``.
 - ``"lca_removed_points"`` - same for LCA.
 
-Centerlines can be supplied in two formats.
-
-**CSV files** - three columns (no header): ``x``, ``y``, ``z`` in mm.  Convert to
-:class:`~multimodars.PyCenterline` with :func:`multimodars.numpy_to_centerline`:
-
-.. code-block:: python
-
-    import numpy as np
-
-    rca_cl_raw   = np.genfromtxt("data/centerline_rca_short.csv", delimiter=',')
-    lca_cl_raw   = np.genfromtxt("data/centerline_lca.csv",       delimiter=',')
-    aorta_cl_raw = np.genfromtxt("data/centerline_aorta.csv",     delimiter=',')
-
-    rca_cl   = mm.numpy_to_centerline(rca_cl_raw)
-    lca_cl   = mm.numpy_to_centerline(lca_cl_raw)
-    aorta_cl = mm.numpy_to_centerline(aorta_cl_raw)
-
-**VTP files** (recommended) - ASCII VTK PolyData exported by 3D-Slicer or VMTK.
-:func:`multimodars.read_centerline_vtp` parses the file and identifies branches automatically.
-:meth:`~multimodars.PyCenterline.cleanup_vtp_data` then removes the run-alongside-main-branch
-prefix that VTP files attach to every side branch and optionally smooths the result:
+Centerlines can be supplied as CSV files (three columns, no header: ``x``, ``y``, ``z`` in mm),
+ASCII VTP files (VTK PolyData exported by 3D-Slicer or VMTK, recommended), an existing
+:class:`~multimodars.PyCenterline`, or a numpy array of points.
+:func:`multimodars.load_and_prepare_centerline` loads any of these and runs the standard prep
+pipeline in one call - trimming any run-alongside-main-branch prefix VTP files attach to every
+side branch, optionally trimming the inlet, resampling to even spacing, detecting branches for
+formats that don't already carry them (e.g. CSV), normalising branch ordering, and smoothing:
 
 .. code-block:: python
 
-    rca_cl   = mm.read_centerline_vtp("data/rca_cl.vtp").cleanup_vtp_data(smooth=True)
-    lca_cl   = mm.read_centerline_vtp("data/lca_cl.vtp").cleanup_vtp_data(smooth=True)
-    aorta_cl = mm.read_centerline_vtp("data/ao_cl.vtp").cleanup_vtp_data(smooth=True)
+    rca_cl   = mm.load_and_prepare_centerline("data/rca_cl.vtp",              name="RCA",   spacing_mm=1.0)
+    lca_cl   = mm.load_and_prepare_centerline("data/lca_cl.vtp",              name="LCA",   spacing_mm=1.0)
+    aorta_cl = mm.load_and_prepare_centerline("data/ao_cl.vtp",               name="Aorta", spacing_mm=1.0)
 
-When using VTP files, pass the :class:`~multimodars.PyCenterline` objects directly to
-``path_centerline_*`` (instead of file-path strings).
+    # CSV works the same way - branch detection runs automatically since a flat
+    # CSV/array of points carries no branch information yet.
+    rca_cl   = mm.load_and_prepare_centerline("data/centerline_rca_short.csv", name="RCA",   spacing_mm=1.0)
+
+Pass the returned :class:`~multimodars.PyCenterline` objects directly to ``path_centerline_*``
+(instead of file-path strings).
 
 2. Prepare centerlines, detect branches, and discretize the vessel tree
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

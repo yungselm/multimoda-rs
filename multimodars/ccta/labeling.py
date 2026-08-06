@@ -15,6 +15,7 @@ from ..multimodars import (
     clean_outlier_points,
     find_points_by_cl_region,
     keep_largest_connected_component,
+    read_centerline_vtp,
     PyCenterline,
 )
 from .._converters import numpy_to_centerline
@@ -24,9 +25,9 @@ from .debug_plots import plot_results_key
 
 def label_geometry(
     path_ccta_geometry: Path | str | trimesh.Trimesh,
-    path_centerline_aorta: Path | str | PyCenterline,
-    path_centerline_rca: Path | str | PyCenterline,
-    path_centerline_lca: Path | str | PyCenterline,
+    path_centerline_aorta: Path | str | PyCenterline | np.ndarray,
+    path_centerline_rca: Path | str | PyCenterline | np.ndarray,
+    path_centerline_lca: Path | str | PyCenterline | np.ndarray,
     acute_takeoff_rca: bool = False,
     acute_takeoff_lca: bool = False,
     n_points_takeoff_rca: int = 120,
@@ -55,13 +56,17 @@ def label_geometry(
     path_ccta_geometry : Path or str
         Path to the CCTA surface mesh file (any format supported by
         :func:`multimodars.io.read_geometrical.read_mesh`).
-    path_centerline_aorta : Path or str
-        Path to a CSV file containing the aortic centerline (comma-delimited,
-        columns: x, y, z, …).
-    path_centerline_rca : Path or str
-        Path to a CSV file containing the RCA centerline.
-    path_centerline_lca : Path or str
-        Path to a CSV file containing the LCA centerline.
+    path_centerline_aorta : PyCenterline, Path, str, or numpy.ndarray
+        Aortic centerline: a ``.vtp`` file path, a CSV file path (comma-delimited,
+        columns: x, y, z, …), an existing ``PyCenterline``, or an array of points.
+        Orientation is normalised automatically (``orient_by_max_z`` for the aorta,
+        ``orient_to_reference`` against the aorta for RCA/LCA); prepare trimming,
+        resampling, branch extraction, and smoothing beforehand, e.g. with
+        :func:`load_and_prepare_centerline`.
+    path_centerline_rca : PyCenterline, Path, str, or numpy.ndarray
+        RCA centerline, same accepted formats as *path_centerline_aorta*.
+    path_centerline_lca : PyCenterline, Path, str, or numpy.ndarray
+        LCA centerline, same accepted formats as *path_centerline_aorta*.
     acute_takeoff_rca : bool, optional
         When ``True`` applies ray-triangle occlusion removal to the RCA region
         to strip points overlapping the aortic wall near an acute-angle takeoff
@@ -265,13 +270,22 @@ def label_geometry(
     return new_results, (cl_rca, cl_lca, cl_aorta)
 
 
-def _try_load_cl(path_centerline_aorta: PyCenterline | Path | str, name: str):
+def _try_load_cl(
+    path_centerline_aorta: PyCenterline | Path | str | np.ndarray, name: str
+):
     if isinstance(path_centerline_aorta, PyCenterline):
         cl_aorta = path_centerline_aorta
         print(f"Using provided {name} centerline: {len(cl_aorta.points)} points")
     elif isinstance(path_centerline_aorta, np.ndarray):
         cl_aorta = numpy_to_centerline(path_centerline_aorta)
         print(f"Using provided {name} centerline: {len(cl_aorta.points)} points")
+    elif str(path_centerline_aorta).lower().endswith(".vtp"):
+        try:
+            cl_aorta = read_centerline_vtp(str(path_centerline_aorta))
+            print(f"Loaded {name} centerline from VTP: {len(cl_aorta.points)} points")
+        except Exception as e:
+            print(f"Error reading {name} centerline from {path_centerline_aorta}: {e}")
+            raise
     else:
         try:
             cl_aorta_raw = np.genfromtxt(path_centerline_aorta, delimiter=",")
@@ -281,6 +295,77 @@ def _try_load_cl(path_centerline_aorta: PyCenterline | Path | str, name: str):
             print(f"Error reading {name} centerline from {path_centerline_aorta}: {e}")
             raise
     return cl_aorta
+
+
+def load_and_prepare_centerline(
+    source: PyCenterline | Path | str | np.ndarray,
+    name: str = "centerline",
+    spacing_mm: float | None = None,
+    branch_spacing_tolerance: float = 1.0,
+    rm_start_mm: float = 0.0,
+    smooth_sigma: float = 2.5,
+) -> PyCenterline:
+    """Load a centerline from any supported source and run the standard prep pipeline.
+
+    Loads *source* (a ``.vtp`` file, a CSV file, an existing ``PyCenterline``, or a
+    numpy array of points via :func:`_try_load_cl`), then applies, in order:
+
+    1. ``remove_branch_overlap()`` - only if *source* already carries branch
+       information (currently only true for VTP files, which duplicate a
+       prefix of branch 0 into every side branch).
+    2. ``trim_start(rm_start_mm)`` - only if ``rm_start_mm > 0``.
+    3. ``resample(spacing_mm)`` - only if ``spacing_mm`` is given.
+    4. ``calculate_branches(branch_spacing_tolerance)`` - only if *source* did
+       not already carry branch information (e.g. a flat CSV/array of points).
+    5. ``check_centerline()`` - normalise branch ordering.
+    6. ``smooth(smooth_sigma)`` - only if ``smooth_sigma > 0``.
+
+    Parameters
+    ----------
+    source : PyCenterline, Path, str, or numpy.ndarray
+        ``.vtp`` file path, CSV file path (columns x, y, z, ...), an existing
+        ``PyCenterline``, or an ``(N, 3+)`` array of points.
+    name : str, optional
+        Label used in log output. Default ``"centerline"``.
+    spacing_mm : float, optional
+        Target arc-length spacing in mm passed to ``resample``. ``None``
+        (default) skips resampling.
+    branch_spacing_tolerance : float, optional
+        Passed to ``calculate_branches`` when branch extraction is needed.
+        Default ``1.0``.
+    rm_start_mm : float, optional
+        Arc-length in mm to trim from the start of branch 0 (e.g. the aortic
+        inlet region). Default ``0.0`` (no trim).
+    smooth_sigma : float, optional
+        Half-width of the Gaussian smoothing kernel in number of centerline
+        points. Default ``2.5``. Set to ``0.0`` to skip smoothing.
+
+    Returns
+    -------
+    PyCenterline
+        The prepared centerline.
+    """
+    cl = _try_load_cl(source, name)
+
+    already_branched = len(cl.branch_start_indices) > 1
+    if already_branched:
+        cl = cl.remove_branch_overlap()
+
+    if rm_start_mm > 0:
+        cl = cl.trim_start(rm_start_mm)
+
+    if spacing_mm:
+        cl = cl.resample(spacing_mm)
+
+    if not already_branched:
+        cl = cl.calculate_branches(branch_spacing_tolerance)
+
+    cl = cl.check_centerline()
+
+    if smooth_sigma > 0:
+        cl = cl.smooth(smooth_sigma)
+
+    return cl
 
 
 def _apply_occlusion_removal(

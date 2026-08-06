@@ -1510,10 +1510,14 @@ def discretize_vessel(
     remaining contours to exactly ``n_points`` evenly-spaced points via a closed Catmull-Rom
     spline.
 
+    ``centerline`` is used as-is - smooth/resample/orient it beforehand (e.g. via
+    ``PyCenterline.smooth``, or :func:`multimodars.ccta.labeling.load_and_prepare_centerline`);
+    this does not smooth internally.
+
     Parameters
     ----------
     centerline : PyCenterline
-        Centerline object containing one or more branches.
+        Centerline object containing one or more branches, already prepared.
     points : list of tuple of (float, float, float)
         3-D surface mesh points ``(x, y, z)`` to project onto each cross-section.
     branch_id : int, optional

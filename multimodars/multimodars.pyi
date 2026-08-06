@@ -8,6 +8,9 @@ and IDEs can offer autocompletion and type checking for downstream code.
 
 from __future__ import annotations
 
+from pathlib import Path
+import numpy as np
+
 # Alignment log entry: (id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y)
 # Rust: Vec<(u32, u32, f64, f64, f64, f64, f64)>
 _AlignLog = list[tuple[int, int, float, float, float, float, float]]
@@ -378,41 +381,79 @@ class PyCenterline:
         """
         ...
 
-    def cleanup_vtp_data(
-        self,
-        rm_start_mm: float = ...,
-        smooth: bool = ...,
-        smooth_sigma: float = ...,
-    ) -> PyCenterline:
-        """Remove the run-alongside-main-branch prefix from every side branch,
-        optionally strip the inlet region from branch 0, and optionally smooth.
+    def remove_branch_overlap(self) -> PyCenterline:
+        """Remove the run-alongside-main-branch prefix duplicated by every side branch.
 
-        VTP files export every branch starting from the vessel origin, so side
-        branches share a common prefix with branch 0. This method trims that
-        prefix from each side branch, keeping the bifurcation junction point
-        and the diverged portion. Branches that overlap branch 0 entirely are
-        dropped. The trim threshold is one mean inter-point spacing of branch 0.
-
-        Parameters
-        ----------
-        rm_start_mm : float, optional
-            Arc-length in mm to remove from the start of branch 0 (the inlet
-            region). Set to ``0.0`` to leave branch 0 untouched. Default ``5.0``.
-        smooth : bool, optional
-            When ``True``, apply a per-branch Gaussian smoothing pass after all
-            trimming. Default ``False``.
-        smooth_sigma : float, optional
-            Half-width of the Gaussian kernel in number of centerline points.
-            A value of ``1.0`` is a gentle neighbourhood average; ``2-5`` removes
-            noise while preserving the overall vessel path. Ignored when
-            ``smooth=False``. Default ``2.5``.
+        Some centerline export formats (e.g. VTP) write every branch starting
+        from the vessel origin, so side branches share a common prefix with
+        branch 0. This trims that prefix from each side branch, keeping the
+        bifurcation junction point and the diverged portion. Branches that
+        overlap branch 0 entirely are dropped. The trim threshold is one mean
+        inter-point spacing of branch 0.
 
         Returns
         -------
         PyCenterline
             New centerline with overlapping prefixes removed from all side
-            branches, the inlet trimmed from branch 0 if requested, and
-            positions smoothed if requested.
+            branches.
+        """
+        ...
+
+    def trim_start(self, mm: float) -> PyCenterline:
+        """Trim `mm` of arc length off the start of branch 0.
+
+        Useful when the main branch starts at the aortic inlet and the
+        proximal region is outside the region of interest.
+
+        Parameters
+        ----------
+        mm : float
+            Arc-length in mm to remove from the start of branch 0.
+
+        Returns
+        -------
+        PyCenterline
+            New centerline with the inlet trimmed from branch 0.
+        """
+        ...
+
+    def resample(self, spacing_mm: float) -> PyCenterline:
+        """Resample every branch independently to even arc-length spacing.
+
+        Interior points are linearly interpolated (position and radius)
+        between the two nearest original points; tangents are recomputed
+        afterwards. No interpolation occurs across a bifurcation.
+
+        Parameters
+        ----------
+        spacing_mm : float
+            Target arc-length spacing in mm between consecutive points.
+
+        Returns
+        -------
+        PyCenterline
+            New centerline resampled to even spacing per branch.
+        """
+        ...
+
+    def smooth(self, sigma: float) -> PyCenterline:
+        """Smooth centerline positions with a Gaussian kernel (per branch).
+
+        `sigma` is the half-width in number of centerline points. A value of
+        ``1.0`` is a gentle neighbourhood average; ``2-5`` removes noise while
+        keeping the overall vessel path; larger values heavily round corners.
+        Branches are processed independently so no smoothing bleeds across a
+        bifurcation.
+
+        Parameters
+        ----------
+        sigma : float
+            Half-width of the Gaussian kernel in number of centerline points.
+
+        Returns
+        -------
+        PyCenterline
+            New centerline with smoothed positions and recomputed tangents.
         """
         ...
 
@@ -767,6 +808,57 @@ def to_obj(
 # ---------------------------------------------------------------------------
 
 def read_centerline_vtp(path: str) -> PyCenterline: ...
+
+# Implemented in Python (multimodars.ccta.labeling), re-declared here for
+# discoverability alongside the other centerline loading/prep functions.
+def load_and_prepare_centerline(
+    source: PyCenterline | Path | str | np.ndarray,
+    name: str = ...,
+    spacing_mm: float | None = ...,
+    branch_spacing_tolerance: float = ...,
+    rm_start_mm: float = ...,
+    smooth_sigma: float = ...,
+) -> PyCenterline:
+    """Load a centerline from any supported source and run the standard prep pipeline.
+
+    Loads *source* (a ``.vtp`` file, a CSV file, an existing ``PyCenterline``, or a
+    numpy array of points), then applies, in order:
+
+    1. ``remove_branch_overlap()`` - only if *source* already carries branch
+       information (currently only true for VTP files).
+    2. ``trim_start(rm_start_mm)`` - only if ``rm_start_mm > 0``.
+    3. ``resample(spacing_mm)`` - only if ``spacing_mm`` is given.
+    4. ``calculate_branches(branch_spacing_tolerance)`` - only if *source* did
+       not already carry branch information (e.g. a flat CSV/array of points).
+    5. ``check_centerline()`` - normalise branch ordering.
+    6. ``smooth(smooth_sigma)`` - only if ``smooth_sigma > 0``.
+
+    Parameters
+    ----------
+    source : PyCenterline, Path, str, or numpy.ndarray
+        ``.vtp`` file path, CSV file path (columns x, y, z, ...), an existing
+        ``PyCenterline``, or an ``(N, 3+)`` array of points.
+    name : str, optional
+        Label used in log output. Default ``"centerline"``.
+    spacing_mm : float, optional
+        Target arc-length spacing in mm passed to ``resample``. ``None``
+        (default) skips resampling.
+    branch_spacing_tolerance : float, optional
+        Passed to ``calculate_branches`` when branch extraction is needed.
+        Default ``1.0``.
+    rm_start_mm : float, optional
+        Arc-length in mm to trim from the start of branch 0 (e.g. the aortic
+        inlet region). Default ``0.0`` (no trim).
+    smooth_sigma : float, optional
+        Half-width of the Gaussian smoothing kernel in number of centerline
+        points. Default ``2.5``. Set to ``0.0`` to skip smoothing.
+
+    Returns
+    -------
+    PyCenterline
+        The prepared centerline.
+    """
+    ...
 
 # ---------------------------------------------------------------------------
 # CCTA mesh labelling and scaling functions

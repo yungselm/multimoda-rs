@@ -1,7 +1,6 @@
 use super::centerline_point::CenterlinePoint;
 use super::contour_point::ContourPoint;
 use super::Point3D;
-use crate::types::utils;
 use nalgebra::Vector3;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -662,26 +661,16 @@ impl Centerline {
         dist_last < dist_first
     }
 
-    /// Remove the run-alongside-main-branch prefix from every side branch,
-    /// optionally strip the inlet region from branch 0, and optionally smooth.
+    /// Remove the run-alongside-main-branch prefix duplicated by every side branch.
     ///
-    /// VTP files export every branch starting from the vessel origin, so side
-    /// branches share a common prefix with branch 0.  For each side branch this
-    /// method trims the contiguous leading prefix whose points all lie within
-    /// one mean inter-point spacing of branch 0 of at least one main-branch
-    /// point. The last point of the trimmed prefix is kept as the bifurcation
-    /// junction. Branches whose entire extent lies within that buffer are
-    /// dropped completely.
-    ///
-    /// If `rm_start_mm > 0`, the leading points of branch 0 are also removed
-    /// up to `rm_start_mm` arc-length from its first point.  This is useful
-    /// when the main branch starts at the aortic inlet and the proximal region
-    /// is outside the region of interest.
-    ///
-    /// If `smooth` is `true`, a Gaussian kernel with half-width `smooth_sigma`
-    /// (in number of points) is applied per branch after all trimming is done.
-    /// See [`utils::smooth_centerline`] for kernel details.
-    pub fn cleanup_vtp_data(&mut self, rm_start_mm: f64, smooth: bool, smooth_sigma: f64) {
+    /// Some centerline export formats (e.g. VTP) write every branch starting from
+    /// the vessel origin, so side branches share a common prefix with branch 0.
+    /// For each side branch this trims the contiguous leading prefix whose points
+    /// all lie within one mean inter-point spacing of branch 0 of at least one
+    /// main-branch point. The last point of the trimmed prefix is kept as the
+    /// bifurcation junction. Branches whose entire extent lies within that buffer
+    /// are dropped completely.
+    pub fn remove_branch_overlap(&mut self) {
         if self.branch_start_indices.is_empty() {
             return;
         }
@@ -690,14 +679,182 @@ impl Centerline {
         let mut branches = self.branches_as_vecs();
 
         Self::remove_overlapping(&mut branches, buffer * buffer);
-        Self::remove_trailing_start(&mut branches, rm_start_mm);
 
         self.rebuild_from_branches(branches);
+    }
 
-        if smooth {
-            let new_cl_smooth = utils::smooth_centerline(self, smooth_sigma);
-            *self = new_cl_smooth;
+    /// Trim `mm` of arc length off the start of branch 0.
+    ///
+    /// Useful when the main branch starts at the aortic inlet and the proximal
+    /// region is outside the region of interest.
+    pub fn trim_start(&mut self, mm: f64) {
+        if mm <= 0.0 || self.branch_start_indices.is_empty() {
+            return;
         }
+
+        let mut branches = self.branches_as_vecs();
+
+        Self::remove_trailing_start(&mut branches, mm);
+
+        self.rebuild_from_branches(branches);
+    }
+
+    /// Resample every branch independently to even arc-length spacing.
+    ///
+    /// Interior points are linearly interpolated (position and radius) between the
+    /// two nearest original points; tangents are recomputed afterwards. No
+    /// interpolation occurs across a bifurcation. `frame_index`/`point_index` are
+    /// reassigned sequentially per branch since resampled points no longer
+    /// correspond 1:1 with source frames.
+    pub fn resample(&mut self, spacing_mm: f64) {
+        if self.points.is_empty() || spacing_mm <= 1e-12 {
+            return;
+        }
+
+        let mut branches = self.branches_as_vecs();
+        for branch in branches.iter_mut() {
+            *branch = Self::resample_branch(branch, spacing_mm);
+        }
+        self.rebuild_from_branches(branches);
+    }
+
+    /// Resample one branch's points to even arc-length spacing via linear interpolation.
+    fn resample_branch(points: &[CenterlinePoint], spacing_mm: f64) -> Vec<CenterlinePoint> {
+        if points.len() < 2 {
+            return points.to_vec();
+        }
+
+        let mut cum = vec![0.0f64; points.len()];
+        for i in 1..points.len() {
+            cum[i] = cum[i - 1]
+                + points[i - 1]
+                    .contour_point
+                    .distance_to(&points[i].contour_point);
+        }
+        let total = cum[points.len() - 1];
+        if total < 1e-12 {
+            return points.to_vec();
+        }
+
+        let mut targets = Vec::new();
+        let mut s = 0.0;
+        while s < total {
+            targets.push(s);
+            s += spacing_mm;
+        }
+        targets.push(total);
+
+        let mut seg = 0usize;
+        targets
+            .iter()
+            .enumerate()
+            .map(|(sample_index, &t)| {
+                while seg < points.len() - 2 && cum[seg + 1] < t {
+                    seg += 1;
+                }
+                let (s0, s1) = (cum[seg], cum[seg + 1]);
+                let frac = if (s1 - s0).abs() < 1e-12 {
+                    0.0
+                } else {
+                    (t - s0) / (s1 - s0)
+                };
+
+                let p0 = &points[seg].contour_point;
+                let p1 = &points[seg + 1].contour_point;
+                let r0 = points[seg].radius;
+                let r1 = points[seg + 1].radius;
+
+                CenterlinePoint {
+                    contour_point: ContourPoint {
+                        frame_index: sample_index as u32,
+                        point_index: sample_index as u32,
+                        x: p0.x + frac * (p1.x - p0.x),
+                        y: p0.y + frac * (p1.y - p0.y),
+                        z: p0.z + frac * (p1.z - p0.z),
+                        aortic: p0.aortic,
+                    },
+                    tangent: Vector3::zeros(),
+                    branch_id: points[seg].branch_id,
+                    radius: r0 + frac * (r1 - r0),
+                }
+            })
+            .collect()
+    }
+
+    /// Smooth centerline positions with a Gaussian kernel (per branch) and recompute tangents.
+    ///
+    /// `sigma` is the half-width in number of centerline points.  A value of 1.0 is a gentle
+    /// neighbourhood average; 3–5 removes noise while keeping the overall vessel path; larger
+    /// values heavily round corners.  Branches are processed independently so no smoothing
+    /// bleeds across the bifurcation.
+    pub fn smooth(&mut self, sigma: f64) {
+        if self.points.is_empty() || sigma < 1e-12 {
+            return;
+        }
+
+        let n = self.points.len();
+        let max_branch = self.points.iter().map(|p| p.branch_id).max().unwrap_or(0);
+
+        let mut sx = vec![0.0f64; n];
+        let mut sy = vec![0.0f64; n];
+        let mut sz = vec![0.0f64; n];
+
+        for branch_id in 0..=max_branch {
+            let indices: Vec<usize> = self
+                .points
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| p.branch_id == branch_id)
+                .map(|(i, _)| i)
+                .collect();
+
+            if indices.is_empty() {
+                continue;
+            }
+
+            // Truncate kernel at 3σ to avoid O(n²) cost on long vessels.
+            let radius = (3.0 * sigma).ceil() as usize;
+
+            for (li, &gi) in indices.iter().enumerate() {
+                // Symmetric truncation: equal radius on both sides so that a
+                // linear trend is preserved exactly (weighted mean of symmetric
+                // neighbours always equals the centre value).
+                let sym_r = li.min(radius).min(indices.len() - 1 - li);
+                let j_start = li - sym_r;
+                let j_end = li + sym_r + 1;
+                let (mut wx, mut wy, mut wz, mut wt) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
+
+                for (k, &gi_j) in indices[j_start..j_end].iter().enumerate() {
+                    let j = j_start + k;
+                    let diff = (li as f64) - (j as f64);
+                    let w = (-0.5 * diff * diff / (sigma * sigma)).exp();
+                    let pt = &self.points[gi_j].contour_point;
+                    wx += w * pt.x;
+                    wy += w * pt.y;
+                    wz += w * pt.z;
+                    wt += w;
+                }
+
+                if wt > 1e-12 {
+                    sx[gi] = wx / wt;
+                    sy[gi] = wy / wt;
+                    sz[gi] = wz / wt;
+                } else {
+                    let pt = &self.points[gi].contour_point;
+                    sx[gi] = pt.x;
+                    sy[gi] = pt.y;
+                    sz[gi] = pt.z;
+                }
+            }
+        }
+
+        for (i, p) in self.points.iter_mut().enumerate() {
+            p.contour_point.x = sx[i];
+            p.contour_point.y = sy[i];
+            p.contour_point.z = sz[i];
+        }
+
+        self.recompute_tangents();
     }
 
     /// Trims the leading overlap each side branch shares with the main vessel (branch 0).
@@ -965,7 +1122,7 @@ mod centerline_tests {
     }
 
     #[test]
-    fn test_cleanup_vtp_trims_overlap_prefix() {
+    fn test_remove_branch_overlap_trims_prefix() {
         // Main: straight along x, spacing = 1.0.
         // Side: first 3 pts lie on main, then diverges by 1.5 (> 1 spacing) in y.
         let main = &[
@@ -983,7 +1140,7 @@ mod centerline_tests {
             (2., 3., 0.),
         ];
         let mut cl = make_multi_branch(&[main, side]);
-        cl.cleanup_vtp_data(0.0, false, 0.0);
+        cl.remove_branch_overlap();
 
         let branches = cl.branches_as_vecs();
         assert_eq!(branches.len(), 2, "side branch must survive");
@@ -995,12 +1152,12 @@ mod centerline_tests {
     }
 
     #[test]
-    fn test_cleanup_vtp_drops_fully_overlapping_branch() {
+    fn test_remove_branch_overlap_drops_fully_overlapping_branch() {
         let main = &[(0., 0., 0.), (1., 0., 0.), (2., 0., 0.)];
         // Side branch lies entirely on main within buffer=0.5.
         let side = &[(0., 0., 0.), (1., 0., 0.)];
         let mut cl = make_multi_branch(&[main, side]);
-        cl.cleanup_vtp_data(0.0, false, 0.0);
+        cl.remove_branch_overlap();
 
         assert_eq!(
             cl.branch_start_indices.len(),
@@ -1010,7 +1167,7 @@ mod centerline_tests {
     }
 
     #[test]
-    fn test_cleanup_vtp_inlet_trim() {
+    fn test_trim_start_removes_inlet() {
         // Main: spacing = 1.0, 6 points → trim first 3 mm → keep from point 3 onwards.
         let main = &[
             (0., 0., 0.),
@@ -1021,7 +1178,7 @@ mod centerline_tests {
             (5., 0., 0.),
         ];
         let mut cl = make_multi_branch(&[main]);
-        cl.cleanup_vtp_data(3.0, false, 0.0);
+        cl.trim_start(3.0);
 
         assert_eq!(cl.branch_start_indices.len(), 1);
         // arc ≤ 3.0 covers points at 0, 1, 2, 3 mm → trim_idx = 3, keep from 3 onwards
@@ -1030,16 +1187,99 @@ mod centerline_tests {
     }
 
     #[test]
-    fn test_cleanup_vtp_no_overlap_leaves_branch_intact() {
+    fn test_remove_branch_overlap_no_overlap_leaves_branch_intact() {
         let main = &[(0., 0., 0.), (1., 0., 0.), (2., 0., 0.)];
         // Side branch diverges from the very first point.
         let side = &[(0., 5., 0.), (0., 6., 0.), (0., 7., 0.)];
         let mut cl = make_multi_branch(&[main, side]);
-        cl.cleanup_vtp_data(0.0, false, 0.0);
+        cl.remove_branch_overlap();
 
         let branches = cl.branches_as_vecs();
         assert_eq!(branches.len(), 2);
         assert_eq!(branches[1].len(), 3, "no trimming when no overlap");
+    }
+
+    #[test]
+    fn straight_line_smooth_is_unchanged() {
+        // A perfectly straight line should not move after smoothing.
+        let pts: Vec<(f64, f64, f64)> = (0..20).map(|i| (i as f64, 0.0, 0.0)).collect();
+        let mut cl = cl_from_coords(&pts);
+        let original = cl.clone();
+        cl.smooth(3.0);
+
+        for (orig, sm) in original.points.iter().zip(cl.points.iter()) {
+            let dx = (orig.contour_point.x - sm.contour_point.x).abs();
+            let dy = (orig.contour_point.y - sm.contour_point.y).abs();
+            let dz = (orig.contour_point.z - sm.contour_point.z).abs();
+            assert!(
+                dx < 1e-10 && dy < 1e-10 && dz < 1e-10,
+                "straight line moved"
+            );
+        }
+    }
+
+    #[test]
+    fn smooth_damps_spike() {
+        // Insert a sharp lateral spike at position 7 in an otherwise straight line.
+        let mut pts: Vec<(f64, f64, f64)> = (0..15).map(|i| (i as f64, 0.0, 0.0)).collect();
+        pts[7] = (7.0, 5.0, 0.0);
+        let mut cl = cl_from_coords(&pts);
+        cl.smooth(2.0);
+
+        let spike_y = cl.points[7].contour_point.y;
+        assert!(spike_y < 5.0, "spike should be damped, got y = {spike_y}");
+        assert!(spike_y > 0.0, "spike should not be fully erased");
+    }
+
+    #[test]
+    fn smooth_produces_unit_tangents() {
+        let mut pts: Vec<(f64, f64, f64)> = (0..20).map(|i| (i as f64, 0.0, 0.0)).collect();
+        pts[10] = (10.0, 3.0, 0.0);
+        let mut cl = cl_from_coords(&pts);
+        cl.smooth(2.0);
+
+        for p in &cl.points {
+            let len = p.tangent.norm();
+            assert!(
+                (len - 1.0).abs() < 1e-10 || len < 1e-12,
+                "tangent not unit: {len}"
+            );
+        }
+    }
+
+    #[test]
+    fn smooth_sigma_zero_is_noop() {
+        let pts: Vec<(f64, f64, f64)> = (0..10).map(|i| (i as f64, 0.0, 0.0)).collect();
+        let mut cl = cl_from_coords(&pts);
+        let original = cl.clone();
+        cl.smooth(0.0);
+        assert_eq!(cl, original);
+    }
+
+    #[test]
+    fn test_resample_produces_even_spacing() {
+        let mut cl = cl_from_coords(&[(0., 0., 0.), (10., 0., 0.)]);
+        cl.resample(2.5);
+
+        assert_eq!(cl.points.len(), 5);
+        for (i, p) in cl.points.iter().enumerate() {
+            assert!((p.contour_point.x - i as f64 * 2.5).abs() < 1e-9);
+        }
+        assert!((cl.points.last().unwrap().contour_point.x - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_resample_does_not_cross_branch_boundary() {
+        let main = &[(0., 0., 0.), (10., 0., 0.)];
+        let side = &[(10., 0., 0.), (10., 5., 0.)];
+        let mut cl = make_multi_branch(&[main, side]);
+        cl.resample(2.0);
+
+        assert_eq!(cl.branch_start_indices.len(), 2);
+        let branches = cl.branches_as_vecs();
+        assert!(branches[0].iter().all(|p| p.branch_id == 0));
+        assert!(branches[1].iter().all(|p| p.branch_id == 1));
+        assert!((branches[1][0].contour_point.y).abs() < 1e-9);
     }
 
     #[test]

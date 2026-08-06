@@ -136,11 +136,15 @@ def discretize_vessel_tree(
     :func:`prepare_and_discretize` if you also need branch labelling to run
     automatically.
 
+    ``ao_cl``, ``rca_cl``, and ``lca_cl`` are used as-is - smooth/resample/orient
+    them beforehand (e.g. via :func:`load_and_prepare_centerline`); this does
+    not smooth internally.
+
     Parameters
     ----------
     ao_cl, rca_cl, lca_cl:
         Aortic, RCA, and LCA centerlines (branches already computed and
-        labelled).
+        labelled), already prepared.
     results_dict:
         Dictionary produced by :func:`~multimodars.label_branches` containing
         keys ``aorta_points``, ``rca_points_main``, ``lca_points_main``, and
@@ -229,10 +233,9 @@ def prepare_centerlines(
     3. :func:`~multimodars.label_branches` for RCA, then LCA
 
     When ``vtp_data=True``, branch detection is skipped because the centerline
-    already carries branch information from the VTP file (populated by
-    :func:`~multimodars.read_centerline_vtp` and cleaned by
-    ``cleanup_vtp_data``). Only ``check_centerline`` is called to normalise
-    branch ordering.
+    already carries branch information from the VTP file (populated and
+    cleaned by :func:`~multimodars.load_and_prepare_centerline`). Only
+    ``check_centerline`` is called to normalise branch ordering.
 
     .. note::
         Manual edits - ``find_sharp_angles``, ``split_branch``,

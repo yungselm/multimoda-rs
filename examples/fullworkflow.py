@@ -13,9 +13,9 @@ for candidate in [cwd, cwd.parent, cwd.parent.parent]:
         break
 print(f"Working directory: {os.getcwd()}")
 
-rca_cl = mm.read_centerline_vtp("./rca_cl.vtp").cleanup_vtp_data(smooth=True)
-lca_cl = mm.read_centerline_vtp("./lca_cl.vtp").cleanup_vtp_data(smooth=True)
-aorta_cl = mm.read_centerline_vtp("./ao_cl.vtp").cleanup_vtp_data(smooth=True)
+rca_cl = mm.load_and_prepare_centerline("./rca_cl.vtp", name="RCA", spacing_mm=0.1)
+lca_cl = mm.load_and_prepare_centerline("./lca_cl.vtp", name="LCA", spacing_mm=0.1)
+aorta_cl = mm.load_and_prepare_centerline("./ao_cl.vtp", name="Aorta", spacing_mm=0.1)
 
 results, (rca_cl, lca_cl, ao_cl) = mm.label_geometry(
     path_ccta_geometry="./NARCO_119.stl",
