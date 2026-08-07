@@ -6,44 +6,24 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [0.6.0] -2026-08-07
 
 ### Changed
-- `Centerline`/`PyCenterline` API reorganised around a clear load → prepare → branch → order →
-  smooth pipeline:
-- `cleanup_vtp_data` is removed, replaced by `remove_branch_overlap()` (just the VTP
-  duplicate-prefix trim) and `trim_start(mm)` (the inlet trim), so smoothing and trimming are
-  no longer bundled into one VTP-specific call.
-- `smooth(sigma)` is now an inherent `Centerline`/`PyCenterline` method (was the free function
-  `utils::smooth_centerline`, Rust-only).
-- New `resample(spacing_mm)` resamples every branch to even arc-length spacing independently of
-  any reference geometry.
-- New `orient_by_max_z()` and `orient_to_reference(reference)` replace the ad-hoc z-based
-  reversal/sort heuristics previously duplicated across `label_coronary.rs`,
-  `centerline_align/preprocessing.rs`, and `Centerline::check_centerline` - one of which
-  (`label_coronary.rs`'s private `check_centerline`) fully re-sorted points by z instead of just
-  reversing, risking corruption of arc-length-contiguous assumptions downstream.
-- New Python helpers `load_centerline(source, name)` (loads a centerline from any supported
-  source - `.vtp`, CSV, `PyCenterline`, or numpy array) and `prepare_centerline(centerline,
-  ref_centerline=None, ...)` (runs the full prep pipeline: overlap removal, inlet trim,
-  resample, branch extraction, orientation, smoothing) - together replace the old
-  `read_centerline_vtp(...).cleanup_vtp_data(smooth=True)` pattern. Loading and preparing are
-  separate calls so a caller can load once and prepare against a reference computed from another
-  centerline (e.g. orient a coronary against the already-loaded aorta).
-  `prepare_centerline`'s `ref_centerline` doubles as the "is this a coronary?" signal: given, it
-  orients via `orient_to_reference` and extracts branches (a coronary has side branches);
-  omitted, it falls back to `orient_by_max_z` and skips branch extraction (e.g. the aorta, which
-  has none).
-- `discretize_vessel`/`discretize_vessel_tree` no longer smooth centerlines internally (σ = 2.5
-  was previously hardcoded); callers must prepare centerlines beforehand, e.g. via
-  `prepare_centerline` or `.smooth()`.
-- `label_geometry` now takes prepared `PyCenterline` objects directly (`centerline_aorta`,
-  `centerline_rca`, `centerline_lca`) instead of `Path | str | PyCenterline | np.ndarray` unions -
-  it no longer loads or orients centerlines internally, so callers must do that beforehand (e.g.
-  via `load_centerline` + `prepare_centerline`) and pass the same objects to every downstream
-  call instead of relying on `label_geometry` to hand them back.
-- `orient_by_max_z()` and `orient_to_reference(reference)` now also reorder every side branch
-  (previously only branch 0 was touched), applying the same "closer end goes first" rule against
-  branch 0 (for `orient_by_max_z`) or `reference`'s branch 0 (for `orient_to_reference`). This
-  makes `check_centerline` - which only ever duplicated `orient_by_max_z`'s side-branch handling -
-  fully redundant, so it is removed; call `orient_by_max_z()` instead.
+- `Centerline`/`PyCenterline` API reorganised around a load → prepare → branch → order → smooth
+  pipeline:
+  - `cleanup_vtp_data` removed, replaced by `remove_branch_overlap()` and `trim_start(mm)`.
+  - `smooth(sigma)` is now an inherent method (was the Rust-only `utils::smooth_centerline`).
+  - New `resample(spacing_mm)` resamples every branch to even arc-length spacing.
+  - New `orient_by_max_z()` / `orient_to_reference(reference)` replace the old ad-hoc z-based
+    reversal heuristics (`label_coronary.rs`, `centerline_align/preprocessing.rs`,
+    `Centerline::check_centerline`) and now also reorder every side branch, not just branch 0 -
+    making `check_centerline` fully redundant, so it is removed; call `orient_by_max_z()` instead.
+  - New Python helpers `load_centerline(source, name)` and `prepare_centerline(centerline,
+    ref_centerline=None, ...)` replace `read_centerline_vtp(...).cleanup_vtp_data(smooth=True)`.
+    `ref_centerline` doubles as the "is this a coronary?" signal, driving both which orientation
+    method runs and whether branch detection runs.
+- `discretize_vessel`/`discretize_vessel_tree` no longer smooth centerlines internally; prepare
+  centerlines beforehand via `prepare_centerline` or `.smooth()`.
+- `label_geometry` now takes prepared `PyCenterline` objects (`centerline_aorta`,
+  `centerline_rca`, `centerline_lca`) instead of path/array unions, and no longer loads or
+  orients centerlines internally.
 
 ## [0.5.8] - 2026-08-06
 

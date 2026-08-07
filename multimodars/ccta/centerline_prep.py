@@ -55,7 +55,7 @@ def prepare_centerline(
     centerline: PyCenterline,
     ref_centerline: PyCenterline | None = None,
     spacing_mm: float | None = None,
-    branch_spacing_tolerance: float = 1.0,
+    branch_spacing_tolerance: float = 2.0,
     rm_start_mm: float = 0.0,
     smooth_sigma: float = 2.5,
 ) -> PyCenterline:
@@ -97,7 +97,7 @@ def prepare_centerline(
         (default) skips resampling.
     branch_spacing_tolerance : float, optional
         Passed to ``calculate_branches`` when branch extraction is needed.
-        Default ``1.0``.
+        Default ``2.0``.
     rm_start_mm : float, optional
         Arc-length in mm to trim from the start of branch 0 (e.g. the aortic
         inlet region). Default ``0.0`` (no trim).
