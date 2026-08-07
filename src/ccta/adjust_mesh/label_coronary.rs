@@ -70,7 +70,7 @@ fn ray_triangle_intersection(
 pub fn remove_occluded_points_ray_triangle_rust(
     centerline_coronary: &Centerline,
     centerline_aorta: &Centerline,
-    range_coronary: usize,
+    range_mm: f64,
     points: &[(f64, f64, f64)],
     faces: &[Triangle],
     step_size_mm: f64,
@@ -80,10 +80,13 @@ pub fn remove_occluded_points_ray_triangle_rust(
     }
 
     // Callers must orient both centerlines before calling (`orient_by_max_z` for the
-    // aorta, `orient_to_reference` for the coronary) — `.take(range_coronary)` below
+    // aorta, `orient_to_reference` for the coronary) — `.take(range_points)` below
     // assumes the proximal segment is arc-length-contiguous starting at index 0.
     let spacing = (centerline_aorta.mean_spacing() + centerline_coronary.mean_spacing()) / 2.0;
     let step_cl_points = (step_size_mm / spacing).ceil() as usize;
+    // range_mm is a physical length, not a point count, so it stays correct
+    // regardless of how finely the centerline was resampled beforehand.
+    let range_points = (range_mm / spacing).ceil() as usize;
 
     // Parallelize over aorta points (75 items): each thread owns 100 sequential coronary
     // iterations against faces — coarse enough to avoid scheduler overhead from nested parallelism.
@@ -102,7 +105,7 @@ pub fn remove_occluded_points_ray_triangle_rust(
             for coronary_point in centerline_coronary
                 .points
                 .iter()
-                .take(range_coronary)
+                .take(range_points)
                 .step_by(step_cl_points)
             {
                 let coronary_coord = Point3::new(

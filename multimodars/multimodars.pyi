@@ -872,7 +872,7 @@ def load_and_prepare_centerline(
 def remove_occluded_points_ray_triangle(
     centerline_coronary: PyCenterline,
     centerline_aorta: PyCenterline,
-    range_coronary: int,
+    range_mm: float,
     points: list[tuple[float, float, float]],
     faces: list[
         tuple[

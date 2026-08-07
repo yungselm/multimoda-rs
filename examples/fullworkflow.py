@@ -20,7 +20,7 @@ lca_cl = mm.load_and_prepare_centerline(
     "./lca_cl.vtp", name="LCA", spacing_mm=1.0, rm_start_mm=5.0
 )
 aorta_cl = mm.load_and_prepare_centerline("./ao_cl.vtp", name="Aorta", spacing_mm=1.0)
-
+# aorta_cl = mm.read_centerline_vtp("./ao_cl.vtp")
 # Orient once, locally, so these same oriented objects can be reused for every
 # downstream step below — label_geometry() re-applies the same idempotent
 # orientation internally but no longer returns centerlines.
@@ -35,8 +35,8 @@ results = mm.label_geometry(
     path_centerline_lca=lca_cl,
     bounding_sphere_radius_mm_rca=3.0,
     bounding_sphere_radius_mm_lca=3.0,
-    n_points_takeoff_rca=100,
-    n_points_takeoff_lca=60,
+    range_mm_takeoff_rca=60.0,  # mm, was a point count before
+    range_mm_takeoff_lca=40.0,  # mm, was a point count before
     acute_takeoff_rca=True,
     acute_takeoff_lca=False,
     control_plot=True,
@@ -179,8 +179,8 @@ results_final = mm.label_geometry(
     path_centerline_lca=lca_cl,
     bounding_sphere_radius_mm_rca=3.0,
     bounding_sphere_radius_mm_lca=3.0,
-    n_points_takeoff_rca=100,
-    n_points_takeoff_lca=60,
+    range_mm_takeoff_rca=60.0,  # mm, was a point count before
+    range_mm_takeoff_lca=40.0,  # mm, was a point count before
     acute_takeoff_rca=True,
     acute_takeoff_lca=False,
     control_plot=True,

@@ -25,8 +25,8 @@ def label(
     aligned_frames: list[PyFrame],
     acute_takeoff_rca: bool = False,
     acute_takeoff_lca: bool = False,
-    n_points_takeoff_rca: int = 120,
-    n_points_takeoff_lca: int = 120,
+    range_mm_takeoff_rca: float = 60.0,
+    range_mm_takeoff_lca: float = 60.0,
     step_size_mm: float = 1.0,
     bounding_sphere_radius_mm_rca: float = 3.0,
     bounding_sphere_radius_mm_lca: float = 3.0,
@@ -75,12 +75,14 @@ def label(
     acute_takeoff_lca : bool, optional
         When ``True`` applies ray-triangle occlusion removal to the LCA region,
         same as *acute_takeoff_rca* but for the LCA.  Default is ``False``.
-    n_points_takeoff_rca : int, optional
-        Number of RCA centerline points examined during occlusion removal
-        (the overlapping/intramural segment length).  Default is ``120``.
-    n_points_takeoff_lca : int, optional
-        Number of LCA centerline points examined during occlusion removal
-        (the overlapping/intramural segment length).  Default is ``120``.
+    range_mm_takeoff_rca : float, optional
+        Arc-length in mm along the RCA centerline, from its proximal end,
+        examined during occlusion removal (the overlapping/intramural segment
+        length). Expressed as a physical length rather than a point count so
+        it stays correct regardless of centerline resampling density.
+        Default is ``60.0``.
+    range_mm_takeoff_lca : float, optional
+        Same as *range_mm_takeoff_rca* but for the LCA. Default is ``60.0``.
     step_size_mm : float, optional
         Step size in mm for iterating over coronary centerline points during
         occlusion removal.  Default is ``1.0`` mm.
@@ -136,8 +138,8 @@ def label(
         path_centerline_lca=lca_cl,
         acute_takeoff_rca=acute_takeoff_rca,
         acute_takeoff_lca=acute_takeoff_lca,
-        n_points_takeoff_rca=n_points_takeoff_rca,
-        n_points_takeoff_lca=n_points_takeoff_lca,
+        range_mm_takeoff_rca=range_mm_takeoff_rca,
+        range_mm_takeoff_lca=range_mm_takeoff_lca,
         step_size_mm=step_size_mm,
         bounding_sphere_radius_mm_rca=bounding_sphere_radius_mm_rca,
         bounding_sphere_radius_mm_lca=bounding_sphere_radius_mm_lca,

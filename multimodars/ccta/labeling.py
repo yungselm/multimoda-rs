@@ -30,8 +30,8 @@ def label_geometry(
     path_centerline_lca: Path | str | PyCenterline | np.ndarray,
     acute_takeoff_rca: bool = False,
     acute_takeoff_lca: bool = False,
-    n_points_takeoff_rca: int = 120,
-    n_points_takeoff_lca: int = 120,
+    range_mm_takeoff_rca: float = 60.0,
+    range_mm_takeoff_lca: float = 60.0,
     step_size_mm: float = 1.0,
     bounding_sphere_radius_mm_rca: float = 3.0,
     bounding_sphere_radius_mm_lca: float = 3.0,
@@ -74,12 +74,14 @@ def label_geometry(
     acute_takeoff_lca : bool, optional
         When ``True`` applies ray-triangle occlusion removal to the LCA region,
         same as *acute_takeoff_rca* but for the LCA.  Default is ``False``.
-    n_points_takeoff_rca : int, optional
-        Number of RCA centerline points examined during occlusion removal
-        (the overlapping/intramural segment length).  Default is ``120``.
-    n_points_takeoff_lca : int, optional
-        Number of LCA centerline points examined during occlusion removal
-        (the overlapping/intramural segment length).  Default is ``120``.
+    range_mm_takeoff_rca : float, optional
+        Arc-length in mm along the RCA centerline, from its proximal end,
+        examined during occlusion removal (the overlapping/intramural segment
+        length). Expressed as a physical length rather than a point count so
+        it stays correct regardless of centerline resampling density.
+        Default is ``60.0``.
+    range_mm_takeoff_lca : float, optional
+        Same as *range_mm_takeoff_rca* but for the LCA. Default is ``60.0``.
     step_size_mm : float, optional
         Step size in mm for iterating over coronary centerline points during
         occlusion removal.  Default is ``1.0`` mm.
@@ -168,7 +170,7 @@ def label_geometry(
 
     if acute_takeoff_rca:
         rca_removed_points, final_rca_points_found = _apply_occlusion_removal(
-            n_points_takeoff_rca,
+            range_mm_takeoff_rca,
             step_size_mm,
             tolerance_float,
             cl_aorta,
@@ -183,7 +185,7 @@ def label_geometry(
 
     if acute_takeoff_lca:
         lca_removed_points, final_lca_points_found = _apply_occlusion_removal(
-            n_points_takeoff_lca,
+            range_mm_takeoff_lca,
             step_size_mm,
             tolerance_float,
             cl_aorta,
@@ -310,12 +312,16 @@ def load_and_prepare_centerline(
     numpy array of points via :func:`_try_load_cl`), then applies, in order:
 
     1. ``remove_branch_overlap()`` - only if *source* already carries branch
-       information (currently only true for VTP files, which duplicate a
-       prefix of branch 0 into every side branch).
+       information: a ``.vtp`` file path (always, regardless of how many
+       branches it ends up with - even a single-branch aorta), or any other
+       source whose loaded centerline already reports more than one branch.
     2. ``trim_start(rm_start_mm)`` - only if ``rm_start_mm > 0``.
     3. ``resample(spacing_mm)`` - only if ``spacing_mm`` is given.
     4. ``calculate_branches(branch_spacing_tolerance)`` - only if *source* did
        not already carry branch information (e.g. a flat CSV/array of points).
+       Never runs for a ``.vtp`` source, even single-branch ones - re-running
+       branch detection on already-clean VTP data risks its artefact-discard
+       logic truncating a genuine end of the centerline.
     5. ``check_centerline()`` - normalise branch ordering.
     6. ``smooth(smooth_sigma)`` - only if ``smooth_sigma > 0``.
 
@@ -346,7 +352,17 @@ def load_and_prepare_centerline(
     """
     cl = _try_load_cl(source, name)
 
-    already_branched = len(cl.branch_start_indices) > 1
+    # `len(branch_start_indices) > 1` can't tell a never-branched flat CSV/array
+    # apart from a VTP-loaded centerline that legitimately has only one branch
+    # (e.g. the aorta, which has no side branches) — both report `[0]`. A `.vtp`
+    # source always carries real branch structure from the file regardless of
+    # branch count, so route on the source format instead; running
+    # `calculate_branches` again on already-clean VTP data risks its
+    # artefact-discard logic truncating a genuine end of the centerline.
+    is_vtp_source = isinstance(source, (str, Path)) and str(source).lower().endswith(
+        ".vtp"
+    )
+    already_branched = is_vtp_source or len(cl.branch_start_indices) > 1
     if already_branched:
         cl = cl.remove_branch_overlap()
 
@@ -368,7 +384,7 @@ def load_and_prepare_centerline(
 
 
 def _apply_occlusion_removal(
-    n_points_takeoff_rca: int,
+    range_mm_takeoff_rca: float,
     step_size_mm: float,
     tolerance_float: float,
     cl_aorta: PyCenterline,
@@ -385,7 +401,7 @@ def _apply_occlusion_removal(
     final_rca_points_found = remove_occluded_points_ray_triangle(
         centerline_coronary=cl_rca,
         centerline_aorta=cl_aorta,
-        range_coronary=n_points_takeoff_rca,
+        range_mm=range_mm_takeoff_rca,
         points=rca_points_found,
         faces=rca_faces_for_rust,
         step_size_mm=step_size_mm,

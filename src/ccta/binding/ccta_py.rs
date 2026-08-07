@@ -77,8 +77,11 @@ pub fn find_centerline_bounded_points_simple(
 ///     Centerline of the coronary vessel used as vantage points.
 /// centerline_aorta : PyCenterline
 ///     Centerline of the aorta used as additional vantage points.
-/// range_coronary : int
-///     Number of centerline points considered around each coronary point.
+/// range_mm : float
+///     Arc-length in mm along the coronary centerline, from its proximal end,
+///     examined for occlusion. Expressed as a physical length rather than a
+///     point count so the result doesn't depend on how finely the centerline
+///     was resampled beforehand.
 /// points : list of tuple of float
 ///     Candidate ``(x, y, z)`` points, e.g. output of
 ///     :func:`find_centerline_bounded_points`.
@@ -99,7 +102,7 @@ pub fn find_centerline_bounded_points_simple(
     signature = (
         centerline_coronary,
         centerline_aorta,
-        range_coronary,
+        range_mm,
         points,
         faces,
         step_size_mm = 1.0,
@@ -108,7 +111,7 @@ pub fn find_centerline_bounded_points_simple(
 pub fn remove_occluded_points_ray_triangle(
     centerline_coronary: PyCenterline,
     centerline_aorta: PyCenterline,
-    range_coronary: usize,
+    range_mm: f64,
     points: Vec<Point3D>,
     faces: Vec<TriangleTuple>,
     step_size_mm: f64,
@@ -124,7 +127,7 @@ pub fn remove_occluded_points_ray_triangle(
     let result = label_coronary::remove_occluded_points_ray_triangle_rust(
         &rust_centerline_coronary,
         &rust_centerline_aorta,
-        range_coronary,
+        range_mm,
         &points,
         &triangles,
         step_size_mm,
