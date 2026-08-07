@@ -293,11 +293,11 @@ def find_sharp_angles(
     Returns
     -------
     list[int]
-        0-indexed positions within the branch (suitable for ``split_branch``).
+        Global point_index values (suitable for ``split_branch``).
     """
     positions = cl.find_sharp_angles(branch_id, cos_threshold)
     print(
-        f"Branch {branch_id}: {len(positions)} sharp angle(s) at positions {positions}"
+        f"Branch {branch_id}: {len(positions)} sharp angle(s) at point_index {positions}"
     )
     if control_plot:
         from .debug_plots import plot_sharp_angles

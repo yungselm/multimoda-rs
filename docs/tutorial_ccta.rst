@@ -194,7 +194,7 @@ flagged position highlighted in a distinct colour:
     # Inspect: red × marks every position that may need a correction
     mm.plot_centerline_edges(lca_cl, cos_threshold=0.0)
 
-    # Find flagged positions (returns a list of 0-based indices within the branch)
+    # Find flagged positions (returns a list of global point_index values)
     positions = mm.find_sharp_angles(lca_cl, branch_id=0, cos_threshold=0.0,
                                      control_plot=True)
 

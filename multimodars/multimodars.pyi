@@ -318,7 +318,7 @@ class PyCenterline:
     def points_as_tuples(self) -> list[tuple[float, float, float]]: ...
     def calculate_branches(self, spacing_tolerance: float = 1.0) -> PyCenterline: ...
     def find_sharp_angles(self, branch_id: int, cos_threshold: float) -> list[int]:
-        """Return local positions within the branch where the opening angle is sharp.
+        """Return global point_index values where the opening angle is sharp.
 
         Parameters
         ----------
@@ -331,30 +331,33 @@ class PyCenterline:
         Returns
         -------
         list[int]
-            0-indexed positions within the branch (suitable for ``split_branch``).
+            ``point_index`` values (indices into ``points``) where sharp
+            angles were found, suitable for ``split_branch``.
         """
         ...
 
-    def split_branch(self, branch_id: int, local_pos: int) -> PyCenterline:
-        """Split a branch at a local position and return the updated centerline.
+    def split_branch(self, branch_id: int, point_index: int) -> PyCenterline:
+        """Split a branch at a point and return the updated centerline.
 
-        Both resulting segments share the split point. When splitting the main
-        branch (``branch_id=0``) the longer segment stays as branch 0.
+        Both resulting segments share the split point. Branches are re-sorted
+        by descending length afterwards, so branch 0 is always the longest
+        overall - the same invariant ``calculate_branches`` establishes.
 
         Parameters
         ----------
         branch_id : int
-        local_pos : int
-            0-indexed position within the branch (as returned by
-            ``find_sharp_angles``).
+        point_index : int
+            Global index into ``points`` (as returned by ``find_sharp_angles``)
+            where the split occurs. Must fall within `branch_id`'s own range.
         """
         ...
 
     def merge_branches(self, branch_id_a: int, branch_id_b: int) -> PyCenterline:
         """Merge two branches into one and return the updated centerline.
 
-        Segments are joined at the closest endpoint pair.
-        If either branch is branch 0, the merged result becomes branch 0.
+        Segments are joined at the closest endpoint pair. Branches are
+        re-sorted by descending length afterwards, so branch 0 is always the
+        longest overall - the same invariant ``calculate_branches`` establishes.
 
         Parameters
         ----------

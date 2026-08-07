@@ -123,8 +123,8 @@ impl PyCenterline {
         Ok(PyCenterline::from(&cl))
     }
 
-    /// Return local positions (0-indexed within the branch) of interior points
-    /// where the opening angle is sharper than `cos_threshold`.
+    /// Return global `point_index` values (indices into ``points``) of interior
+    /// points on `branch_id` where the opening angle is sharper than `cos_threshold`.
     ///
     /// Parameters
     /// ----------
@@ -137,40 +137,42 @@ impl PyCenterline {
     /// Returns
     /// -------
     /// list[int]
-    ///     Local positions within the branch where sharp angles were found.
+    ///     ``point_index`` values where sharp angles were found, suitable for
+    ///     ``split_branch``.
     pub fn find_sharp_angles(&self, branch_id: u32, cos_threshold: f64) -> Vec<usize> {
         self.to_rust_centerline()
             .find_sharp_angles(branch_id, cos_threshold)
     }
 
-    /// Split a branch at a local position and return the updated centerline.
+    /// Split a branch at a point and return the updated centerline.
     ///
-    /// Both resulting segments include the split point. When splitting the main
-    /// branch (``branch_id=0``) the longer segment stays as branch 0; for side
-    /// branches the first segment keeps its slot and the second is appended.
+    /// Both resulting segments include the split point. Branches are re-sorted
+    /// by descending length afterwards, so branch 0 is always the longest
+    /// overall - the same invariant ``calculate_branches`` establishes.
     ///
     /// Parameters
     /// ----------
     /// branch_id : int
     ///     Branch to split.
-    /// local_pos : int
-    ///     0-indexed position within the branch (as returned by
-    ///     ``find_sharp_angles``).
+    /// point_index : int
+    ///     Global index into ``points`` (as returned by ``find_sharp_angles``)
+    ///     where the split occurs. Must fall within `branch_id`'s own range.
     ///
     /// Returns
     /// -------
     /// PyCenterline
     ///     New centerline with the branch split and all IDs reassigned.
-    pub fn split_branch(&self, branch_id: u32, local_pos: usize) -> PyResult<PyCenterline> {
+    pub fn split_branch(&self, branch_id: u32, point_index: usize) -> PyResult<PyCenterline> {
         let mut cl = self.to_rust_centerline();
-        cl.split_branch(branch_id, local_pos);
+        cl.split_branch(branch_id, point_index);
         Ok(PyCenterline::from(&cl))
     }
 
     /// Merge two branches and return the updated centerline.
     ///
-    /// Segments are joined at the closest endpoint pair. If either branch is
-    /// the main branch (id 0) the merged result becomes branch 0.
+    /// Segments are joined at the closest endpoint pair. Branches are re-sorted
+    /// by descending length afterwards, so branch 0 is always the longest
+    /// overall - the same invariant ``calculate_branches`` establishes.
     ///
     /// Parameters
     /// ----------

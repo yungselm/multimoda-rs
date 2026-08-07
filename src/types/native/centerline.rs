@@ -429,8 +429,9 @@ impl Centerline {
         self.recompute_tangents();
     }
 
-    /// Return local positions (0-indexed within the branch) of interior points
-    /// where the opening angle satisfies `cos_angle > cos_threshold`.
+    /// Return global `point_index` values (as in `ContourPoint::point_index`, i.e.
+    /// indices into the flat `points` Vec) of interior points on `branch_id` where
+    /// the opening angle satisfies `cos_angle > cos_threshold`.
     /// Use `cos_threshold = 0.0` for < 90°, `0.5` for < 60°, etc.
     pub fn find_sharp_angles(&self, branch_id: u32, cos_threshold: f64) -> Vec<usize> {
         let idx = branch_id as usize;
@@ -460,19 +461,34 @@ impl Centerline {
                 }
                 v1.dot(&v2) / (n1 * n2) > cos_threshold
             })
+            .map(|local_pos| start + local_pos)
             .collect()
     }
 
-    /// Split the branch at `local_pos` (0-indexed within the branch).
-    /// Both resulting segments include the split point.
-    /// If `branch_id == 0` the longer segment stays as branch 0.
-    /// For side branches the first segment keeps its slot; the second is appended.
-    pub fn split_branch(&mut self, branch_id: u32, local_pos: usize) {
-        let mut branches = self.branches_as_vecs();
+    /// Split `branch_id` at `point_index` (a global index into `points`, as
+    /// returned by [`Centerline::find_sharp_angles`] - must fall within
+    /// `branch_id`'s own range). Both resulting segments include the split
+    /// point. Branches are re-sorted by descending length afterwards, so
+    /// branch 0 is always the longest overall, matching the invariant
+    /// established by [`Centerline::calculate_branches`].
+    pub fn split_branch(&mut self, branch_id: u32, point_index: usize) {
         let idx = branch_id as usize;
-        if idx >= branches.len() {
+        let n = self.branch_start_indices.len();
+        if idx >= n {
             return;
         }
+        let start = self.branch_start_indices[idx];
+        let end = if idx + 1 < n {
+            self.branch_start_indices[idx + 1]
+        } else {
+            self.points.len()
+        };
+        if point_index < start || point_index >= end {
+            return;
+        }
+        let local_pos = point_index - start;
+
+        let mut branches = self.branches_as_vecs();
         let branch = branches.remove(idx);
         if local_pos == 0 || local_pos >= branch.len().saturating_sub(1) {
             branches.insert(idx, branch);
@@ -481,26 +497,18 @@ impl Centerline {
 
         let seg_a = branch[..=local_pos].to_vec();
         let seg_b = branch[local_pos..].to_vec();
+        branches.push(seg_a);
+        branches.push(seg_b);
 
-        if branch_id == 0 {
-            let (main_seg, other_seg) = if seg_a.len() >= seg_b.len() {
-                (seg_a, seg_b)
-            } else {
-                (seg_b, seg_a)
-            };
-            branches.insert(0, main_seg);
-            branches.push(other_seg);
-        } else {
-            branches.insert(idx, seg_a);
-            branches.push(seg_b);
-        }
-
+        Self::sort_branches_by_length(&mut branches);
         self.rebuild_from_branches(branches);
     }
 
     /// Merge two branches into one. Endpoints are matched by minimum distance
-    /// so the segments are concatenated in the correct spatial order.
-    /// If either branch is the main branch (id 0) the merged result is branch 0.
+    /// so the segments are concatenated in the correct spatial order. Branches
+    /// are re-sorted by descending length afterwards, so branch 0 is always
+    /// the longest overall, matching the invariant established by
+    /// [`Centerline::calculate_branches`].
     pub fn merge_branches(&mut self, branch_id_a: u32, branch_id_b: u32) {
         let mut branches = self.branches_as_vecs();
         let idx_a = branch_id_a as usize;
@@ -539,14 +547,16 @@ impl Centerline {
             b_high.into_iter().chain(b_low).collect()
         };
 
-        let result_is_main = low == 0 || high == 0;
-        if result_is_main {
-            branches.insert(0, merged);
-        } else {
-            branches.insert(low, merged);
-        }
-
+        branches.push(merged);
+        Self::sort_branches_by_length(&mut branches);
         self.rebuild_from_branches(branches);
+    }
+
+    /// Sort branches by descending length, so branch 0 ends up the longest -
+    /// the same invariant [`Centerline::calculate_branches`] establishes.
+    /// Ties keep their relative order (stable sort).
+    fn sort_branches_by_length(branches: &mut [Vec<CenterlinePoint>]) {
+        branches.sort_by_key(|b| std::cmp::Reverse(b.len()));
     }
 
     /// Reverse branch 0 in place if its highest-z point is not already at its start,
@@ -1026,6 +1036,25 @@ mod centerline_tests {
     }
 
     #[test]
+    fn test_find_sharp_angles_returns_point_index_not_local_pos() {
+        // Side branch (branch_id=1) starts at global point_index 3, after the 3-point
+        // main branch. The V-shape's sharp corner sits at local position 3 within the
+        // side branch, so find_sharp_angles must report global point_index 6 (3 + 3),
+        // not local position 3.
+        let main = &[(0., 0., 0.), (0., 0., 1.), (0., 0., 2.)];
+        let side = &[
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (2.0, 0.0, 0.0),
+            (3.0, 0.0, 0.0),
+            (2.5, 0.5, 0.0),
+            (2.0, 1.0, 0.0),
+        ];
+        let cl = make_multi_branch(&[main, side]);
+        assert_eq!(cl.find_sharp_angles(1, 0.0), vec![6]);
+    }
+
+    #[test]
     fn test_split_branch_main_longer_stays() {
         let mut cl = cl_from_coords(&[
             (0.0, 0.0, 0.0),
@@ -1065,6 +1094,66 @@ mod centerline_tests {
     }
 
     #[test]
+    fn test_split_branch_uses_point_index_not_local_pos() {
+        // Side branch (branch_id=1) starts at global point_index 5, after the 5-point
+        // main branch. Splitting at point_index=7 must land at local position 2 within
+        // the side branch, not local position 7 (out of range for a 5-point branch).
+        let main = &[
+            (0., 0., 0.),
+            (1., 0., 0.),
+            (2., 0., 0.),
+            (3., 0., 0.),
+            (4., 0., 0.),
+        ];
+        let side = &[
+            (10., 0., 0.),
+            (11., 0., 0.),
+            (12., 0., 0.),
+            (13., 0., 0.),
+            (14., 0., 0.),
+        ];
+        let mut cl = make_multi_branch(&[main, side]);
+        cl.split_branch(1, 7);
+
+        assert_eq!(cl.branch_start_indices.len(), 3);
+        let branches = cl.branches_as_vecs();
+        assert_eq!(
+            branches[0].len(),
+            5,
+            "main branch unaffected, still longest"
+        );
+        assert_eq!(branches[1].len(), 3);
+        assert_eq!(branches[2].len(), 3);
+        assert_eq!(branches[1][0].contour_point.x, 10.0);
+        assert_eq!(branches[2][0].contour_point.x, 12.0);
+    }
+
+    #[test]
+    fn test_split_branch_resorts_by_length_among_side_branches() {
+        // main(10) > side1(6, split into 4+3) > side2(2). After the split, both new
+        // pieces must sort ahead of the untouched, shorter side2 - not just slot into
+        // side1's old position while side2 stays where it was.
+        let main: Vec<(f64, f64, f64)> = (0..10).map(|i| (i as f64, 0., 0.)).collect();
+        let side1: Vec<(f64, f64, f64)> = (0..6).map(|i| (i as f64, 1., 0.)).collect();
+        let side2: Vec<(f64, f64, f64)> = (0..2).map(|i| (i as f64, 2., 0.)).collect();
+        let mut cl = make_multi_branch(&[main.as_slice(), side1.as_slice(), side2.as_slice()]);
+
+        // side1 (branch_id=1) starts at point_index 10; split at local position 3 -> point_index 13.
+        cl.split_branch(1, 13);
+
+        let branches = cl.branches_as_vecs();
+        assert_eq!(branches.len(), 4);
+        assert_eq!(branches[0].len(), 10, "main unaffected, stays longest");
+        assert_eq!(branches[1].len(), 4, "larger new piece from the split");
+        assert_eq!(branches[2].len(), 3, "smaller new piece from the split");
+        assert_eq!(
+            branches[3].len(),
+            2,
+            "side2 sorted last: shorter than both new pieces"
+        );
+    }
+
+    #[test]
     fn test_merge_branches_result_is_main() {
         let mut cl = cl_from_coords(&[
             (0.0, 0.0, 0.0),
@@ -1083,6 +1172,28 @@ mod centerline_tests {
         for (i, p) in cl.points.iter().enumerate() {
             assert_eq!(p.contour_point.point_index, i as u32);
         }
+    }
+
+    #[test]
+    fn test_merge_branches_promotes_to_main_when_result_is_longest() {
+        // main(5) < side1(4) + side2(4) merged = 8. Even though neither merged branch
+        // was originally the main vessel, the merged result is now the longest branch
+        // and must become the new branch 0.
+        let main: Vec<(f64, f64, f64)> = (0..5).map(|i| (i as f64, 0., 0.)).collect();
+        let side1 = &[(0., 1., 0.), (1., 1., 0.), (2., 1., 0.), (3., 1., 0.)];
+        let side2 = &[(3., 1., 0.), (4., 1., 0.), (5., 1., 0.), (6., 1., 0.)];
+        let mut cl = make_multi_branch(&[main.as_slice(), side1, side2]);
+
+        cl.merge_branches(1, 2);
+
+        assert_eq!(cl.branch_start_indices.len(), 2);
+        let branches = cl.branches_as_vecs();
+        assert_eq!(
+            branches[0].len(),
+            8,
+            "merged side branches are now the longest, must be branch 0"
+        );
+        assert_eq!(branches[1].len(), 5, "old main demoted to a side branch");
     }
 
     #[test]
