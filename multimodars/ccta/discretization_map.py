@@ -146,7 +146,7 @@ def discretize_vessel_tree(
         Aortic, RCA, and LCA centerlines (branches already computed and
         labelled), already prepared.
     results_dict:
-        Dictionary produced by :func:`~multimodars.label_branches` containing
+        Dictionary produced by :func:`~multimodars.label_branches_pair` containing
         keys ``aorta_points``, ``rca_points_main``, ``lca_points_main``, and
         any ``rca_points_side_N`` / ``lca_points_side_N`` entries.
     branch_id_rca, branch_id_lca:
@@ -213,7 +213,7 @@ def discretize_vessel_tree(
     return tree
 
 
-def prepare_centerlines(
+def label_branches_pair(
     rca_cl: PyCenterline,
     lca_cl: PyCenterline,
     results_dict: dict,

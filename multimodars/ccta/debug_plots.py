@@ -321,7 +321,7 @@ def plot_centerline_branches(
     ----------
     rca_cl, lca_cl:
         Centerlines after ``calculate_branches`` and ``orient_by_max_z``
-        (output of :func:`~multimodars.ccta.discretization_map.prepare_centerlines`).
+        (output of :func:`~multimodars.ccta.discretization_map.label_branches`).
     results_dict:
         Optional.  When provided, labelled surface points
         (``rca_points_main``, ``rca_points_side_N``, ``lca_points_main``,

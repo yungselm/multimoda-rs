@@ -63,7 +63,7 @@ from .ccta.manipulating import (
     stitch_ccta_to_intravascular,
 )
 from .ccta.discretization_map import (
-    prepare_centerlines,
+    label_branches_pair,
     discretize_vessel_tree,
     find_sharp_angles,
 )
@@ -131,10 +131,10 @@ __all__ = [
     "plot_centerline_edges",
     "plot_sharp_angles",
     "discretize_vessel",
-    "prepare_centerlines",
     "discretize_vessel_tree",
     "find_sharp_angles",
     "label_branches",
+    "label_branches_pair",
     "load_centerline",
     "prepare_centerline",
 ]

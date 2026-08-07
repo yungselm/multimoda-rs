@@ -164,14 +164,14 @@ branches to find).
 
 Before discretizing the vessel geometry, the surface-mesh points must be labeled by branch.
 ``rca_cl``/``lca_cl`` already have their branches computed and ordered by
-``prepare_centerline`` above, so :func:`multimodars.prepare_centerlines` only needs to
+``prepare_centerline`` above, so :func:`multimodars.label_branches_pair` only needs to
 call :func:`multimodars.label_branches` for each, so the ``results`` dictionary gains keys
 ``rca_points_main``, ``rca_points_side_1``, …, ``lca_points_main``, ``lca_points_side_1``, …. It
 does not modify ``rca_cl``/``lca_cl`` in any way:
 
 .. code-block:: python
 
-    results = mm.prepare_centerlines(
+    results = mm.label_branches_pair(
         rca_cl, lca_cl, results,
         control_plot=False,   # True opens a trimesh scene of the branch assignment
     )
@@ -212,7 +212,7 @@ re-label. After splitting and merging it is assured that the longest centerline 
 
 .. note::
 
-    :func:`~multimodars.prepare_centerlines` cannot automate the ``split_branch`` /
+    :func:`~multimodars.label_branches_pair` cannot automate the ``split_branch`` /
     ``merge_branches`` step because the right corrections are case-specific.  Inspect the
     ``control_plot`` output first, then call those methods manually before proceeding.
 

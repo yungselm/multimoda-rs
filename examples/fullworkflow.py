@@ -45,7 +45,7 @@ results = mm.label_geometry(
 )
 
 # Branches (and their ordering) already come from prepare_centerline above.
-results = mm.prepare_centerlines(rca_cl, lca_cl, results)
+results = mm.label_branches_pair(rca_cl, lca_cl, results)
 
 tree = mm.discretize_vessel_tree(
     aorta_cl,
