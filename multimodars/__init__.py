@@ -47,7 +47,10 @@ from .ccta.labeling import (
     label_geometry,
     label_anomalous_region,
     label_branches,
-    load_and_prepare_centerline,
+)
+from .ccta.centerline_prep import (
+    load_centerline,
+    prepare_centerline,
 )
 from .ccta.manipulating import (
     scale_region_centerline_morphing,
@@ -132,7 +135,8 @@ __all__ = [
     "discretize_vessel_tree",
     "find_sharp_angles",
     "label_branches",
-    "load_and_prepare_centerline",
+    "load_centerline",
+    "prepare_centerline",
 ]
 
 # def _print_banner():

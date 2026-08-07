@@ -137,7 +137,7 @@ def discretize_vessel_tree(
     automatically.
 
     ``ao_cl``, ``rca_cl``, and ``lca_cl`` are used as-is - smooth/resample/orient
-    them beforehand (e.g. via :func:`load_and_prepare_centerline`); this does
+    them beforehand (e.g. via :func:`load_centerline`/:func:`prepare_centerline`); this does
     not smooth internally.
 
     Parameters
@@ -222,7 +222,8 @@ def prepare_centerlines(
     """Label both coronary centerlines' branch-point sets for :func:`discretize_vessel_tree`.
 
     Assumes `rca_cl`/`lca_cl` already have branches computed and correctly
-    ordered (e.g. via :func:`~multimodars.load_and_prepare_centerline`) — this
+    ordered (e.g. via :func:`~multimodars.load_centerline` and
+    :func:`~multimodars.prepare_centerline`) — this
     only calls :func:`~multimodars.label_branches` for RCA, then LCA, to
     project the branch structure onto the surface-mesh point sets in
     `results_dict`. It does not modify `rca_cl`/`lca_cl` in any way.
@@ -236,7 +237,7 @@ def prepare_centerlines(
     ----------
     rca_cl, lca_cl:
         Prepared centerlines (branches already computed and ordered), e.g. via
-        :func:`~multimodars.load_and_prepare_centerline`.
+        :func:`~multimodars.load_centerline` and :func:`~multimodars.prepare_centerline`.
     results_dict:
         Dictionary produced by :func:`~multimodars.label_geometry`.
     control_plot:

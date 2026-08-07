@@ -34,9 +34,9 @@ lca_cl = lca_cl.orient_to_reference(aorta_cl)
 
 results = mm.label_geometry(
     path_ccta_geometry="../data/NARCO_119.stl",
-    path_centerline_aorta=aorta_cl,
-    path_centerline_rca=rca_cl,
-    path_centerline_lca=lca_cl,
+    centerline_aorta=aorta_cl,
+    centerline_rca=rca_cl,
+    centerline_lca=lca_cl,
     bounding_sphere_radius_mm_rca=3.0,
     bounding_sphere_radius_mm_lca=3.0,
     range_mm_takeoff_rca=60.0,  # mm, was a point count before
@@ -175,9 +175,13 @@ mm.export_section_stl(stitched, "rca")
 
 results = mm.label_geometry(
     path_ccta_geometry="../data/fixed_mesh.stl",
-    path_centerline_aorta="../data/centerline_aorta.csv",
-    path_centerline_rca="../data/centerline_rca_short.csv",
-    path_centerline_lca="../data/centerline_lca.csv",
+    # Reuse the same oriented centerlines from above — the mesh's vertex
+    # positions changed after remeshing/smoothing but the anatomical
+    # centerlines did not, and label_geometry now takes prepared
+    # PyCenterline objects directly rather than loading paths itself.
+    centerline_aorta=aorta_cl,
+    centerline_rca=rca_cl,
+    centerline_lca=lca_cl,
     bounding_sphere_radius_mm_rca=3.0,
     bounding_sphere_radius_mm_lca=3.0,
     range_mm_takeoff_rca=60.0,  # mm, was a point count before

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from . import manipulating
 from . import labeling
+from . import centerline_prep
 from . import debug_plots as debug_plots
 from . import fixing_functions
 
@@ -60,8 +61,10 @@ def label(
     path_centerline_aorta : PyCenterline, Path, str, or numpy.ndarray
         Aortic centerline: a ``.vtp`` file path, a CSV file path (comma-delimited,
         columns: x, y, z, …), an existing ``PyCenterline``, or an array of points.
-        Trim, resample, extract branches, and smooth it beforehand, e.g. with
-        :func:`multimodars.load_and_prepare_centerline`.
+        Loaded and oriented (``orient_by_max_z``) automatically; if it needs
+        trimming, resampling, or branch extraction first, prepare it beforehand
+        with :func:`multimodars.prepare_centerline` and pass the resulting
+        ``PyCenterline`` directly.
     path_centerline_rca : PyCenterline, Path, str, or numpy.ndarray
         RCA centerline, same accepted formats as *path_centerline_aorta*.
     path_centerline_lca : PyCenterline, Path, str, or numpy.ndarray
@@ -120,22 +123,21 @@ def label(
         files, after printing a descriptive message.
     """
     # Resolve and orient centerlines once, locally, so the same oriented objects
-    # can be passed both to `label_geometry` (which re-applies the same
-    # idempotent orientation internally) and to `label_anomalous_region` below —
-    # `label_geometry` no longer returns centerlines, so it can't hand them back.
-    ao_cl = labeling._try_load_cl(path_centerline_aorta, "Aorta").orient_by_max_z()
-    rca_cl = labeling._try_load_cl(path_centerline_rca, "RCA").orient_to_reference(
-        ao_cl
-    )
-    lca_cl = labeling._try_load_cl(path_centerline_lca, "LCA").orient_to_reference(
-        ao_cl
-    )
+    # can be passed both to `label_geometry` (which uses them as-is) and to
+    # `label_anomalous_region` below — `label_geometry` no longer returns
+    # centerlines, so it can't hand them back.
+    ao_cl = centerline_prep.load_centerline(path_centerline_aorta, "Aorta")
+    ao_cl = ao_cl.orient_by_max_z()
+    rca_cl = centerline_prep.load_centerline(path_centerline_rca, "RCA")
+    rca_cl = rca_cl.orient_to_reference(ao_cl)
+    lca_cl = centerline_prep.load_centerline(path_centerline_lca, "LCA")
+    lca_cl = lca_cl.orient_to_reference(ao_cl)
 
     results = labeling.label_geometry(
         path_ccta_geometry=path_ccta_geometry,
-        path_centerline_aorta=ao_cl,
-        path_centerline_rca=rca_cl,
-        path_centerline_lca=lca_cl,
+        centerline_aorta=ao_cl,
+        centerline_rca=rca_cl,
+        centerline_lca=lca_cl,
         acute_takeoff_rca=acute_takeoff_rca,
         acute_takeoff_lca=acute_takeoff_lca,
         range_mm_takeoff_rca=range_mm_takeoff_rca,

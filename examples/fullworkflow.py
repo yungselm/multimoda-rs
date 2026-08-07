@@ -13,26 +13,28 @@ for candidate in [cwd, cwd.parent, cwd.parent.parent]:
         break
 print(f"Working directory: {os.getcwd()}")
 
-rca_cl = mm.load_and_prepare_centerline(
-    "./rca_cl.vtp", name="RCA", spacing_mm=1.0, rm_start_mm=5.0
+# The aorta has no reference to orient against, so prepare it first, then use
+# it as `ref_centerline` when preparing the coronaries (this also drives the
+# branch-detection decision inside `prepare_centerline`: no ref -> aorta ->
+# no side branches to find; a ref -> coronary -> extract branches).
+aorta_cl = mm.load_centerline("./ao_cl.vtp", name="Aorta")
+aorta_cl = mm.prepare_centerline(aorta_cl, spacing_mm=1.0)
+
+rca_cl = mm.load_centerline("./rca_cl.vtp", name="RCA")
+rca_cl = mm.prepare_centerline(
+    rca_cl, ref_centerline=aorta_cl, spacing_mm=1.0, rm_start_mm=5.0
 )
-lca_cl = mm.load_and_prepare_centerline(
-    "./lca_cl.vtp", name="LCA", spacing_mm=1.0, rm_start_mm=5.0
+
+lca_cl = mm.load_centerline("./lca_cl.vtp", name="LCA")
+lca_cl = mm.prepare_centerline(
+    lca_cl, ref_centerline=aorta_cl, spacing_mm=1.0, rm_start_mm=5.0
 )
-aorta_cl = mm.load_and_prepare_centerline("./ao_cl.vtp", name="Aorta", spacing_mm=1.0)
-# aorta_cl = mm.read_centerline_vtp("./ao_cl.vtp")
-# Orient once, locally, so these same oriented objects can be reused for every
-# downstream step below — label_geometry() re-applies the same idempotent
-# orientation internally but no longer returns centerlines.
-aorta_cl = aorta_cl.orient_by_max_z()
-rca_cl = rca_cl.orient_to_reference(aorta_cl)
-lca_cl = lca_cl.orient_to_reference(aorta_cl)
 
 results = mm.label_geometry(
     path_ccta_geometry="./NARCO_119.stl",
-    path_centerline_aorta=aorta_cl,
-    path_centerline_rca=rca_cl,
-    path_centerline_lca=lca_cl,
+    centerline_aorta=aorta_cl,
+    centerline_rca=rca_cl,
+    centerline_lca=lca_cl,
     bounding_sphere_radius_mm_rca=3.0,
     bounding_sphere_radius_mm_lca=3.0,
     range_mm_takeoff_rca=60.0,  # mm, was a point count before
@@ -42,7 +44,7 @@ results = mm.label_geometry(
     control_plot=True,
 )
 
-# Branches (and their ordering) already come from load_and_prepare_centerline above.
+# Branches (and their ordering) already come from prepare_centerline above.
 results = mm.prepare_centerlines(rca_cl, lca_cl, results)
 
 tree = mm.discretize_vessel_tree(
@@ -174,9 +176,9 @@ trimesh.smoothing.filter_taubin(remeshed["mesh"], lamb=0.6)
 
 results_final = mm.label_geometry(
     path_ccta_geometry="fixed_mesh.stl",
-    path_centerline_aorta=aorta_cl,
-    path_centerline_rca=rca_cl,
-    path_centerline_lca=lca_cl,
+    centerline_aorta=aorta_cl,
+    centerline_rca=rca_cl,
+    centerline_lca=lca_cl,
     bounding_sphere_radius_mm_rca=3.0,
     bounding_sphere_radius_mm_lca=3.0,
     range_mm_takeoff_rca=60.0,  # mm, was a point count before

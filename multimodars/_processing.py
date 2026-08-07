@@ -1520,7 +1520,7 @@ def discretize_vessel(
     spline.
 
     ``centerline`` is used as-is - smooth/resample/orient it beforehand (e.g. via
-    ``PyCenterline.smooth``, or :func:`multimodars.ccta.labeling.load_and_prepare_centerline`);
+    ``PyCenterline.smooth``, or :func:`multimodars.ccta.centerline_prep.prepare_centerline`);
     this does not smooth internally.
 
     Parameters

@@ -20,17 +20,25 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   `centerline_align/preprocessing.rs`, and `Centerline::check_centerline` - one of which
   (`label_coronary.rs`'s private `check_centerline`) fully re-sorted points by z instead of just
   reversing, risking corruption of arc-length-contiguous assumptions downstream.
-- New Python helper `load_and_prepare_centerline(source, ...)` loads a centerline from any
-  supported source (`.vtp`, CSV, `PyCenterline`, or numpy array) and runs the full prep
-  pipeline (overlap removal, inlet trim, resample, branch extraction, ordering, smoothing) in
-  one call - replaces the old
-  `read_centerline_vtp(...).cleanup_vtp_data(smooth=True)` pattern.
+- New Python helpers `load_centerline(source, name)` (loads a centerline from any supported
+  source - `.vtp`, CSV, `PyCenterline`, or numpy array) and `prepare_centerline(centerline,
+  ref_centerline=None, ...)` (runs the full prep pipeline: overlap removal, inlet trim,
+  resample, branch extraction, orientation, smoothing) - together replace the old
+  `read_centerline_vtp(...).cleanup_vtp_data(smooth=True)` pattern. Loading and preparing are
+  separate calls so a caller can load once and prepare against a reference computed from another
+  centerline (e.g. orient a coronary against the already-loaded aorta).
+  `prepare_centerline`'s `ref_centerline` doubles as the "is this a coronary?" signal: given, it
+  orients via `orient_to_reference` and extracts branches (a coronary has side branches);
+  omitted, it falls back to `orient_by_max_z` and skips branch extraction (e.g. the aorta, which
+  has none).
 - `discretize_vessel`/`discretize_vessel_tree` no longer smooth centerlines internally (σ = 2.5
   was previously hardcoded); callers must prepare centerlines beforehand, e.g. via
-  `load_and_prepare_centerline` or `.smooth()`.
-- `label_geometry` now orients the aorta/RCA/LCA centerlines explicitly on load
-  (`orient_by_max_z` for the aorta, `orient_to_reference` for RCA/LCA against the aorta)
-  instead of relying on the removed internal z-sort in `label_coronary.rs`.
+  `prepare_centerline` or `.smooth()`.
+- `label_geometry` now takes prepared `PyCenterline` objects directly (`centerline_aorta`,
+  `centerline_rca`, `centerline_lca`) instead of `Path | str | PyCenterline | np.ndarray` unions -
+  it no longer loads or orients centerlines internally, so callers must do that beforehand (e.g.
+  via `load_centerline` + `prepare_centerline`) and pass the same objects to every downstream
+  call instead of relying on `label_geometry` to hand them back.
 - `orient_by_max_z()` and `orient_to_reference(reference)` now also reorder every side branch
   (previously only branch 0 was touched), applying the same "closer end goes first" rule against
   branch 0 (for `orient_by_max_z`) or `reference`'s branch 0 (for `orient_to_reference`). This

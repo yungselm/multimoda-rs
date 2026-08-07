@@ -801,37 +801,67 @@ def to_obj(
 
 def read_centerline_vtp(path: str) -> PyCenterline: ...
 
-# Implemented in Python (multimodars.ccta.labeling), re-declared here for
+# Implemented in Python (multimodars.ccta.centerline_prep), re-declared here for
 # discoverability alongside the other centerline loading/prep functions.
-def load_and_prepare_centerline(
+def load_centerline(
     source: PyCenterline | Path | str | np.ndarray,
-    name: str = ...,
+    name: str,
+) -> PyCenterline:
+    """Load a centerline from any supported source.
+
+    Parameters
+    ----------
+    source : PyCenterline, Path, str, or numpy.ndarray
+        A ``.vtp`` file path, a CSV file path (comma-delimited, columns
+        x, y, z, ...), an existing ``PyCenterline`` (returned as-is), or an
+        ``(N, 3+)`` array of points.
+    name : str
+        Label used in log output (e.g. ``"Aorta"``, ``"RCA"``, ``"LCA"``).
+
+    Returns
+    -------
+    PyCenterline
+        The loaded centerline, unprepared - pass it to
+        :func:`prepare_centerline` next.
+    """
+    ...
+
+def prepare_centerline(
+    centerline: PyCenterline,
+    ref_centerline: PyCenterline | None = ...,
     spacing_mm: float | None = ...,
     branch_spacing_tolerance: float = ...,
     rm_start_mm: float = ...,
     smooth_sigma: float = ...,
 ) -> PyCenterline:
-    """Load a centerline from any supported source and run the standard prep pipeline.
+    """Run the standard branch/order/smooth prep pipeline on a centerline.
 
-    Loads *source* (a ``.vtp`` file, a CSV file, an existing ``PyCenterline``, or a
-    numpy array of points), then applies, in order:
+    *ref_centerline* doubles as the "is this a coronary?" signal: the aorta has
+    no upstream reference to orient against, while a coronary (RCA/LCA) orients
+    towards the aorta's branch 0. Applies, in order:
 
-    1. ``remove_branch_overlap()`` - only if *source* already carries branch
-       information (currently only true for VTP files).
-    2. ``trim_start(rm_start_mm)`` - only if ``rm_start_mm > 0``.
-    3. ``resample(spacing_mm)`` - only if ``spacing_mm`` is given.
-    4. ``calculate_branches(branch_spacing_tolerance)`` - only if *source* did
-       not already carry branch information (e.g. a flat CSV/array of points).
-    5. ``orient_by_max_z()`` - normalise branch ordering.
+    1. ``calculate_branches(branch_spacing_tolerance)`` - only when
+       *ref_centerline* is given (i.e. *centerline* is a coronary) and
+       *centerline* does not already carry branch structure (e.g. it came
+       from a ``.vtp`` file, which reports its branches directly). The aorta
+       (*ref_centerline* is ``None``) never needs branch detection.
+    2. ``remove_branch_overlap()`` - trims the run-alongside-main-branch prefix
+       some centerline export formats (e.g. VTP) attach to every side branch.
+       A no-op for a single-branch centerline.
+    3. ``trim_start(rm_start_mm)`` - only if ``rm_start_mm > 0``.
+    4. ``resample(spacing_mm)`` - only if ``spacing_mm`` is given.
+    5. ``orient_to_reference(ref_centerline)`` if *ref_centerline* is given,
+       otherwise ``orient_by_max_z()`` - normalise branch ordering.
     6. ``smooth(smooth_sigma)`` - only if ``smooth_sigma > 0``.
 
     Parameters
     ----------
-    source : PyCenterline, Path, str, or numpy.ndarray
-        ``.vtp`` file path, CSV file path (columns x, y, z, ...), an existing
-        ``PyCenterline``, or an ``(N, 3+)`` array of points.
-    name : str, optional
-        Label used in log output. Default ``"centerline"``.
+    centerline : PyCenterline
+        Centerline to prepare, e.g. the output of :func:`load_centerline`.
+    ref_centerline : PyCenterline, optional
+        Reference centerline to orient towards (e.g. the aorta, for a
+        coronary centerline). ``None`` (default) means *centerline* has no
+        reference (e.g. it is the aorta itself).
     spacing_mm : float, optional
         Target arc-length spacing in mm passed to ``resample``. ``None``
         (default) skips resampling.

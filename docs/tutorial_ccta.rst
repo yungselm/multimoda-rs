@@ -32,21 +32,32 @@ The goal of this module is to replace a section on the CCTA geometry with an int
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The entry point for the CCTA module is :func:`multimodars.label_geometry`, which reads a
-triangulated surface mesh (STL) together with centerline CSV files for the aorta, the right
+triangulated surface mesh (STL) together with prepared centerlines for the aorta, the right
 coronary artery (RCA), and the left coronary artery (LCA), and returns a labeled results
-dictionary.  It does not return or modify the centerlines you pass in — prepare and orient them
-yourself beforehand (see below) and reuse those same objects for every subsequent step.
+dictionary.  It takes ``PyCenterline`` objects, not file paths — load and orient them yourself
+beforehand (see below) and reuse those same objects for every subsequent step; it does not
+return or modify them.
 
 .. code-block:: python
 
     import multimodars as mm
 
+    aorta_cl = mm.load_centerline("data/centerline_aorta.csv", name="Aorta")
+    aorta_cl = mm.prepare_centerline(aorta_cl)
+
+    rca_cl = mm.load_centerline("data/centerline_rca_short.csv", name="RCA")
+    rca_cl = mm.prepare_centerline(rca_cl, ref_centerline=aorta_cl)
+
+    lca_cl = mm.load_centerline("data/centerline_lca.csv", name="LCA")
+    lca_cl = mm.prepare_centerline(lca_cl, ref_centerline=aorta_cl)
+
     results = mm.label_geometry(
         path_ccta_geometry="data/NARCO_119_noside.stl",
-        path_centerline_aorta="data/centerline_aorta.csv",
-        path_centerline_rca="data/centerline_rca_short.csv",
-        path_centerline_lca="data/centerline_lca.csv",
-        bounding_sphere_radius_mm=3.0,
+        centerline_aorta=aorta_cl,
+        centerline_rca=rca_cl,
+        centerline_lca=lca_cl,
+        bounding_sphere_radius_mm_rca=3.0,
+        bounding_sphere_radius_mm_lca=3.0,
         range_mm_takeoff_rca=60.0,
         range_mm_takeoff_lca=60.0,
         acute_takeoff_rca=True,
@@ -124,41 +135,36 @@ The returned ``results`` dictionary contains:
 Centerlines can be supplied as CSV files (three columns, no header: ``x``, ``y``, ``z`` in mm),
 ASCII VTP files (VTK PolyData exported by 3D-Slicer or VMTK, recommended), an existing
 :class:`~multimodars.PyCenterline`, or a numpy array of points.
-:func:`multimodars.load_and_prepare_centerline` loads any of these and runs the standard prep
-pipeline in one call - trimming any run-alongside-main-branch prefix VTP files attach to every
-side branch, optionally trimming the inlet, resampling to even spacing, detecting branches for
-formats that don't already carry them (e.g. CSV), normalising branch ordering, and smoothing:
+:func:`multimodars.load_centerline` loads any of these, then
+:func:`multimodars.prepare_centerline` runs the standard prep pipeline - trimming any
+run-alongside-main-branch prefix VTP files attach to every side branch, optionally trimming the
+inlet, resampling to even spacing, detecting branches, normalising branch ordering, and
+smoothing - as already shown above for the aorta/RCA/LCA. The same two calls work for VTP
+sources too:
 
 .. code-block:: python
 
-    rca_cl   = mm.load_and_prepare_centerline("data/rca_cl.vtp",              name="RCA",   spacing_mm=1.0)
-    lca_cl   = mm.load_and_prepare_centerline("data/lca_cl.vtp",              name="LCA",   spacing_mm=1.0)
-    aorta_cl = mm.load_and_prepare_centerline("data/ao_cl.vtp",               name="Aorta", spacing_mm=1.0)
+    aorta_cl = mm.load_centerline("data/ao_cl.vtp", name="Aorta")
+    aorta_cl = mm.prepare_centerline(aorta_cl, spacing_mm=1.0)
 
-    # CSV works the same way - branch detection runs automatically since a flat
-    # CSV/array of points carries no branch information yet.
-    rca_cl   = mm.load_and_prepare_centerline("data/centerline_rca_short.csv", name="RCA",   spacing_mm=1.0)
+    rca_cl = mm.load_centerline("data/rca_cl.vtp", name="RCA")
+    rca_cl = mm.prepare_centerline(rca_cl, ref_centerline=aorta_cl, spacing_mm=1.0)
 
-``load_and_prepare_centerline`` handles branch structure but not orientation *between*
-centerlines (which end of the aorta/RCA/LCA is proximal).  Do that once, right after loading,
-and reuse the same oriented objects for every step below — ``label_geometry`` re-applies the
-same idempotent orientation internally but never hands the objects back:
+    lca_cl = mm.load_centerline("data/lca_cl.vtp", name="LCA")
+    lca_cl = mm.prepare_centerline(lca_cl, ref_centerline=aorta_cl, spacing_mm=1.0)
 
-.. code-block:: python
-
-    aorta_cl = aorta_cl.orient_by_max_z()          # no reference available for the aorta itself
-    rca_cl   = rca_cl.orient_to_reference(aorta_cl)  # orient toward the aorta's branch 0
-    lca_cl   = lca_cl.orient_to_reference(aorta_cl)
-
-Pass the returned :class:`~multimodars.PyCenterline` objects directly to ``path_centerline_*``
-(instead of file-path strings).
+``ref_centerline`` doubles as the "is this a coronary?" signal: passing the aorta as
+``ref_centerline`` for RCA/LCA both orients each towards it (``orient_to_reference``) and tells
+``prepare_centerline`` to run branch detection; the aorta itself, called with no
+``ref_centerline``, falls back to ``orient_by_max_z`` and skips branch detection (it has no side
+branches to find).
 
 2. Prepare centerlines, detect branches, and discretize the vessel tree
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Before discretizing the vessel geometry, the surface-mesh points must be labeled by branch.
 ``rca_cl``/``lca_cl`` already have their branches computed and ordered by
-``load_and_prepare_centerline`` above, so :func:`multimodars.prepare_centerlines` only needs to
+``prepare_centerline`` above, so :func:`multimodars.prepare_centerlines` only needs to
 call :func:`multimodars.label_branches` for each, so the ``results`` dictionary gains keys
 ``rca_points_main``, ``rca_points_side_1``, …, ``lca_points_main``, ``lca_points_side_1``, …. It
 does not modify ``rca_cl``/``lca_cl`` in any way:
@@ -659,16 +665,19 @@ To extract a sub-mesh programmatically (e.g. to pass to a downstream analysis), 
 After remeshing and smoothing, the vertex coordinates have changed and the stored point
 lists are no longer valid.  Re-running :func:`multimodars.label_geometry` on the exported
 fixed mesh produces a fresh, consistent labeling that can be used for downstream
-biomechanical simulation or further analysis:
+biomechanical simulation or further analysis. The mesh geometry changed, but the
+anatomical centerlines did not, so reuse the same ``aorta_cl``/``rca_cl``/``lca_cl``
+objects prepared in step 1:
 
 .. code-block:: python
 
     results = mm.label_geometry(
         path_ccta_geometry="fixed_mesh.stl",
-        path_centerline_aorta="data/centerline_aorta.csv",
-        path_centerline_rca="data/centerline_rca_short.csv",
-        path_centerline_lca="data/centerline_lca.csv",
-        bounding_sphere_radius_mm=3.0,
+        centerline_aorta=aorta_cl,
+        centerline_rca=rca_cl,
+        centerline_lca=lca_cl,
+        bounding_sphere_radius_mm_rca=3.0,
+        bounding_sphere_radius_mm_lca=3.0,
         range_mm_takeoff_rca=60.0,
         range_mm_takeoff_lca=60.0,
         acute_takeoff_rca=True,
