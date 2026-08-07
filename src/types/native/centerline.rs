@@ -549,73 +549,57 @@ impl Centerline {
         self.rebuild_from_branches(branches);
     }
 
-    /// Ensure consistent ordering across all branches:
+    /// Reverse branch 0 in place if its highest-z point is not already at its start,
+    /// then apply the same "closer end goes first" rule to every side branch,
+    /// using branch 0 (post-reversal) as the reference.
     ///
-    /// * **Branch 0** – the point with the highest z-coordinate must be at index 0.
-    ///   If it is not, the entire branch is reversed.
-    /// * **Side branches (1 … n-1)** – the endpoint that is closest to any point on
-    ///   branch 0 must be the *first* point of the branch.  If the last point is
-    ///   closer to branch 0 than the first, the branch is reversed.
-    pub fn check_centerline(&mut self) {
-        let n = self.branch_start_indices.len();
-        if n == 0 {
-            return;
-        }
-
-        let mut branches = self.branches_as_vecs();
-
-        if Self::should_reverse_by_max_z(&branches[0]) {
-            branches[0].reverse();
-        }
-
-        for k in 1..n {
-            if branches[k].is_empty() || branches[0].is_empty() {
-                continue;
-            }
-            if Self::should_reverse_relative_to(&branches[k], &branches[0]) {
-                branches[k].reverse();
-            }
-        }
-
-        self.rebuild_from_branches(branches);
-    }
-
-    /// Reverse branch 0 in place if its highest-z point is not already at its start.
-    ///
-    /// Only branch 0 is touched — side branches keep their own order, since this
-    /// answers "which end of the main vessel is proximal", not a per-branch concern.
     /// Intended for a centerline with no anatomical reference to orient against
     /// (e.g. the aorta) — use [`Centerline::orient_to_reference`] instead whenever
     /// one is available. Only correct under the standard CT/DICOM convention where
     /// z increases toward the head, so the aortic root/valve is the highest-z point.
     pub fn orient_by_max_z(&mut self) {
-        if self.branch_start_indices.is_empty() {
+        let n = self.branch_start_indices.len();
+        if n == 0 {
             return;
         }
         let mut branches = self.branches_as_vecs();
         if Self::should_reverse_by_max_z(&branches[0]) {
             branches[0].reverse();
         }
+        if let Some((first, rest)) = branches.split_first_mut() {
+            for branch in rest.iter_mut() {
+                if Self::should_reverse_relative_to(branch, first.as_slice()) {
+                    branch.reverse();
+                }
+            }
+        }
         self.rebuild_from_branches(branches);
     }
 
     /// Reverse branch 0 in place if its last point is closer to `reference`'s
-    /// branch 0 than its first point is, so the end nearer `reference` becomes
-    /// branch 0's start.
+    /// branch 0 than its first point is, then apply the same rule to every side
+    /// branch — so every branch of `self` starts at whichever end is nearer
+    /// `reference`.
     ///
-    /// Only branch 0 is touched on both sides — side branches of `self` keep
-    /// their own order, and any side branches `reference` has are ignored so a
-    /// stray one can't skew the distance check. Distance to `reference` is the
-    /// minimum distance to any point of its branch 0, not a single fixed point —
-    /// e.g. for a coronary centerline, `reference` would be the aorta centerline,
-    /// not one ostium point.
+    /// Any side branches `reference` has are ignored so a stray one can't skew
+    /// the distance check — only `reference`'s branch 0 is ever measured
+    /// against. Distance to `reference` is the minimum distance to any point of
+    /// its branch 0, not a single fixed point — e.g. for a coronary centerline,
+    /// `reference` would be the aorta centerline, not one ostium point.
     pub fn orient_to_reference(&mut self, reference: &Centerline) {
-        if self.branch_start_indices.is_empty() {
+        let n = self.branch_start_indices.len();
+        if n == 0 {
             return;
         }
         let mut branches = self.branches_as_vecs();
-        if Self::should_reverse_relative_to(&branches[0], reference.branch_0()) {
+        let ref_branch_0 = reference.branch_0();
+        if Self::should_reverse_relative_to(&branches[0], ref_branch_0) {
             branches[0].reverse();
+        }
+        for branch in branches.iter_mut().skip(1) {
+            if Self::should_reverse_relative_to(branch, ref_branch_0) {
+                branch.reverse();
+            }
         }
         self.rebuild_from_branches(branches);
     }
@@ -1325,6 +1309,21 @@ mod centerline_tests {
     }
 
     #[test]
+    fn test_orient_by_max_z_reorients_side_branches() {
+        // Side branch's last point ends up nearer branch 0's (post-reversal)
+        // start than its first point is, so it must be reversed too.
+        let main = &[(0., 0., 0.), (0., 0., 1.), (0., 0., 2.)];
+        let side = &[(5., 0., 2.), (0., 0., 2.)];
+        let mut cl = make_multi_branch(&[main, side]);
+        cl.orient_by_max_z();
+
+        let branches = cl.branches_as_vecs();
+        assert_eq!(branches[0][0].contour_point.z, 2.0);
+        assert_eq!(branches[1][0].contour_point.x, 0.0);
+        assert_eq!(branches[1][1].contour_point.x, 5.0);
+    }
+
+    #[test]
     fn test_orient_to_reference_reverses_branch_0_only() {
         // Branch 0's last point (10,0,0) is close to `reference`; its first (0,0,0) is not.
         let main = &[(0., 0., 0.), (5., 0., 0.), (10., 0., 0.)];
@@ -1360,5 +1359,44 @@ mod centerline_tests {
         let reference = make_multi_branch(&[ref_main, ref_side]);
         cl.orient_to_reference(&reference);
         assert_eq!(cl.points[0].contour_point.x, 0.0);
+    }
+
+    #[test]
+    fn test_orient_to_reference_reorients_side_branches_toward_reference() {
+        // Own branch 0 gives no preference for the side branch (it's equidistant
+        // from both its endpoints), but `reference` is much closer to the side
+        // branch's last point — the side branch must be reversed to match
+        // `reference`, not left alone based on `self`'s own branch 0.
+        let main = &[(0., 0., 0.), (5., 0., 0.), (10., 0., 0.)];
+        let side = &[(10., 5., 0.), (0., 5., 0.)];
+        let mut cl = make_multi_branch(&[main, side]);
+        let reference = cl_from_coords(&[(0., 1., 0.), (-10., 1., 0.)]);
+        cl.orient_to_reference(&reference);
+
+        let branches = cl.branches_as_vecs();
+        assert_eq!(branches[0][0].contour_point.x, 0.0, "branch 0 unchanged");
+        assert_eq!(
+            branches[1][0].contour_point.x, 0.0,
+            "side branch reversed toward reference"
+        );
+        assert_eq!(branches[1][1].contour_point.x, 10.0);
+    }
+
+    #[test]
+    fn test_orient_to_reference_side_branches_ignore_references_side_branches() {
+        // `cl`'s side branch's first point (0,0,0) is already closest to
+        // `reference`'s branch 0. `reference` also has a side branch sitting
+        // right next to `cl`'s side branch's last point (10,5,0) — that must
+        // NOT cause a reversal.
+        let main = &[(0., 0., 0.), (5., 0., 0.), (10., 0., 0.)];
+        let side = &[(0., 0., 0.), (10., 5., 0.)];
+        let mut cl = make_multi_branch(&[main, side]);
+        let ref_main = &[(0., 1., 0.), (1., 1., 0.)];
+        let ref_side = &[(10., 5., 0.), (11., 5., 0.)];
+        let reference = make_multi_branch(&[ref_main, ref_side]);
+        cl.orient_to_reference(&reference);
+
+        let branches = cl.branches_as_vecs();
+        assert_eq!(branches[1][0].contour_point.x, 0.0);
     }
 }

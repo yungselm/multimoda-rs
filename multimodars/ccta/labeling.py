@@ -141,8 +141,10 @@ def label_geometry(
     # occlusion removal, ...) can trust point order instead of re-deriving it itself.
     # The aorta has no upstream reference, so it falls back to the highest-z point;
     # the coronaries orient toward the aorta's branch 0 (nearest point, not a fixed
-    # one). Only branch 0 of each centerline is touched — side branches are
-    # already correctly ordered relative to branch 0 by ``check_centerline``.
+    # one). Both calls also reorder each centerline's side branches to match — by
+    # the aorta's own branch 0 for `cl_aorta`, by the aorta's branch 0 for the
+    # coronaries too, superseding whatever `load_and_prepare_centerline` did
+    # earlier against each coronary's own branch 0.
     cl_aorta = cl_aorta.orient_by_max_z()
     cl_rca = cl_rca.orient_to_reference(cl_aorta)
     cl_lca = cl_lca.orient_to_reference(cl_aorta)
@@ -322,7 +324,7 @@ def load_and_prepare_centerline(
        Never runs for a ``.vtp`` source, even single-branch ones - re-running
        branch detection on already-clean VTP data risks its artefact-discard
        logic truncating a genuine end of the centerline.
-    5. ``check_centerline()`` - normalise branch ordering.
+    5. ``orient_by_max_z()`` - normalise branch ordering.
     6. ``smooth(smooth_sigma)`` - only if ``smooth_sigma > 0``.
 
     Parameters
@@ -375,7 +377,7 @@ def load_and_prepare_centerline(
     if not already_branched:
         cl = cl.calculate_branches(branch_spacing_tolerance)
 
-    cl = cl.check_centerline()
+    cl = cl.orient_by_max_z()
 
     if smooth_sigma > 0:
         cl = cl.smooth(smooth_sigma)

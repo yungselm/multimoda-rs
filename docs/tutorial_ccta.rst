@@ -201,7 +201,7 @@ re-label. After splitting and merging it is assured that the longest centerline 
     # Example: the 5th flagged position creates a loop - split there, then re-merge
     lca_cl = lca_cl.split_branch(0, positions[4])
     lca_cl = lca_cl.merge_branches(0, 4)
-    lca_cl = lca_cl.check_centerline()
+    lca_cl = lca_cl.orient_by_max_z()
     results = mm.label_branches(lca_cl, results, results_key="lca_points")
 
 .. note::

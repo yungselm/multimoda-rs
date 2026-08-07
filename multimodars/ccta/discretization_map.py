@@ -279,7 +279,7 @@ def find_sharp_angles(
     ----------
     cl:
         Centerline after ``calculate_branches`` (and optionally
-        ``check_centerline``).
+        ``orient_by_max_z``).
     branch_id:
         Branch to inspect (0 = main vessel).
     cos_threshold:

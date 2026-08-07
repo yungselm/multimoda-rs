@@ -457,47 +457,34 @@ class PyCenterline:
         """
         ...
 
-    def check_centerline(self) -> PyCenterline:
-        """Normalise branch ordering and return the corrected centerline.
-
-        For branch 0, the point with the highest z-coordinate is placed at
-        index 0 (reversed if necessary).  For every side branch, the endpoint
-        closest to branch 0 is placed at index 0.
-
-        Returns
-        -------
-        PyCenterline
-            A new centerline with corrected branch ordering.
-        """
-        ...
-
     def orient_by_max_z(self) -> PyCenterline:
-        """Reverse branch 0 if its highest-z point isn't already at its start.
+        """Reverse branch 0 if its highest-z point isn't already at its start,
+        then apply the same "closer end goes first" rule to every side branch,
+        using branch 0 (post-reversal) as the reference.
 
-        Only branch 0 is touched — side branches keep their own order, since
-        this answers "which end of the main vessel is proximal", not a
-        per-branch concern. For centerlines with no anatomical reference to
-        orient against, e.g. the aorta — use ``orient_to_reference`` instead
-        whenever one is available. Only correct under the standard CT/DICOM
-        convention where z increases toward the head, so the aortic
-        root/valve is the highest-z point.
+        For centerlines with no anatomical reference to orient against, e.g.
+        the aorta — use ``orient_to_reference`` instead whenever one is
+        available. Only correct under the standard CT/DICOM convention where
+        z increases toward the head, so the aortic root/valve is the
+        highest-z point.
 
         Returns
         -------
         PyCenterline
-            New centerline with branch 0 reversed if necessary.
+            New centerline with all branches in canonical order.
         """
         ...
 
     def orient_to_reference(self, reference: PyCenterline) -> PyCenterline:
-        """Reverse branch 0 so the end nearer `reference`'s branch 0 is its start.
+        """Reverse branch 0 so the end nearer `reference`'s branch 0 is its
+        start, then apply the same rule to every side branch.
 
-        Only branch 0 is touched on both sides — side branches of `self` keep
-        their own order, and any side branches `reference` has are ignored so
-        a stray one can't skew the distance check. Distance to `reference` is
-        the minimum distance to any point of its branch 0, not a single fixed
-        point — e.g. for a coronary centerline, `reference` would be the
-        aorta centerline, not one ostium point.
+        Any side branches `reference` has are ignored so a stray one can't
+        skew the distance check — only `reference`'s branch 0 is ever
+        measured against. Distance to `reference` is the minimum distance to
+        any point of its branch 0, not a single fixed point — e.g. for a
+        coronary centerline, `reference` would be the aorta centerline, not
+        one ostium point.
 
         Parameters
         ----------
@@ -508,7 +495,7 @@ class PyCenterline:
         Returns
         -------
         PyCenterline
-            New centerline with branch 0 reversed if necessary.
+            New centerline with all branches in canonical order.
         """
         ...
 
@@ -835,7 +822,7 @@ def load_and_prepare_centerline(
     3. ``resample(spacing_mm)`` - only if ``spacing_mm`` is given.
     4. ``calculate_branches(branch_spacing_tolerance)`` - only if *source* did
        not already carry branch information (e.g. a flat CSV/array of points).
-    5. ``check_centerline()`` - normalise branch ordering.
+    5. ``orient_by_max_z()`` - normalise branch ordering.
     6. ``smooth(smooth_sigma)`` - only if ``smooth_sigma > 0``.
 
     Parameters

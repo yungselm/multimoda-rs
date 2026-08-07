@@ -320,7 +320,7 @@ def plot_centerline_branches(
     Parameters
     ----------
     rca_cl, lca_cl:
-        Centerlines after ``calculate_branches`` and ``check_centerline``
+        Centerlines after ``calculate_branches`` and ``orient_by_max_z``
         (output of :func:`~multimodars.ccta.discretization_map.prepare_centerlines`).
     results_dict:
         Optional.  When provided, labelled surface points
@@ -394,7 +394,7 @@ def plot_centerline_edges(
     ----------
     cl:
         Centerline after ``calculate_branches`` (and optionally
-        ``check_centerline``).
+        ``orient_by_max_z``).
     cos_threshold:
         Cosine threshold forwarded to ``cl.find_sharp_angles``.  ``0.0`` flags
         all angles ≥ 90 °; negative values flag increasingly obtuse bends.

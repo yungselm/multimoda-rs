@@ -3,34 +3,39 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.6.0] -2026-08-07
 
 ### Changed
 - `Centerline`/`PyCenterline` API reorganised around a clear load → prepare → branch → order →
   smooth pipeline:
-  - `cleanup_vtp_data` is removed, replaced by `remove_branch_overlap()` (just the VTP
-    duplicate-prefix trim) and `trim_start(mm)` (the inlet trim), so smoothing and trimming are
-    no longer bundled into one VTP-specific call.
-  - `smooth(sigma)` is now an inherent `Centerline`/`PyCenterline` method (was the free function
-    `utils::smooth_centerline`, Rust-only).
-  - New `resample(spacing_mm)` resamples every branch to even arc-length spacing independently of
-    any reference geometry.
-  - New `orient_by_max_z()` and `orient_to_reference(reference)` replace the ad-hoc z-based
-    reversal/sort heuristics previously duplicated across `label_coronary.rs`,
-    `centerline_align/preprocessing.rs`, and `Centerline::check_centerline` - one of which
-    (`label_coronary.rs`'s private `check_centerline`) fully re-sorted points by z instead of just
-    reversing, risking corruption of arc-length-contiguous assumptions downstream.
-  - New Python helper `load_and_prepare_centerline(source, ...)` loads a centerline from any
-    supported source (`.vtp`, CSV, `PyCenterline`, or numpy array) and runs the full prep
-    pipeline (overlap removal, inlet trim, resample, branch extraction, ordering, smoothing) in
-    one call - replaces the old
-    `read_centerline_vtp(...).cleanup_vtp_data(smooth=True)` pattern.
-  - `discretize_vessel`/`discretize_vessel_tree` no longer smooth centerlines internally (σ = 2.5
-    was previously hardcoded); callers must prepare centerlines beforehand, e.g. via
-    `load_and_prepare_centerline` or `.smooth()`.
-  - `label_geometry` now orients the aorta/RCA/LCA centerlines explicitly on load
-    (`orient_by_max_z` for the aorta, `orient_to_reference` for RCA/LCA against the aorta)
-    instead of relying on the removed internal z-sort in `label_coronary.rs`.
+- `cleanup_vtp_data` is removed, replaced by `remove_branch_overlap()` (just the VTP
+  duplicate-prefix trim) and `trim_start(mm)` (the inlet trim), so smoothing and trimming are
+  no longer bundled into one VTP-specific call.
+- `smooth(sigma)` is now an inherent `Centerline`/`PyCenterline` method (was the free function
+  `utils::smooth_centerline`, Rust-only).
+- New `resample(spacing_mm)` resamples every branch to even arc-length spacing independently of
+  any reference geometry.
+- New `orient_by_max_z()` and `orient_to_reference(reference)` replace the ad-hoc z-based
+  reversal/sort heuristics previously duplicated across `label_coronary.rs`,
+  `centerline_align/preprocessing.rs`, and `Centerline::check_centerline` - one of which
+  (`label_coronary.rs`'s private `check_centerline`) fully re-sorted points by z instead of just
+  reversing, risking corruption of arc-length-contiguous assumptions downstream.
+- New Python helper `load_and_prepare_centerline(source, ...)` loads a centerline from any
+  supported source (`.vtp`, CSV, `PyCenterline`, or numpy array) and runs the full prep
+  pipeline (overlap removal, inlet trim, resample, branch extraction, ordering, smoothing) in
+  one call - replaces the old
+  `read_centerline_vtp(...).cleanup_vtp_data(smooth=True)` pattern.
+- `discretize_vessel`/`discretize_vessel_tree` no longer smooth centerlines internally (σ = 2.5
+  was previously hardcoded); callers must prepare centerlines beforehand, e.g. via
+  `load_and_prepare_centerline` or `.smooth()`.
+- `label_geometry` now orients the aorta/RCA/LCA centerlines explicitly on load
+  (`orient_by_max_z` for the aorta, `orient_to_reference` for RCA/LCA against the aorta)
+  instead of relying on the removed internal z-sort in `label_coronary.rs`.
+- `orient_by_max_z()` and `orient_to_reference(reference)` now also reorder every side branch
+  (previously only branch 0 was touched), applying the same "closer end goes first" rule against
+  branch 0 (for `orient_by_max_z`) or `reference`'s branch 0 (for `orient_to_reference`). This
+  makes `check_centerline` - which only ever duplicated `orient_by_max_z`'s side-branch handling -
+  fully redundant, so it is removed; call `orient_by_max_z()` instead.
 
 ## [0.5.8] - 2026-08-06
 
