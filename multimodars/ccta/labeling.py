@@ -4,7 +4,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 import trimesh
-import numpy as np
 
 from ..multimodars import (
     find_centerline_bounded_points_simple,
@@ -17,26 +16,25 @@ from ..multimodars import (
     keep_largest_connected_component,
     PyCenterline,
 )
-from .._converters import numpy_to_centerline
 from ..io.read_geometrical import read_mesh
 from .debug_plots import plot_results_key
 
 
 def label_geometry(
     path_ccta_geometry: Path | str | trimesh.Trimesh,
-    path_centerline_aorta: Path | str | PyCenterline,
-    path_centerline_rca: Path | str | PyCenterline,
-    path_centerline_lca: Path | str | PyCenterline,
+    centerline_aorta: PyCenterline,
+    centerline_rca: PyCenterline,
+    centerline_lca: PyCenterline,
     acute_takeoff_rca: bool = False,
     acute_takeoff_lca: bool = False,
-    n_points_takeoff_rca: int = 120,
-    n_points_takeoff_lca: int = 120,
+    range_mm_takeoff_rca: float = 60.0,
+    range_mm_takeoff_lca: float = 60.0,
     step_size_mm: float = 1.0,
     bounding_sphere_radius_mm_rca: float = 3.0,
     bounding_sphere_radius_mm_lca: float = 3.0,
     tolerance_float: float = 1e-6,
     control_plot: bool = True,
-) -> tuple[dict, tuple[PyCenterline, PyCenterline, PyCenterline]]:
+) -> dict:
     """Label CCTA mesh vertices as aorta, RCA, or LCA using centerline-based region detection.
 
     Loads a 3-D surface mesh and three centerlines (aorta, RCA, LCA), then assigns
@@ -55,13 +53,15 @@ def label_geometry(
     path_ccta_geometry : Path or str
         Path to the CCTA surface mesh file (any format supported by
         :func:`multimodars.io.read_geometrical.read_mesh`).
-    path_centerline_aorta : Path or str
-        Path to a CSV file containing the aortic centerline (comma-delimited,
-        columns: x, y, z, …).
-    path_centerline_rca : Path or str
-        Path to a CSV file containing the RCA centerline.
-    path_centerline_lca : Path or str
-        Path to a CSV file containing the LCA centerline.
+    centerline_aorta : PyCenterline
+        Aortic centerline. Used as-is - load and prepare it beforehand (branch
+        extraction, trimming, resampling, orientation, smoothing), e.g. with
+        :func:`~multimodars.ccta.centerline_prep.load_centerline` followed by
+        :func:`~multimodars.ccta.centerline_prep.prepare_centerline`.
+    centerline_rca : PyCenterline
+        RCA centerline, prepared the same way as *centerline_aorta*.
+    centerline_lca : PyCenterline
+        LCA centerline, prepared the same way as *centerline_aorta*.
     acute_takeoff_rca : bool, optional
         When ``True`` applies ray-triangle occlusion removal to the RCA region
         to strip points overlapping the aortic wall near an acute-angle takeoff
@@ -69,12 +69,14 @@ def label_geometry(
     acute_takeoff_lca : bool, optional
         When ``True`` applies ray-triangle occlusion removal to the LCA region,
         same as *acute_takeoff_rca* but for the LCA.  Default is ``False``.
-    n_points_takeoff_rca : int, optional
-        Number of RCA centerline points examined during occlusion removal
-        (the overlapping/intramural segment length).  Default is ``120``.
-    n_points_takeoff_lca : int, optional
-        Number of LCA centerline points examined during occlusion removal
-        (the overlapping/intramural segment length).  Default is ``120``.
+    range_mm_takeoff_rca : float, optional
+        Arc-length in mm along the RCA centerline, from its proximal end,
+        examined during occlusion removal (the overlapping/intramural segment
+        length). Expressed as a physical length rather than a point count so
+        it stays correct regardless of centerline resampling density.
+        Default is ``60.0``.
+    range_mm_takeoff_lca : float, optional
+        Same as *range_mm_takeoff_rca* but for the LCA. Default is ``60.0``.
     step_size_mm : float, optional
         Step size in mm for iterating over coronary centerline points during
         occlusion removal.  Default is ``1.0`` mm.
@@ -103,9 +105,6 @@ def label_geometry(
         * ``"rca_removed_points"`` - RCA vertices removed by occlusion detection.
         * ``"lca_removed_points"`` - LCA vertices removed by occlusion detection.
 
-    centerlines : tuple
-        A 3-tuple ``(cl_rca, cl_lca, cl_aorta)`` of ``PyCenterline`` objects.
-
     Raises
     ------
     Exception
@@ -127,23 +126,17 @@ def label_geometry(
             print(f"Error reading CCTA mesh from {path_ccta_geometry}: {e}")
             raise
 
-    cl_aorta = _try_load_cl(path_centerline_aorta, "Aorta")
-
-    cl_lca = _try_load_cl(path_centerline_lca, "LCA")
-
-    cl_rca = _try_load_cl(path_centerline_rca, "RCA")
-
     points_list = [tuple(vertex) for vertex in mesh.vertices.tolist()]
     mesh_faces_list = mesh.faces.tolist()
 
     # Rust implementation using a rolling sphere with fixed radius
     rca_points_found = find_centerline_bounded_points_simple(
-        centerline=cl_rca,
+        centerline=centerline_rca,
         points=points_list,
         radius=bounding_sphere_radius_mm_rca,
     )
     lca_points_found = find_centerline_bounded_points_simple(
-        centerline=cl_lca,
+        centerline=centerline_lca,
         points=points_list,
         radius=bounding_sphere_radius_mm_lca,
     )
@@ -156,11 +149,11 @@ def label_geometry(
 
     if acute_takeoff_rca:
         rca_removed_points, final_rca_points_found = _apply_occlusion_removal(
-            n_points_takeoff_rca,
+            range_mm_takeoff_rca,
             step_size_mm,
             tolerance_float,
-            cl_aorta,
-            cl_rca,
+            centerline_aorta,
+            centerline_rca,
             points_list,
             mesh_faces_list,
             rca_points_found,
@@ -171,11 +164,11 @@ def label_geometry(
 
     if acute_takeoff_lca:
         lca_removed_points, final_lca_points_found = _apply_occlusion_removal(
-            n_points_takeoff_lca,
+            range_mm_takeoff_lca,
             step_size_mm,
             tolerance_float,
-            cl_aorta,
-            cl_lca,
+            centerline_aorta,
+            centerline_lca,
             points_list,
             mesh_faces_list,
             lca_points_found,
@@ -188,7 +181,7 @@ def label_geometry(
     aortic_points = find_aortic_points(
         points_list, final_rca_points_found, final_lca_points_found
     )
-    print(f"length before: {len(final_lca_points_found)}")
+    print(f"length before: {len(final_lca_points_found + final_rca_points_found)}")
     final_lca_points, final_aortic_points = clean_outlier_points(
         final_lca_points_found, aortic_points, 2.0, 0.4
     )  # based on patient data, only precleaning anyways, rest done by final_reclassification
@@ -202,7 +195,7 @@ def label_geometry(
     final_aortic_points = list(
         set(final_aortic_points) | set(rca_removed_points) | set(lca_removed_points)
     )
-    print(f"length after: {len(final_lca_points)}")
+    print(f"length after: {len(final_lca_points + final_rca_points)}")
 
     results: dict[str, Any] = {
         "mesh": mesh,
@@ -249,34 +242,16 @@ def label_geometry(
             proximal_points=True,
             distal_points=False,
             anomalous_points=False,
-            cl_rca=cl_rca,
-            cl_lca=cl_lca,
-            cl_aorta=cl_aorta,
+            cl_rca=centerline_rca,
+            cl_lca=centerline_lca,
+            cl_aorta=centerline_aorta,
         )
 
-    return new_results, (cl_rca, cl_lca, cl_aorta)
-
-
-def _try_load_cl(path_centerline_aorta: PyCenterline | Path | str, name: str):
-    if isinstance(path_centerline_aorta, PyCenterline):
-        cl_aorta = path_centerline_aorta
-        print(f"Using provided {name} centerline: {len(cl_aorta.points)} points")
-    elif isinstance(path_centerline_aorta, np.ndarray):
-        cl_aorta = numpy_to_centerline(path_centerline_aorta)
-        print(f"Using provided {name} centerline: {len(cl_aorta.points)} points")
-    else:
-        try:
-            cl_aorta_raw = np.genfromtxt(path_centerline_aorta, delimiter=",")
-            cl_aorta = numpy_to_centerline(cl_aorta_raw)
-            print(f"Loaded {name} centerline: {len(cl_aorta.points)} points")
-        except Exception as e:
-            print(f"Error reading {name} centerline from {path_centerline_aorta}: {e}")
-            raise
-    return cl_aorta
+    return new_results
 
 
 def _apply_occlusion_removal(
-    n_points_takeoff_rca: int,
+    range_mm_takeoff_rca: float,
     step_size_mm: float,
     tolerance_float: float,
     cl_aorta: PyCenterline,
@@ -293,7 +268,7 @@ def _apply_occlusion_removal(
     final_rca_points_found = remove_occluded_points_ray_triangle(
         centerline_coronary=cl_rca,
         centerline_aorta=cl_aorta,
-        range_coronary=n_points_takeoff_rca,
+        range_mm=range_mm_takeoff_rca,
         points=rca_points_found,
         faces=rca_faces_for_rust,
         step_size_mm=step_size_mm,

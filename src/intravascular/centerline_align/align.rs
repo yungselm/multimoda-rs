@@ -74,8 +74,8 @@ pub fn align_three_point_rs<T: Processable>(
     contour_types: Vec<ContourType>,
     case_name: &str,
     align_wall_anomalous: bool,
-) -> anyhow::Result<(T, Centerline, f64)> {
-    let resampled_centerline =
+) -> anyhow::Result<(T, f64, f64)> {
+    let (resampled_centerline, spacing_mm) =
         super::preprocessing::preprocess_centerline(centerline, target.primary_geometry())
             .map_err(|e| anyhow!("Couldn't resample the centerline: {e}"))?;
 
@@ -120,7 +120,7 @@ pub fn align_three_point_rs<T: Processable>(
         target
     };
 
-    Ok((target, resampled_centerline, total_rotation))
+    Ok((target, spacing_mm, total_rotation))
 }
 
 pub fn align_manual_rs<T: Processable>(
@@ -135,8 +135,8 @@ pub fn align_manual_rs<T: Processable>(
     contour_types: Vec<ContourType>,
     case_name: &str,
     align_wall_anomalous: bool,
-) -> anyhow::Result<(T, Centerline, f64)> {
-    let resampled_centerline =
+) -> anyhow::Result<(T, f64, f64)> {
+    let (resampled_centerline, spacing_mm) =
         super::preprocessing::preprocess_centerline(centerline, target.primary_geometry())
             .map_err(|e| anyhow!("Couldn't resample the centerline: {e}"))?;
 
@@ -162,7 +162,7 @@ pub fn align_manual_rs<T: Processable>(
         target
     };
 
-    Ok((target, resampled_centerline, total_rotation))
+    Ok((target, spacing_mm, total_rotation))
 }
 
 /// Combined alignment with three-point initialization and Hausdorff refinement
@@ -183,12 +183,12 @@ pub fn align_combined_rs<T: Processable>(
     contour_types: Vec<ContourType>,
     case_name: &str,
     align_wall_anomalous: bool,
-) -> anyhow::Result<(T, Centerline, f64)> {
+) -> anyhow::Result<(T, f64, f64)> {
     let original = target.clone();
 
     println!("\nStep 1: Finding initial rotation via three-point method");
 
-    let resampled_centerline = super::preprocessing::preprocess_centerline(
+    let (resampled_centerline, spacing_mm) = super::preprocessing::preprocess_centerline(
         centerline.clone(),
         original.primary_geometry(),
     )
@@ -281,7 +281,7 @@ pub fn align_combined_rs<T: Processable>(
         final_target
     };
 
-    Ok((final_target, resampled_centerline, total_rotation))
+    Ok((final_target, spacing_mm, total_rotation))
 }
 
 // /// Simpler combined alignment that doesn't double-rotate

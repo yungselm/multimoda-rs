@@ -32,23 +32,34 @@ The goal of this module is to replace a section on the CCTA geometry with an int
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The entry point for the CCTA module is :func:`multimodars.label_geometry`, which reads a
-triangulated surface mesh (STL) together with centerline CSV files for the aorta, the right
-coronary artery (RCA), and the left coronary artery (LCA).  It returns a labeled results
-dictionary and three :class:`multimodars.PyCenterline` objects that are used in all subsequent
-steps.
+triangulated surface mesh (STL) together with prepared centerlines for the aorta, the right
+coronary artery (RCA), and the left coronary artery (LCA), and returns a labeled results
+dictionary.  It takes ``PyCenterline`` objects, not file paths — load and orient them yourself
+beforehand (see below) and reuse those same objects for every subsequent step; it does not
+return or modify them.
 
 .. code-block:: python
 
     import multimodars as mm
 
-    results, (rca_cl, lca_cl, ao_cl) = mm.label_geometry(
+    aorta_cl = mm.load_centerline("data/centerline_aorta.csv", name="Aorta")
+    aorta_cl = mm.prepare_centerline(aorta_cl)
+
+    rca_cl = mm.load_centerline("data/centerline_rca_short.csv", name="RCA")
+    rca_cl = mm.prepare_centerline(rca_cl, ref_centerline=aorta_cl)
+
+    lca_cl = mm.load_centerline("data/centerline_lca.csv", name="LCA")
+    lca_cl = mm.prepare_centerline(lca_cl, ref_centerline=aorta_cl)
+
+    results = mm.label_geometry(
         path_ccta_geometry="data/NARCO_119_noside.stl",
-        path_centerline_aorta="data/centerline_aorta.csv",
-        path_centerline_rca="data/centerline_rca_short.csv",
-        path_centerline_lca="data/centerline_lca.csv",
-        bounding_sphere_radius_mm=3.0,
-        n_points_takeoff_rca=100,
-        n_points_takeoff_lca=100,
+        centerline_aorta=aorta_cl,
+        centerline_rca=rca_cl,
+        centerline_lca=lca_cl,
+        bounding_sphere_radius_mm_rca=3.0,
+        bounding_sphere_radius_mm_lca=3.0,
+        range_mm_takeoff_rca=60.0,
+        range_mm_takeoff_lca=60.0,
         acute_takeoff_rca=True,
         acute_takeoff_lca=False,
         control_plot=False,
@@ -66,7 +77,7 @@ In the first step, a rolling sphere is propagated along the coronary centerlines
 
    Rolling sphere applied for the case of an R-AAOCA, demonstrating incorrect labeling caused by the elliptic vessel cross-section. Left: 3-D view; right: schematic illustration.
 
-To address this limitation, a ray-casting algorithm is employed. A ray is cast from each aortic centerline point toward each of the ``n_points_takeoff_rca`` proximal coronary centerline points. When a ray intersects three mesh faces, the first intersected face is added to an occlusion set. All RCA vertices that are topologically connected to any face in this set are subsequently reclassified as ``aortic_points`` and recorded in ``rca_removed_points``, removing them from the ``rca_points`` label. The identical procedure is applied symmetrically when ``acute_takeoff_lca=True``, using ``n_points_takeoff_lca``. This same mechanism also applies more generally to any acute-angle ostium where the coronary and aortic walls overlap, not only intramural-course anomalies.
+To address this limitation, a ray-casting algorithm is employed. A ray is cast from each aortic centerline point toward each coronary centerline point within ``range_mm_takeoff_rca`` mm of the proximal end. When a ray intersects three mesh faces, the first intersected face is added to an occlusion set. All RCA vertices that are topologically connected to any face in this set are subsequently reclassified as ``aortic_points`` and recorded in ``rca_removed_points``, removing them from the ``rca_points`` label. The identical procedure is applied symmetrically when ``acute_takeoff_lca=True``, using ``range_mm_takeoff_lca``. This same mechanism also applies more generally to any acute-angle ostium where the coronary and aortic walls overlap, not only intramural-course anomalies.
 
 .. list-table::
    :widths: 50 50
@@ -93,17 +104,18 @@ on the mesh surface.
   labeling pass.  Larger values cast a wider net and capture more distant vertices; smaller
   values are more conservative.  The default of 3.5 mm works for most datasets; adjust
   downward if neighboring structures are incorrectly captured.
-- ``n_points_takeoff_rca`` / ``n_points_takeoff_lca``: number of centerline points used to
-  define the end of the overlapping/intramural segment, set independently per vessel.  When
-  uncertain, keep this value large; the anomalous-region labeling in step 3 will refine the
-  boundary.
+- ``range_mm_takeoff_rca`` / ``range_mm_takeoff_lca``: arc-length in mm from the proximal end of
+  each coronary centerline defining the end of the overlapping/intramural segment, set
+  independently per vessel.  Expressed as a physical length rather than a point count so it stays
+  correct regardless of centerline resampling density.  When uncertain, keep this value large;
+  the anomalous-region labeling in step 3 will refine the boundary.
 - ``acute_takeoff_rca`` / ``acute_takeoff_lca``: when ``True``, the algorithm removes incorrectly
   labeled points overlapping the aortic wall near an acute-angle takeoff from the respective
   vessel and reassigns them to ``"rca_removed_points"`` / ``"lca_removed_points"``.  Set to
   ``False`` for normal coronary anatomy.
 - ``control_plot``: opens an interactive 3-D scene to inspect the labeling result.  Set to
-  ``True`` when tuning ``bounding_sphere_radius_mm`` or ``n_points_takeoff_rca`` /
-  ``n_points_takeoff_lca``.
+  ``True`` when tuning ``bounding_sphere_radius_mm`` or ``range_mm_takeoff_rca`` /
+  ``range_mm_takeoff_lca``.
 
 .. image:: ./figures/initial_labeling.jpg
    :alt: Example initial labeling figure
@@ -120,72 +132,52 @@ The returned ``results`` dictionary contains:
   the RCA label: ``[(x, y, z), ...]``.
 - ``"lca_removed_points"`` - same for LCA.
 
-Centerlines can be supplied in two formats.
-
-**CSV files** - three columns (no header): ``x``, ``y``, ``z`` in mm.  Convert to
-:class:`~multimodars.PyCenterline` with :func:`multimodars.numpy_to_centerline`:
-
-.. code-block:: python
-
-    import numpy as np
-
-    rca_cl_raw   = np.genfromtxt("data/centerline_rca_short.csv", delimiter=',')
-    lca_cl_raw   = np.genfromtxt("data/centerline_lca.csv",       delimiter=',')
-    aorta_cl_raw = np.genfromtxt("data/centerline_aorta.csv",     delimiter=',')
-
-    rca_cl   = mm.numpy_to_centerline(rca_cl_raw)
-    lca_cl   = mm.numpy_to_centerline(lca_cl_raw)
-    aorta_cl = mm.numpy_to_centerline(aorta_cl_raw)
-
-**VTP files** (recommended) - ASCII VTK PolyData exported by 3D-Slicer or VMTK.
-:func:`multimodars.read_centerline_vtp` parses the file and identifies branches automatically.
-:meth:`~multimodars.PyCenterline.cleanup_vtp_data` then removes the run-alongside-main-branch
-prefix that VTP files attach to every side branch and optionally smooths the result:
+Centerlines can be supplied as CSV files (three columns, no header: ``x``, ``y``, ``z`` in mm),
+ASCII VTP files (VTK PolyData exported by 3D-Slicer or VMTK, recommended), an existing
+:class:`~multimodars.PyCenterline`, or a numpy array of points.
+:func:`multimodars.load_centerline` loads any of these, then
+:func:`multimodars.prepare_centerline` runs the standard prep pipeline - trimming any
+run-alongside-main-branch prefix VTP files attach to every side branch, optionally trimming the
+inlet, resampling to even spacing, detecting branches, normalising branch ordering, and
+smoothing - as already shown above for the aorta/RCA/LCA. The same two calls work for VTP
+sources too:
 
 .. code-block:: python
 
-    rca_cl   = mm.read_centerline_vtp("data/rca_cl.vtp").cleanup_vtp_data(smooth=True)
-    lca_cl   = mm.read_centerline_vtp("data/lca_cl.vtp").cleanup_vtp_data(smooth=True)
-    aorta_cl = mm.read_centerline_vtp("data/ao_cl.vtp").cleanup_vtp_data(smooth=True)
+    aorta_cl = mm.load_centerline("data/ao_cl.vtp", name="Aorta")
+    aorta_cl = mm.prepare_centerline(aorta_cl, spacing_mm=1.0)
 
-When using VTP files, pass the :class:`~multimodars.PyCenterline` objects directly to
-``path_centerline_*`` (instead of file-path strings).
+    rca_cl = mm.load_centerline("data/rca_cl.vtp", name="RCA")
+    rca_cl = mm.prepare_centerline(rca_cl, ref_centerline=aorta_cl, spacing_mm=1.0)
+
+    lca_cl = mm.load_centerline("data/lca_cl.vtp", name="LCA")
+    lca_cl = mm.prepare_centerline(lca_cl, ref_centerline=aorta_cl, spacing_mm=1.0)
+
+``ref_centerline`` doubles as the "is this a coronary?" signal: passing the aorta as
+``ref_centerline`` for RCA/LCA both orients each towards it (``orient_to_reference``) and tells
+``prepare_centerline`` to run branch detection; the aorta itself, called with no
+``ref_centerline``, falls back to ``orient_by_max_z`` and skips branch detection (it has no side
+branches to find).
 
 2. Prepare centerlines, detect branches, and discretize the vessel tree
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Before discretizing the vessel geometry, both coronary centerlines must have their branches
-detected and the surface-mesh points labeled by branch.  :func:`multimodars.prepare_centerlines`
-handles all of this in a single call: it runs ``calculate_branches`` and ``check_centerline``
-on each centerline, then calls :func:`multimodars.label_branches` so the ``results`` dictionary
-gains keys ``rca_points_main``, ``rca_points_side_1``, …, ``lca_points_main``,
-``lca_points_side_1``, …:
-
-**CSV path** - run full branch detection from scratch:
+Before discretizing the vessel geometry, the surface-mesh points must be labeled by branch.
+``rca_cl``/``lca_cl`` already have their branches computed and ordered by
+``prepare_centerline`` above, so :func:`multimodars.label_branches_pair` only needs to
+call :func:`multimodars.label_branches` for each, so the ``results`` dictionary gains keys
+``rca_points_main``, ``rca_points_side_1``, …, ``lca_points_main``, ``lca_points_side_1``, …. It
+does not modify ``rca_cl``/``lca_cl`` in any way:
 
 .. code-block:: python
 
-    rca_cl, lca_cl, results = mm.prepare_centerlines(
+    results = mm.label_branches_pair(
         rca_cl, lca_cl, results,
-        branch_sigma=2.0,
         control_plot=False,   # True opens a trimesh scene of the branch assignment
-    )
-
-**VTP path** - branch indices are already set; only ordering is normalised:
-
-.. code-block:: python
-
-    rca_cl, lca_cl, results = mm.prepare_centerlines(
-        rca_cl, lca_cl, results, vtp_data=True
     )
 
 **Parameter reference:**
 
-- ``branch_sigma``: Gaussian smoothing radius (mm) applied during branch detection.  Increase
-  if the algorithm over-segments a noisy centerline; decrease to preserve fine anatomical detail.
-  Ignored when ``vtp_data=True``.
-- ``vtp_data``: when ``True``, skip ``calculate_branches`` (branch indices are already populated
-  from the VTP file) and only run ``check_centerline`` to normalise branch ordering.
 - ``control_plot``: opens an interactive trimesh scene coloured by branch ID and showing the
   labelled surface points, so you can verify the assignment before discretizing.
 
@@ -202,7 +194,7 @@ flagged position highlighted in a distinct colour:
     # Inspect: red × marks every position that may need a correction
     mm.plot_centerline_edges(lca_cl, cos_threshold=0.0)
 
-    # Find flagged positions (returns a list of 0-based indices within the branch)
+    # Find flagged positions (returns a list of global point_index values)
     positions = mm.find_sharp_angles(lca_cl, branch_id=0, cos_threshold=0.0,
                                      control_plot=True)
 
@@ -215,12 +207,12 @@ re-label. After splitting and merging it is assured that the longest centerline 
     # Example: the 5th flagged position creates a loop - split there, then re-merge
     lca_cl = lca_cl.split_branch(0, positions[4])
     lca_cl = lca_cl.merge_branches(0, 4)
-    lca_cl = lca_cl.check_centerline()
+    lca_cl = lca_cl.orient_by_max_z()
     results = mm.label_branches(lca_cl, results, results_key="lca_points")
 
 .. note::
 
-    :func:`~multimodars.prepare_centerlines` cannot automate the ``split_branch`` /
+    :func:`~multimodars.label_branches_pair` cannot automate the ``split_branch`` /
     ``merge_branches`` step because the right corrections are case-specific.  Inspect the
     ``control_plot`` output first, then call those methods manually before proceeding.
 
@@ -237,7 +229,7 @@ used to initialize the three-point alignment in step 3:
 .. code-block:: python
 
     tree = mm.discretize_vessel_tree(
-        ao_cl, rca_cl, lca_cl,
+        aorta_cl, rca_cl, lca_cl,
         results,
         step_size=1.0,      # arc-length spacing between cross-sections in mm
         n_points=100,       # points per output contour ring
@@ -305,7 +297,7 @@ RCA ostium is available directly from the discretized tree:
     ref_points = tree.rca_references[0]   # triplet at the ostium (index 0)
     rca_cl_main = rca_cl.get_branch(0)    # alignment needs a single-branch centerline
 
-    aligned, resampled_cl = mm.align_combined(
+    aligned, spacing_mm, total_rotation_deg = mm.align_combined(
         rca_cl_main,
         rest,
         ref_points[0],                     # main reference point
@@ -317,6 +309,14 @@ RCA ostium is available directly from the discretized tree:
         watertight=False,
         output_dir="test",
     )
+
+``align_combined`` resamples ``rca_cl_main`` internally to match the intravascular frame
+spacing, but returns that spacing (``spacing_mm``) rather than the resampled centerline itself —
+apply it to other centerlines (e.g. the aorta) directly instead of re-deriving it:
+
+.. code-block:: python
+
+    aorta_cl = aorta_cl.resample(spacing_mm)
 
 **Parameter reference:**
 
@@ -393,7 +393,7 @@ intravascular geometry:
 
     aortic_scaling = mm.find_aorta_scaling(
         frames=aligned.geom_a.frames,
-        cl_aorta=ao_cl,
+        cl_aorta=aorta_cl,
         results=results,
     )
 
@@ -409,7 +409,7 @@ to round free-segment lumen:
 
     aortic_wall_scaling = mm.find_aortic_wall_scaling(
         frames=aligned.geom_a.frames,
-        cl_aorta=ao_cl,
+        cl_aorta=aorta_cl,
         results=results,
     )
 
@@ -665,18 +665,21 @@ To extract a sub-mesh programmatically (e.g. to pass to a downstream analysis), 
 After remeshing and smoothing, the vertex coordinates have changed and the stored point
 lists are no longer valid.  Re-running :func:`multimodars.label_geometry` on the exported
 fixed mesh produces a fresh, consistent labeling that can be used for downstream
-biomechanical simulation or further analysis:
+biomechanical simulation or further analysis. The mesh geometry changed, but the
+anatomical centerlines did not, so reuse the same ``aorta_cl``/``rca_cl``/``lca_cl``
+objects prepared in step 1:
 
 .. code-block:: python
 
-    results, (rca_cl, lca_cl, ao_cl) = mm.label_geometry(
+    results = mm.label_geometry(
         path_ccta_geometry="fixed_mesh.stl",
-        path_centerline_aorta="data/centerline_aorta.csv",
-        path_centerline_rca="data/centerline_rca_short.csv",
-        path_centerline_lca="data/centerline_lca.csv",
-        bounding_sphere_radius_mm=3.0,
-        n_points_takeoff_rca=100,
-        n_points_takeoff_lca=100,
+        centerline_aorta=aorta_cl,
+        centerline_rca=rca_cl,
+        centerline_lca=lca_cl,
+        bounding_sphere_radius_mm_rca=3.0,
+        bounding_sphere_radius_mm_lca=3.0,
+        range_mm_takeoff_rca=60.0,
+        range_mm_takeoff_lca=60.0,
         acute_takeoff_rca=True,
         acute_takeoff_lca=False,
         control_plot=True,

@@ -1,7 +1,6 @@
 use super::centerline_point::CenterlinePoint;
 use super::contour_point::ContourPoint;
 use super::Point3D;
-use crate::types::utils;
 use nalgebra::Vector3;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -430,8 +429,9 @@ impl Centerline {
         self.recompute_tangents();
     }
 
-    /// Return local positions (0-indexed within the branch) of interior points
-    /// where the opening angle satisfies `cos_angle > cos_threshold`.
+    /// Return global `point_index` values (as in `ContourPoint::point_index`, i.e.
+    /// indices into the flat `points` Vec) of interior points on `branch_id` where
+    /// the opening angle satisfies `cos_angle > cos_threshold`.
     /// Use `cos_threshold = 0.0` for < 90°, `0.5` for < 60°, etc.
     pub fn find_sharp_angles(&self, branch_id: u32, cos_threshold: f64) -> Vec<usize> {
         let idx = branch_id as usize;
@@ -461,19 +461,34 @@ impl Centerline {
                 }
                 v1.dot(&v2) / (n1 * n2) > cos_threshold
             })
+            .map(|local_pos| start + local_pos)
             .collect()
     }
 
-    /// Split the branch at `local_pos` (0-indexed within the branch).
-    /// Both resulting segments include the split point.
-    /// If `branch_id == 0` the longer segment stays as branch 0.
-    /// For side branches the first segment keeps its slot; the second is appended.
-    pub fn split_branch(&mut self, branch_id: u32, local_pos: usize) {
-        let mut branches = self.branches_as_vecs();
+    /// Split `branch_id` at `point_index` (a global index into `points`, as
+    /// returned by [`Centerline::find_sharp_angles`] - must fall within
+    /// `branch_id`'s own range). Both resulting segments include the split
+    /// point. Branches are re-sorted by descending length afterwards, so
+    /// branch 0 is always the longest overall, matching the invariant
+    /// established by [`Centerline::calculate_branches`].
+    pub fn split_branch(&mut self, branch_id: u32, point_index: usize) {
         let idx = branch_id as usize;
-        if idx >= branches.len() {
+        let n = self.branch_start_indices.len();
+        if idx >= n {
             return;
         }
+        let start = self.branch_start_indices[idx];
+        let end = if idx + 1 < n {
+            self.branch_start_indices[idx + 1]
+        } else {
+            self.points.len()
+        };
+        if point_index < start || point_index >= end {
+            return;
+        }
+        let local_pos = point_index - start;
+
+        let mut branches = self.branches_as_vecs();
         let branch = branches.remove(idx);
         if local_pos == 0 || local_pos >= branch.len().saturating_sub(1) {
             branches.insert(idx, branch);
@@ -482,26 +497,18 @@ impl Centerline {
 
         let seg_a = branch[..=local_pos].to_vec();
         let seg_b = branch[local_pos..].to_vec();
+        branches.push(seg_a);
+        branches.push(seg_b);
 
-        if branch_id == 0 {
-            let (main_seg, other_seg) = if seg_a.len() >= seg_b.len() {
-                (seg_a, seg_b)
-            } else {
-                (seg_b, seg_a)
-            };
-            branches.insert(0, main_seg);
-            branches.push(other_seg);
-        } else {
-            branches.insert(idx, seg_a);
-            branches.push(seg_b);
-        }
-
+        Self::sort_branches_by_length(&mut branches);
         self.rebuild_from_branches(branches);
     }
 
     /// Merge two branches into one. Endpoints are matched by minimum distance
-    /// so the segments are concatenated in the correct spatial order.
-    /// If either branch is the main branch (id 0) the merged result is branch 0.
+    /// so the segments are concatenated in the correct spatial order. Branches
+    /// are re-sorted by descending length afterwards, so branch 0 is always
+    /// the longest overall, matching the invariant established by
+    /// [`Centerline::calculate_branches`].
     pub fn merge_branches(&mut self, branch_id_a: u32, branch_id_b: u32) {
         let mut branches = self.branches_as_vecs();
         let idx_a = branch_id_a as usize;
@@ -540,97 +547,138 @@ impl Centerline {
             b_high.into_iter().chain(b_low).collect()
         };
 
-        let result_is_main = low == 0 || high == 0;
-        if result_is_main {
-            branches.insert(0, merged);
-        } else {
-            branches.insert(low, merged);
-        }
-
+        branches.push(merged);
+        Self::sort_branches_by_length(&mut branches);
         self.rebuild_from_branches(branches);
     }
 
-    /// Ensure consistent ordering across all branches:
+    /// Sort branches by descending length, so branch 0 ends up the longest -
+    /// the same invariant [`Centerline::calculate_branches`] establishes.
+    /// Ties keep their relative order (stable sort).
+    fn sort_branches_by_length(branches: &mut [Vec<CenterlinePoint>]) {
+        branches.sort_by_key(|b| std::cmp::Reverse(b.len()));
+    }
+
+    /// Reverse branch 0 in place if its highest-z point is not already at its start,
+    /// then apply the same "closer end goes first" rule to every side branch,
+    /// using branch 0 (post-reversal) as the reference.
     ///
-    /// * **Branch 0** – the point with the highest z-coordinate must be at index 0.
-    ///   If it is not, the entire branch is reversed.
-    /// * **Side branches (1 … n-1)** – the endpoint that is closest to any point on
-    ///   branch 0 must be the *first* point of the branch.  If the last point is
-    ///   closer to branch 0 than the first, the branch is reversed.
-    pub fn check_centerline(&mut self) {
+    /// Intended for a centerline with no anatomical reference to orient against
+    /// (e.g. the aorta) — use [`Centerline::orient_to_reference`] instead whenever
+    /// one is available. Only correct under the standard CT/DICOM convention where
+    /// z increases toward the head, so the aortic root/valve is the highest-z point.
+    pub fn orient_by_max_z(&mut self) {
         let n = self.branch_start_indices.len();
         if n == 0 {
             return;
         }
-
         let mut branches = self.branches_as_vecs();
-
-        // --- Branch 0: highest-z point must be at index 0 ---
-        if !branches[0].is_empty() {
-            let max_z_idx = branches[0]
-                .iter()
-                .enumerate()
-                .max_by(|(_, a), (_, b)| {
-                    a.contour_point
-                        .z
-                        .partial_cmp(&b.contour_point.z)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                })
-                .map(|(i, _)| i)
-                .unwrap_or(0);
-            if max_z_idx != 0 {
-                branches[0].reverse();
+        if Self::should_reverse_by_max_z(&branches[0]) {
+            branches[0].reverse();
+        }
+        if let Some((first, rest)) = branches.split_first_mut() {
+            for branch in rest.iter_mut() {
+                if Self::should_reverse_relative_to(branch, first.as_slice()) {
+                    branch.reverse();
+                }
             }
         }
-
-        // --- Side branches: first point must be the one closest to branch 0 ---
-        for k in 1..n {
-            if branches[k].is_empty() || branches[0].is_empty() {
-                continue;
-            }
-
-            // Clone endpoints so we can borrow branches[0] freely afterwards.
-            let first_pt = branches[k][0].contour_point;
-            let last_pt = branches[k].last().unwrap().contour_point;
-
-            let dist_first = branches[0]
-                .iter()
-                .map(|p| p.contour_point.distance_to(&first_pt))
-                .fold(f64::INFINITY, f64::min);
-
-            let dist_last = branches[0]
-                .iter()
-                .map(|p| p.contour_point.distance_to(&last_pt))
-                .fold(f64::INFINITY, f64::min);
-
-            if dist_last < dist_first {
-                branches[k].reverse();
-            }
-        }
-
         self.rebuild_from_branches(branches);
     }
 
-    /// Remove the run-alongside-main-branch prefix from every side branch,
-    /// optionally strip the inlet region from branch 0, and optionally smooth.
+    /// Reverse branch 0 in place if its last point is closer to `reference`'s
+    /// branch 0 than its first point is, then apply the same rule to every side
+    /// branch — so every branch of `self` starts at whichever end is nearer
+    /// `reference`.
     ///
-    /// VTP files export every branch starting from the vessel origin, so side
-    /// branches share a common prefix with branch 0.  For each side branch this
-    /// method trims the contiguous leading prefix whose points all lie within
-    /// one mean inter-point spacing of branch 0 of at least one main-branch
-    /// point. The last point of the trimmed prefix is kept as the bifurcation
-    /// junction. Branches whose entire extent lies within that buffer are
-    /// dropped completely.
+    /// Any side branches `reference` has are ignored so a stray one can't skew
+    /// the distance check — only `reference`'s branch 0 is ever measured
+    /// against. Distance to `reference` is the minimum distance to any point of
+    /// its branch 0, not a single fixed point — e.g. for a coronary centerline,
+    /// `reference` would be the aorta centerline, not one ostium point.
+    pub fn orient_to_reference(&mut self, reference: &Centerline) {
+        let n = self.branch_start_indices.len();
+        if n == 0 {
+            return;
+        }
+        let mut branches = self.branches_as_vecs();
+        let ref_branch_0 = reference.branch_0();
+        if Self::should_reverse_relative_to(&branches[0], ref_branch_0) {
+            branches[0].reverse();
+        }
+        for branch in branches.iter_mut().skip(1) {
+            if Self::should_reverse_relative_to(branch, ref_branch_0) {
+                branch.reverse();
+            }
+        }
+        self.rebuild_from_branches(branches);
+    }
+
+    /// Branch 0's points, or all points if `self` has no branch structure yet.
+    fn branch_0(&self) -> &[CenterlinePoint] {
+        let end = self
+            .branch_start_indices
+            .get(1)
+            .copied()
+            .unwrap_or(self.points.len());
+        &self.points[..end]
+    }
+
+    /// `true` if the point with the maximum z-coordinate in `points` is not at index 0.
+    fn should_reverse_by_max_z(points: &[CenterlinePoint]) -> bool {
+        if points.is_empty() {
+            return false;
+        }
+        let max_z_idx = points
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| {
+                a.contour_point
+                    .z
+                    .partial_cmp(&b.contour_point.z)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+        max_z_idx != 0
+    }
+
+    /// `true` if the last point of `points` is closer to `reference` (minimum distance
+    /// to any of its points) than the first point of `points` is.
+    fn should_reverse_relative_to(
+        points: &[CenterlinePoint],
+        reference: &[CenterlinePoint],
+    ) -> bool {
+        if points.is_empty() || reference.is_empty() {
+            return false;
+        }
+
+        let first_pt = points[0].contour_point;
+        let last_pt = points.last().unwrap().contour_point;
+
+        let dist_first = reference
+            .iter()
+            .map(|p| p.contour_point.distance_to(&first_pt))
+            .fold(f64::INFINITY, f64::min);
+
+        let dist_last = reference
+            .iter()
+            .map(|p| p.contour_point.distance_to(&last_pt))
+            .fold(f64::INFINITY, f64::min);
+
+        dist_last < dist_first
+    }
+
+    /// Remove the run-alongside-main-branch prefix duplicated by every side branch.
     ///
-    /// If `rm_start_mm > 0`, the leading points of branch 0 are also removed
-    /// up to `rm_start_mm` arc-length from its first point.  This is useful
-    /// when the main branch starts at the aortic inlet and the proximal region
-    /// is outside the region of interest.
-    ///
-    /// If `smooth` is `true`, a Gaussian kernel with half-width `smooth_sigma`
-    /// (in number of points) is applied per branch after all trimming is done.
-    /// See [`utils::smooth_centerline`] for kernel details.
-    pub fn cleanup_vtp_data(&mut self, rm_start_mm: f64, smooth: bool, smooth_sigma: f64) {
+    /// Some centerline export formats (e.g. VTP) write every branch starting from
+    /// the vessel origin, so side branches share a common prefix with branch 0.
+    /// For each side branch this trims the contiguous leading prefix whose points
+    /// all lie within one mean inter-point spacing of branch 0 of at least one
+    /// main-branch point. The last point of the trimmed prefix is kept as the
+    /// bifurcation junction. Branches whose entire extent lies within that buffer
+    /// are dropped completely.
+    pub fn remove_branch_overlap(&mut self) {
         if self.branch_start_indices.is_empty() {
             return;
         }
@@ -639,14 +687,182 @@ impl Centerline {
         let mut branches = self.branches_as_vecs();
 
         Self::remove_overlapping(&mut branches, buffer * buffer);
-        Self::remove_trailing_start(&mut branches, rm_start_mm);
 
         self.rebuild_from_branches(branches);
+    }
 
-        if smooth {
-            let new_cl_smooth = utils::smooth_centerline(self, smooth_sigma);
-            *self = new_cl_smooth;
+    /// Trim `mm` of arc length off the start of branch 0.
+    ///
+    /// Useful when the main branch starts at the aortic inlet and the proximal
+    /// region is outside the region of interest.
+    pub fn trim_start(&mut self, mm: f64) {
+        if mm <= 0.0 || self.branch_start_indices.is_empty() {
+            return;
         }
+
+        let mut branches = self.branches_as_vecs();
+
+        Self::remove_trailing_start(&mut branches, mm);
+
+        self.rebuild_from_branches(branches);
+    }
+
+    /// Resample every branch independently to even arc-length spacing.
+    ///
+    /// Interior points are linearly interpolated (position and radius) between the
+    /// two nearest original points; tangents are recomputed afterwards. No
+    /// interpolation occurs across a bifurcation. `frame_index`/`point_index` are
+    /// reassigned sequentially per branch since resampled points no longer
+    /// correspond 1:1 with source frames.
+    pub fn resample(&mut self, spacing_mm: f64) {
+        if self.points.is_empty() || spacing_mm <= 1e-12 {
+            return;
+        }
+
+        let mut branches = self.branches_as_vecs();
+        for branch in branches.iter_mut() {
+            *branch = Self::resample_branch(branch, spacing_mm);
+        }
+        self.rebuild_from_branches(branches);
+    }
+
+    /// Resample one branch's points to even arc-length spacing via linear interpolation.
+    fn resample_branch(points: &[CenterlinePoint], spacing_mm: f64) -> Vec<CenterlinePoint> {
+        if points.len() < 2 {
+            return points.to_vec();
+        }
+
+        let mut cum = vec![0.0f64; points.len()];
+        for i in 1..points.len() {
+            cum[i] = cum[i - 1]
+                + points[i - 1]
+                    .contour_point
+                    .distance_to(&points[i].contour_point);
+        }
+        let total = cum[points.len() - 1];
+        if total < 1e-12 {
+            return points.to_vec();
+        }
+
+        let mut targets = Vec::new();
+        let mut s = 0.0;
+        while s < total {
+            targets.push(s);
+            s += spacing_mm;
+        }
+        targets.push(total);
+
+        let mut seg = 0usize;
+        targets
+            .iter()
+            .enumerate()
+            .map(|(sample_index, &t)| {
+                while seg < points.len() - 2 && cum[seg + 1] < t {
+                    seg += 1;
+                }
+                let (s0, s1) = (cum[seg], cum[seg + 1]);
+                let frac = if (s1 - s0).abs() < 1e-12 {
+                    0.0
+                } else {
+                    (t - s0) / (s1 - s0)
+                };
+
+                let p0 = &points[seg].contour_point;
+                let p1 = &points[seg + 1].contour_point;
+                let r0 = points[seg].radius;
+                let r1 = points[seg + 1].radius;
+
+                CenterlinePoint {
+                    contour_point: ContourPoint {
+                        frame_index: sample_index as u32,
+                        point_index: sample_index as u32,
+                        x: p0.x + frac * (p1.x - p0.x),
+                        y: p0.y + frac * (p1.y - p0.y),
+                        z: p0.z + frac * (p1.z - p0.z),
+                        aortic: p0.aortic,
+                    },
+                    tangent: Vector3::zeros(),
+                    branch_id: points[seg].branch_id,
+                    radius: r0 + frac * (r1 - r0),
+                }
+            })
+            .collect()
+    }
+
+    /// Smooth centerline positions with a Gaussian kernel (per branch) and recompute tangents.
+    ///
+    /// `sigma` is the half-width in number of centerline points.  A value of 1.0 is a gentle
+    /// neighbourhood average; 3–5 removes noise while keeping the overall vessel path; larger
+    /// values heavily round corners.  Branches are processed independently so no smoothing
+    /// bleeds across the bifurcation.
+    pub fn smooth(&mut self, sigma: f64) {
+        if self.points.is_empty() || sigma < 1e-12 {
+            return;
+        }
+
+        let n = self.points.len();
+        let max_branch = self.points.iter().map(|p| p.branch_id).max().unwrap_or(0);
+
+        let mut sx = vec![0.0f64; n];
+        let mut sy = vec![0.0f64; n];
+        let mut sz = vec![0.0f64; n];
+
+        for branch_id in 0..=max_branch {
+            let indices: Vec<usize> = self
+                .points
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| p.branch_id == branch_id)
+                .map(|(i, _)| i)
+                .collect();
+
+            if indices.is_empty() {
+                continue;
+            }
+
+            // Truncate kernel at 3σ to avoid O(n²) cost on long vessels.
+            let radius = (3.0 * sigma).ceil() as usize;
+
+            for (li, &gi) in indices.iter().enumerate() {
+                // Symmetric truncation: equal radius on both sides so that a
+                // linear trend is preserved exactly (weighted mean of symmetric
+                // neighbours always equals the centre value).
+                let sym_r = li.min(radius).min(indices.len() - 1 - li);
+                let j_start = li - sym_r;
+                let j_end = li + sym_r + 1;
+                let (mut wx, mut wy, mut wz, mut wt) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
+
+                for (k, &gi_j) in indices[j_start..j_end].iter().enumerate() {
+                    let j = j_start + k;
+                    let diff = (li as f64) - (j as f64);
+                    let w = (-0.5 * diff * diff / (sigma * sigma)).exp();
+                    let pt = &self.points[gi_j].contour_point;
+                    wx += w * pt.x;
+                    wy += w * pt.y;
+                    wz += w * pt.z;
+                    wt += w;
+                }
+
+                if wt > 1e-12 {
+                    sx[gi] = wx / wt;
+                    sy[gi] = wy / wt;
+                    sz[gi] = wz / wt;
+                } else {
+                    let pt = &self.points[gi].contour_point;
+                    sx[gi] = pt.x;
+                    sy[gi] = pt.y;
+                    sz[gi] = pt.z;
+                }
+            }
+        }
+
+        for (i, p) in self.points.iter_mut().enumerate() {
+            p.contour_point.x = sx[i];
+            p.contour_point.y = sy[i];
+            p.contour_point.z = sz[i];
+        }
+
+        self.recompute_tangents();
     }
 
     /// Trims the leading overlap each side branch shares with the main vessel (branch 0).
@@ -820,6 +1036,25 @@ mod centerline_tests {
     }
 
     #[test]
+    fn test_find_sharp_angles_returns_point_index_not_local_pos() {
+        // Side branch (branch_id=1) starts at global point_index 3, after the 3-point
+        // main branch. The V-shape's sharp corner sits at local position 3 within the
+        // side branch, so find_sharp_angles must report global point_index 6 (3 + 3),
+        // not local position 3.
+        let main = &[(0., 0., 0.), (0., 0., 1.), (0., 0., 2.)];
+        let side = &[
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (2.0, 0.0, 0.0),
+            (3.0, 0.0, 0.0),
+            (2.5, 0.5, 0.0),
+            (2.0, 1.0, 0.0),
+        ];
+        let cl = make_multi_branch(&[main, side]);
+        assert_eq!(cl.find_sharp_angles(1, 0.0), vec![6]);
+    }
+
+    #[test]
     fn test_split_branch_main_longer_stays() {
         let mut cl = cl_from_coords(&[
             (0.0, 0.0, 0.0),
@@ -859,6 +1094,66 @@ mod centerline_tests {
     }
 
     #[test]
+    fn test_split_branch_uses_point_index_not_local_pos() {
+        // Side branch (branch_id=1) starts at global point_index 5, after the 5-point
+        // main branch. Splitting at point_index=7 must land at local position 2 within
+        // the side branch, not local position 7 (out of range for a 5-point branch).
+        let main = &[
+            (0., 0., 0.),
+            (1., 0., 0.),
+            (2., 0., 0.),
+            (3., 0., 0.),
+            (4., 0., 0.),
+        ];
+        let side = &[
+            (10., 0., 0.),
+            (11., 0., 0.),
+            (12., 0., 0.),
+            (13., 0., 0.),
+            (14., 0., 0.),
+        ];
+        let mut cl = make_multi_branch(&[main, side]);
+        cl.split_branch(1, 7);
+
+        assert_eq!(cl.branch_start_indices.len(), 3);
+        let branches = cl.branches_as_vecs();
+        assert_eq!(
+            branches[0].len(),
+            5,
+            "main branch unaffected, still longest"
+        );
+        assert_eq!(branches[1].len(), 3);
+        assert_eq!(branches[2].len(), 3);
+        assert_eq!(branches[1][0].contour_point.x, 10.0);
+        assert_eq!(branches[2][0].contour_point.x, 12.0);
+    }
+
+    #[test]
+    fn test_split_branch_resorts_by_length_among_side_branches() {
+        // main(10) > side1(6, split into 4+3) > side2(2). After the split, both new
+        // pieces must sort ahead of the untouched, shorter side2 - not just slot into
+        // side1's old position while side2 stays where it was.
+        let main: Vec<(f64, f64, f64)> = (0..10).map(|i| (i as f64, 0., 0.)).collect();
+        let side1: Vec<(f64, f64, f64)> = (0..6).map(|i| (i as f64, 1., 0.)).collect();
+        let side2: Vec<(f64, f64, f64)> = (0..2).map(|i| (i as f64, 2., 0.)).collect();
+        let mut cl = make_multi_branch(&[main.as_slice(), side1.as_slice(), side2.as_slice()]);
+
+        // side1 (branch_id=1) starts at point_index 10; split at local position 3 -> point_index 13.
+        cl.split_branch(1, 13);
+
+        let branches = cl.branches_as_vecs();
+        assert_eq!(branches.len(), 4);
+        assert_eq!(branches[0].len(), 10, "main unaffected, stays longest");
+        assert_eq!(branches[1].len(), 4, "larger new piece from the split");
+        assert_eq!(branches[2].len(), 3, "smaller new piece from the split");
+        assert_eq!(
+            branches[3].len(),
+            2,
+            "side2 sorted last: shorter than both new pieces"
+        );
+    }
+
+    #[test]
     fn test_merge_branches_result_is_main() {
         let mut cl = cl_from_coords(&[
             (0.0, 0.0, 0.0),
@@ -877,6 +1172,28 @@ mod centerline_tests {
         for (i, p) in cl.points.iter().enumerate() {
             assert_eq!(p.contour_point.point_index, i as u32);
         }
+    }
+
+    #[test]
+    fn test_merge_branches_promotes_to_main_when_result_is_longest() {
+        // main(5) < side1(4) + side2(4) merged = 8. Even though neither merged branch
+        // was originally the main vessel, the merged result is now the longest branch
+        // and must become the new branch 0.
+        let main: Vec<(f64, f64, f64)> = (0..5).map(|i| (i as f64, 0., 0.)).collect();
+        let side1 = &[(0., 1., 0.), (1., 1., 0.), (2., 1., 0.), (3., 1., 0.)];
+        let side2 = &[(3., 1., 0.), (4., 1., 0.), (5., 1., 0.), (6., 1., 0.)];
+        let mut cl = make_multi_branch(&[main.as_slice(), side1, side2]);
+
+        cl.merge_branches(1, 2);
+
+        assert_eq!(cl.branch_start_indices.len(), 2);
+        let branches = cl.branches_as_vecs();
+        assert_eq!(
+            branches[0].len(),
+            8,
+            "merged side branches are now the longest, must be branch 0"
+        );
+        assert_eq!(branches[1].len(), 5, "old main demoted to a side branch");
     }
 
     #[test]
@@ -914,7 +1231,7 @@ mod centerline_tests {
     }
 
     #[test]
-    fn test_cleanup_vtp_trims_overlap_prefix() {
+    fn test_remove_branch_overlap_trims_prefix() {
         // Main: straight along x, spacing = 1.0.
         // Side: first 3 pts lie on main, then diverges by 1.5 (> 1 spacing) in y.
         let main = &[
@@ -932,7 +1249,7 @@ mod centerline_tests {
             (2., 3., 0.),
         ];
         let mut cl = make_multi_branch(&[main, side]);
-        cl.cleanup_vtp_data(0.0, false, 0.0);
+        cl.remove_branch_overlap();
 
         let branches = cl.branches_as_vecs();
         assert_eq!(branches.len(), 2, "side branch must survive");
@@ -944,12 +1261,12 @@ mod centerline_tests {
     }
 
     #[test]
-    fn test_cleanup_vtp_drops_fully_overlapping_branch() {
+    fn test_remove_branch_overlap_drops_fully_overlapping_branch() {
         let main = &[(0., 0., 0.), (1., 0., 0.), (2., 0., 0.)];
         // Side branch lies entirely on main within buffer=0.5.
         let side = &[(0., 0., 0.), (1., 0., 0.)];
         let mut cl = make_multi_branch(&[main, side]);
-        cl.cleanup_vtp_data(0.0, false, 0.0);
+        cl.remove_branch_overlap();
 
         assert_eq!(
             cl.branch_start_indices.len(),
@@ -959,7 +1276,7 @@ mod centerline_tests {
     }
 
     #[test]
-    fn test_cleanup_vtp_inlet_trim() {
+    fn test_trim_start_removes_inlet() {
         // Main: spacing = 1.0, 6 points → trim first 3 mm → keep from point 3 onwards.
         let main = &[
             (0., 0., 0.),
@@ -970,7 +1287,7 @@ mod centerline_tests {
             (5., 0., 0.),
         ];
         let mut cl = make_multi_branch(&[main]);
-        cl.cleanup_vtp_data(3.0, false, 0.0);
+        cl.trim_start(3.0);
 
         assert_eq!(cl.branch_start_indices.len(), 1);
         // arc ≤ 3.0 covers points at 0, 1, 2, 3 mm → trim_idx = 3, keep from 3 onwards
@@ -979,15 +1296,218 @@ mod centerline_tests {
     }
 
     #[test]
-    fn test_cleanup_vtp_no_overlap_leaves_branch_intact() {
+    fn test_remove_branch_overlap_no_overlap_leaves_branch_intact() {
         let main = &[(0., 0., 0.), (1., 0., 0.), (2., 0., 0.)];
         // Side branch diverges from the very first point.
         let side = &[(0., 5., 0.), (0., 6., 0.), (0., 7., 0.)];
         let mut cl = make_multi_branch(&[main, side]);
-        cl.cleanup_vtp_data(0.0, false, 0.0);
+        cl.remove_branch_overlap();
 
         let branches = cl.branches_as_vecs();
         assert_eq!(branches.len(), 2);
         assert_eq!(branches[1].len(), 3, "no trimming when no overlap");
+    }
+
+    #[test]
+    fn straight_line_smooth_is_unchanged() {
+        // A perfectly straight line should not move after smoothing.
+        let pts: Vec<(f64, f64, f64)> = (0..20).map(|i| (i as f64, 0.0, 0.0)).collect();
+        let mut cl = cl_from_coords(&pts);
+        let original = cl.clone();
+        cl.smooth(3.0);
+
+        for (orig, sm) in original.points.iter().zip(cl.points.iter()) {
+            let dx = (orig.contour_point.x - sm.contour_point.x).abs();
+            let dy = (orig.contour_point.y - sm.contour_point.y).abs();
+            let dz = (orig.contour_point.z - sm.contour_point.z).abs();
+            assert!(
+                dx < 1e-10 && dy < 1e-10 && dz < 1e-10,
+                "straight line moved"
+            );
+        }
+    }
+
+    #[test]
+    fn smooth_damps_spike() {
+        // Insert a sharp lateral spike at position 7 in an otherwise straight line.
+        let mut pts: Vec<(f64, f64, f64)> = (0..15).map(|i| (i as f64, 0.0, 0.0)).collect();
+        pts[7] = (7.0, 5.0, 0.0);
+        let mut cl = cl_from_coords(&pts);
+        cl.smooth(2.0);
+
+        let spike_y = cl.points[7].contour_point.y;
+        assert!(spike_y < 5.0, "spike should be damped, got y = {spike_y}");
+        assert!(spike_y > 0.0, "spike should not be fully erased");
+    }
+
+    #[test]
+    fn smooth_produces_unit_tangents() {
+        let mut pts: Vec<(f64, f64, f64)> = (0..20).map(|i| (i as f64, 0.0, 0.0)).collect();
+        pts[10] = (10.0, 3.0, 0.0);
+        let mut cl = cl_from_coords(&pts);
+        cl.smooth(2.0);
+
+        for p in &cl.points {
+            let len = p.tangent.norm();
+            assert!(
+                (len - 1.0).abs() < 1e-10 || len < 1e-12,
+                "tangent not unit: {len}"
+            );
+        }
+    }
+
+    #[test]
+    fn smooth_sigma_zero_is_noop() {
+        let pts: Vec<(f64, f64, f64)> = (0..10).map(|i| (i as f64, 0.0, 0.0)).collect();
+        let mut cl = cl_from_coords(&pts);
+        let original = cl.clone();
+        cl.smooth(0.0);
+        assert_eq!(cl, original);
+    }
+
+    #[test]
+    fn test_resample_produces_even_spacing() {
+        let mut cl = cl_from_coords(&[(0., 0., 0.), (10., 0., 0.)]);
+        cl.resample(2.5);
+
+        assert_eq!(cl.points.len(), 5);
+        for (i, p) in cl.points.iter().enumerate() {
+            assert!((p.contour_point.x - i as f64 * 2.5).abs() < 1e-9);
+        }
+        assert!((cl.points.last().unwrap().contour_point.x - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_resample_does_not_cross_branch_boundary() {
+        let main = &[(0., 0., 0.), (10., 0., 0.)];
+        let side = &[(10., 0., 0.), (10., 5., 0.)];
+        let mut cl = make_multi_branch(&[main, side]);
+        cl.resample(2.0);
+
+        assert_eq!(cl.branch_start_indices.len(), 2);
+        let branches = cl.branches_as_vecs();
+        assert!(branches[0].iter().all(|p| p.branch_id == 0));
+        assert!(branches[1].iter().all(|p| p.branch_id == 1));
+        assert!((branches[1][0].contour_point.y).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_orient_by_max_z_reverses_branch_0_only() {
+        // Highest z (2.0) is at the end of branch 0, must end up at its start;
+        // the side branch must be left completely untouched.
+        let main = &[(0., 0., 0.), (0., 0., 1.), (0., 0., 2.)];
+        let side = &[(0., 0., 2.), (5., 0., 2.)];
+        let mut cl = make_multi_branch(&[main, side]);
+        cl.orient_by_max_z();
+
+        let branches = cl.branches_as_vecs();
+        assert_eq!(branches[0][0].contour_point.z, 2.0);
+        assert_eq!(branches[0][2].contour_point.z, 0.0);
+        assert_eq!(branches[1][0].contour_point.x, 0.0);
+        assert_eq!(branches[1][1].contour_point.x, 5.0);
+        assert!(cl
+            .points
+            .iter()
+            .enumerate()
+            .all(|(i, p)| p.contour_point.point_index == i as u32));
+    }
+
+    #[test]
+    fn test_orient_by_max_z_leaves_already_correct_untouched() {
+        let mut cl = cl_from_coords(&[(0., 0., 2.), (0., 0., 1.), (0., 0., 0.)]);
+        cl.orient_by_max_z();
+        assert_eq!(cl.points[0].contour_point.z, 2.0);
+    }
+
+    #[test]
+    fn test_orient_by_max_z_reorients_side_branches() {
+        // Side branch's last point ends up nearer branch 0's (post-reversal)
+        // start than its first point is, so it must be reversed too.
+        let main = &[(0., 0., 0.), (0., 0., 1.), (0., 0., 2.)];
+        let side = &[(5., 0., 2.), (0., 0., 2.)];
+        let mut cl = make_multi_branch(&[main, side]);
+        cl.orient_by_max_z();
+
+        let branches = cl.branches_as_vecs();
+        assert_eq!(branches[0][0].contour_point.z, 2.0);
+        assert_eq!(branches[1][0].contour_point.x, 0.0);
+        assert_eq!(branches[1][1].contour_point.x, 5.0);
+    }
+
+    #[test]
+    fn test_orient_to_reference_reverses_branch_0_only() {
+        // Branch 0's last point (10,0,0) is close to `reference`; its first (0,0,0) is not.
+        let main = &[(0., 0., 0.), (5., 0., 0.), (10., 0., 0.)];
+        let side = &[(0., 0., 0.), (0., 5., 0.)];
+        let mut cl = make_multi_branch(&[main, side]);
+        let reference = cl_from_coords(&[(10., 1., 0.), (20., 1., 0.)]);
+        cl.orient_to_reference(&reference);
+
+        let branches = cl.branches_as_vecs();
+        assert_eq!(branches[0][0].contour_point.x, 10.0);
+        assert_eq!(branches[0][2].contour_point.x, 0.0);
+        assert_eq!(branches[1][0].contour_point.x, 0.0);
+        assert_eq!(branches[1][1].contour_point.y, 5.0);
+    }
+
+    #[test]
+    fn test_orient_to_reference_leaves_already_correct_untouched() {
+        // `cl`'s first point (10,0,0) is already closest to `reference`.
+        let mut cl = cl_from_coords(&[(10., 0., 0.), (5., 0., 0.), (0., 0., 0.)]);
+        let reference = cl_from_coords(&[(10., 1., 0.), (20., 1., 0.)]);
+        cl.orient_to_reference(&reference);
+        assert_eq!(cl.points[0].contour_point.x, 10.0);
+    }
+
+    #[test]
+    fn test_orient_to_reference_ignores_references_side_branches() {
+        // `cl`'s first point (0,0,0) is already closest to `reference`'s branch 0.
+        // `reference` also has a side branch sitting right next to `cl`'s last
+        // point (10,0,0) — that must NOT cause a reversal.
+        let mut cl = cl_from_coords(&[(0., 0., 0.), (5., 0., 0.), (10., 0., 0.)]);
+        let ref_main = &[(0., 1., 0.), (1., 1., 0.)];
+        let ref_side = &[(10., 1., 0.), (11., 1., 0.)];
+        let reference = make_multi_branch(&[ref_main, ref_side]);
+        cl.orient_to_reference(&reference);
+        assert_eq!(cl.points[0].contour_point.x, 0.0);
+    }
+
+    #[test]
+    fn test_orient_to_reference_reorients_side_branches_toward_reference() {
+        // Own branch 0 gives no preference for the side branch (it's equidistant
+        // from both its endpoints), but `reference` is much closer to the side
+        // branch's last point — the side branch must be reversed to match
+        // `reference`, not left alone based on `self`'s own branch 0.
+        let main = &[(0., 0., 0.), (5., 0., 0.), (10., 0., 0.)];
+        let side = &[(10., 5., 0.), (0., 5., 0.)];
+        let mut cl = make_multi_branch(&[main, side]);
+        let reference = cl_from_coords(&[(0., 1., 0.), (-10., 1., 0.)]);
+        cl.orient_to_reference(&reference);
+
+        let branches = cl.branches_as_vecs();
+        assert_eq!(branches[0][0].contour_point.x, 0.0, "branch 0 unchanged");
+        assert_eq!(
+            branches[1][0].contour_point.x, 0.0,
+            "side branch reversed toward reference"
+        );
+        assert_eq!(branches[1][1].contour_point.x, 10.0);
+    }
+
+    #[test]
+    fn test_orient_to_reference_side_branches_ignore_references_side_branches() {
+        // `cl`'s side branch's first point (0,0,0) is already closest to
+        // `reference`'s branch 0. `reference` also has a side branch sitting
+        // right next to `cl`'s side branch's last point (10,5,0) — that must
+        // NOT cause a reversal.
+        let main = &[(0., 0., 0.), (5., 0., 0.), (10., 0., 0.)];
+        let side = &[(0., 0., 0.), (10., 5., 0.)];
+        let mut cl = make_multi_branch(&[main, side]);
+        let ref_main = &[(0., 1., 0.), (1., 1., 0.)];
+        let ref_side = &[(10., 5., 0.), (11., 5., 0.)];
+        let reference = make_multi_branch(&[ref_main, ref_side]);
+        cl.orient_to_reference(&reference);
+
+        let branches = cl.branches_as_vecs();
+        assert_eq!(branches[1][0].contour_point.x, 0.0);
     }
 }

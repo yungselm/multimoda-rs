@@ -77,8 +77,11 @@ pub fn find_centerline_bounded_points_simple(
 ///     Centerline of the coronary vessel used as vantage points.
 /// centerline_aorta : PyCenterline
 ///     Centerline of the aorta used as additional vantage points.
-/// range_coronary : int
-///     Number of centerline points considered around each coronary point.
+/// range_mm : float
+///     Arc-length in mm along the coronary centerline, from its proximal end,
+///     examined for occlusion. Expressed as a physical length rather than a
+///     point count so the result doesn't depend on how finely the centerline
+///     was resampled beforehand.
 /// points : list of tuple of float
 ///     Candidate ``(x, y, z)`` points, e.g. output of
 ///     :func:`find_centerline_bounded_points`.
@@ -99,7 +102,7 @@ pub fn find_centerline_bounded_points_simple(
     signature = (
         centerline_coronary,
         centerline_aorta,
-        range_coronary,
+        range_mm,
         points,
         faces,
         step_size_mm = 1.0,
@@ -108,7 +111,7 @@ pub fn find_centerline_bounded_points_simple(
 pub fn remove_occluded_points_ray_triangle(
     centerline_coronary: PyCenterline,
     centerline_aorta: PyCenterline,
-    range_coronary: usize,
+    range_mm: f64,
     points: Vec<Point3D>,
     faces: Vec<TriangleTuple>,
     step_size_mm: f64,
@@ -124,7 +127,7 @@ pub fn remove_occluded_points_ray_triangle(
     let result = label_coronary::remove_occluded_points_ray_triangle_rust(
         &rust_centerline_coronary,
         &rust_centerline_aorta,
-        range_coronary,
+        range_mm,
         &points,
         &triangles,
         step_size_mm,
@@ -688,10 +691,14 @@ pub fn fix_mesh_winding(faces: Vec<[usize; 3]>) -> Vec<[usize; 3]> {
 /// and resamples each surviving slice to exactly ``n_points`` evenly-spaced
 /// points via a closed Catmull-Rom spline.
 ///
+/// ``centerline`` is used as-is — smooth/resample/orient it beforehand (e.g. via
+/// ``PyCenterline.smooth``); this no longer smooths internally.
+///
 /// Parameters
 /// ----------
 /// centerline : PyCenterline
-///     Centerline of the vessel to discretize.
+///     Centerline of the vessel to discretize, already prepared (smoothed,
+///     resampled, and oriented as needed).
 /// points : list of tuple of float
 ///     ``(x, y, z)`` surface point cloud of the vessel (e.g. mesh vertices).
 /// branch_id : int
@@ -809,18 +816,19 @@ pub fn smooth_mesh_labels(
 /// Discretize the full coronary vessel tree and compute orientation references.
 ///
 /// Runs :func:`discretize_vessel` for every branch (aorta, RCA main, LCA main,
-/// and each side branch), smoothes all centerlines with a Gaussian kernel
-/// (σ = 2.5 points) beforehand, and then computes orientation reference triplets
-/// at the ostium and every side-branch bifurcation.
+/// and each side branch), then computes orientation reference triplets at the
+/// ostium and every side-branch bifurcation. ``ao_cl``, ``rca_cl``, and
+/// ``lca_cl`` are used as-is — smooth/resample/orient them beforehand (e.g.
+/// via ``PyCenterline.smooth``); this no longer smooths internally.
 ///
 /// Parameters
 /// ----------
 /// ao_cl : PyCenterline
-///     Aortic centerline (branch 0 only).
+///     Aortic centerline (branch 0 only), already prepared.
 /// rca_cl : PyCenterline
-///     RCA centerline with all branches calculated.
+///     RCA centerline with all branches calculated, already prepared.
 /// lca_cl : PyCenterline
-///     LCA centerline with all branches calculated.
+///     LCA centerline with all branches calculated, already prepared.
 /// points_ao : list of tuple of float
 ///     Surface mesh points ``(x, y, z)`` of the aorta.
 /// points_rca_main : list of tuple of float

@@ -3,6 +3,28 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] -2026-08-07
+
+### Changed
+- `Centerline`/`PyCenterline` API reorganised around a load → prepare → branch → order → smooth
+  pipeline:
+  - `cleanup_vtp_data` removed, replaced by `remove_branch_overlap()` and `trim_start(mm)`.
+  - `smooth(sigma)` is now an inherent method (was the Rust-only `utils::smooth_centerline`).
+  - New `resample(spacing_mm)` resamples every branch to even arc-length spacing.
+  - New `orient_by_max_z()` / `orient_to_reference(reference)` replace the old ad-hoc z-based
+    reversal heuristics (`label_coronary.rs`, `centerline_align/preprocessing.rs`,
+    `Centerline::check_centerline`) and now also reorder every side branch, not just branch 0 -
+    making `check_centerline` fully redundant, so it is removed; call `orient_by_max_z()` instead.
+  - New Python helpers `load_centerline(source, name)` and `prepare_centerline(centerline,
+    ref_centerline=None, ...)` replace `read_centerline_vtp(...).cleanup_vtp_data(smooth=True)`.
+    `ref_centerline` doubles as the "is this a coronary?" signal, driving both which orientation
+    method runs and whether branch detection runs.
+- `discretize_vessel`/`discretize_vessel_tree` no longer smooth centerlines internally; prepare
+  centerlines beforehand via `prepare_centerline` or `.smooth()`.
+- `label_geometry` now takes prepared `PyCenterline` objects (`centerline_aorta`,
+  `centerline_rca`, `centerline_lca`) instead of path/array unions, and no longer loads or
+  orients centerlines internally.
+
 ## [0.5.8] - 2026-08-06
 
 ### Fixed

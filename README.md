@@ -27,6 +27,9 @@
 > A high‑performance, Rust‑accelerated toolkit for multi‑modality cardiac image fusion and registration ﮩ٨ـﮩﮩ٨ـ♡ﮩ٨ـﮩﮩ٨ـ.
 
 ---
+> [!warning]
+> Currently under heavy construction. Real world data proved the existing labeling algorithms to be insufficient for many cases.
+> So brace for breaking changes!
 
 ## Overview
 

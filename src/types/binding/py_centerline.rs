@@ -123,8 +123,8 @@ impl PyCenterline {
         Ok(PyCenterline::from(&cl))
     }
 
-    /// Return local positions (0-indexed within the branch) of interior points
-    /// where the opening angle is sharper than `cos_threshold`.
+    /// Return global `point_index` values (indices into ``points``) of interior
+    /// points on `branch_id` where the opening angle is sharper than `cos_threshold`.
     ///
     /// Parameters
     /// ----------
@@ -137,40 +137,42 @@ impl PyCenterline {
     /// Returns
     /// -------
     /// list[int]
-    ///     Local positions within the branch where sharp angles were found.
+    ///     ``point_index`` values where sharp angles were found, suitable for
+    ///     ``split_branch``.
     pub fn find_sharp_angles(&self, branch_id: u32, cos_threshold: f64) -> Vec<usize> {
         self.to_rust_centerline()
             .find_sharp_angles(branch_id, cos_threshold)
     }
 
-    /// Split a branch at a local position and return the updated centerline.
+    /// Split a branch at a point and return the updated centerline.
     ///
-    /// Both resulting segments include the split point. When splitting the main
-    /// branch (``branch_id=0``) the longer segment stays as branch 0; for side
-    /// branches the first segment keeps its slot and the second is appended.
+    /// Both resulting segments include the split point. Branches are re-sorted
+    /// by descending length afterwards, so branch 0 is always the longest
+    /// overall - the same invariant ``calculate_branches`` establishes.
     ///
     /// Parameters
     /// ----------
     /// branch_id : int
     ///     Branch to split.
-    /// local_pos : int
-    ///     0-indexed position within the branch (as returned by
-    ///     ``find_sharp_angles``).
+    /// point_index : int
+    ///     Global index into ``points`` (as returned by ``find_sharp_angles``)
+    ///     where the split occurs. Must fall within `branch_id`'s own range.
     ///
     /// Returns
     /// -------
     /// PyCenterline
     ///     New centerline with the branch split and all IDs reassigned.
-    pub fn split_branch(&self, branch_id: u32, local_pos: usize) -> PyResult<PyCenterline> {
+    pub fn split_branch(&self, branch_id: u32, point_index: usize) -> PyResult<PyCenterline> {
         let mut cl = self.to_rust_centerline();
-        cl.split_branch(branch_id, local_pos);
+        cl.split_branch(branch_id, point_index);
         Ok(PyCenterline::from(&cl))
     }
 
     /// Merge two branches and return the updated centerline.
     ///
-    /// Segments are joined at the closest endpoint pair. If either branch is
-    /// the main branch (id 0) the merged result becomes branch 0.
+    /// Segments are joined at the closest endpoint pair. Branches are re-sorted
+    /// by descending length afterwards, so branch 0 is always the longest
+    /// overall - the same invariant ``calculate_branches`` establishes.
     ///
     /// Parameters
     /// ----------
@@ -228,61 +230,130 @@ impl PyCenterline {
         })
     }
 
-    /// Remove the run-alongside-main-branch prefix from every side branch,
-    /// optionally strip the inlet region from branch 0, and optionally smooth.
+    /// Remove the run-alongside-main-branch prefix duplicated by every side branch.
     ///
-    /// VTP files export every branch starting from the vessel origin, so side
-    /// branches share a common prefix with branch 0.  This method trims that
-    /// prefix from each side branch, keeping only the bifurcation junction and
-    /// the diverged portion.  Branches that overlap with branch 0 entirely are
-    /// dropped.  The trim threshold is one mean inter-point spacing of branch 0.
-    ///
-    /// Parameters
-    /// ----------
-    /// rm_start_mm : float, optional
-    ///     Arc-length in mm to remove from the start of branch 0 (the inlet
-    ///     region).  Set to ``0.0`` to leave branch 0 untouched.  Default ``5.0``.
-    /// smooth : bool, optional
-    ///     When ``True``, apply a per-branch Gaussian smoothing pass after all
-    ///     trimming.  Default ``False``.
-    /// smooth_sigma : float, optional
-    ///     Half-width of the Gaussian kernel in number of centerline points.
-    ///     A value of ``1.0`` is a gentle neighbourhood average; ``2–5`` removes
-    ///     noise while preserving the overall vessel path.  Ignored when
-    ///     ``smooth=False``.  Default ``2.5``.
+    /// Some centerline export formats (e.g. VTP) write every branch starting from
+    /// the vessel origin, so side branches share a common prefix with branch 0.
+    /// This trims that prefix from each side branch, keeping only the bifurcation
+    /// junction and the diverged portion. Branches that overlap with branch 0
+    /// entirely are dropped. The trim threshold is one mean inter-point spacing
+    /// of branch 0.
     ///
     /// Returns
     /// -------
     /// PyCenterline
-    ///     New centerline with overlapping prefixes removed from all side
-    ///     branches, the inlet trimmed from branch 0 if requested, and
-    ///     positions smoothed if requested.
-    #[pyo3(signature = (rm_start_mm = 5.0, smooth = false, smooth_sigma = 2.5))]
-    pub fn cleanup_vtp_data(
-        &self,
-        rm_start_mm: f64,
-        smooth: bool,
-        smooth_sigma: f64,
-    ) -> PyResult<PyCenterline> {
+    ///     New centerline with overlapping prefixes removed from all side branches.
+    pub fn remove_branch_overlap(&self) -> PyResult<PyCenterline> {
         let mut cl = self.to_rust_centerline();
-        cl.cleanup_vtp_data(rm_start_mm, smooth, smooth_sigma);
+        cl.remove_branch_overlap();
         Ok(PyCenterline::from(&cl))
     }
 
-    /// Normalise branch ordering so that downstream processing is consistent.
+    /// Trim `mm` of arc length off the start of branch 0.
     ///
-    /// * **Branch 0** – the point with the highest z-coordinate is moved to
-    ///   index 0 (the whole branch is reversed if necessary).
-    /// * **Side branches** – the endpoint closest to branch 0 becomes index 0
-    ///   (the branch is reversed if necessary).
+    /// Useful when the main branch starts at the aortic inlet and the proximal
+    /// region is outside the region of interest.
+    ///
+    /// Parameters
+    /// ----------
+    /// mm : float
+    ///     Arc-length in mm to remove from the start of branch 0.
+    ///
+    /// Returns
+    /// -------
+    /// PyCenterline
+    ///     New centerline with the inlet trimmed from branch 0.
+    pub fn trim_start(&self, mm: f64) -> PyResult<PyCenterline> {
+        let mut cl = self.to_rust_centerline();
+        cl.trim_start(mm);
+        Ok(PyCenterline::from(&cl))
+    }
+
+    /// Resample every branch independently to even arc-length spacing.
+    ///
+    /// Interior points are linearly interpolated (position and radius) between
+    /// the two nearest original points; tangents are recomputed afterwards. No
+    /// interpolation occurs across a bifurcation.
+    ///
+    /// Parameters
+    /// ----------
+    /// spacing_mm : float
+    ///     Target arc-length spacing in mm between consecutive points.
+    ///
+    /// Returns
+    /// -------
+    /// PyCenterline
+    ///     New centerline resampled to even spacing per branch.
+    pub fn resample(&self, spacing_mm: f64) -> PyResult<PyCenterline> {
+        let mut cl = self.to_rust_centerline();
+        cl.resample(spacing_mm);
+        Ok(PyCenterline::from(&cl))
+    }
+
+    /// Smooth centerline positions with a Gaussian kernel (per branch).
+    ///
+    /// `sigma` is the half-width in number of centerline points. A value of
+    /// ``1.0`` is a gentle neighbourhood average; ``2–5`` removes noise while
+    /// keeping the overall vessel path; larger values heavily round corners.
+    /// Branches are processed independently so no smoothing bleeds across a
+    /// bifurcation.
+    ///
+    /// Parameters
+    /// ----------
+    /// sigma : float
+    ///     Half-width of the Gaussian kernel in number of centerline points.
+    ///
+    /// Returns
+    /// -------
+    /// PyCenterline
+    ///     New centerline with smoothed positions and recomputed tangents.
+    pub fn smooth(&self, sigma: f64) -> PyResult<PyCenterline> {
+        let mut cl = self.to_rust_centerline();
+        cl.smooth(sigma);
+        Ok(PyCenterline::from(&cl))
+    }
+
+    /// Reverse branch 0 if its highest-z point is not already at its start,
+    /// then apply the same "closer end goes first" rule to every side branch,
+    /// using branch 0 (post-reversal) as the reference.
+    ///
+    /// For centerlines with no anatomical reference to orient against, e.g. the
+    /// aorta — use ``orient_to_reference`` instead whenever one is available.
+    /// Only correct under the standard CT/DICOM convention where z increases
+    /// toward the head, so the aortic root/valve is the highest-z point.
     ///
     /// Returns
     /// -------
     /// PyCenterline
     ///     New centerline with all branches in canonical order.
-    pub fn check_centerline(&self) -> PyResult<PyCenterline> {
+    pub fn orient_by_max_z(&self) -> PyResult<PyCenterline> {
         let mut cl = self.to_rust_centerline();
-        cl.check_centerline();
+        cl.orient_by_max_z();
+        Ok(PyCenterline::from(&cl))
+    }
+
+    /// Reverse branch 0 if its last point is closer to `reference`'s branch 0
+    /// than its first point is, then apply the same rule to every side branch —
+    /// so every branch starts at whichever end is nearer `reference`.
+    ///
+    /// Any side branches `reference` has are ignored so a stray one can't skew
+    /// the distance check — only `reference`'s branch 0 is ever measured
+    /// against. Distance to `reference` is the minimum distance to any point of
+    /// its branch 0, not a single fixed point — e.g. for a coronary centerline,
+    /// `reference` would be the aorta centerline, not one ostium point.
+    ///
+    /// Parameters
+    /// ----------
+    /// reference : PyCenterline
+    ///     Centerline to orient towards (e.g. the aorta, for a coronary centerline).
+    ///
+    /// Returns
+    /// -------
+    /// PyCenterline
+    ///     New centerline with all branches in canonical order.
+    pub fn orient_to_reference(&self, reference: &PyCenterline) -> PyResult<PyCenterline> {
+        let mut cl = self.to_rust_centerline();
+        cl.orient_to_reference(&reference.to_rust_centerline());
         Ok(PyCenterline::from(&cl))
     }
 }

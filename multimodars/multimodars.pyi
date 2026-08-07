@@ -8,6 +8,9 @@ and IDEs can offer autocompletion and type checking for downstream code.
 
 from __future__ import annotations
 
+from pathlib import Path
+import numpy as np
+
 # Alignment log entry: (id, matched_to, rel_rot_deg, total_rot_deg, tx, ty, centroid_x, centroid_y)
 # Rust: Vec<(u32, u32, f64, f64, f64, f64, f64)>
 _AlignLog = list[tuple[int, int, float, float, float, float, float]]
@@ -315,7 +318,7 @@ class PyCenterline:
     def points_as_tuples(self) -> list[tuple[float, float, float]]: ...
     def calculate_branches(self, spacing_tolerance: float = 1.0) -> PyCenterline: ...
     def find_sharp_angles(self, branch_id: int, cos_threshold: float) -> list[int]:
-        """Return local positions within the branch where the opening angle is sharp.
+        """Return global point_index values where the opening angle is sharp.
 
         Parameters
         ----------
@@ -328,30 +331,33 @@ class PyCenterline:
         Returns
         -------
         list[int]
-            0-indexed positions within the branch (suitable for ``split_branch``).
+            ``point_index`` values (indices into ``points``) where sharp
+            angles were found, suitable for ``split_branch``.
         """
         ...
 
-    def split_branch(self, branch_id: int, local_pos: int) -> PyCenterline:
-        """Split a branch at a local position and return the updated centerline.
+    def split_branch(self, branch_id: int, point_index: int) -> PyCenterline:
+        """Split a branch at a point and return the updated centerline.
 
-        Both resulting segments share the split point. When splitting the main
-        branch (``branch_id=0``) the longer segment stays as branch 0.
+        Both resulting segments share the split point. Branches are re-sorted
+        by descending length afterwards, so branch 0 is always the longest
+        overall - the same invariant ``calculate_branches`` establishes.
 
         Parameters
         ----------
         branch_id : int
-        local_pos : int
-            0-indexed position within the branch (as returned by
-            ``find_sharp_angles``).
+        point_index : int
+            Global index into ``points`` (as returned by ``find_sharp_angles``)
+            where the split occurs. Must fall within `branch_id`'s own range.
         """
         ...
 
     def merge_branches(self, branch_id_a: int, branch_id_b: int) -> PyCenterline:
         """Merge two branches into one and return the updated centerline.
 
-        Segments are joined at the closest endpoint pair.
-        If either branch is branch 0, the merged result becomes branch 0.
+        Segments are joined at the closest endpoint pair. Branches are
+        re-sorted by descending length afterwards, so branch 0 is always the
+        longest overall - the same invariant ``calculate_branches`` establishes.
 
         Parameters
         ----------
@@ -378,55 +384,121 @@ class PyCenterline:
         """
         ...
 
-    def cleanup_vtp_data(
-        self,
-        rm_start_mm: float = ...,
-        smooth: bool = ...,
-        smooth_sigma: float = ...,
-    ) -> PyCenterline:
-        """Remove the run-alongside-main-branch prefix from every side branch,
-        optionally strip the inlet region from branch 0, and optionally smooth.
+    def remove_branch_overlap(self) -> PyCenterline:
+        """Remove the run-alongside-main-branch prefix duplicated by every side branch.
 
-        VTP files export every branch starting from the vessel origin, so side
-        branches share a common prefix with branch 0. This method trims that
-        prefix from each side branch, keeping the bifurcation junction point
-        and the diverged portion. Branches that overlap branch 0 entirely are
-        dropped. The trim threshold is one mean inter-point spacing of branch 0.
-
-        Parameters
-        ----------
-        rm_start_mm : float, optional
-            Arc-length in mm to remove from the start of branch 0 (the inlet
-            region). Set to ``0.0`` to leave branch 0 untouched. Default ``5.0``.
-        smooth : bool, optional
-            When ``True``, apply a per-branch Gaussian smoothing pass after all
-            trimming. Default ``False``.
-        smooth_sigma : float, optional
-            Half-width of the Gaussian kernel in number of centerline points.
-            A value of ``1.0`` is a gentle neighbourhood average; ``2-5`` removes
-            noise while preserving the overall vessel path. Ignored when
-            ``smooth=False``. Default ``2.5``.
+        Some centerline export formats (e.g. VTP) write every branch starting
+        from the vessel origin, so side branches share a common prefix with
+        branch 0. This trims that prefix from each side branch, keeping the
+        bifurcation junction point and the diverged portion. Branches that
+        overlap branch 0 entirely are dropped. The trim threshold is one mean
+        inter-point spacing of branch 0.
 
         Returns
         -------
         PyCenterline
             New centerline with overlapping prefixes removed from all side
-            branches, the inlet trimmed from branch 0 if requested, and
-            positions smoothed if requested.
+            branches.
         """
         ...
 
-    def check_centerline(self) -> PyCenterline:
-        """Normalise branch ordering and return the corrected centerline.
+    def trim_start(self, mm: float) -> PyCenterline:
+        """Trim `mm` of arc length off the start of branch 0.
 
-        For branch 0, the point with the highest z-coordinate is placed at
-        index 0 (reversed if necessary).  For every side branch, the endpoint
-        closest to branch 0 is placed at index 0.
+        Useful when the main branch starts at the aortic inlet and the
+        proximal region is outside the region of interest.
+
+        Parameters
+        ----------
+        mm : float
+            Arc-length in mm to remove from the start of branch 0.
 
         Returns
         -------
         PyCenterline
-            A new centerline with corrected branch ordering.
+            New centerline with the inlet trimmed from branch 0.
+        """
+        ...
+
+    def resample(self, spacing_mm: float) -> PyCenterline:
+        """Resample every branch independently to even arc-length spacing.
+
+        Interior points are linearly interpolated (position and radius)
+        between the two nearest original points; tangents are recomputed
+        afterwards. No interpolation occurs across a bifurcation.
+
+        Parameters
+        ----------
+        spacing_mm : float
+            Target arc-length spacing in mm between consecutive points.
+
+        Returns
+        -------
+        PyCenterline
+            New centerline resampled to even spacing per branch.
+        """
+        ...
+
+    def smooth(self, sigma: float) -> PyCenterline:
+        """Smooth centerline positions with a Gaussian kernel (per branch).
+
+        `sigma` is the half-width in number of centerline points. A value of
+        ``1.0`` is a gentle neighbourhood average; ``2-5`` removes noise while
+        keeping the overall vessel path; larger values heavily round corners.
+        Branches are processed independently so no smoothing bleeds across a
+        bifurcation.
+
+        Parameters
+        ----------
+        sigma : float
+            Half-width of the Gaussian kernel in number of centerline points.
+
+        Returns
+        -------
+        PyCenterline
+            New centerline with smoothed positions and recomputed tangents.
+        """
+        ...
+
+    def orient_by_max_z(self) -> PyCenterline:
+        """Reverse branch 0 if its highest-z point isn't already at its start,
+        then apply the same "closer end goes first" rule to every side branch,
+        using branch 0 (post-reversal) as the reference.
+
+        For centerlines with no anatomical reference to orient against, e.g.
+        the aorta — use ``orient_to_reference`` instead whenever one is
+        available. Only correct under the standard CT/DICOM convention where
+        z increases toward the head, so the aortic root/valve is the
+        highest-z point.
+
+        Returns
+        -------
+        PyCenterline
+            New centerline with all branches in canonical order.
+        """
+        ...
+
+    def orient_to_reference(self, reference: PyCenterline) -> PyCenterline:
+        """Reverse branch 0 so the end nearer `reference`'s branch 0 is its
+        start, then apply the same rule to every side branch.
+
+        Any side branches `reference` has are ignored so a stray one can't
+        skew the distance check — only `reference`'s branch 0 is ever
+        measured against. Distance to `reference` is the minimum distance to
+        any point of its branch 0, not a single fixed point — e.g. for a
+        coronary centerline, `reference` would be the aorta centerline, not
+        one ostium point.
+
+        Parameters
+        ----------
+        reference : PyCenterline
+            Centerline to orient towards (e.g. the aorta, for a coronary
+            centerline).
+
+        Returns
+        -------
+        PyCenterline
+            New centerline with all branches in canonical order.
         """
         ...
 
@@ -681,7 +753,7 @@ def align_three_point(
     contour_types: list[PyContourType] | None = ...,
     case_name: str = ...,
     align_wall_anomalous: bool = ...,
-) -> tuple[PyGeometryPair | PyGeometry, PyCenterline, float]: ...
+) -> tuple[PyGeometryPair | PyGeometry, float, float]: ...
 def align_manual(
     centerline: PyCenterline,
     geometry: PyGeometryPair | PyGeometry,
@@ -694,7 +766,7 @@ def align_manual(
     contour_types: list[PyContourType] | None = ...,
     case_name: str = ...,
     align_wall_anomalous: bool = ...,
-) -> tuple[PyGeometryPair | PyGeometry, PyCenterline, float]: ...
+) -> tuple[PyGeometryPair | PyGeometry, float, float]: ...
 def align_combined(
     centerline: PyCenterline,
     geometry: PyGeometryPair | PyGeometry,
@@ -712,7 +784,7 @@ def align_combined(
     contour_types: list[PyContourType] | None = ...,
     case_name: str = ...,
     align_wall_anomalous: bool = ...,
-) -> tuple[PyGeometryPair | PyGeometry, PyCenterline, float]: ...
+) -> tuple[PyGeometryPair | PyGeometry, float, float]: ...
 
 # ---------------------------------------------------------------------------
 # OBJ export
@@ -732,6 +804,87 @@ def to_obj(
 
 def read_centerline_vtp(path: str) -> PyCenterline: ...
 
+# Implemented in Python (multimodars.ccta.centerline_prep), re-declared here for
+# discoverability alongside the other centerline loading/prep functions.
+def load_centerline(
+    source: PyCenterline | Path | str | np.ndarray,
+    name: str,
+) -> PyCenterline:
+    """Load a centerline from any supported source.
+
+    Parameters
+    ----------
+    source : PyCenterline, Path, str, or numpy.ndarray
+        A ``.vtp`` file path, a CSV file path (comma-delimited, columns
+        x, y, z, ...), an existing ``PyCenterline`` (returned as-is), or an
+        ``(N, 3+)`` array of points.
+    name : str
+        Label used in log output (e.g. ``"Aorta"``, ``"RCA"``, ``"LCA"``).
+
+    Returns
+    -------
+    PyCenterline
+        The loaded centerline, unprepared - pass it to
+        :func:`prepare_centerline` next.
+    """
+    ...
+
+def prepare_centerline(
+    centerline: PyCenterline,
+    ref_centerline: PyCenterline | None = ...,
+    spacing_mm: float | None = ...,
+    branch_spacing_tolerance: float = ...,
+    rm_start_mm: float = ...,
+    smooth_sigma: float = ...,
+) -> PyCenterline:
+    """Run the standard branch/order/smooth prep pipeline on a centerline.
+
+    *ref_centerline* doubles as the "is this a coronary?" signal: the aorta has
+    no upstream reference to orient against, while a coronary (RCA/LCA) orients
+    towards the aorta's branch 0. Applies, in order:
+
+    1. ``calculate_branches(branch_spacing_tolerance)`` - only when
+       *ref_centerline* is given (i.e. *centerline* is a coronary) and
+       *centerline* does not already carry branch structure (e.g. it came
+       from a ``.vtp`` file, which reports its branches directly). The aorta
+       (*ref_centerline* is ``None``) never needs branch detection.
+    2. ``remove_branch_overlap()`` - trims the run-alongside-main-branch prefix
+       some centerline export formats (e.g. VTP) attach to every side branch.
+       A no-op for a single-branch centerline.
+    3. ``trim_start(rm_start_mm)`` - only if ``rm_start_mm > 0``.
+    4. ``resample(spacing_mm)`` - only if ``spacing_mm`` is given.
+    5. ``orient_to_reference(ref_centerline)`` if *ref_centerline* is given,
+       otherwise ``orient_by_max_z()`` - normalise branch ordering.
+    6. ``smooth(smooth_sigma)`` - only if ``smooth_sigma > 0``.
+
+    Parameters
+    ----------
+    centerline : PyCenterline
+        Centerline to prepare, e.g. the output of :func:`load_centerline`.
+    ref_centerline : PyCenterline, optional
+        Reference centerline to orient towards (e.g. the aorta, for a
+        coronary centerline). ``None`` (default) means *centerline* has no
+        reference (e.g. it is the aorta itself).
+    spacing_mm : float, optional
+        Target arc-length spacing in mm passed to ``resample``. ``None``
+        (default) skips resampling.
+    branch_spacing_tolerance : float, optional
+        Passed to ``calculate_branches`` when branch extraction is needed.
+        Default ``1.0``.
+    rm_start_mm : float, optional
+        Arc-length in mm to trim from the start of branch 0 (e.g. the aortic
+        inlet region). Default ``0.0`` (no trim).
+    smooth_sigma : float, optional
+        Half-width of the Gaussian smoothing kernel in number of centerline
+        points. Default ``2.5``. Set to ``0.0`` to skip smoothing.
+
+    Returns
+    -------
+    PyCenterline
+        The prepared centerline.
+    """
+    ...
+
 # ---------------------------------------------------------------------------
 # CCTA mesh labelling and scaling functions
 # ---------------------------------------------------------------------------
@@ -739,7 +892,7 @@ def read_centerline_vtp(path: str) -> PyCenterline: ...
 def remove_occluded_points_ray_triangle(
     centerline_coronary: PyCenterline,
     centerline_aorta: PyCenterline,
-    range_coronary: int,
+    range_mm: float,
     points: list[tuple[float, float, float]],
     faces: list[
         tuple[

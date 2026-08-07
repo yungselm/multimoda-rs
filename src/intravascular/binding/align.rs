@@ -44,15 +44,18 @@ use pyo3::prelude::*;
 /// -------
 /// geometry : PyGeometry or PyGeometryPair
 ///     Aligned geometry, matching the type of the input.
-/// centerline : PyCenterline
-///     Resampled centerline.
+/// spacing_mm : float
+///     Arc-length spacing (mm) used to resample `centerline` internally, derived
+///     from the mean spacing between consecutive contour centroids in `geometry`.
+///     Pass this to `PyCenterline.resample` to resample other centerlines (e.g.
+///     the aorta) to the same spacing, instead of re-deriving it.
 /// total_rotation_deg : float
 ///     Rotation, in degrees, that was applied to align the geometry.
 ///
 /// Examples
 /// --------
 /// >>> import multimodars as mm
-/// >>> result, cl, total_rotation_deg = mm.align_three_point(
+/// >>> result, spacing_mm, total_rotation_deg = mm.align_three_point(
 /// ...     centerline,
 /// ...     geometry_pair,
 /// ...     (12.2605, -201.3643, 1751.0554),
@@ -92,14 +95,14 @@ pub fn align_three_point(
     contour_types: Vec<PyContourType>,
     case_name: &str,
     align_wall_anomalous: bool,
-) -> PyResult<(Py<PyAny>, PyCenterline, f64)> {
+) -> PyResult<(Py<PyAny>, f64, f64)> {
     let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
     let cl_rs = centerline.to_rust_centerline();
     let angle_step = angle_step_deg.to_radians();
 
     if let Ok(geom_pair) = geometry.extract::<PyGeometryPair>() {
-        let (result_rs, cl, total_rotation) = align_three_point_rs(
+        let (result_rs, spacing_mm, total_rotation) = align_three_point_rs(
             cl_rs,
             geom_pair.to_rust_geometry_pair(),
             main_ref_pt,
@@ -118,11 +121,11 @@ pub fn align_three_point(
         let py_result: PyGeometryPair = result_rs.into();
         Ok((
             Py::new(py, py_result)?.into_any(),
-            cl.into(),
+            spacing_mm,
             total_rotation.to_degrees(),
         ))
     } else if let Ok(geom) = geometry.extract::<PyGeometry>() {
-        let (result_rs, cl, total_rotation) = align_three_point_rs(
+        let (result_rs, spacing_mm, total_rotation) = align_three_point_rs(
             cl_rs,
             geom.to_rust_geometry()?,
             main_ref_pt,
@@ -141,7 +144,7 @@ pub fn align_three_point(
         let py_result: PyGeometry = result_rs.into();
         Ok((
             Py::new(py, py_result)?.into_any(),
-            cl.into(),
+            spacing_mm,
             total_rotation.to_degrees(),
         ))
     } else {
@@ -187,8 +190,11 @@ pub fn align_three_point(
 /// -------
 /// geometry : PyGeometry or PyGeometryPair
 ///     Aligned geometry, matching the type of the input.
-/// centerline : PyCenterline
-///     Resampled centerline.
+/// spacing_mm : float
+///     Arc-length spacing (mm) used to resample `centerline` internally, derived
+///     from the mean spacing between consecutive contour centroids in `geometry`.
+///     Pass this to `PyCenterline.resample` to resample other centerlines (e.g.
+///     the aorta) to the same spacing, instead of re-deriving it.
 /// total_rotation_deg : float
 ///     Rotation, in degrees, that was applied to align the geometry
 ///     (equal to *rotation_angle_deg*).
@@ -196,7 +202,7 @@ pub fn align_three_point(
 /// Examples
 /// --------
 /// >>> import multimodars as mm
-/// >>> result, cl, total_rotation_deg = mm.align_manual(
+/// >>> result, spacing_mm, total_rotation_deg = mm.align_manual(
 /// ...     centerline, geometry_pair, rotation_angle=1.57, ref_point=(1.0, 2.0, 3.0)
 /// ... )
 #[pyfunction]
@@ -228,13 +234,13 @@ pub fn align_manual(
     contour_types: Vec<PyContourType>,
     case_name: &str,
     align_wall_anomalous: bool,
-) -> PyResult<(Py<PyAny>, PyCenterline, f64)> {
+) -> PyResult<(Py<PyAny>, f64, f64)> {
     let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
     let cl_rs = centerline.to_rust_centerline();
 
     if let Ok(geom_pair) = geometry.extract::<PyGeometryPair>() {
-        let (result_rs, cl, total_rotation) = align_manual_rs(
+        let (result_rs, spacing_mm, total_rotation) = align_manual_rs(
             cl_rs,
             geom_pair.to_rust_geometry_pair(),
             rotation_angle_deg,
@@ -251,11 +257,11 @@ pub fn align_manual(
         let py_result: PyGeometryPair = result_rs.into();
         Ok((
             Py::new(py, py_result)?.into_any(),
-            cl.into(),
+            spacing_mm,
             total_rotation.to_degrees(),
         ))
     } else if let Ok(geom) = geometry.extract::<PyGeometry>() {
-        let (result_rs, cl, total_rotation) = align_manual_rs(
+        let (result_rs, spacing_mm, total_rotation) = align_manual_rs(
             cl_rs,
             geom.to_rust_geometry()?,
             rotation_angle_deg,
@@ -272,7 +278,7 @@ pub fn align_manual(
         let py_result: PyGeometry = result_rs.into();
         Ok((
             Py::new(py, py_result)?.into_any(),
-            cl.into(),
+            spacing_mm,
             total_rotation.to_degrees(),
         ))
     } else {
@@ -330,8 +336,11 @@ pub fn align_manual(
 /// -------
 /// geometry : PyGeometry or PyGeometryPair
 ///     Aligned geometry, matching the type of the input.
-/// centerline : PyCenterline
-///     Resampled centerline.
+/// spacing_mm : float
+///     Arc-length spacing (mm) used to resample `centerline` internally, derived
+///     from the mean spacing between consecutive contour centroids in `geometry`.
+///     Pass this to `PyCenterline.resample` to resample other centerlines (e.g.
+///     the aorta) to the same spacing, instead of re-deriving it.
 /// total_rotation_deg : float
 ///     Total rotation, in degrees, that was applied (initial three-point
 ///     rotation plus the Hausdorff refinement delta).
@@ -339,7 +348,7 @@ pub fn align_manual(
 /// Examples
 /// --------
 /// >>> import multimodars as mm
-/// >>> result, cl, total_rotation_deg = mm.align_combined(
+/// >>> result, spacing_mm, total_rotation_deg = mm.align_combined(
 /// ...     centerline,
 /// ...     geometry_pair,
 /// ...     (12.2605, -201.3643, 1751.0554),
@@ -347,6 +356,7 @@ pub fn align_manual(
 /// ...     (15.6605, -202.1920, 1749.9655),
 /// ...     point_cloud,
 /// ... )
+/// >>> aorta_cl = aorta_cl.resample(spacing_mm)
 #[pyfunction]
 #[pyo3(
     signature = (
@@ -386,7 +396,7 @@ pub fn align_combined(
     contour_types: Vec<PyContourType>,
     case_name: &str,
     align_wall_anomalous: bool,
-) -> PyResult<(Py<PyAny>, PyCenterline, f64)> {
+) -> PyResult<(Py<PyAny>, f64, f64)> {
     let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
     let cl_rs = centerline.to_rust_centerline();
@@ -394,7 +404,7 @@ pub fn align_combined(
     let angle_range = angle_range_deg.to_radians();
 
     if let Ok(geom_pair) = geometry.extract::<PyGeometryPair>() {
-        let (result_rs, cl, total_rotation) = align_combined_rs(
+        let (result_rs, spacing_mm, total_rotation) = align_combined_rs(
             cl_rs,
             geom_pair.to_rust_geometry_pair(),
             main_ref_pt,
@@ -416,11 +426,11 @@ pub fn align_combined(
         let py_result: PyGeometryPair = result_rs.into();
         Ok((
             Py::new(py, py_result)?.into_any(),
-            cl.into(),
+            spacing_mm,
             total_rotation.to_degrees(),
         ))
     } else if let Ok(geom) = geometry.extract::<PyGeometry>() {
-        let (result_rs, cl, total_rotation) = align_combined_rs(
+        let (result_rs, spacing_mm, total_rotation) = align_combined_rs(
             cl_rs,
             geom.to_rust_geometry()?,
             main_ref_pt,
@@ -442,7 +452,7 @@ pub fn align_combined(
         let py_result: PyGeometry = result_rs.into();
         Ok((
             Py::new(py, py_result)?.into_any(),
-            cl.into(),
+            spacing_mm,
             total_rotation.to_degrees(),
         ))
     } else {

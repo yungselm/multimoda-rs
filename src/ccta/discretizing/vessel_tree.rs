@@ -5,8 +5,9 @@ use rayon::prelude::*;
 impl DiscretizedVesselTree {
     /// Discretize the full vessel tree from pre-labelled point sets.
     ///
-    /// Smooths all three centerlines with a Gaussian (σ = 2.5 points) before
-    /// discretizing, then processes:
+    /// `ao_cl`, `rca_cl`, and `lca_cl` are used as-is — smooth/resample/orient
+    /// them beforehand (e.g. via `Centerline::smooth`); this no longer smooths
+    /// internally. Processes:
     /// - aorta (branch 0)
     /// - RCA main vessel (`branch_id_rca`, usually 0)
     /// - LCA main vessel (`branch_id_lca`, usually 0)

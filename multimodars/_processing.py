@@ -1021,7 +1021,7 @@ def align_three_point(
     contour_types: list[PyContourType] | None = None,
     case_name: str = "None",
     align_wall_anomalous: bool = False,
-) -> tuple[PyGeometryPair | PyGeometry, PyCenterline, float]:
+) -> tuple[PyGeometryPair | PyGeometry, float, float]:
     """Align a geometry (or geometry pair) to the centerline using three reference points.
 
     Creates centerline-aligned meshes based on three anatomical reference points
@@ -1065,15 +1065,18 @@ def align_three_point(
     -------
     geometry : PyGeometryPair or PyGeometry
         Aligned geometry, matching the type of the input.
-    centerline : PyCenterline
-        Resampled centerline.
+    spacing_mm : float
+        Arc-length spacing (mm) used to resample `centerline` internally, derived
+        from the mean spacing between consecutive contour centroids in `geometry`.
+        Pass this to `PyCenterline.resample` to resample other centerlines (e.g.
+        the aorta) to the same spacing, instead of re-deriving it.
     total_rotation_deg : float
         Rotation, in degrees, that was applied to align the geometry.
 
     Examples
     --------
     >>> import multimodars as mm
-    >>> result, cl, total_rotation_deg = mm.align_three_point(
+    >>> result, spacing_mm, total_rotation_deg = mm.align_three_point(
     ...     centerline,
     ...     geometry_pair,
     ...     (12.2605, -201.3643, 1751.0554),
@@ -1112,7 +1115,7 @@ def align_manual(
     contour_types: list[PyContourType] | None = None,
     case_name: str = "None",
     align_wall_anomalous: bool = False,
-) -> tuple[PyGeometryPair | PyGeometry, PyCenterline, float]:
+) -> tuple[PyGeometryPair | PyGeometry, float, float]:
     """Align a geometry (or geometry pair) to the centerline using a manual rotation angle.
 
     Creates centerline-aligned meshes using an explicit rotation angle and a
@@ -1152,8 +1155,11 @@ def align_manual(
     -------
     geometry : PyGeometryPair or PyGeometry
         Aligned geometry, matching the type of the input.
-    centerline : PyCenterline
-        Resampled centerline.
+    spacing_mm : float
+        Arc-length spacing (mm) used to resample `centerline` internally, derived
+        from the mean spacing between consecutive contour centroids in `geometry`.
+        Pass this to `PyCenterline.resample` to resample other centerlines (e.g.
+        the aorta) to the same spacing, instead of re-deriving it.
     total_rotation_deg : float
         Rotation, in degrees, that was applied to align the geometry
         (equal to *rotation_angle_deg*).
@@ -1161,7 +1167,7 @@ def align_manual(
     Examples
     --------
     >>> import multimodars as mm
-    >>> result, cl, total_rotation_deg = mm.align_manual(
+    >>> result, spacing_mm, total_rotation_deg = mm.align_manual(
     ...     centerline, geometry_pair, rotation_angle_deg=90.0, ref_point=(1.0, 2.0, 3.0)
     ... )
     """
@@ -1199,7 +1205,7 @@ def align_combined(
     contour_types: list[PyContourType] | None = None,
     case_name: str = "None",
     align_wall_anomalous: bool = False,
-) -> tuple[PyGeometryPair | PyGeometry, PyCenterline, float]:
+) -> tuple[PyGeometryPair | PyGeometry, float, float]:
     """Align a geometry (or geometry pair) using three reference points and Hausdorff refinement.
 
     Creates centerline-aligned meshes using three anatomical reference points
@@ -1251,8 +1257,11 @@ def align_combined(
     -------
     geometry : PyGeometryPair or PyGeometry
         Aligned geometry, matching the type of the input.
-    centerline : PyCenterline
-        Resampled centerline.
+    spacing_mm : float
+        Arc-length spacing (mm) used to resample `centerline` internally, derived
+        from the mean spacing between consecutive contour centroids in `geometry`.
+        Pass this to `PyCenterline.resample` to resample other centerlines (e.g.
+        the aorta) to the same spacing, instead of re-deriving it.
     total_rotation_deg : float
         Total rotation, in degrees, that was applied (initial three-point
         rotation plus the Hausdorff refinement delta).
@@ -1260,7 +1269,7 @@ def align_combined(
     Examples
     --------
     >>> import multimodars as mm
-    >>> result, cl, total_rotation_deg = mm.align_combined(
+    >>> result, spacing_mm, total_rotation_deg = mm.align_combined(
     ...     centerline,
     ...     geometry_pair,
     ...     (12.2605, -201.3643, 1751.0554),
@@ -1510,10 +1519,14 @@ def discretize_vessel(
     remaining contours to exactly ``n_points`` evenly-spaced points via a closed Catmull-Rom
     spline.
 
+    ``centerline`` is used as-is - smooth/resample/orient it beforehand (e.g. via
+    ``PyCenterline.smooth``, or :func:`multimodars.ccta.centerline_prep.prepare_centerline`);
+    this does not smooth internally.
+
     Parameters
     ----------
     centerline : PyCenterline
-        Centerline object containing one or more branches.
+        Centerline object containing one or more branches, already prepared.
     points : list of tuple of (float, float, float)
         3-D surface mesh points ``(x, y, z)`` to project onto each cross-section.
     branch_id : int, optional

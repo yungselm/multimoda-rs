@@ -320,8 +320,8 @@ def plot_centerline_branches(
     Parameters
     ----------
     rca_cl, lca_cl:
-        Centerlines after ``calculate_branches`` and ``check_centerline``
-        (output of :func:`~multimodars.ccta.discretization_map.prepare_centerlines`).
+        Centerlines after ``calculate_branches`` and ``orient_by_max_z``
+        (output of :func:`~multimodars.ccta.discretization_map.label_branches`).
     results_dict:
         Optional.  When provided, labelled surface points
         (``rca_points_main``, ``rca_points_side_N``, ``lca_points_main``,
@@ -394,7 +394,7 @@ def plot_centerline_edges(
     ----------
     cl:
         Centerline after ``calculate_branches`` (and optionally
-        ``check_centerline``).
+        ``orient_by_max_z``).
     cos_threshold:
         Cosine threshold forwarded to ``cl.find_sharp_angles``.  ``0.0`` flags
         all angles ≥ 90 °; negative values flag increasingly obtuse bends.
@@ -420,9 +420,18 @@ def plot_centerline_edges(
         arr = np.array([(p.x, p.y, p.z) for p in pts], dtype=np.float64)
         scene_geoms.append(_make_point_cloud(arr, _PALETTE[bid % len(_PALETTE)]))
 
+        # find_sharp_angles returns global point_index values, not positions
+        # local to `pts` - offset by the branch's own start to index into it.
+        branch_start = (
+            cl.branch_start_indices[bid] if bid < len(cl.branch_start_indices) else 0
+        )
         sharp_pos = cl.find_sharp_angles(bid, cos_threshold)
         if sharp_pos:
-            sharp_pts = [pts[i] for i in sharp_pos if i < len(pts)]
+            sharp_pts = [
+                pts[i - branch_start]
+                for i in sharp_pos
+                if 0 <= i - branch_start < len(pts)
+            ]
             if sharp_pts:
                 sharp_arr = np.array(
                     [(p.x, p.y, p.z) for p in sharp_pts], dtype=np.float64
@@ -456,8 +465,8 @@ def plot_sharp_angles(
     branch_id:
         Branch that was inspected (0 = main vessel).
     sharp_positions:
-        Local positions within the branch as returned by
-        :func:`find_sharp_angles` or ``cl.find_sharp_angles``.
+        Global point_index values as returned by :func:`find_sharp_angles` or
+        ``cl.find_sharp_angles``.
     context_pts:
         Number of neighbouring points shown on each side of each position.
     """
@@ -483,7 +492,13 @@ def plot_sharp_angles(
 
     branch_pts = by_branch.get(branch_id, [])
     n = len(branch_pts)
-    for i, pos in enumerate(sharp_positions):
+    branch_start = (
+        cl.branch_start_indices[branch_id]
+        if branch_id < len(cl.branch_start_indices)
+        else 0
+    )
+    for i, point_index in enumerate(sharp_positions):
+        pos = point_index - branch_start
         lo = max(0, pos - context_pts)
         hi = min(n, pos + context_pts + 1)
         segment = branch_pts[lo:hi]

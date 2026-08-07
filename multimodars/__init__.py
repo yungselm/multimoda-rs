@@ -48,6 +48,10 @@ from .ccta.labeling import (
     label_anomalous_region,
     label_branches,
 )
+from .ccta.centerline_prep import (
+    load_centerline,
+    prepare_centerline,
+)
 from .ccta.manipulating import (
     scale_region_centerline_morphing,
     find_distal_and_proximal_scaling,
@@ -59,7 +63,7 @@ from .ccta.manipulating import (
     stitch_ccta_to_intravascular,
 )
 from .ccta.discretization_map import (
-    prepare_centerlines,
+    label_branches_pair,
     discretize_vessel_tree,
     find_sharp_angles,
 )
@@ -127,10 +131,12 @@ __all__ = [
     "plot_centerline_edges",
     "plot_sharp_angles",
     "discretize_vessel",
-    "prepare_centerlines",
     "discretize_vessel_tree",
     "find_sharp_angles",
     "label_branches",
+    "label_branches_pair",
+    "load_centerline",
+    "prepare_centerline",
 ]
 
 # def _print_banner():

@@ -70,7 +70,7 @@ fn ray_triangle_intersection(
 pub fn remove_occluded_points_ray_triangle_rust(
     centerline_coronary: &Centerline,
     centerline_aorta: &Centerline,
-    range_coronary: usize,
+    range_mm: f64,
     points: &[(f64, f64, f64)],
     faces: &[Triangle],
     step_size_mm: f64,
@@ -79,14 +79,18 @@ pub fn remove_occluded_points_ray_triangle_rust(
         return points.to_vec();
     }
 
-    let checked_cl_coronary = check_centerline(centerline_coronary);
-    let checked_cl_aorta = check_centerline(centerline_aorta);
+    // Callers must orient both centerlines before calling (`orient_by_max_z` for the
+    // aorta, `orient_to_reference` for the coronary) — `.take(range_points)` below
+    // assumes the proximal segment is arc-length-contiguous starting at index 0.
     let spacing = (centerline_aorta.mean_spacing() + centerline_coronary.mean_spacing()) / 2.0;
     let step_cl_points = (step_size_mm / spacing).ceil() as usize;
+    // range_mm is a physical length, not a point count, so it stays correct
+    // regardless of how finely the centerline was resampled beforehand.
+    let range_points = (range_mm / spacing).ceil() as usize;
 
     // Parallelize over aorta points (75 items): each thread owns 100 sequential coronary
     // iterations against faces — coarse enough to avoid scheduler overhead from nested parallelism.
-    let faces_to_exclude: HashSet<usize> = checked_cl_aorta
+    let faces_to_exclude: HashSet<usize> = centerline_aorta
         .points
         .par_iter()
         .flat_map_iter(|aorta_point| {
@@ -98,10 +102,10 @@ pub fn remove_occluded_points_ray_triangle_rust(
 
             let mut local_excluded: Vec<usize> = Vec::new();
 
-            for coronary_point in checked_cl_coronary
+            for coronary_point in centerline_coronary
                 .points
                 .iter()
-                .take(range_coronary)
+                .take(range_points)
                 .step_by(step_cl_points)
             {
                 let coronary_coord = Point3::new(
@@ -199,8 +203,7 @@ pub fn find_centerline_bounded_points(
     points: &[(f64, f64, f64)],
     radius: f64,
 ) -> Result<Vec<(f64, f64, f64)>, String> {
-    let checked_centerline = check_centerline(&centerline);
-    if points.is_empty() || checked_centerline.points.is_empty() {
+    if points.is_empty() || centerline.points.is_empty() {
         return Err(
             "find_centerline_bounded_points failed because `Centerline` is empty".to_string(),
         );
@@ -209,7 +212,7 @@ pub fn find_centerline_bounded_points(
     // R-tree over the centerline points (the small side, typically ~1000 points).
     // Each mesh point then costs O(log M) instead of a scan over all M centerline
     // points, so the whole query is O(N log M) instead of O(N * M).
-    let cl_coords: Vec<[f64; 3]> = checked_centerline
+    let cl_coords: Vec<[f64; 3]> = centerline
         .points
         .iter()
         .map(|p| [p.contour_point.x, p.contour_point.y, p.contour_point.z])
@@ -626,20 +629,6 @@ fn restore_removed_by_propagation(
         if is_target {
             new_labels[v] = target_label;
         }
-    }
-}
-
-/// Check that the centerline is sorted by z-value (distal to proximal)
-/// and ensure the last point has the lowest z-value
-fn check_centerline(centerline: &Centerline) -> Centerline {
-    let mut points = centerline.points.clone();
-
-    points.sort_by(|a, b| b.contour_point.z.partial_cmp(&a.contour_point.z).unwrap());
-
-    let branch_start_indices = if points.is_empty() { vec![] } else { vec![0] };
-    Centerline {
-        points,
-        branch_start_indices,
     }
 }
 

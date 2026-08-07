@@ -13,29 +13,42 @@ for candidate in [cwd, cwd.parent, cwd.parent.parent]:
         break
 print(f"Working directory: {os.getcwd()}")
 
-rca_cl = mm.read_centerline_vtp("./rca_cl.vtp").cleanup_vtp_data(smooth=True)
-lca_cl = mm.read_centerline_vtp("./lca_cl.vtp").cleanup_vtp_data(smooth=True)
-aorta_cl = mm.read_centerline_vtp("./ao_cl.vtp").cleanup_vtp_data(smooth=True)
+# The aorta has no reference to orient against, so prepare it first, then use
+# it as `ref_centerline` when preparing the coronaries (this also drives the
+# branch-detection decision inside `prepare_centerline`: no ref -> aorta ->
+# no side branches to find; a ref -> coronary -> extract branches).
+aorta_cl = mm.load_centerline("./ao_cl.vtp", name="Aorta")
+aorta_cl = mm.prepare_centerline(aorta_cl, spacing_mm=1.0)
 
-results, (rca_cl, lca_cl, ao_cl) = mm.label_geometry(
+rca_cl = mm.load_centerline("./rca_cl.vtp", name="RCA")
+rca_cl = mm.prepare_centerline(
+    rca_cl, ref_centerline=aorta_cl, spacing_mm=1.0, rm_start_mm=5.0
+)
+
+lca_cl = mm.load_centerline("./lca_cl.vtp", name="LCA")
+lca_cl = mm.prepare_centerline(
+    lca_cl, ref_centerline=aorta_cl, spacing_mm=1.0, rm_start_mm=5.0
+)
+
+results = mm.label_geometry(
     path_ccta_geometry="./NARCO_119.stl",
-    path_centerline_aorta=aorta_cl,
-    path_centerline_rca=rca_cl,
-    path_centerline_lca=lca_cl,
+    centerline_aorta=aorta_cl,
+    centerline_rca=rca_cl,
+    centerline_lca=lca_cl,
     bounding_sphere_radius_mm_rca=3.0,
     bounding_sphere_radius_mm_lca=3.0,
-    n_points_takeoff_rca=150,
-    n_points_takeoff_lca=100,
+    range_mm_takeoff_rca=60.0,  # mm, was a point count before
+    range_mm_takeoff_lca=40.0,  # mm, was a point count before
     acute_takeoff_rca=True,
     acute_takeoff_lca=False,
     control_plot=True,
 )
 
-# Branch indices already set from VTP — skip calculate_branches
-rca_cl, lca_cl, results = mm.prepare_centerlines(rca_cl, lca_cl, results, vtp_data=True)
+# Branches (and their ordering) already come from prepare_centerline above.
+results = mm.label_branches_pair(rca_cl, lca_cl, results)
 
 tree = mm.discretize_vessel_tree(
-    ao_cl,
+    aorta_cl,
     rca_cl,
     lca_cl,
     results,
@@ -57,7 +70,7 @@ rest, (dia_logs, sys_logs) = mm.from_file_singlepair(
 ref_points = tree.rca_references[0]
 
 rca_cl_main = rca_cl.get_branch(0)  # alignment needs single-branch CL
-aligned, resampled_cl, total_rotation_deg = mm.align_combined(
+aligned, spacing_mm, total_rotation_deg = mm.align_combined(
     rca_cl_main,
     rest,
     ref_points[0],  # aortic reference point
@@ -70,6 +83,13 @@ aligned, resampled_cl, total_rotation_deg = mm.align_combined(
     output_dir="test",
     align_wall_anomalous=True,
 )
+
+# Resample the aorta to the same spacing align_combined derived from the frames,
+# instead of re-deriving it — keeps the two centerlines' point density consistent
+# for the scaling steps below.
+aorta_cl = aorta_cl.resample(spacing_mm)
+rca_cl = rca_cl.resample(spacing_mm)
+lca_cl = lca_cl.resample(spacing_mm)
 
 results = mm.label_anomalous_region(
     centerline=rca_cl,
@@ -87,13 +107,13 @@ prox_scaling, distal_scaling = mm.find_distal_and_proximal_scaling(
 
 aortic_scaling = mm.find_aorta_scaling(
     frames=aligned.geom_a.frames,
-    cl_aorta=ao_cl,
+    cl_aorta=aorta_cl,
     results=results,
 )
 
 aortic_wall_scaling = mm.find_aortic_wall_scaling(
     frames=aligned.geom_a.frames,
-    cl_aorta=ao_cl,
+    cl_aorta=aorta_cl,
     results=results,
 )
 
@@ -154,15 +174,15 @@ print(f"Watertight? {remeshed['mesh'].is_watertight}")
 
 trimesh.smoothing.filter_taubin(remeshed["mesh"], lamb=0.6)
 
-results_final, (rca_cl_f, lca_cl_f, ao_cl_f) = mm.label_geometry(
+results_final = mm.label_geometry(
     path_ccta_geometry="fixed_mesh.stl",
-    path_centerline_aorta="../data/centerline_aorta.csv",
-    path_centerline_rca="../data/centerline_rca_short.csv",
-    path_centerline_lca="../data/centerline_lca.csv",
+    centerline_aorta=aorta_cl,
+    centerline_rca=rca_cl,
+    centerline_lca=lca_cl,
     bounding_sphere_radius_mm_rca=3.0,
     bounding_sphere_radius_mm_lca=3.0,
-    n_points_takeoff_rca=100,
-    n_points_takeoff_lca=100,
+    range_mm_takeoff_rca=60.0,  # mm, was a point count before
+    range_mm_takeoff_lca=40.0,  # mm, was a point count before
     acute_takeoff_rca=True,
     acute_takeoff_lca=False,
     control_plot=True,
