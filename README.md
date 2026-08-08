@@ -7,6 +7,10 @@
   </a>
 </p>
 
+> [!warning]
+> Currently under heavy construction. Real world data proved the existing labeling algorithms to be insufficient for many cases.
+> Brace for breaking changes!
+
 [![PyPI](https://img.shields.io/pypi/v/multimodars.svg)](https://pypi.org/project/multimodars)
 [![Downloads](https://static.pepy.tech/badge/multimodars)](https://pepy.tech/project/multimodars)
 [![License](https://img.shields.io/pypi/l/multimodars.svg)](LICENSE)
@@ -27,9 +31,6 @@
 > A high‑performance, Rust‑accelerated toolkit for multi‑modality cardiac image fusion and registration ﮩ٨ـﮩﮩ٨ـ♡ﮩ٨ـﮩﮩ٨ـ.
 
 ---
-> [!warning]
-> Currently under heavy construction. Real world data proved the existing labeling algorithms to be insufficient for many cases.
-> So brace for breaking changes!
 
 ## Overview
 
@@ -40,7 +41,7 @@
 - **Intravascular Registration**: align pullback sequences (rest/stress, diastole/systole) using Hausdorff distance on vessel contours and catheter centroids; four modes: *full*, *double-pair*, *single-pair*, *single*.
 - **Centerline Alignment**: register intravascular geometries onto a CCTA-derived centerline via three-point landmark or manual rotation.
 - **CCTA Fusion**: automatically label CCTA geometries by vessel region and morph them to match intravascular measurements.
-- **Flexible Input**: accepts CSV files ([AIVUS](https://github.com/AI-in-Cardiovascular-Medicine/AIVUS-CAA) format) or raw NumPy arrays.
+- **Flexible Input**: accepts CSV files ([HolOrama](https://github.com/AI-in-Cardiovascular-Medicine/HolOrama) format) or raw NumPy arrays.
 
 ## Installation
 
