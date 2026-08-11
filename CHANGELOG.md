@@ -3,6 +3,11 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.1] -2026-08-11
+
+### Fix
+- `remove_branch_overlap` only considered the main branch and didn't clean up the side branches.
+
 ## [0.6.0] -2026-08-07
 
 ### Changed

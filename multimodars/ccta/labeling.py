@@ -144,9 +144,6 @@ def label_geometry(
     print(f"\nRCA points found: {len(rca_points_found)}")
     print(f"LCA points found: {len(lca_points_found)}")
 
-    rca_removed_points = []
-    lca_removed_points = []
-
     if acute_takeoff_rca:
         rca_removed_points, final_rca_points_found = _apply_occlusion_removal(
             range_mm_takeoff_rca,
@@ -161,6 +158,7 @@ def label_geometry(
         )
     else:
         final_rca_points_found = rca_points_found.copy()
+        rca_removed_points = []
 
     if acute_takeoff_lca:
         lca_removed_points, final_lca_points_found = _apply_occlusion_removal(
@@ -176,6 +174,7 @@ def label_geometry(
         )
     else:
         final_lca_points_found = lca_points_found.copy()
+        lca_removed_points = []
 
     print("\nRemoving LCA and RCA island points...")
     aortic_points = find_aortic_points(

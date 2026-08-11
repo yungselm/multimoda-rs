@@ -696,7 +696,7 @@ dependencies = [
 
 [[package]]
 name = "multimodars"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "approx",

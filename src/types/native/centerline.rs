@@ -865,37 +865,48 @@ impl Centerline {
         self.recompute_tangents();
     }
 
-    /// Trims the leading overlap each side branch shares with the main vessel (branch 0).
+    /// Trims the leading overlap each branch shares with the branches already cleaned.
     ///
-    /// VTP centerline branch data often starts by duplicating a stretch of the main
-    /// vessel before diverging at the true bifurcation; this drops that duplicated prefix.
+    /// VTP centerline branch data often starts by duplicating a stretch of an earlier
+    /// branch before diverging at the true bifurcation; this drops that duplicated
+    /// prefix. Branches are ordered longest-first with branch 0 as the main vessel, so
+    /// a smaller side branch may actually bifurcate off another (already-trimmed) side
+    /// branch rather than directly off the main vessel. Processing branches in order
+    /// and growing the reference point set as each branch is cleaned handles that case
+    /// too, instead of only ever comparing against branch 0.
     fn remove_overlapping(branches: &mut Vec<Vec<CenterlinePoint>>, buffer_sq: f64) {
         if branches.len() <= 1 {
             return;
         }
 
-        let main_pts: Vec<(f64, f64, f64)> = branches[0]
+        let mut known_pts: Vec<(f64, f64, f64)> = branches[0]
             .iter()
             .map(|p| (p.contour_point.x, p.contour_point.y, p.contour_point.z))
             .collect();
 
-        let close_to_main = |pt: &CenterlinePoint| -> bool {
-            let (x, y, z) = (pt.contour_point.x, pt.contour_point.y, pt.contour_point.z);
-            main_pts.iter().any(|&(mx, my, mz)| {
-                // avoid distance_to's sqrt in this O(branch_points * main_points) check
-                (x - mx).powi(2) + (y - my).powi(2) + (z - mz).powi(2) <= buffer_sq
-            })
-        };
-
         for branch in branches.iter_mut().skip(1) {
-            let first_outside = branch.iter().position(|pt| !close_to_main(pt));
+            let close_to_known = |pt: &CenterlinePoint| -> bool {
+                let (x, y, z) = (pt.contour_point.x, pt.contour_point.y, pt.contour_point.z);
+                known_pts.iter().any(|&(mx, my, mz)| {
+                    // avoid distance_to's sqrt in this O(branch_points * known_points) check
+                    (x - mx).powi(2) + (y - my).powi(2) + (z - mz).powi(2) <= buffer_sq
+                })
+            };
+
+            let first_outside = branch.iter().position(|pt| !close_to_known(pt));
             match first_outside {
                 None => branch.clear(),
                 Some(0) => {}
-                Some(i) => {
-                    branch.drain(..i - 1);
+                Some(j) => {
+                    branch.drain(..j - 1);
                 }
             }
+
+            known_pts.extend(
+                branch
+                    .iter()
+                    .map(|p| (p.contour_point.x, p.contour_point.y, p.contour_point.z)),
+            );
         }
 
         branches.retain(|b| !b.is_empty());
