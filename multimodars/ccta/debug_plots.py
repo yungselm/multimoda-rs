@@ -516,7 +516,7 @@ def plot_boundary_edges(
     results: dict,
     key: str = "boundary_points",
     show_mesh: bool = True,
-    target_boundaries: int = 1,
+    target_boundaries: int | None = None,
 ) -> None:
     """Open an interactive trimesh scene of a stored boundary ring set and its edges.
 
@@ -544,9 +544,11 @@ def plot_boundary_edges(
         ``"dist_boundary_points"`` to inspect the stitching seams instead.
     show_mesh : bool
         Include the mesh in the scene for context.
-    target_boundaries : int
-        Number of rings to reduce the boundary to (passed through to
-        :func:`~multimodars.ccta.stitching._order_boundary_rings`).
+    target_boundaries : int, optional
+        Leave as ``None`` (the default) to draw every ring the mesh actually
+        has - a debug view should not merge rings behind your back.  Set an
+        integer only to preview what reducing to that many rings would look
+        like.
     """
     print("\n=== BOUNDARY EDGES PLOT ===")
 

@@ -501,6 +501,13 @@ def _clean_open_boundary(
     rings = [r for r in rings if r]
     rings.sort(key=len, reverse=True)
     if len(rings) > target_n:
+        # The rim came back as more pieces than expected.  Joining them stitches
+        # across a gap that is not a mesh edge, so say so: either target_n is too
+        # low for this region, or the pieces are genuinely separate rims.
+        print(
+            f"Warning: boundary has {len(rings)} rings {[len(r) for r in rings]} "
+            f"but target_boundaries={target_n}; joining by nearest endpoints."
+        )
         rings = _join_rings_to_target(rings, vertices, target_n)
         rings.sort(key=len, reverse=True)
     return drop, rings[:target_n]
@@ -510,14 +517,15 @@ def _order_boundary_rings(
     faces: np.ndarray,
     vertices: np.ndarray,
     boundary_indices: set[int] | None = None,
-    target_n: int = 1,
+    target_n: int | None = None,
     despike_cos: float = 0.0,
 ) -> list[list[int]]:
     """Order the open boundary of *faces* into rings, without touching the mesh.
 
     Read-only counterpart to :func:`_clean_open_boundary`: it reports the rings
     the current faces actually have, so a debug view shows the real state of the
-    mesh rather than an idealised one.
+    mesh rather than an idealised one.  *target_n* therefore defaults to
+    ``None`` - every ring found is reported, and none are silently merged.
 
     Parameters
     ----------
@@ -528,8 +536,9 @@ def _order_boundary_rings(
     boundary_indices : set[int], optional
         Seed vertices; only the connected rims containing one of them are
         reported.  When omitted every open boundary is reported.
-    target_n : int
-        Number of rings to reduce to.
+    target_n : int, optional
+        When given, reduce to this many rings (joining leftover arcs by nearest
+        endpoints).  ``None`` (the default) reports every ring as found.
     despike_cos : float
         Unused here; kept so callers can pass the same arguments as
         :func:`_clean_open_boundary`.
@@ -537,13 +546,16 @@ def _order_boundary_rings(
     Returns
     -------
     list[list[int]]
-        Up to *target_n* ordered rings of vertex indices.
+        Ordered rings of vertex indices - all of them, or the *target_n*
+        largest when *target_n* is given.
     """
     graph = _rims_touching(_boundary_graph(faces), boundary_indices or set())
     if not graph:
         return []
     rings = [r for r in _walk_rings(graph) if r]
     rings.sort(key=len, reverse=True)
+    if target_n is None:
+        return rings
     if len(rings) > target_n:
         rings = _join_rings_to_target(rings, vertices, target_n)
         rings.sort(key=len, reverse=True)
