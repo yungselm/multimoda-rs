@@ -361,6 +361,7 @@ def stitch_ccta_to_intravascular(
     dist_start_mode: str = "nearest_iv",
     proximal_is_ostium: bool = True,
     clamp_overshoot: float = 0.5,
+    boundary_point_ratio: float = 1.0,
 ) -> dict:
     """Stitch an aligned intravascular mesh to a CCTA mesh.
 
@@ -394,6 +395,16 @@ def stitch_ccta_to_intravascular(
     proximal_points = iv_mesh.frames[0].lumen.points
     distal_points = iv_mesh.frames[-1].lumen.points
 
+    # Vessel axis: outward for the proximal patch points toward frames[0], and
+    # vice-versa for the distal patch.  Needed before the boundary prep, since
+    # the ostium plane is slid along the proximal outward direction.
+    prox_c = np.array(iv_mesh.frames[0].centroid)
+    dist_c = np.array(iv_mesh.frames[-1].centroid)
+    prox_outward = prox_c - dist_c  # points toward the proximal end
+    dist_outward = dist_c - prox_c  # points toward the distal end
+
+    target_n = max(3, round(boundary_point_ratio * len(proximal_points)))
+
     prox_boundary_pts, dist_boundary_pts, mesh = _prepare_prox_dist_boundary_pts(
         mesh,
         results,
@@ -402,9 +413,11 @@ def stitch_ccta_to_intravascular(
         proximal_is_ostium=proximal_is_ostium,
         proximal_iv_frame_pts=iv_mesh.frames[0].lumen.points,
         clamp_overshoot=clamp_overshoot,
+        target_n=target_n,
+        prox_outward=prox_outward,
     )
-    prox_point_step = len(proximal_points) // len(prox_boundary_pts)
-    dist_point_step = len(distal_points) // len(dist_boundary_pts)
+    prox_point_step = max(1, len(proximal_points) // len(prox_boundary_pts))
+    dist_point_step = max(1, len(distal_points) // len(dist_boundary_pts))
 
     # Adjust start point
     if prox_start_mode == "highest_z" or dist_start_mode == "highest_z":
@@ -419,16 +432,6 @@ def stitch_ccta_to_intravascular(
         dist_boundary_pts = _adjust_start_point_by_z(dist_boundary_pts)
     else:
         dist_boundary_pts = _rotate_to_nearest_iv(dist_boundary_pts, distal_points[0])
-
-    # Compute the vessel axis so each patch can be flipped to face outward,
-    # and also used as the consistent reference normal for direction checking.
-    # frames[0] is the "proximal" end, frames[-1] the "distal" end.
-    # The outward direction for the proximal patch points away from the mesh
-    # interior (toward frames[0]), and vice-versa for the distal patch.
-    prox_c = np.array(iv_mesh.frames[0].centroid)
-    dist_c = np.array(iv_mesh.frames[-1].centroid)
-    prox_outward = prox_c - dist_c  # points toward the proximal end
-    dist_outward = dist_c - prox_c  # points toward the distal end
 
     # Check / fix winding direction of each boundary ring vs its IV ring
     # independently, using the method that matches the start-point strategy.
@@ -451,12 +454,8 @@ def stitch_ccta_to_intravascular(
         )
 
     # Step 3: stitch each boundary ring to its IV ring
-    prox_patch = _stitch_boundary_ring(
-        prox_boundary_pts, proximal_points, prox_point_step, prox_outward
-    )
-    dist_patch = _stitch_boundary_ring(
-        dist_boundary_pts, distal_points, dist_point_step, dist_outward
-    )
+    prox_patch = _stitch_rings(prox_boundary_pts, proximal_points, prox_outward)
+    dist_patch = _stitch_rings(dist_boundary_pts, distal_points, dist_outward)
     test_mesh = geometry_to_trimesh(iv_mesh)
     test_mesh.update_faces(test_mesh.unique_faces())
     test_mesh.update_faces(test_mesh.nondegenerate_faces())
@@ -491,7 +490,18 @@ def _prepare_prox_dist_boundary_pts(
     proximal_iv_frame_pts=None,
     ostium_angle_threshold_deg: float = 45.0,
     clamp_overshoot: float = 1.0,
+    target_n: int | None = None,
+    prox_outward: np.ndarray | None = None,
 ) -> tuple[list, list, trimesh.Trimesh]:
+    """Pick and condition the two boundary rings that will be stitched.
+
+    Both rims get the same treatment: the ring is flattened onto its own
+    best-fit plane, smoothed, respaced evenly along its perimeter, and finally
+    densified to *target_n* points so the stitch is a clean strip.  Every one of
+    those steps is written back into the mesh, so the returned rings are the
+    mesh's real open edge.  An ostial proximal ring gets the extra plane
+    handling in :func:`_condition_ostium_ring` before densification.
+    """
     rings = _boundary_rings(results, mesh)
     if len(rings) < 2:
         raise ValueError(
@@ -500,7 +510,7 @@ def _prepare_prox_dist_boundary_pts(
             f"target_boundaries=2 so both rims are kept as separate rings."
         )
 
-    proximal_boundary_pts, distal_boundary_pts, leftover = _assign_rings_to_ends(
+    prox_ring, dist_ring, leftover = _assign_rings_to_ends(
         rings, prox_centroid, dist_centroid
     )
     if leftover:
@@ -510,60 +520,126 @@ def _prepare_prox_dist_boundary_pts(
             f"end and are left unstitched."
         )
 
+    # Flatten + even out both rims.  Smoothing removes the in-plane jaggedness
+    # that would otherwise show up as ragged stitch triangles; respacing then
+    # makes the interpolated points land uniformly around the ring.
+    prox_pts = _redistribute_ring_evenly(
+        _smooth_ring_laplacian(_project_to_best_fit_plane(prox_ring))
+    )
+    mesh, _ = _write_ring_to_mesh(mesh, prox_ring, prox_pts)
+    dist_pts = _redistribute_ring_evenly(
+        _smooth_ring_laplacian(_project_to_best_fit_plane(dist_ring))
+    )
+    mesh, _ = _write_ring_to_mesh(mesh, dist_ring, dist_pts)
+
     if proximal_is_ostium:
-        # Project onto best-fit plane + Laplacian smooth.
-        prox_projected = _project_to_best_fit_plane(proximal_boundary_pts)
-        prox_boundary_pts_ord = _smooth_ring_laplacian(prox_projected)
+        prox_pts, mesh = _condition_ostium_ring(
+            mesh,
+            prox_pts,
+            prox_centroid,
+            proximal_iv_frame_pts,
+            prox_outward,
+            ostium_angle_threshold_deg,
+            clamp_overshoot,
+            aorta_pts=results.get("aorta_points"),
+        )
 
-        # Final check for anomalous vessels: the aortic ostium is nearly
-        # perpendicular to the coronary ostial plane, which can leave some
-        # boundary points on the wrong side after smoothing.  Compare the two
-        # plane normals and, if the angle exceeds the threshold, project any
-        # outlier that crossed the IV-frame plane back onto it.
-        iv_origin: np.ndarray | None = None
-        iv_normal: np.ndarray | None = None
-        clamping_applied = False
-        if proximal_iv_frame_pts is not None and len(prox_boundary_pts_ord) >= 3:
-            boundary_arr = np.array(prox_boundary_pts_ord, dtype=np.float64)
-            iv_arr = np.array(
-                [[p.x, p.y, p.z] for p in proximal_iv_frame_pts], dtype=np.float64
+    # Densify last, so the inserted points interpolate between final positions
+    # and inherit the ring's planarity for free.
+    if target_n:
+        mesh, prox_pts = _densify_boundary(mesh, prox_pts, target_n)
+        mesh, dist_pts = _densify_boundary(mesh, dist_pts, target_n)
+
+    return prox_pts, dist_pts, mesh
+
+
+def _toward_aorta(
+    ring_centroid: np.ndarray,
+    aorta_pts,
+    fallback: np.ndarray | None,
+) -> tuple[np.ndarray | None, str]:
+    """Direction from the ostial ring into the aorta, and how it was derived.
+
+    Taken from the labelled aortic surface: the vector from the ring centroid to
+    the aortic centroid points into the aortic lumen whatever the take-off angle.
+    The vessel axis is *not* a usable substitute here - an anomalous coronary runs
+    inside the aortic wall, so the lumen lies roughly perpendicular to the axis
+    and the axis can point away from the aorta entirely.  *fallback* is only used
+    when no aortic points are available.
+    """
+    if aorta_pts is not None and len(aorta_pts) > 0:
+        direction = np.asarray(aorta_pts, dtype=np.float64).mean(axis=0) - ring_centroid
+        if np.any(direction):
+            return direction, "aorta_points centroid"
+    if fallback is not None and np.any(fallback):
+        return np.asarray(fallback, dtype=np.float64), "vessel axis (no aorta_points)"
+    return None, "unavailable"
+
+
+def _condition_ostium_ring(
+    mesh: trimesh.Trimesh,
+    ring: list,
+    prox_centroid: tuple[float, float, float],
+    iv_frame_pts,
+    outward: np.ndarray | None,
+    angle_threshold_deg: float,
+    overshoot: float,
+    aorta_pts=None,
+) -> tuple[list, trimesh.Trimesh]:
+    """Keep an ostial boundary ring clear of the IV ostial frame.
+
+    Two corrections, both along a plane normal:
+
+    1. *Whole-plane shift.*  An anomalous ostium can leave the ring's own plane
+       cutting straight through the IV ostial frame.  When that happens the plane
+       is slid toward the aorta - the direction coming from :func:`_toward_aorta`
+       - until it clears every frame point by *overshoot* mm, and the ring is
+       re-projected onto the shifted plane.
+    2. *Per-point clamp.*  The existing correction: where the two planes meet at
+       a steep angle, individual points on the wrong side of - or too close to -
+       the IV plane are clamped, and the two mesh layers behind them are pushed
+       out to avoid a ridge.
+    """
+    if iv_frame_pts is None or len(ring) < 3:
+        return ring, mesh
+
+    iv_arr = np.array([[p.x, p.y, p.z] for p in iv_frame_pts], dtype=np.float64)
+    ring_arr = np.asarray(ring, dtype=np.float64)
+    original = list(ring)
+
+    # 1. Slide the ring's own plane clear of the ostial frame.
+    aorta_dir, dir_source = _toward_aorta(ring_arr.mean(axis=0), aorta_pts, outward)
+    if aorta_dir is not None:
+        shifted_origin, shifted_normal, moved = _shift_plane_clear_of(
+            ring_arr.mean(axis=0),
+            _plane_normal_svd(ring_arr),
+            iv_arr,
+            aorta_dir,
+            overshoot,
+        )
+        if moved > 0.0:
+            print(
+                f"Ostium: boundary plane cut the IV frame; moved it {moved:.2f} mm "
+                f"toward the aorta (direction from {dir_source})."
             )
-            boundary_normal = _plane_normal_svd(boundary_arr)
-            iv_normal = _plane_normal_svd(iv_arr)
-            angle = _angle_between_planes_deg(boundary_normal, iv_normal)
-            if angle >= ostium_angle_threshold_deg:
-                iv_origin = np.array(prox_centroid, dtype=np.float64)
-                prox_boundary_pts_ord = _clamp_to_plane(
-                    prox_boundary_pts_ord,
-                    iv_origin,
-                    iv_normal,
-                    overshoot=clamp_overshoot,
-                )
-                clamping_applied = True
+            ring = _project_onto_plane(ring, shifted_origin, shifted_normal)
+            ring_arr = np.asarray(ring, dtype=np.float64)
 
-        coord_to_idx = {tuple(v): i for i, v in enumerate(mesh.vertices)}
-        new_vertices = mesh.vertices.copy()
-        fixed_indices: set[int] = set()
-        for old_pt, new_pt in zip(proximal_boundary_pts, prox_boundary_pts_ord):
-            idx = coord_to_idx.get(tuple(old_pt))
-            if idx is not None:
-                new_vertices[idx] = new_pt
-                fixed_indices.add(idx)
-        mesh = trimesh.Trimesh(vertices=new_vertices, faces=mesh.faces, process=False)
+    # 2. Clamp individual points against the IV plane when the planes are steep.
+    iv_normal = _plane_normal_svd(iv_arr)
+    clamped = False
+    iv_origin = np.asarray(prox_centroid, dtype=np.float64)
+    if (
+        _angle_between_planes_deg(_plane_normal_svd(ring_arr), iv_normal)
+        >= angle_threshold_deg
+    ):
+        ring = _clamp_to_plane(ring, iv_origin, iv_normal, overshoot=overshoot)
+        clamped = True
 
-        if clamping_applied and fixed_indices:
-            assert iv_origin is not None and iv_normal is not None
-            mesh = _enforce_layer_gap_from_plane(
-                mesh, fixed_indices, iv_origin, iv_normal
-            )
-    else:
-        prox_boundary_pts_ord = proximal_boundary_pts
-
-    # Both rings already come in walk order from the boundary extraction, so no
-    # re-ordering is needed here.
-    dist_boundary_pts_ord = distal_boundary_pts
-
-    return prox_boundary_pts_ord, dist_boundary_pts_ord, mesh
+    mesh, moved_indices = _write_ring_to_mesh(mesh, original, ring)
+    if clamped and moved_indices:
+        mesh = _enforce_layer_gap_from_plane(mesh, moved_indices, iv_origin, iv_normal)
+    return ring, mesh
 
 
 def _project_to_best_fit_plane(
@@ -612,6 +688,229 @@ def _smooth_ring_laplacian(
         neighbor_avg = (np.roll(prev, 1, axis=0) + np.roll(prev, -1, axis=0)) / 2.0
         pts = alpha * prev + (1.0 - alpha) * neighbor_avg
     return [tuple(p) for p in pts]
+
+
+def _redistribute_ring_evenly(
+    points: list[tuple[float, float, float]],
+    n_out: int | None = None,
+) -> list[tuple[float, float, float]]:
+    """Resample a closed ring to evenly spaced points along its own perimeter.
+
+    Walks the ring as a closed polyline and places *n_out* samples at equal
+    arc-length intervals, so clustered vertices spread out and sparse stretches
+    fill in.  Index 0 stays exactly where it was, preserving any start point the
+    caller already chose.  Unlike :func:`_smooth_ring_laplacian` this does not
+    shrink the ring - every sample lands on the original polygon.
+    """
+    pts = np.asarray(points, dtype=np.float64)
+    count = len(pts) if n_out is None else n_out
+    if len(pts) < 3 or count < 3:
+        return [tuple(p) for p in pts]
+
+    loop = np.vstack([pts, pts[:1]])
+    seg_len = np.linalg.norm(np.diff(loop, axis=0), axis=1)
+    cum = np.concatenate([[0.0], np.cumsum(seg_len)])
+    perimeter = float(cum[-1])
+    if perimeter <= 0.0:
+        return [tuple(p) for p in pts]
+
+    out: list[tuple[float, float, float]] = []
+    for target in np.linspace(0.0, perimeter, count, endpoint=False):
+        k = min(int(np.searchsorted(cum, target, side="right") - 1), len(seg_len) - 1)
+        span = float(seg_len[k])
+        frac = 0.0 if span <= 0.0 else (float(target) - float(cum[k])) / span
+        out.append(tuple(loop[k] + frac * (loop[k + 1] - loop[k])))
+    return out
+
+
+def _project_onto_plane(
+    points: list[tuple[float, float, float]],
+    origin: np.ndarray,
+    normal: np.ndarray,
+) -> list[tuple[float, float, float]]:
+    """Orthogonally project *points* onto the plane through *origin*."""
+    pts = np.asarray(points, dtype=np.float64)
+    return [tuple(p) for p in pts - np.outer((pts - origin) @ normal, normal)]
+
+
+def _shift_plane_clear_of(
+    origin: np.ndarray,
+    normal: np.ndarray,
+    points,
+    outward: np.ndarray,
+    overshoot: float,
+) -> tuple[np.ndarray, np.ndarray, float]:
+    """Slide a plane along its normal until it clears a set of points.
+
+    The boundary plane of an anomalous ostium can cut straight through the IV
+    ostial frame.  This re-orients *normal* to point along *outward* (toward the
+    aorta), then translates the plane far enough that every point in *points*
+    sits at least *overshoot* mm behind it.
+
+    Returns the shifted origin, the outward-oriented normal, and how far the
+    plane moved (``0.0`` when it already cleared the points).
+    """
+    n = np.asarray(normal, dtype=np.float64)
+    n = n / np.linalg.norm(n)
+    if float(np.dot(n, np.asarray(outward, dtype=np.float64))) < 0.0:
+        n = -n
+    o = np.asarray(origin, dtype=np.float64)
+
+    signed = (np.asarray(points, dtype=np.float64) - o) @ n
+    worst = float(signed.max())
+    if worst <= -overshoot:
+        return o, n, 0.0
+    shift = worst + overshoot
+    return o + shift * n, n, shift
+
+
+def _write_ring_to_mesh(
+    mesh: trimesh.Trimesh,
+    old_pts: list,
+    new_pts: list,
+) -> tuple[trimesh.Trimesh, set[int]]:
+    """Move the mesh vertices sitting at *old_pts* to *new_pts*.
+
+    Returns the rebuilt mesh and the indices that actually moved, which callers
+    need as seeds for :func:`_enforce_layer_gap_from_plane`.
+    """
+    coord_to_idx = {tuple(v): i for i, v in enumerate(mesh.vertices)}
+    verts = mesh.vertices.copy()
+    moved: set[int] = set()
+    for old, new in zip(old_pts, new_pts):
+        idx = coord_to_idx.get(tuple(old))
+        if idx is not None:
+            verts[idx] = new
+            moved.add(idx)
+    return trimesh.Trimesh(vertices=verts, faces=mesh.faces, process=False), moved
+
+
+def _densify_boundary(
+    mesh: trimesh.Trimesh,
+    ring: list[tuple[float, float, float]],
+    target_n: int,
+) -> tuple[trimesh.Trimesh, list[tuple[float, float, float]]]:
+    r"""Insert points along a boundary ring until it holds *target_n* vertices.
+
+    New points are placed on the ring's own edges, so the rim keeps its shape,
+    and the surplus goes to the longest edges first to keep spacing even.
+
+    A subdivided edge belongs to exactly one surviving face, so that face is
+    replaced by a fan onto its opposite ("third") vertex::
+
+            C                       C
+           / \                    / | \  \
+          /   \        ->        /  |  \    \
+         A-----B                A--P1---P2---B
+
+    Without this the new points would be T-junctions on an edge no face knows
+    about, and the stitched mesh could not close.  A face carrying two rim edges
+    has no corner off the subdivision, so it fans from the polygon centroid
+    instead, avoiding zero-area triangles.
+
+    Returns the rebuilt mesh and the densified ring in walk order.
+    """
+    n = len(ring)
+    extra = target_n - n
+    if n < 3 or extra <= 0:
+        if extra < 0:
+            print(
+                f"Warning: boundary ring has {n} points, more than the target "
+                f"{target_n}; leaving it as it is (reducing it would need edge "
+                f"collapses on the CCTA mesh)."
+            )
+        return mesh, list(ring)
+
+    coord_to_idx = {tuple(v): i for i, v in enumerate(mesh.vertices)}
+    lookup = [coord_to_idx.get(tuple(p)) for p in ring]
+    if any(i is None for i in lookup):
+        print("Warning: boundary ring is not on the mesh; skipping densification.")
+        return mesh, list(ring)
+    idx: list[int] = [int(i) for i in lookup if i is not None]
+
+    # Undirected edge -> incident faces, so each ring edge can find its face(s).
+    edge_faces: dict[frozenset, list[int]] = {}
+    for fi, f in enumerate(mesh.faces):
+        for a, b in ((f[0], f[1]), (f[1], f[2]), (f[2], f[0])):
+            edge_faces.setdefault(frozenset((int(a), int(b))), []).append(fi)
+
+    # Spread the extra points over the ring, longest edge first.
+    verts = mesh.vertices
+    edges = [(idx[i], idx[(i + 1) % n]) for i in range(n)]
+    lengths = [float(np.linalg.norm(verts[b] - verts[a])) for a, b in edges]
+    counts = [extra // n] * n
+    for e in sorted(range(n), key=lambda k: lengths[k], reverse=True)[: extra % n]:
+        counts[e] += 1
+
+    new_pts: list[np.ndarray] = []
+    inserted: dict[tuple[int, int], list[int]] = {}
+    next_idx = len(verts)
+    for (a, b), count in zip(edges, counts):
+        ids: list[int] = []
+        if count:
+            pa, pb = verts[a], verts[b]
+            for j in range(1, count + 1):
+                new_pts.append(pa + (j / (count + 1)) * (pb - pa))
+                ids.append(next_idx)
+                next_idx += 1
+        inserted[(a, b)] = ids
+
+    all_vertices = np.vstack([verts, np.asarray(new_pts, dtype=np.float64)])
+
+    def points_on(a: int, b: int) -> list[int]:
+        """Inserted ids for the directed edge a->b (reversed if stored b->a)."""
+        if inserted.get((a, b)):
+            return inserted[(a, b)]
+        if inserted.get((b, a)):
+            return list(reversed(inserted[(b, a)]))
+        return []
+
+    touched: set[int] = set()
+    for (a, b), ids in inserted.items():
+        if ids:
+            touched.update(edge_faces.get(frozenset((a, b)), []))
+
+    faces: list[tuple[int, int, int]] = [
+        tuple(int(v) for v in f)  # type: ignore[misc]
+        for fi, f in enumerate(mesh.faces)
+        if fi not in touched
+    ]
+    for fi in touched:
+        f = [int(v) for v in mesh.faces[fi]]
+        poly: list[int] = []
+        on_subdivided: set[int] = set()
+        for a, b in ((f[0], f[1]), (f[1], f[2]), (f[2], f[0])):
+            poly.append(a)
+            mids = points_on(a, b)
+            poly.extend(mids)
+            if mids:
+                on_subdivided.update((a, b))
+
+        apex = next((v for v in f if v not in on_subdivided), None)
+        if apex is not None:
+            r = poly.index(apex)
+            rot = poly[r:] + poly[:r]
+            faces.extend((rot[0], rot[i], rot[i + 1]) for i in range(1, len(rot) - 1))
+        else:
+            all_vertices = np.vstack(
+                [all_vertices, all_vertices[poly].mean(axis=0)[None]]
+            )
+            c = len(all_vertices) - 1
+            faces.extend(
+                (c, poly[i], poly[(i + 1) % len(poly)]) for i in range(len(poly))
+            )
+
+    dense: list[tuple[float, float, float]] = []
+    for a, b in edges:
+        dense.append(tuple(all_vertices[a]))
+        dense.extend(tuple(all_vertices[j]) for j in inserted[(a, b)])
+
+    new_mesh = trimesh.Trimesh(
+        vertices=all_vertices,
+        faces=np.asarray(faces, dtype=np.int64),
+        process=False,
+    )
+    return new_mesh, dense
 
 
 def _plane_normal_svd(pts: np.ndarray) -> np.ndarray:
@@ -911,99 +1210,76 @@ def _fix_ring_direction_by_winding(
     return boundary_pts
 
 
-def _stitch_boundary_ring(
+def _stitch_rings(
     boundary_pts: list,
     iv_pts,
-    step: int,
     outward_direction: np.ndarray | None = None,
 ) -> trimesh.Trimesh:
-    """Create a patch mesh stitching an IV lumen ring to a CCTA boundary ring.
+    """Stitch an IV lumen ring to a CCTA boundary ring as a closed triangle strip.
 
-    For each pair of consecutive boundary vertices (b, b+1), *step* IV points
-    are assigned (the first ``r = n_iv % n_boundary`` segments receive
-    ``step + 1`` points to absorb the remainder without gaps).  Each segment
-    is split at its midpoint:
-
-    * Indices [0, mid)      → fan triangles into boundary[b].
-    * Indices [mid, end-1)  → fan triangles into boundary[b+1].
-    * One bridging triangle: (boundary[b], boundary[b+1], iv[mid]).
+    Walks both rings together, each step advancing whichever ring is further
+    behind in normalised perimeter position and emitting one triangle for that
+    advance.  This produces exactly ``len(boundary_pts) + len(iv_pts)``
+    triangles - a complete annulus with no gaps - for any ratio between the two
+    counts.  Equal counts give the obvious quad strip (two triangles per
+    segment); unequal counts spread the extra triangles evenly around the ring
+    instead of bunching them.
 
     Parameters
     ----------
     boundary_pts : list of tuple
         Ordered CCTA boundary vertices.
     iv_pts : list of Point
-        Ordered IV lumen points (with .x / .y / .z attributes).
-    step : int
-        Base number of IV points per boundary segment
-        (``len(iv_pts) // len(boundary_pts)``).
+        Ordered IV lumen points (with ``.x`` / ``.y`` / ``.z``).
+    outward_direction : np.ndarray, optional
+        Vessel-axis direction that should point outward for this patch; the
+        whole patch is flipped when its average normal disagrees.
 
     Returns
     -------
     trimesh.Trimesh
-        Patch mesh with combined vertices and stitching faces.
+        Patch mesh with the boundary vertices first, then the IV vertices.
     """
-    n_boundary = len(boundary_pts)
+    n_b = len(boundary_pts)
     n_iv = len(iv_pts)
-    remainder = n_iv % n_boundary  # extra IV points distributed to first segments
+    if n_b < 3 or n_iv < 3:
+        raise ValueError(
+            f"Need at least 3 points per ring to stitch (got boundary={n_b}, iv={n_iv})."
+        )
 
-    b_arr = np.array(boundary_pts, dtype=np.float64)
+    b_arr = np.asarray(boundary_pts, dtype=np.float64)
     iv_arr = np.array([(p.x, p.y, p.z) for p in iv_pts], dtype=np.float64)
-
-    # Vertices: boundary indices 0..n_boundary-1, IV indices n_boundary..n_boundary+n_iv-1
     vertices = np.vstack([b_arr, iv_arr])
 
-    faces = []
-    iv_start = 0
-
-    for b in range(n_boundary):
-        b_next = (b + 1) % n_boundary
-        seg_len = step + 1 if b < remainder else step
-        iv_end = iv_start + seg_len
-        mid = iv_start + seg_len // 2
-
-        # First half: fan into boundary[b]
-        for i in range(iv_start, mid):
-            i_next = (i + 1) % n_iv
-            faces.append((n_boundary + i, n_boundary + i_next, b))
-
-        # Second half: fan into boundary[b+1]
-        for i in range(mid, iv_end - 1):
-            i_next = (i + 1) % n_iv
-            faces.append((n_boundary + i, n_boundary + i_next, b_next))
-
-        # Bridging triangle connecting both boundary vertices at the midpoint.
-        # Winding is reversed vs the naive (b, b_next, mid) order so that the
-        # shared edges with the adjacent fan triangles are traversed in opposite
-        # directions — the requirement for consistent outward normals.
-        faces.append((b_next, b, n_boundary + (mid % n_iv)))
-
-        iv_start = iv_end
-
-    print(
-        f"Stitching: {len(faces)}/{n_iv} triangles created "
-        f"(n_boundary={n_boundary}, n_iv={n_iv}, step={step}, remainder={remainder})"
-    )
+    faces: list[tuple[int, int, int]] = []
+    i = j = 0
+    while i < n_b or j < n_iv:
+        # Advance whichever ring is behind; ties go to the boundary ring.
+        take_boundary = j >= n_iv or (i < n_b and (i + 1) / n_b <= (j + 1) / n_iv)
+        if take_boundary:
+            faces.append((i % n_b, (i + 1) % n_b, n_b + j % n_iv))
+            i += 1
+        else:
+            faces.append((i % n_b, n_b + (j + 1) % n_iv, n_b + j % n_iv))
+            j += 1
 
     patch = trimesh.Trimesh(
         vertices=vertices,
-        faces=np.array(faces, dtype=np.int64),
+        faces=np.asarray(faces, dtype=np.int64),
         process=False,
     )
 
     if outward_direction is not None:
-        # After the bridging-winding fix all faces in this patch are consistently
-        # oriented, but the whole patch may still face inward (this happens for
-        # the proximal ring because its IV lumen winds in the opposite sense vs
-        # the distal ring when viewed from a fixed external direction).
-        # Compare the average face normal against the known vessel-axis direction
-        # that points outward for this patch.  For an approximately flat annular
-        # patch the average normal is a reliable indicator of face orientation.
-        face_normals = patch.face_normals  # (N, 3), unit normals per face
+        # The strip is internally consistent, but may face inward as a whole -
+        # the proximal IV lumen winds opposite the distal one seen from a fixed
+        # direction.  For a roughly flat annulus the average normal is a reliable
+        # indicator, so compare it against the known outward axis.
+        face_normals = patch.face_normals
         valid = ~np.isnan(face_normals).any(axis=1)
-        if valid.any():
-            avg_normal = face_normals[valid].mean(axis=0)
-            if np.dot(avg_normal, outward_direction) < 0:
-                patch.faces = patch.faces[:, ::-1]
+        if (
+            valid.any()
+            and np.dot(face_normals[valid].mean(axis=0), outward_direction) < 0
+        ):
+            patch.faces = patch.faces[:, ::-1]
 
     return patch
