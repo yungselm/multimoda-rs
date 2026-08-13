@@ -522,13 +522,16 @@ def _prepare_prox_dist_boundary_pts(
 
     # Flatten + even out both rims.  Smoothing removes the in-plane jaggedness
     # that would otherwise show up as ragged stitch triangles; respacing then
-    # makes the interpolated points land uniformly around the ring.
+    # makes the interpolated points land uniformly around the ring.  The
+    # size-preserving smoother matters here: plain Laplacian smoothing shrinks a
+    # coarse ring badly (~16 % at 17 points), which showed up as a distal seam
+    # pinched well inside the vessel.
     prox_pts = _redistribute_ring_evenly(
-        _smooth_ring_laplacian(_project_to_best_fit_plane(prox_ring))
+        _smooth_ring_preserving_size(_project_to_best_fit_plane(prox_ring))
     )
     mesh, _ = _write_ring_to_mesh(mesh, prox_ring, prox_pts)
     dist_pts = _redistribute_ring_evenly(
-        _smooth_ring_laplacian(_project_to_best_fit_plane(dist_ring))
+        _smooth_ring_preserving_size(_project_to_best_fit_plane(dist_ring))
     )
     mesh, _ = _write_ring_to_mesh(mesh, dist_ring, dist_pts)
 
@@ -688,6 +691,52 @@ def _smooth_ring_laplacian(
         neighbor_avg = (np.roll(prev, 1, axis=0) + np.roll(prev, -1, axis=0)) / 2.0
         pts = alpha * prev + (1.0 - alpha) * neighbor_avg
     return [tuple(p) for p in pts]
+
+
+def _ring_calibre(pts: np.ndarray) -> float:
+    """Mean distance from a ring's centroid - its effective radius.
+
+    Preferred over perimeter as a size measure for a noisy ring: radial noise
+    averages out here, whereas it inflates path length, so perimeter would read a
+    jagged ring as much larger than a smooth one of the same diameter.
+    """
+    return float(np.linalg.norm(pts - pts.mean(axis=0), axis=1).mean())
+
+
+def _smooth_ring_preserving_size(
+    points: list[tuple[float, float, float]],
+    iterations: int = 5,
+    alpha: float = 0.5,
+) -> list[tuple[float, float, float]]:
+    """Laplacian-smooth a closed ring without shrinking it.
+
+    Plain Laplacian smoothing pulls every vertex toward the midpoint of its two
+    neighbours, which contracts a closed ring on every pass.  For an evenly
+    spaced ring of *n* points the calibre drops by roughly
+    ``(alpha + (1 - alpha) * cos(2*pi/n)) ** iterations``, so coarse rings lose
+    the most - about 16 % at 17 points versus 6 % at 29 and under 1 % at 100.
+    That is far too much for a boundary ring, whose diameter has to keep matching
+    the vessel.
+
+    This smooths as before, then scales the result about its centroid to restore
+    the original calibre, removing jaggedness without losing diameter.
+    """
+    pts = np.asarray(points, dtype=np.float64)
+    if len(pts) < 3:
+        return [tuple(p) for p in pts]
+
+    before = _ring_calibre(pts)
+    smoothed = np.asarray(
+        _smooth_ring_laplacian([tuple(p) for p in pts], iterations, alpha),
+        dtype=np.float64,
+    )
+    after = _ring_calibre(smoothed)
+    if before <= 0.0 or after <= 0.0:
+        return [tuple(p) for p in smoothed]
+
+    centroid = smoothed.mean(axis=0)
+    restored = centroid + (smoothed - centroid) * (before / after)
+    return [tuple(p) for p in restored]
 
 
 def _redistribute_ring_evenly(
