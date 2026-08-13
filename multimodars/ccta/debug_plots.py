@@ -8,7 +8,7 @@ import trimesh
 from trimesh.points import PointCloud
 from trimesh.visual import ColorVisuals
 
-from ..multimodars import build_adjacency_map
+from .stitching import _open_boundary_edges, _order_boundary_rings
 
 if TYPE_CHECKING:
     from ..multimodars import PyCenterline, PyDiscretizedVesselTree
@@ -512,64 +512,21 @@ def plot_sharp_angles(
     trimesh.Scene(scene_geoms).show()
 
 
-def _order_boundary_rings(
-    boundary_indices: set[int],
-    adj_map,
-) -> list[list[int]]:
-    """Walk each connected boundary component into an ordered ring of vertex indices.
-
-    Local copy of the ordering logic used by
-    :func:`~multimodars.ccta.stitching._order_boundary_components` so the debug
-    plot stays self-contained.  Adjacency is restricted to boundary vertices,
-    then each component is traced edge-by-edge; disconnected regions (e.g. two
-    separate removals) come back as separate rings.
-    """
-    if not boundary_indices:
-        return []
-    if len(boundary_indices) == 1:
-        return [list(boundary_indices)]
-
-    ring_adj = {
-        i: [j for j in adj_map.get(i, []) if j in boundary_indices]
-        for i in boundary_indices
-    }
-
-    remaining = set(boundary_indices)
-    rings: list[list[int]] = []
-    while remaining:
-        start = next(iter(remaining))
-        ring = [start]
-        remaining.discard(start)
-        prev, current = -1, start
-        while True:
-            nxt = next(
-                (n for n in ring_adj.get(current, []) if n != prev and n in remaining),
-                None,
-            )
-            if nxt is None:
-                break
-            ring.append(nxt)
-            remaining.discard(nxt)
-            prev, current = current, nxt
-        rings.append(ring)
-    return rings
-
-
 def plot_boundary_edges(
     results: dict,
     key: str = "boundary_points",
     show_mesh: bool = True,
+    target_boundaries: int = 1,
 ) -> None:
     """Open an interactive trimesh scene of a stored boundary ring set and its edges.
 
-    Reconstructs the boundary as one or more ordered rings (matching
-    :func:`~multimodars.ccta.stitching._order_boundary_components`), draws each
-    ring's edges as connected line segments, and colours the ring vertices
-    red -> blue by their walk order.  This makes both the seam direction and any
-    split into multiple disconnected rings immediately visible - useful after
-    :func:`~multimodars.ccta.stitching.remove_labeled_points_from_mesh`, whose
-    ``"boundary_points"`` list is a flat concatenation that hides the ring
-    structure.
+    Re-orders the stored boundary into clean rings with the same routine the
+    trimming code uses (:func:`~multimodars.ccta.stitching._order_boundary_rings`
+    - chord-free connectivity from the mesh's open edges, spikes/stragglers
+    pruned), draws each ring's edges as connected line segments, and colours the
+    ring vertices red -> blue by their walk order.  This makes both the seam
+    direction and any split into multiple disconnected rings immediately
+    visible.
 
     Colour coding
     -------------
@@ -587,6 +544,9 @@ def plot_boundary_edges(
         ``"dist_boundary_points"`` to inspect the stitching seams instead.
     show_mesh : bool
         Include the mesh in the scene for context.
+    target_boundaries : int
+        Number of rings to reduce the boundary to (passed through to
+        :func:`~multimodars.ccta.stitching._order_boundary_rings`).
     """
     print("\n=== BOUNDARY EDGES PLOT ===")
 
@@ -608,12 +568,24 @@ def plot_boundary_edges(
         print("Nothing to show - no boundary point matched a mesh vertex.")
         return
 
-    adj_map = build_adjacency_map(mesh.faces.tolist())
-    rings = _order_boundary_rings(boundary_indices, adj_map)
+    rings = _order_boundary_rings(
+        mesh.faces,
+        mesh.vertices,
+        boundary_indices,
+        target_n=target_boundaries,
+    )
     print(
         f"  {len(boundary_indices)} points in {len(rings)} ring(s): "
         f"{[len(r) for r in rings]}"
     )
+
+    # Open boundary edges of this rim, for an honest loop-closure test.
+    bnd_edges = _open_boundary_edges(mesh.faces)
+    edge_set = {
+        frozenset((int(a), int(b)))
+        for a, b in bnd_edges
+        if a in boundary_indices and b in boundary_indices
+    }
 
     scene_geoms: list = []
     if show_mesh:
@@ -644,9 +616,9 @@ def plot_boundary_edges(
         scene_geoms.append(PointCloud(coords, colors=colors))
 
         # Edges: connect consecutive ring vertices.  Close the loop only when the
-        # ring's ends are genuinely adjacent, so an open path gets no false edge.
+        # ring's ends are a real boundary edge, so an open arc gets no false edge.
         segs = np.stack([coords[:-1], coords[1:]], axis=1)
-        closed = n > 2 and ring[0] in adj_map.get(ring[-1], [])
+        closed = n > 2 and frozenset((ring[0], ring[-1])) in edge_set
         if closed:
             segs = np.concatenate([segs, coords[[n - 1, 0]][None]], axis=0)
         if len(segs):
