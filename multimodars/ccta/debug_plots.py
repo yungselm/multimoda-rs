@@ -8,6 +8,8 @@ import trimesh
 from trimesh.points import PointCloud
 from trimesh.visual import ColorVisuals
 
+from ..multimodars import build_adjacency_map
+
 if TYPE_CHECKING:
     from ..multimodars import PyCenterline, PyDiscretizedVesselTree
 
@@ -506,5 +508,152 @@ def plot_sharp_angles(
             continue
         arr = np.array([(p.x, p.y, p.z) for p in segment], dtype=np.float64)
         scene_geoms.append(_make_point_cloud(arr, _PALETTE[i % len(_PALETTE)]))
+
+    trimesh.Scene(scene_geoms).show()
+
+
+def _order_boundary_rings(
+    boundary_indices: set[int],
+    adj_map,
+) -> list[list[int]]:
+    """Walk each connected boundary component into an ordered ring of vertex indices.
+
+    Local copy of the ordering logic used by
+    :func:`~multimodars.ccta.stitching._order_boundary_components` so the debug
+    plot stays self-contained.  Adjacency is restricted to boundary vertices,
+    then each component is traced edge-by-edge; disconnected regions (e.g. two
+    separate removals) come back as separate rings.
+    """
+    if not boundary_indices:
+        return []
+    if len(boundary_indices) == 1:
+        return [list(boundary_indices)]
+
+    ring_adj = {
+        i: [j for j in adj_map.get(i, []) if j in boundary_indices]
+        for i in boundary_indices
+    }
+
+    remaining = set(boundary_indices)
+    rings: list[list[int]] = []
+    while remaining:
+        start = next(iter(remaining))
+        ring = [start]
+        remaining.discard(start)
+        prev, current = -1, start
+        while True:
+            nxt = next(
+                (n for n in ring_adj.get(current, []) if n != prev and n in remaining),
+                None,
+            )
+            if nxt is None:
+                break
+            ring.append(nxt)
+            remaining.discard(nxt)
+            prev, current = current, nxt
+        rings.append(ring)
+    return rings
+
+
+def plot_boundary_edges(
+    results: dict,
+    key: str = "boundary_points",
+    show_mesh: bool = True,
+) -> None:
+    """Open an interactive trimesh scene of a stored boundary ring set and its edges.
+
+    Reconstructs the boundary as one or more ordered rings (matching
+    :func:`~multimodars.ccta.stitching._order_boundary_components`), draws each
+    ring's edges as connected line segments, and colours the ring vertices
+    red -> blue by their walk order.  This makes both the seam direction and any
+    split into multiple disconnected rings immediately visible - useful after
+    :func:`~multimodars.ccta.stitching.remove_labeled_points_from_mesh`, whose
+    ``"boundary_points"`` list is a flat concatenation that hides the ring
+    structure.
+
+    Colour coding
+    -------------
+    * Mesh - light gray, semi-transparent.
+    * Ring vertices - red (ring start) -> blue (ring end) gradient.
+    * Ring edges - one distinct colour per connected ring.
+
+    Parameters
+    ----------
+    results : dict
+        Must contain ``"mesh"`` and *key*.
+    key : str
+        Which stored point list to treat as the boundary.  Defaults to
+        ``"boundary_points"``; pass ``"prox_boundary_points"`` or
+        ``"dist_boundary_points"`` to inspect the stitching seams instead.
+    show_mesh : bool
+        Include the mesh in the scene for context.
+    """
+    print("\n=== BOUNDARY EDGES PLOT ===")
+
+    mesh: trimesh.Trimesh = results["mesh"]
+    pts = results.get(key, [])
+    if not pts:
+        print(f"Nothing to show - results['{key}'] is empty or missing.")
+        return
+
+    # Map the stored boundary coordinates back to their mesh vertex indices.
+    coord_to_idx = {tuple(v): i for i, v in enumerate(mesh.vertices)}
+    boundary_indices = {
+        idx for pt in pts if (idx := coord_to_idx.get(tuple(pt))) is not None
+    }
+    missing = len(pts) - len(boundary_indices)
+    if missing:
+        print(f"  {missing} boundary point(s) not found on the mesh - skipped.")
+    if not boundary_indices:
+        print("Nothing to show - no boundary point matched a mesh vertex.")
+        return
+
+    adj_map = build_adjacency_map(mesh.faces.tolist())
+    rings = _order_boundary_rings(boundary_indices, adj_map)
+    print(
+        f"  {len(boundary_indices)} points in {len(rings)} ring(s): "
+        f"{[len(r) for r in rings]}"
+    )
+
+    scene_geoms: list = []
+    if show_mesh:
+        mesh_visual = mesh.copy()
+        cast(ColorVisuals, mesh_visual.visual).face_colors = [200, 200, 200, 100]
+        scene_geoms.append(mesh_visual)
+
+    _RING_COLORS = [
+        [255, 127, 14, 255],
+        [44, 160, 44, 255],
+        [148, 103, 189, 255],
+        [140, 86, 75, 255],
+    ]
+    for r, ring in enumerate(rings):
+        coords = mesh.vertices[ring]
+        n = len(ring)
+
+        # Red (ring start) -> blue (ring end) gradient so walk order is visible.
+        t = (np.arange(n) / max(1, n - 1))[:, None]
+        colors = np.hstack(
+            [
+                (255 * (1 - t)).astype(np.uint8),  # R
+                np.zeros((n, 1), dtype=np.uint8),  # G
+                (255 * t).astype(np.uint8),  # B
+                np.full((n, 1), 255, dtype=np.uint8),  # A
+            ]
+        )
+        scene_geoms.append(PointCloud(coords, colors=colors))
+
+        # Edges: connect consecutive ring vertices.  Close the loop only when the
+        # ring's ends are genuinely adjacent, so an open path gets no false edge.
+        segs = np.stack([coords[:-1], coords[1:]], axis=1)
+        closed = n > 2 and ring[0] in adj_map.get(ring[-1], [])
+        if closed:
+            segs = np.concatenate([segs, coords[[n - 1, 0]][None]], axis=0)
+        if len(segs):
+            path = trimesh.load_path(segs)
+            path.colors = np.tile(
+                _RING_COLORS[r % len(_RING_COLORS)], (len(path.entities), 1)
+            )
+            scene_geoms.append(path)
 
     trimesh.Scene(scene_geoms).show()

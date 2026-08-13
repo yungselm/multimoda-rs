@@ -233,8 +233,12 @@ def _order_boundary_components(
 ) -> list[list[int]]:
     """Walk every connected component of the boundary in edge order.
 
-    Returns one ordered list per component so callers can project each ring
-    onto its own best-fit plane rather than a combined plane fitted to all rings.
+    Returns
+    -------
+    list[list[int]]
+        A list of ring components, one ordered list of vertex indices per
+        connected boundary ring, so callers can project each ring onto its own
+        best-fit plane rather than a combined plane fitted to all rings.
     """
     if not boundary_indices:
         return []
