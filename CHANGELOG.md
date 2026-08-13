@@ -3,12 +3,54 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [0.6.1] -2026-08-11
+## [0.7.0] - 2026-08-13
+
+### Added
+- New `ccta/boundary.py` owning open-boundary ring extraction, shared by the trimming and debug-plot
+  paths: `open_boundary_edges`, `order_boundary_rings` (read-only) and `clean_open_boundary`.
+- `remove_labeled_points_from_mesh`/`keep_labeled_points_from_mesh` take `target_boundaries`
+  (default 1) and now also store the boundary per ring as `boundary_points_1`, `boundary_points_2`,
+  … in walk order. Removing a mid-vessel segment leaves two rings, so stitching needs
+  `target_boundaries=2`.
+- `stitch_ccta_to_intravascular` takes `boundary_point_ratio` (default 1.0): the boundary ring is
+  densified to `round(ratio * n_points_iv_cont)` points, so 1.0 gives a 1:1 quad strip.
+- `plot_boundary_edges` debug scene, drawing each ring's edges coloured red→blue by walk order.
+
+### Changed
+- Ring connectivity now comes from open boundary edges instead of full vertex adjacency, so an
+  interior chord can't invent a junction or fragment a ring; rims are selected as whole connected
+  components, so a hole merging with a pre-existing opening stays intact.
+- Rim vertices that can't form a clean ring (stragglers, hairs, pinch junctions, spikes) are now
+  deleted from the mesh, not just skipped in the ring list.
+- `stitch_ccta_to_intravascular` assigns whole rings to the two intravascular ends by closest
+  centroid pairing, instead of splitting a flat point list per point - which could tear one ring
+  across both seams. Fewer than two rings raises `ValueError` instead of `ZeroDivisionError`.
+- Both rings are now conditioned identically (projected, smoothed, respaced, densified); previously
+  only the proximal ostium ring was, so expect a visible change at the distal seam.
+- Anomalous ostia gain a whole-plane correction: when the boundary plane cuts the intravascular
+  ostial frame, the plane is slid toward the aorta until it clears by `clamp_overshoot` mm.
+- `order_points_list` no longer called during stitching - rings now arrive ordered.
+
+### Fixed
+- `_stitch_boundary_ring` emitted `n_iv` triangles where a closed annulus needs `n_boundary + n_iv`,
+  leaving one hole per boundary segment at every ratio - the surface only closed because
+  `fill_holes` ran afterwards. Replaced by `_stitch_rings`.
+- The ostium plane was slid along the vessel axis as a proxy for "toward the aorta", but an
+  intramural coronary runs inside the aortic wall, so the lumen lies roughly perpendicular to that
+  axis and the ring could be pushed the wrong way. Direction now taken from `aorta_points`.
+- Laplacian smoothing shrank boundary rings, worst on coarse ones (~16% calibre at 17 points),
+  leaving a pinched distal rim. Smoothing now restores the ring's original calibre.
+- Points inserted along a boundary edge left T-junctions; the adjacent face is now retriangulated
+  onto its opposite vertex.
+- `docs/api/adjust_ccta.rst` referenced the removed `ccta.manipulating` module, so the scaling
+  functions were silently missing from the API reference.
+
+## [0.6.1] - 2026-08-11
 
 ### Fix
 - `remove_branch_overlap` only considered the main branch and didn't clean up the side branches.
 
-## [0.6.0] -2026-08-07
+## [0.6.0] - 2026-08-07
 
 ### Changed
 - `Centerline`/`PyCenterline` API reorganised around a load → prepare → branch → order → smooth
@@ -94,7 +136,7 @@ sphere radii for LCA and RCA.
 - the pre-commit hook now references the version in the current .venv, otherwise resulted in 
 sporadic errors.
 
-## [0.5.2] -2026-07-09
+## [0.5.2] - 2026-07-09
 
 ### Fixed
 - `label_anomalous_region` could leave a handful of mesh vertices mislabeled into
@@ -151,7 +193,7 @@ sporadic errors.
   `Centerline`, removing an unnecessary clone at each of its two call sites in
   `remove_occluded_points_ray_triangle_rust`.
 
-## [0.5.1] -2026-07-09
+## [0.5.1] - 2026-07-09
 
 ### Changed
 - Refactored `label_coronary` to use nalgebra
