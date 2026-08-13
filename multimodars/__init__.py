@@ -55,7 +55,6 @@ from .ccta.centerline_prep import (
 from .ccta.stitching import (
     remove_labeled_points_from_mesh,
     keep_labeled_points_from_mesh,
-    sync_results_to_mesh,
     stitch_ccta_to_intravascular,
 )
 from .ccta.scaling import (
@@ -63,6 +62,7 @@ from .ccta.scaling import (
     find_distal_and_proximal_scaling,
     find_aorta_scaling,
     find_aortic_wall_scaling,
+    sync_results_to_mesh,
 )
 from .ccta.discretization_map import (
     label_branches_pair,

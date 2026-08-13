@@ -177,18 +177,18 @@ def scale(
     """Scale the distal, proximal, and aortic regions of the vessel mesh.
 
     1. Computes proximal and distal radial scaling factors via
-       :func:`manipulating.find_distal_and_proximal_scaling`, which matches
+       :func:`scaling.find_distal_and_proximal_scaling`, which matches
        the anomalous segment endpoints to lumen wall points from the first and
        last intravascular frames.
     2. Computes an aortic radial scaling factor via
-       :func:`manipulating.find_aorta_scaling`, which aligns removed RCA points
+       :func:`scaling.find_aorta_scaling`, which aligns removed RCA points
        to reconstructed aortic wall points from the frames.
     3. Applies the scaling in sequence — distal, then aortic (``aorta_points``
        + ``rca_removed_points``), then proximal — using
-       :func:`manipulating.scale_region_centerline_morphing`, which displaces
+       :func:`scaling.scale_region_centerline_morphing`, which displaces
        each vertex radially around the nearest centerline point.
     4. After each aortic/proximal scaling step,
-       :func:`manipulating.sync_results_to_mesh` remaps all coordinate lists
+       :func:`scaling.sync_results_to_mesh` remaps all coordinate lists
        in *results* to the updated vertex positions.
 
     Parameters
@@ -235,7 +235,7 @@ def scale(
         centerline=cl_vessel,
         diameter_adjustment_mm=distal_scaling,
     )
-    results = stitching.sync_results_to_mesh(results, results["mesh"], scaled_distal)
+    results = scaling.sync_results_to_mesh(results, results["mesh"], scaled_distal)
 
     scaled_distal_aortic = scaling.scale_region_centerline_morphing(
         mesh=results["mesh"],
@@ -243,7 +243,7 @@ def scale(
         centerline=cl_aorta,
         diameter_adjustment_mm=aortic_scaling,
     )
-    results = stitching.sync_results_to_mesh(
+    results = scaling.sync_results_to_mesh(
         results, results["mesh"], scaled_distal_aortic
     )
 
@@ -253,7 +253,7 @@ def scale(
         centerline=cl_vessel,
         diameter_adjustment_mm=prox_scaling,
     )
-    results = stitching.sync_results_to_mesh(results, results["mesh"], scaled_proximal)
+    results = scaling.sync_results_to_mesh(results, results["mesh"], scaled_proximal)
 
     return results
 

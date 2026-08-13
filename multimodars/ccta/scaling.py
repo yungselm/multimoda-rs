@@ -296,3 +296,54 @@ def _extract_wall_from_frames(frames) -> list[tuple[float, float, float]] | None
         ]
 
     return reference_points
+
+
+def sync_results_to_mesh(
+    results: dict,
+    old_mesh: trimesh.Trimesh,
+    new_mesh: trimesh.Trimesh,
+) -> dict:
+    """Update all coordinate lists in *results* after vertices have been moved.
+
+    Use this after :func:`scale_region_centerline_morphing` to keep the stored
+    point lists consistent with the new vertex positions.  The two meshes must
+    have the same vertex count and ordering (only positions change, no vertices
+    are added or removed).
+
+    Parameters
+    ----------
+    results : dict
+        Results dict whose coordinate lists should be refreshed.
+    old_mesh : trimesh.Trimesh
+        The mesh whose vertex positions match the current coordinate lists.
+    new_mesh : trimesh.Trimesh
+        The mesh with updated vertex positions (same indices, new coordinates).
+
+    Returns
+    -------
+    dict
+        Updated *results* with ``"mesh"`` replaced by *new_mesh* and all
+        coordinate lists remapped to the new vertex positions.
+    """
+    old_coord_to_idx = {tuple(v): i for i, v in enumerate(old_mesh.vertices)}
+
+    updated = dict(results)
+    updated["mesh"] = new_mesh
+
+    for key in (
+        "aorta_points",
+        "rca_points",
+        "lca_points",
+        "rca_removed_points",
+        "lca_removed_points",
+        "proximal_points",
+        "distal_points",
+        "anomalous_points",
+        "boundary_points",
+    ):
+        if key not in updated or not updated[key]:
+            continue
+        indices = [old_coord_to_idx.get(tuple(p)) for p in updated[key]]
+        updated[key] = [tuple(new_mesh.vertices[i]) for i in indices if i is not None]
+
+    return updated

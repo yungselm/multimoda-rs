@@ -12,161 +12,6 @@ from ..multimodars import (
 from .._converters import geometry_to_trimesh
 
 
-def _fast_fix_normals(mesh: trimesh.Trimesh) -> None:
-    """Drop-in replacement for ``trimesh.Trimesh.fix_normals()``.
-
-    trimesh's own ``fix_winding`` does a Python/NetworkX BFS over the
-    face-adjacency graph with several small numpy allocations per edge -
-    O(n_edges) with heavy per-iteration overhead (e.g. ~3.9s on a ~52k-face
-    mesh). ``fix_mesh_winding`` is a Rust port of the same BFS-consistency
-    algorithm; ``fix_inversion`` (the volume-sign flip check) is already
-    vectorized numpy in trimesh, so it's left as-is.
-    """
-    mesh.faces = np.array(fix_mesh_winding(mesh.faces.tolist()), dtype=mesh.faces.dtype)
-    trimesh.repair.fix_inversion(mesh, multibody=False)
-
-
-def _project_to_best_fit_plane(
-    points: list[tuple[float, float, float]],
-) -> list[tuple[float, float, float]]:
-    """Project a ring of boundary points onto their best-fit plane.
-
-    Fits a plane via SVD (the plane normal is the direction of minimum variance)
-    and orthogonally projects every point onto it, flattening noise perpendicular
-    to the ring.
-    """
-    if len(points) < 3:
-        return points
-    pts = np.array(points, dtype=np.float64)
-    centroid = pts.mean(axis=0)
-    _, _, Vt = np.linalg.svd(pts - centroid, full_matrices=False)
-    normal = Vt[-1]
-    distances = (pts - centroid) @ normal
-    projected = pts - np.outer(distances, normal)
-    return [tuple(p) for p in projected]
-
-
-def _plane_normal_svd(pts: np.ndarray) -> np.ndarray:
-    """Best-fit plane normal for a point cloud via SVD (minimum-variance axis)."""
-    centroid = pts.mean(axis=0)
-    _, _, Vt = np.linalg.svd(pts - centroid, full_matrices=False)
-    return Vt[-1]
-
-
-def _angle_between_planes_deg(n1: np.ndarray, n2: np.ndarray) -> float:
-    """Acute angle in degrees between two planes given their normals."""
-    cos = np.clip(np.abs(np.dot(n1, n2)), 0.0, 1.0)
-    return float(np.degrees(np.arccos(cos)))
-
-
-def _clamp_to_plane(
-    points: list[tuple[float, float, float]],
-    plane_origin: np.ndarray,
-    plane_normal: np.ndarray,
-    overshoot: float = 0.0,
-) -> list[tuple[float, float, float]]:
-    """Clamp wrong-side points to the IV plane, then enforce a minimum gap.
-
-    Step 1: project any point on the wrong side of the plane onto it.
-    Step 2: if ``overshoot`` > 0, every point (including freshly clamped ones
-    that now sit exactly on the plane) that is within ``overshoot`` mm of the
-    plane on the correct side is pushed further away until it is exactly
-    ``overshoot`` mm from the plane.  This creates a clean buffer zone between
-    the aortic boundary ring and the IV ostium plane, avoiding the sharp angle
-    that would otherwise form.
-    """
-    pts = np.array(points, dtype=np.float64)
-    dists = (pts - plane_origin) @ plane_normal
-    correct_sign = np.sign(np.median(dists))
-
-    # Step 1: project wrong-side points onto the plane
-    wrong = (np.sign(dists) != correct_sign) & (dists != 0.0)
-    pts[wrong] -= np.outer(dists[wrong], plane_normal)
-
-    if overshoot > 0.0:
-        # Step 2: recompute distances and push any point within the buffer zone
-        # further away on the aortic (correct) side
-        dists2 = (pts - plane_origin) @ plane_normal
-        signed_dist = correct_sign * dists2  # positive = on correct side
-        too_close = signed_dist < overshoot
-        deficit = overshoot - signed_dist[too_close]
-        pts[too_close] += np.outer(deficit * correct_sign, plane_normal)
-
-    return [tuple(p) for p in pts]
-
-
-def _smooth_ring_laplacian(
-    points: list[tuple[float, float, float]],
-    iterations: int = 5,
-    alpha: float = 0.5,
-) -> list[tuple[float, float, float]]:
-    """Laplacian smoothing of a closed boundary ring.
-
-    Each vertex is blended toward the midpoint of its two ring neighbors.
-    Since the input is already coplanar, the result stays on the same plane
-    (a linear combination of coplanar points is coplanar).
-
-    Parameters
-    ----------
-    iterations : int
-        Number of smoothing passes.
-    alpha : float
-        Weight kept on the original position (0 = full Laplacian, 1 = no-op).
-    """
-    if len(points) < 3:
-        return points
-    pts = np.array(points, dtype=np.float64)
-    for _ in range(iterations):
-        prev = pts.copy()
-        neighbor_avg = (np.roll(prev, 1, axis=0) + np.roll(prev, -1, axis=0)) / 2.0
-        pts = alpha * prev + (1.0 - alpha) * neighbor_avg
-    return [tuple(p) for p in pts]
-
-
-def _order_boundary_components(
-    boundary_indices: set[int],
-    adj_map: Mapping[int, list[int] | set[int]],
-) -> list[list[int]]:
-    """Walk every connected component of the boundary in edge order.
-
-    Returns one ordered list per component so callers can project each ring
-    onto its own best-fit plane rather than a combined plane fitted to all rings.
-    """
-    if not boundary_indices:
-        return []
-    if len(boundary_indices) == 1:
-        return [list(boundary_indices)]
-
-    ring_adj = {
-        i: [j for j in adj_map.get(i, []) if j in boundary_indices]
-        for i in boundary_indices
-    }
-
-    remaining = set(boundary_indices)
-    components: list[list[int]] = []
-
-    while remaining:
-        start = next(iter(remaining))
-        component = [start]
-        remaining.discard(start)
-        prev, current = -1, start
-
-        while True:
-            nxt = next(
-                (n for n in ring_adj.get(current, []) if n != prev and n in remaining),
-                None,
-            )
-            if nxt is None:
-                break
-            component.append(nxt)
-            remaining.discard(nxt)
-            prev, current = current, nxt
-
-        components.append(component)
-
-    return components
-
-
 def remove_labeled_points_from_mesh(
     results: dict,
     region_keys: list[str] | str = "anomalous_points",
@@ -382,69 +227,48 @@ def keep_labeled_points_from_mesh(
     return updated
 
 
-def sync_results_to_mesh(
-    results: dict,
-    old_mesh: trimesh.Trimesh,
-    new_mesh: trimesh.Trimesh,
-) -> dict:
-    """Update all coordinate lists in *results* after vertices have been moved.
+def _order_boundary_components(
+    boundary_indices: set[int],
+    adj_map: Mapping[int, list[int] | set[int]],
+) -> list[list[int]]:
+    """Walk every connected component of the boundary in edge order.
 
-    Use this after :func:`scale_region_centerline_morphing` to keep the stored
-    point lists consistent with the new vertex positions.  The two meshes must
-    have the same vertex count and ordering (only positions change, no vertices
-    are added or removed).
-
-    Parameters
-    ----------
-    results : dict
-        Results dict whose coordinate lists should be refreshed.
-    old_mesh : trimesh.Trimesh
-        The mesh whose vertex positions match the current coordinate lists.
-    new_mesh : trimesh.Trimesh
-        The mesh with updated vertex positions (same indices, new coordinates).
-
-    Returns
-    -------
-    dict
-        Updated *results* with ``"mesh"`` replaced by *new_mesh* and all
-        coordinate lists remapped to the new vertex positions.
+    Returns one ordered list per component so callers can project each ring
+    onto its own best-fit plane rather than a combined plane fitted to all rings.
     """
-    old_coord_to_idx = {tuple(v): i for i, v in enumerate(old_mesh.vertices)}
+    if not boundary_indices:
+        return []
+    if len(boundary_indices) == 1:
+        return [list(boundary_indices)]
 
-    updated = dict(results)
-    updated["mesh"] = new_mesh
+    ring_adj = {
+        i: [j for j in adj_map.get(i, []) if j in boundary_indices]
+        for i in boundary_indices
+    }
 
-    for key in (
-        "aorta_points",
-        "rca_points",
-        "lca_points",
-        "rca_removed_points",
-        "lca_removed_points",
-        "proximal_points",
-        "distal_points",
-        "anomalous_points",
-        "boundary_points",
-    ):
-        if key not in updated or not updated[key]:
-            continue
-        indices = [old_coord_to_idx.get(tuple(p)) for p in updated[key]]
-        updated[key] = [tuple(new_mesh.vertices[i]) for i in indices if i is not None]
+    remaining = set(boundary_indices)
+    components: list[list[int]] = []
 
-    return updated
+    while remaining:
+        start = next(iter(remaining))
+        component = [start]
+        remaining.discard(start)
+        prev, current = -1, start
 
+        while True:
+            nxt = next(
+                (n for n in ring_adj.get(current, []) if n != prev and n in remaining),
+                None,
+            )
+            if nxt is None:
+                break
+            component.append(nxt)
+            remaining.discard(nxt)
+            prev, current = current, nxt
 
-def _rotate_to_nearest_iv(boundary_pts: list, iv_pt) -> list:
-    """Rotate a boundary ring so the point nearest to *iv_pt* is first."""
-    iv_arr = np.array([iv_pt.x, iv_pt.y, iv_pt.z])
-    dists = [np.linalg.norm(np.array(pt) - iv_arr) for pt in boundary_pts]
-    start_idx = int(np.argmin(dists))
-    return boundary_pts[start_idx:] + boundary_pts[:start_idx]
+        components.append(component)
 
-
-def _adjust_start_point_by_z(boundary_pts: list) -> list:
-    """Rotate a boundary ring so the point with the highest z-value is first."""
-    start_idx = int(np.argmax([pt[2] for pt in boundary_pts]))
-    return boundary_pts[start_idx:] + boundary_pts[:start_idx]
+    return components
 
 
 def stitch_ccta_to_intravascular(
@@ -572,59 +396,6 @@ def stitch_ccta_to_intravascular(
     return results
 
 
-def _enforce_layer_gap_from_plane(
-    mesh: trimesh.Trimesh,
-    seed_indices: set[int],
-    plane_origin: np.ndarray,
-    plane_normal: np.ndarray,
-    layer_step_mm: float = 0.1,
-    n_rings: int = 2,
-) -> trimesh.Trimesh:
-    """Push neighboring mesh rings radially away from the IV ring center.
-
-    The boundary ring was clamped toward the IV plane, which can leave second-
-    and third-layer aortic vertices sitting closer to the coronary axis than
-    the boundary ring itself — creating a visible ridge.  The fix is to push
-    those vertices outward *within* the IV plane (i.e. along the aortic
-    surface, away from the coronary center), not perpendicular to it.
-
-    Ring k is displaced by ``k * layer_step_mm`` in the radial direction:
-    the projection of the vertex onto the IV plane, measured from the IV
-    ring centre (``plane_origin``), gives the outward direction.
-    """
-    adj_map = build_adjacency_map(mesh.faces.tolist())
-    new_vertices = mesh.vertices.copy()
-
-    frontier = set(seed_indices)
-    visited = set(seed_indices)
-
-    for ring in range(1, n_rings + 1):
-        push_dist = ring * layer_step_mm
-        next_frontier = set()
-        for vi in frontier:
-            for nb in adj_map.get(vi, []):
-                if nb not in visited:
-                    next_frontier.add(nb)
-
-        for vi in next_frontier:
-            p = new_vertices[vi]
-            # Project the vertex onto the IV plane to get its lateral position
-            p_proj = p - float(np.dot(p - plane_origin, plane_normal)) * plane_normal
-            # Radial direction: from IV ring centre outward, within the IV plane
-            radial = p_proj - plane_origin
-            r_norm = np.linalg.norm(radial)
-            if r_norm < 1e-10:
-                continue
-            new_vertices[vi] = p + (push_dist / r_norm) * radial
-
-        visited.update(next_frontier)
-        frontier = next_frontier
-        if not frontier:
-            break
-
-    return trimesh.Trimesh(vertices=new_vertices, faces=mesh.faces, process=False)
-
-
 def _prepare_prox_dist_boundary_pts(
     mesh: trimesh.Trimesh,
     results: dict,
@@ -697,6 +468,156 @@ def _prepare_prox_dist_boundary_pts(
     dist_boundary_pts_ord = order_points_list(mesh, distal_boundary_pts)
 
     return prox_boundary_pts_ord, dist_boundary_pts_ord, mesh
+
+
+def _project_to_best_fit_plane(
+    points: list[tuple[float, float, float]],
+) -> list[tuple[float, float, float]]:
+    """Project a ring of boundary points onto their best-fit plane.
+
+    Fits a plane via SVD (the plane normal is the direction of minimum variance)
+    and orthogonally projects every point onto it, flattening noise perpendicular
+    to the ring.
+    """
+    if len(points) < 3:
+        return points
+    pts = np.array(points, dtype=np.float64)
+    centroid = pts.mean(axis=0)
+    _, _, Vt = np.linalg.svd(pts - centroid, full_matrices=False)
+    normal = Vt[-1]
+    distances = (pts - centroid) @ normal
+    projected = pts - np.outer(distances, normal)
+    return [tuple(p) for p in projected]
+
+
+def _smooth_ring_laplacian(
+    points: list[tuple[float, float, float]],
+    iterations: int = 5,
+    alpha: float = 0.5,
+) -> list[tuple[float, float, float]]:
+    """Laplacian smoothing of a closed boundary ring.
+
+    Each vertex is blended toward the midpoint of its two ring neighbors.
+    Since the input is already coplanar, the result stays on the same plane
+    (a linear combination of coplanar points is coplanar).
+
+    Parameters
+    ----------
+    iterations : int
+        Number of smoothing passes.
+    alpha : float
+        Weight kept on the original position (0 = full Laplacian, 1 = no-op).
+    """
+    if len(points) < 3:
+        return points
+    pts = np.array(points, dtype=np.float64)
+    for _ in range(iterations):
+        prev = pts.copy()
+        neighbor_avg = (np.roll(prev, 1, axis=0) + np.roll(prev, -1, axis=0)) / 2.0
+        pts = alpha * prev + (1.0 - alpha) * neighbor_avg
+    return [tuple(p) for p in pts]
+
+
+def _plane_normal_svd(pts: np.ndarray) -> np.ndarray:
+    """Best-fit plane normal for a point cloud via SVD (minimum-variance axis)."""
+    centroid = pts.mean(axis=0)
+    _, _, Vt = np.linalg.svd(pts - centroid, full_matrices=False)
+    return Vt[-1]
+
+
+def _angle_between_planes_deg(n1: np.ndarray, n2: np.ndarray) -> float:
+    """Acute angle in degrees between two planes given their normals."""
+    cos = np.clip(np.abs(np.dot(n1, n2)), 0.0, 1.0)
+    return float(np.degrees(np.arccos(cos)))
+
+
+def _clamp_to_plane(
+    points: list[tuple[float, float, float]],
+    plane_origin: np.ndarray,
+    plane_normal: np.ndarray,
+    overshoot: float = 0.0,
+) -> list[tuple[float, float, float]]:
+    """Clamp wrong-side points to the IV plane, then enforce a minimum gap.
+
+    Step 1: project any point on the wrong side of the plane onto it.
+    Step 2: if ``overshoot`` > 0, every point (including freshly clamped ones
+    that now sit exactly on the plane) that is within ``overshoot`` mm of the
+    plane on the correct side is pushed further away until it is exactly
+    ``overshoot`` mm from the plane.  This creates a clean buffer zone between
+    the aortic boundary ring and the IV ostium plane, avoiding the sharp angle
+    that would otherwise form.
+    """
+    pts = np.array(points, dtype=np.float64)
+    dists = (pts - plane_origin) @ plane_normal
+    correct_sign = np.sign(np.median(dists))
+
+    # Step 1: project wrong-side points onto the plane
+    wrong = (np.sign(dists) != correct_sign) & (dists != 0.0)
+    pts[wrong] -= np.outer(dists[wrong], plane_normal)
+
+    if overshoot > 0.0:
+        # Step 2: recompute distances and push any point within the buffer zone
+        # further away on the aortic (correct) side
+        dists2 = (pts - plane_origin) @ plane_normal
+        signed_dist = correct_sign * dists2  # positive = on correct side
+        too_close = signed_dist < overshoot
+        deficit = overshoot - signed_dist[too_close]
+        pts[too_close] += np.outer(deficit * correct_sign, plane_normal)
+
+    return [tuple(p) for p in pts]
+
+
+def _enforce_layer_gap_from_plane(
+    mesh: trimesh.Trimesh,
+    seed_indices: set[int],
+    plane_origin: np.ndarray,
+    plane_normal: np.ndarray,
+    layer_step_mm: float = 0.1,
+    n_rings: int = 2,
+) -> trimesh.Trimesh:
+    """Push neighboring mesh rings radially away from the IV ring center.
+
+    The boundary ring was clamped toward the IV plane, which can leave second-
+    and third-layer aortic vertices sitting closer to the coronary axis than
+    the boundary ring itself — creating a visible ridge.  The fix is to push
+    those vertices outward *within* the IV plane (i.e. along the aortic
+    surface, away from the coronary center), not perpendicular to it.
+
+    Ring k is displaced by ``k * layer_step_mm`` in the radial direction:
+    the projection of the vertex onto the IV plane, measured from the IV
+    ring centre (``plane_origin``), gives the outward direction.
+    """
+    adj_map = build_adjacency_map(mesh.faces.tolist())
+    new_vertices = mesh.vertices.copy()
+
+    frontier = set(seed_indices)
+    visited = set(seed_indices)
+
+    for ring in range(1, n_rings + 1):
+        push_dist = ring * layer_step_mm
+        next_frontier = set()
+        for vi in frontier:
+            for nb in adj_map.get(vi, []):
+                if nb not in visited:
+                    next_frontier.add(nb)
+
+        for vi in next_frontier:
+            p = new_vertices[vi]
+            # Project the vertex onto the IV plane to get its lateral position
+            p_proj = p - float(np.dot(p - plane_origin, plane_normal)) * plane_normal
+            # Radial direction: from IV ring centre outward, within the IV plane
+            radial = p_proj - plane_origin
+            r_norm = np.linalg.norm(radial)
+            if r_norm < 1e-10:
+                continue
+            new_vertices[vi] = p + (push_dist / r_norm) * radial
+
+        visited.update(next_frontier)
+        frontier = next_frontier
+        if not frontier:
+            break
+
+    return trimesh.Trimesh(vertices=new_vertices, faces=mesh.faces, process=False)
 
 
 def order_points_list(mesh: trimesh.Trimesh, points: list) -> list:
@@ -778,6 +699,34 @@ def order_points_list(mesh: trimesh.Trimesh, points: list) -> list:
     order = np.argsort(angles)  # counterclockwise by ascending angle
 
     return [idx_to_pt[boundary_indices[k]] for k in order]
+
+
+def _adjust_start_point_by_z(boundary_pts: list) -> list:
+    """Rotate a boundary ring so the point with the highest z-value is first."""
+    start_idx = int(np.argmax([pt[2] for pt in boundary_pts]))
+    return boundary_pts[start_idx:] + boundary_pts[:start_idx]
+
+
+def _rotate_to_nearest_iv(boundary_pts: list, iv_pt) -> list:
+    """Rotate a boundary ring so the point nearest to *iv_pt* is first."""
+    iv_arr = np.array([iv_pt.x, iv_pt.y, iv_pt.z])
+    dists = [np.linalg.norm(np.array(pt) - iv_arr) for pt in boundary_pts]
+    start_idx = int(np.argmin(dists))
+    return boundary_pts[start_idx:] + boundary_pts[:start_idx]
+
+
+def _fast_fix_normals(mesh: trimesh.Trimesh) -> None:
+    """Drop-in replacement for ``trimesh.Trimesh.fix_normals()``.
+
+    trimesh's own ``fix_winding`` does a Python/NetworkX BFS over the
+    face-adjacency graph with several small numpy allocations per edge -
+    O(n_edges) with heavy per-iteration overhead (e.g. ~3.9s on a ~52k-face
+    mesh). ``fix_mesh_winding`` is a Rust port of the same BFS-consistency
+    algorithm; ``fix_inversion`` (the volume-sign flip check) is already
+    vectorized numpy in trimesh, so it's left as-is.
+    """
+    mesh.faces = np.array(fix_mesh_winding(mesh.faces.tolist()), dtype=mesh.faces.dtype)
+    trimesh.repair.fix_inversion(mesh, multibody=False)
 
 
 def _signed_area_projected(pts: list, normal: np.ndarray) -> float:

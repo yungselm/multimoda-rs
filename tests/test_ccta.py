@@ -45,6 +45,9 @@ from multimodars.ccta.stitching import (
     keep_labeled_points_from_mesh,
     order_points_list,
     remove_labeled_points_from_mesh,
+)
+
+from multimodars.ccta.scaling import (
     scale_region_centerline_morphing,
     sync_results_to_mesh,
 )
