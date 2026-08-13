@@ -52,15 +52,17 @@ from .ccta.centerline_prep import (
     load_centerline,
     prepare_centerline,
 )
-from .ccta.manipulating import (
+from .ccta.stitching import (
+    remove_labeled_points_from_mesh,
+    keep_labeled_points_from_mesh,
+    stitch_ccta_to_intravascular,
+)
+from .ccta.scaling import (
     scale_region_centerline_morphing,
     find_distal_and_proximal_scaling,
     find_aorta_scaling,
     find_aortic_wall_scaling,
-    remove_labeled_points_from_mesh,
-    keep_labeled_points_from_mesh,
     sync_results_to_mesh,
-    stitch_ccta_to_intravascular,
 )
 from .ccta.discretization_map import (
     label_branches_pair,
@@ -68,7 +70,12 @@ from .ccta.discretization_map import (
     find_sharp_angles,
 )
 from .ccta.fixing_functions import fix_and_remesh_stitched_mesh, manual_hole_fill
-from .ccta.debug_plots import plot_results_key, plot_centerline_edges, plot_sharp_angles
+from .ccta.debug_plots import (
+    plot_results_key,
+    plot_centerline_edges,
+    plot_sharp_angles,
+    plot_boundary_edges,
+)
 
 __all__ = [
     # Core classes
@@ -130,6 +137,7 @@ __all__ = [
     "plot_results_key",
     "plot_centerline_edges",
     "plot_sharp_angles",
+    "plot_boundary_edges",
     "discretize_vessel",
     "discretize_vessel_tree",
     "find_sharp_angles",

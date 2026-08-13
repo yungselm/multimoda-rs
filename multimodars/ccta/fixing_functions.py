@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import trimesh
-from ..ccta.manipulating import order_points_list
+from .stitching import order_points_list
 
 try:
     import pymeshlab

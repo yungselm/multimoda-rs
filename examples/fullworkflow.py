@@ -152,7 +152,10 @@ results = mm.sync_results_to_mesh(results, results["mesh"], scaled_proximal)
 updated_results = mm.remove_labeled_points_from_mesh(
     results,
     ["anomalous_points", "proximal_points"],
+    target_boundaries=2,
 )
+
+mm.plot_boundary_edges(updated_results, key="boundary_points")
 
 stitched = mm.stitch_ccta_to_intravascular(
     aligned.geom_a,

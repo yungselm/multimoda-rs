@@ -482,25 +482,57 @@ keep the coordinate lists in ``results`` consistent with the updated vertex posi
 7. Remove intramural region and stitch geometries
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Before stitching, remove the anomalous and proximal regions from the CCTA mesh.  This opens
-a boundary ring at the proximal end of the intravascular segment where the two meshes will
-be connected.  :func:`multimodars.remove_labeled_points_from_mesh` deletes the requested
-vertices, remaps the remaining faces, and adds a ``"boundary_points"`` key to ``results``:
+Before stitching, remove the anomalous and proximal regions from the CCTA mesh.  Cutting a
+segment out of the middle of the vessel opens **two** boundary rings - one at each cut face -
+which is where the two meshes will be joined, so tell
+:func:`multimodars.remove_labeled_points_from_mesh` how many to expect via
+``target_boundaries``:
 
 .. code-block:: python
 
     updated_results = mm.remove_labeled_points_from_mesh(
         results,
         ["anomalous_points", "proximal_points"],
+        target_boundaries=2,
     )
+
+The function deletes the requested vertices, remaps the remaining faces, and stores the
+exposed boundary both per ring and flattened:
+
+- ``"boundary_points_1"``, ``"boundary_points_2"``, … - one ordered ring each, in walk order.
+- ``"boundary_points"`` - every boundary vertex concatenated, for callers that do not care
+  about the split.
 
 ``region_keys`` accepts a single string or a list of strings matching keys in ``results``.
 Any combination of labeled regions can be removed; the resulting open boundary is always
 placed adjacent to the deleted vertices.
 
-Once the hole is open, :func:`multimodars.stitch_ccta_to_intravascular` connects the
-boundary ring of the CCTA mesh to the proximal contour of the aligned intravascular
-geometry with a triangulated patch:
+.. note::
+
+    ``target_boundaries`` defaults to ``1``.  If the trim actually produced more rings than
+    requested, the surplus is merged by nearest endpoints and a warning is printed - that join
+    bridges a gap which is not a mesh edge, so treat the warning as a sign to raise
+    ``target_boundaries`` rather than as cosmetic noise.  Removing a single blob leaves one
+    ring; removing a mid-vessel segment leaves two.
+
+The rim is also cleaned as part of this step.  Vertices that cannot form a clean ring -
+isolated stragglers, dangling hairs, pinch junctions where two holes meet, and sharp spikes -
+are deleted from the mesh, not merely skipped in the stored ring.  Deleting a vertex exposes
+new rim, so the boundary is re-derived until it stabilises; the count of culled vertices is
+printed.  This guarantees the stored ring really traces the mesh's open edge, which the
+stitching step depends on.
+
+Inspect the result with :func:`multimodars.plot_boundary_edges`, which draws each ring's edges
+and colours its vertices red→blue by walk order:
+
+.. code-block:: python
+
+    mm.plot_boundary_edges(updated_results)                          # every ring found
+    mm.plot_boundary_edges(updated_results, key="boundary_points_1") # just the first
+
+Once the holes are open, :func:`multimodars.stitch_ccta_to_intravascular` connects each
+boundary ring to the matching contour of the aligned intravascular geometry with a
+triangulated patch:
 
 .. code-block:: python
 
@@ -511,11 +543,30 @@ geometry with a triangulated patch:
         prox_start_mode="highest_z",
     )
 
+Each ring is assigned to an intravascular end **as a whole**, by whichever pairing of rings to
+the proximal and distal frame centroids is closest overall - so a single ring is never torn
+across both seams.  Both rings are then conditioned identically: projected onto their own
+best-fit plane, smoothed, respaced evenly along their perimeter, and finally densified to the
+stitching resolution by inserting points along their edges.  Each subdivided edge's adjacent
+face is retriangulated onto its opposite vertex, so the inserted points are real mesh vertices
+rather than T-junctions.
+
+.. note::
+
+    Stitching requires two rings.  With fewer it raises ``ValueError`` naming
+    ``target_boundaries=2``, rather than failing deep inside the patch construction.
+
 **Parameter reference:**
 
 - ``n_points_iv_cont``: number of points to which each intravascular contour is downsampled
-  before stitching (default 100).  Matching this to the boundary-ring resolution improves
-  triangle quality.
+  before stitching (default 100).  This also sets the stitching resolution - see
+  ``boundary_point_ratio``.
+- ``boundary_point_ratio``: how many points the CCTA boundary ring is densified to, as a
+  fraction of ``n_points_iv_cont`` (default 1.0).  At 1.0 the two rings have equal counts and
+  the patch is a clean quad strip.  Lower values (e.g. ``0.67``) leave the CCTA rim coarser;
+  the patch is still hole-free, just with unequal triangle sizes.  Values that would *reduce*
+  the ring below its existing point count are ignored with a warning, since shrinking it would
+  require edge collapses on the CCTA mesh.
 - ``prox_start_mode`` / ``dist_start_mode``: controls which vertex is chosen as index 0 of
   the boundary ring before the rings are paired for stitching.
 
@@ -526,10 +577,10 @@ geometry with a triangulated patch:
     straight intramural segments.
 
 - ``clamp_overshoot``: minimum distance in mm that every proximal boundary point must sit
-  away from the IV plane after clamping (default 0.5).  Only active for anomalous ostia
-  where the boundary-ring plane and the IV plane diverge by ≥ 45°.  Increase this value
-  if stitching artefacts remain visible near the ostium; decrease it (toward 0.0) for
-  more tightly fitted geometries.
+  away from the IV plane (default 0.5).  Only active for anomalous ostia where the
+  boundary-ring plane and the IV plane diverge by ≥ 45°.  Increase this value if stitching
+  artefacts remain visible near the ostium; decrease it (toward 0.0) for more tightly fitted
+  geometries.  It also sets the clearance used by the whole-plane correction below.
 
 The return value is a new ``results``-like dictionary that additionally contains:
 
@@ -541,6 +592,36 @@ Export the raw stitched mesh before remeshing to allow inspection:
 .. code-block:: python
 
     stitched['mesh'].export("prefixed_mesh.stl")
+
+Anomalous ostium corrections
+"""""""""""""""""""""""""""""
+
+For an anomalous coronary the intramural course runs roughly *perpendicular* to the aortic
+wall, so the plane of the intravascular ring at the ostium sits at nearly 90° to the plane of
+the aortic boundary ring.  Without correction, boundary vertices end up on the wrong side of
+the ostium plane - inside the coronary lumen - producing a jagged seam.  When the angle between
+the two planes exceeds 45°, three corrections are applied automatically:
+
+1. **Whole-plane shift** - if the boundary ring's own plane cuts through the intravascular
+   ostial frame, the entire plane is slid toward the aorta until it clears every frame point by
+   ``clamp_overshoot`` mm, and the ring is re-projected onto the shifted plane.  The "toward the
+   aorta" direction is taken from the labelled ``"aorta_points"`` centroid, because the vessel
+   axis is not a usable substitute here: an intramural coronary runs *inside* the aortic wall,
+   so the lumen lies roughly perpendicular to the axis.  A console message reports the distance
+   moved and which reference was used.
+2. **Per-point clamp and minimum gap** - any remaining boundary vertex on the intravascular
+   side of the ostium plane is projected back onto it, then every vertex is pushed at least
+   ``clamp_overshoot`` mm clear on the aortic side.  This prevents the patch from meeting the
+   aortic wall at a razor-sharp angle.
+3. **Layer propagation** - the two rings of aortic mesh vertices behind the boundary ring are
+   shifted radially outward (0.1 mm and 0.2 mm) within the ostium plane, so they cannot sit
+   closer to the coronary axis than the boundary ring itself and form a visible ridge.
+
+.. note::
+
+    If the console reports ``direction from vessel axis (no aorta_points)``, the aortic label
+    was empty at stitch time and step 1 fell back to the unreliable heuristic.  ``aorta_points``
+    is filtered by every removal step, so check it survived.
 
 8. Remesh and smooth
 ^^^^^^^^^^^^^^^^^^^^^
@@ -605,38 +686,49 @@ Colour coding:
 - **Magenta** - distal points
 - **Orange** - anomalous points
 
-To inspect the stitching seam directly, overlay the proximal boundary ring with the
-intravascular contour in a trimesh scene.  The following snippet colours the boundary ring
-from red (index 0) to blue (last index) and overlays the frame-0 lumen points of the
-downsampled intravascular geometry:
+Two views help when checking the seams.  To inspect the mesh's own boundary structure - how many
+rings there are and how each is ordered - use :func:`multimodars.plot_boundary_edges`, which
+draws each ring's edges and colours its vertices red→blue by walk order:
+
+.. code-block:: python
+
+    mm.plot_boundary_edges(updated_results)
+
+To check that each boundary ring lines up with the intravascular contour it was stitched to,
+overlay them directly.  Both seams are worth looking at, so loop over the pair; a healthy seam
+has the two rings starting at the same place and running the same way round:
 
 .. code-block:: python
 
     import numpy as np
     import trimesh
 
-    boundary_pts = np.array(remeshed['prox_boundary_points'], dtype=np.float64)
-    sphere_meshes = []
-    for i, pt in enumerate(boundary_pts):
-        t = i / max(len(boundary_pts) - 1, 1)
-        color = [int(255 * t), 0, int(255 * (1 - t)), 200]
-        s = trimesh.creation.icosphere(radius=0.1).apply_translation(pt)
-        s.visual.face_colors = color
-        sphere_meshes.append(s)
-
     iv_viz = aligned.geom_a.downsample(100).sort_frame_points()
-    iv_pts = iv_viz.frames[0].lumen.points
-    n_iv = len(iv_pts)
-    for pt in iv_pts:
-        t = pt.point_index / max(n_iv - 1, 1)
-        color = [int(255 * t), 0, int(255 * (1 - t)), 220]
-        s = trimesh.creation.icosphere(radius=0.15).apply_translation([pt.x, pt.y, pt.z])
-        s.visual.face_colors = color
-        sphere_meshes.append(s)
+    seams = [
+        (stitched['prox_boundary_points'], iv_viz.frames[0].lumen.points),
+        (stitched['dist_boundary_points'], iv_viz.frames[-1].lumen.points),
+    ]
 
-    spheres = trimesh.util.concatenate(sphere_meshes)
-    scene = trimesh.Scene([remeshed['mesh'], spheres])
+    sphere_meshes = []
+    for boundary_ring, iv_pts in seams:
+        for radius, pts in ((0.10, [tuple(p) for p in boundary_ring]),
+                            (0.15, [(p.x, p.y, p.z) for p in iv_pts])):
+            n = len(pts)
+            for i, pt in enumerate(pts):
+                t = i / max(n - 1, 1)
+                s = trimesh.creation.icosphere(radius=radius).apply_translation(pt)
+                s.visual.face_colors = [int(255 * t), 0, int(255 * (1 - t)), 210]
+                sphere_meshes.append(s)
+
+    scene = trimesh.Scene([stitched['mesh'], trimesh.util.concatenate(sphere_meshes)])
     scene.show()
+
+.. note::
+
+    The index colouring only reflects what the stitcher used if the corresponding
+    ``*_start_mode`` is ``"highest_z"`` - that is what triggers ``sort_frame_points()``.  With
+    ``"nearest_iv"`` the positions are still correct but the intravascular indices start
+    elsewhere.
 
 Export individual anatomical sections as STL files with :func:`multimodars.export_section_stl`.
 The ``type`` argument controls which region is exported:
