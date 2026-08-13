@@ -52,15 +52,17 @@ from .ccta.centerline_prep import (
     load_centerline,
     prepare_centerline,
 )
-from .ccta.manipulating import (
-    scale_region_centerline_morphing,
-    find_distal_and_proximal_scaling,
-    find_aorta_scaling,
-    find_aortic_wall_scaling,
+from .ccta.stitching import (
     remove_labeled_points_from_mesh,
     keep_labeled_points_from_mesh,
     sync_results_to_mesh,
     stitch_ccta_to_intravascular,
+)
+from .ccta.scaling import (
+    scale_region_centerline_morphing,
+    find_distal_and_proximal_scaling,
+    find_aorta_scaling,
+    find_aortic_wall_scaling,
 )
 from .ccta.discretization_map import (
     label_branches_pair,

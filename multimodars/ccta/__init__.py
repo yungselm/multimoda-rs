@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from . import manipulating
+from . import stitching
+from . import scaling
 from . import labeling
 from . import centerline_prep
 from . import debug_plots as debug_plots
@@ -216,45 +217,43 @@ def scale(
         Updated *results* with ``"mesh"`` replaced by the fully scaled mesh
         and all coordinate lists remapped to the new vertex positions.
     """
-    prox_scaling, distal_scaling = manipulating.find_distal_and_proximal_scaling(
+    prox_scaling, distal_scaling = scaling.find_distal_and_proximal_scaling(
         frames=aligned_frames,
         centerline=cl_vessel,
         results=results,
     )
 
-    aortic_scaling = manipulating.find_aorta_scaling(
+    aortic_scaling = scaling.find_aorta_scaling(
         frames=aligned_frames,
         cl_aorta=cl_aorta,
         results=results,
     )
 
-    scaled_distal = manipulating.scale_region_centerline_morphing(
+    scaled_distal = scaling.scale_region_centerline_morphing(
         mesh=results["mesh"],
         region_points=results["distal_points"],
         centerline=cl_vessel,
         diameter_adjustment_mm=distal_scaling,
     )
-    results = manipulating.sync_results_to_mesh(results, results["mesh"], scaled_distal)
+    results = stitching.sync_results_to_mesh(results, results["mesh"], scaled_distal)
 
-    scaled_distal_aortic = manipulating.scale_region_centerline_morphing(
+    scaled_distal_aortic = scaling.scale_region_centerline_morphing(
         mesh=results["mesh"],
         region_points=results["aorta_points"] + results["rca_removed_points"],
         centerline=cl_aorta,
         diameter_adjustment_mm=aortic_scaling,
     )
-    results = manipulating.sync_results_to_mesh(
+    results = stitching.sync_results_to_mesh(
         results, results["mesh"], scaled_distal_aortic
     )
 
-    scaled_proximal = manipulating.scale_region_centerline_morphing(
+    scaled_proximal = scaling.scale_region_centerline_morphing(
         mesh=results["mesh"],
         region_points=results["proximal_points"],
         centerline=cl_vessel,
         diameter_adjustment_mm=prox_scaling,
     )
-    results = manipulating.sync_results_to_mesh(
-        results, results["mesh"], scaled_proximal
-    )
+    results = stitching.sync_results_to_mesh(results, results["mesh"], scaled_proximal)
 
     return results
 
@@ -318,11 +317,9 @@ def stitch(
             "Install it with: pip install 'multimodars[meshlab]'"
         )
 
-    updated_results = manipulating.remove_labeled_points_from_mesh(
-        results, region_remove
-    )
+    updated_results = stitching.remove_labeled_points_from_mesh(results, region_remove)
 
-    stitched = manipulating.stitch_ccta_to_intravascular(
+    stitched = stitching.stitch_ccta_to_intravascular(
         geometry,
         updated_results["mesh"],
         updated_results,
@@ -418,7 +415,7 @@ def export_section_stl(
     elif type in _REGION_KEYS:
         region_points = results.get(_REGION_KEYS[type], [])
         if type == "aorta":
-            sub_mesh_dict = manipulating.keep_labeled_points_from_mesh(
+            sub_mesh_dict = stitching.keep_labeled_points_from_mesh(
                 results, ["aorta_points", "rca_removed_points", "lca_removed_points"]
             )
             sub_mesh = sub_mesh_dict["mesh"]
@@ -453,18 +450,18 @@ def create_wall_mesh(
     scaling_factor = 0.0
 
     if frames is not None:
-        scaling = manipulating.find_aortic_wall_scaling(
+        ao_scaling = scaling.find_aortic_wall_scaling(
             frames=frames,
             cl_aorta=cl_aorta,
             results=results,
         )
-        scaling_factor = scaling
+        scaling_factor = ao_scaling
     else:
         assert aortic_scaling is not None
         scaling_factor = aortic_scaling
 
     # Extract aorta sub-mesh, fill ostia holes, then scale the closed aorta directly
-    sub_mesh_dict = manipulating.keep_labeled_points_from_mesh(
+    sub_mesh_dict = stitching.keep_labeled_points_from_mesh(
         results, ["aorta_points", "rca_removed_points", "lca_removed_points"]
     )
     sub_mesh = sub_mesh_dict["mesh"]
@@ -473,7 +470,7 @@ def create_wall_mesh(
         (float(p[0]), float(p[1]), float(p[2])) for p in sub_mesh_filled.vertices
     ]
 
-    scaled_aorta = manipulating.scale_region_centerline_morphing(
+    scaled_aorta = scaling.scale_region_centerline_morphing(
         mesh=sub_mesh_filled,
         region_points=filled_vertices,
         centerline=cl_aorta,
@@ -481,16 +478,16 @@ def create_wall_mesh(
     )
 
     # Extract and scale each coronary sub-mesh independently
-    rca_sub_dict = manipulating.keep_labeled_points_from_mesh(results, ["rca_points"])
-    scaled_rca = manipulating.scale_region_centerline_morphing(
+    rca_sub_dict = stitching.keep_labeled_points_from_mesh(results, ["rca_points"])
+    scaled_rca = scaling.scale_region_centerline_morphing(
         mesh=rca_sub_dict["mesh"],
         region_points=rca_sub_dict["rca_points"],
         centerline=cl_rca,
         diameter_adjustment_mm=coronary_scaling,
     )
 
-    lca_sub_dict = manipulating.keep_labeled_points_from_mesh(results, ["lca_points"])
-    scaled_lca = manipulating.scale_region_centerline_morphing(
+    lca_sub_dict = stitching.keep_labeled_points_from_mesh(results, ["lca_points"])
+    scaled_lca = scaling.scale_region_centerline_morphing(
         mesh=lca_sub_dict["mesh"],
         region_points=lca_sub_dict["lca_points"],
         centerline=cl_lca,

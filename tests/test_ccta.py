@@ -34,7 +34,7 @@ from multimodars.multimodars import (
     find_aortic_points,
     final_reclassification,
 )
-from multimodars.ccta.manipulating import (
+from multimodars.ccta.stitching import (
     _clamp_to_plane,
     _enforce_layer_gap_from_plane,
     _fast_fix_normals,
