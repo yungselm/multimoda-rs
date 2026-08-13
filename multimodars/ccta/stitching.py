@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 import numpy as np
 import trimesh
 
@@ -10,6 +9,7 @@ from ..multimodars import (
     fix_mesh_winding,
 )
 from .._converters import geometry_to_trimesh
+from .boundary import clean_open_boundary
 
 
 def remove_labeled_points_from_mesh(
@@ -92,7 +92,7 @@ def remove_labeled_points_from_mesh(
     #    too - not just skipped in the ring - so the stored boundary really is
     #    the mesh's open edge.
     face_keep_mask = np.all(keep_mask[mesh.faces], axis=1)
-    extra_drop, components = _clean_open_boundary(
+    extra_drop, components = clean_open_boundary(
         mesh.faces[face_keep_mask],
         mesh.vertices,
         boundary_indices,
@@ -219,7 +219,7 @@ def keep_labeled_points_from_mesh(
     # Drop faces that reference any removed vertex, then clean the exposed rim,
     # deleting unclean boundary vertices from the mesh as well as the ring.
     face_keep_mask = np.all(keep_mask[mesh.faces], axis=1)
-    extra_drop, components = _clean_open_boundary(
+    extra_drop, components = clean_open_boundary(
         mesh.faces[face_keep_mask],
         mesh.vertices,
         boundary_indices,
@@ -262,304 +262,6 @@ def keep_labeled_points_from_mesh(
             updated[key] = [p for p in updated[key] if tuple(p) in new_coord_set]
 
     return updated
-
-
-def _open_boundary_edges(faces: np.ndarray) -> np.ndarray:
-    """Return the open-boundary edges of *faces* (edges used by exactly one face).
-
-    Parameters
-    ----------
-    faces : (F, 3) int array
-        Triangle vertex indices.
-
-    Returns
-    -------
-    (E, 2) int array
-        Sorted vertex-index pairs, one per edge lying on the open rim.
-    """
-    if len(faces) == 0:
-        return np.empty((0, 2), dtype=np.int64)
-    edges = faces[:, [0, 1, 1, 2, 2, 0]].reshape(-1, 2)
-    edges = np.sort(edges, axis=1)
-    uniq, counts = np.unique(edges, axis=0, return_counts=True)
-    return uniq[counts == 1]
-
-
-def _despike_ring(
-    order: list[int],
-    vertices: np.ndarray,
-    graph: Mapping[int, set[int]],
-    cos_thresh: float,
-) -> list[int]:
-    """Remove "bump" spikes from an ordered ring.
-
-    A bump spike is a vertex the rim detours out to and immediately back from,
-    so the two edge directions leaving it point nearly the same way (cosine
-    close to ``+1``); a normal rim vertex has them pointing nearly opposite
-    (cosine close to ``-1``).  Any vertex whose cosine exceeds *cos_thresh* is
-    dropped, which reconnects its two neighbours directly.  Iterated because
-    removing one tip can expose the next.
-    """
-    if len(order) < 3:
-        return order
-    closed = order[0] in graph.get(order[-1], set())
-    pts = list(order)
-    changed = True
-    while changed and len(pts) > 3:
-        changed = False
-        m = len(pts)
-        for i in range(m):
-            if not closed and (i == 0 or i == m - 1):
-                continue
-            d1 = vertices[pts[(i - 1) % m]] - vertices[pts[i]]
-            d2 = vertices[pts[(i + 1) % m]] - vertices[pts[i]]
-            n1 = float(np.linalg.norm(d1))
-            n2 = float(np.linalg.norm(d2))
-            if n1 == 0.0 or n2 == 0.0:
-                continue
-            if float(np.dot(d1, d2)) / (n1 * n2) > cos_thresh:
-                del pts[i]
-                changed = True
-                break
-    return pts
-
-
-def _join_rings_to_target(
-    components: list[list[int]],
-    vertices: np.ndarray,
-    target_n: int,
-) -> list[list[int]]:
-    """Greedily merge arcs until only *target_n* remain.
-
-    Each pass finds the two component endpoints (from different components) that
-    are closest in space, flips the components so those endpoints meet, and
-    concatenates them.  Used to reunite a ring that came back as several arcs.
-    """
-    comps = [list(c) for c in components]
-    while len(comps) > target_n:
-        best: tuple[float, int, int, bool, bool] | None = None
-        for a in range(len(comps)):
-            ends_a = ((comps[a][0], True), (comps[a][-1], False))
-            for b in range(a + 1, len(comps)):
-                ends_b = ((comps[b][0], False), (comps[b][-1], True))
-                for pa, flip_a in ends_a:
-                    for pb, flip_b in ends_b:
-                        d = float(np.linalg.norm(vertices[pa] - vertices[pb]))
-                        if best is None or d < best[0]:
-                            best = (d, a, b, flip_a, flip_b)
-        assert best is not None
-        _, a, b, flip_a, flip_b = best
-        ca = comps[a][::-1] if flip_a else comps[a]
-        cb = comps[b][::-1] if flip_b else comps[b]
-        merged = ca + cb
-        comps = [c for k, c in enumerate(comps) if k not in (a, b)]
-        comps.append(merged)
-    return comps
-
-
-def _boundary_graph(faces: np.ndarray) -> dict[int, set[int]]:
-    """Adjacency of the open rim of *faces*, built from open boundary edges only.
-
-    Using open edges rather than full vertex adjacency means interior chords
-    between two rim vertices cannot invent junctions or fragment a ring.
-    """
-    graph: dict[int, set[int]] = {}
-    for a, b in _open_boundary_edges(faces):
-        graph.setdefault(int(a), set()).add(int(b))
-        graph.setdefault(int(b), set()).add(int(a))
-    return graph
-
-
-def _rims_touching(
-    graph: Mapping[int, set[int]],
-    seeds: set[int],
-) -> dict[int, set[int]]:
-    """Restrict *graph* to the connected rims containing at least one seed.
-
-    Selecting whole components (rather than filtering edges by whether both
-    endpoints are seeds) keeps a removal hole intact when it merges with a
-    pre-existing opening: the pre-existing stretch has no removed neighbour and
-    would otherwise drop out, leaving a gap in the ring.
-    """
-    if not seeds:
-        return {v: set(ns) for v, ns in graph.items()}
-    keep: set[int] = set()
-    unvisited = set(graph)
-    while unvisited:
-        stack = [unvisited.pop()]
-        comp = set(stack)
-        while stack:
-            v = stack.pop()
-            for w in graph.get(v, set()):
-                if w not in comp:
-                    comp.add(w)
-                    unvisited.discard(w)
-                    stack.append(w)
-        if comp & seeds:
-            keep |= comp
-    return {v: set(graph[v]) & keep for v in keep}
-
-
-def _walk_rings(graph: Mapping[int, set[int]]) -> list[list[int]]:
-    """Trace every connected component of *graph* into an ordered vertex list."""
-    remaining = set(graph)
-    components: list[list[int]] = []
-    while remaining:
-        start = next(iter(remaining))
-        comp = [start]
-        remaining.discard(start)
-        prev, current = -1, start
-        while True:
-            nxt = next(
-                (n for n in graph.get(current, set()) if n != prev and n in remaining),
-                None,
-            )
-            if nxt is None:
-                break
-            comp.append(nxt)
-            remaining.discard(nxt)
-            prev, current = current, nxt
-        components.append(comp)
-    return components
-
-
-def _clean_open_boundary(
-    faces: np.ndarray,
-    vertices: np.ndarray,
-    seeds: set[int],
-    target_n: int = 1,
-    despike_cos: float = 0.0,
-    max_rounds: int = 64,
-) -> tuple[set[int], list[list[int]]]:
-    """Cull rim vertices that cannot form a clean ring, from the *mesh*.
-
-    Every vertex this rejects - isolated stragglers, dangling hairs, pinch
-    junctions, and sharp "bump" spikes - is returned for deletion from the mesh
-    itself, not merely skipped in the ring list.  Dropping a vertex removes its
-    faces and so exposes a new rim, hence the loop: each round re-derives the
-    boundary from the surviving faces until nothing more is rejected.  This
-    keeps the returned rings a faithful trace of the mesh's actual open edge.
-
-    Parameters
-    ----------
-    faces : (F, 3) int array
-        Faces surviving the labelled-region removal.
-    vertices : (V, 3) float array
-        Vertex coordinates (used for the spike angle test and arc joining).
-    seeds : set[int]
-        Vertices known to lie on the rim of interest; used to pick which open
-        boundaries to clean and ignore unrelated ones (e.g. the aorta inlet).
-    target_n : int
-        Number of rings the rim should end up as.
-    despike_cos : float
-        Threshold forwarded to :func:`_despike_ring`.
-    max_rounds : int
-        Safety bound on the re-derivation loop.
-
-    Returns
-    -------
-    (set[int], list[list[int]])
-        Vertices to delete from the mesh, and the resulting ordered rings.
-    """
-    drop: set[int] = set()
-    seed_set = set(seeds)
-    rings: list[list[int]] = []
-
-    for _ in range(max_rounds):
-        if drop:
-            keep_faces = ~np.any(
-                np.isin(faces, np.fromiter(drop, dtype=np.int64)), axis=1
-            )
-            cur_faces = faces[keep_faces]
-        else:
-            cur_faces = faces
-
-        graph = _rims_touching(_boundary_graph(cur_faces), seed_set)
-        if not graph:
-            return drop, []
-        # Grow the seed set to the whole rim so vertices exposed by this round's
-        # deletions are still recognised as part of it next round.
-        seed_set |= set(graph)
-
-        # A clean rim is degree-2 everywhere; anything else is a straggler (0/1)
-        # or a pinch junction (3+), and gets cut out of the mesh.
-        bad = {v for v, ns in graph.items() if len(ns) != 2}
-        if bad:
-            drop |= bad
-            continue
-
-        rings = _walk_rings(graph)
-        spikes: set[int] = set()
-        for ring in rings:
-            kept = _despike_ring(ring, vertices, graph, despike_cos)
-            spikes |= set(ring) - set(kept)
-        if spikes:
-            drop |= spikes
-            continue
-        break
-
-    rings = [r for r in rings if r]
-    rings.sort(key=len, reverse=True)
-    if len(rings) > target_n:
-        # The rim came back as more pieces than expected.  Joining them stitches
-        # across a gap that is not a mesh edge, so say so: either target_n is too
-        # low for this region, or the pieces are genuinely separate rims.
-        print(
-            f"Warning: boundary has {len(rings)} rings {[len(r) for r in rings]} "
-            f"but target_boundaries={target_n}; joining by nearest endpoints."
-        )
-        rings = _join_rings_to_target(rings, vertices, target_n)
-        rings.sort(key=len, reverse=True)
-    return drop, rings[:target_n]
-
-
-def _order_boundary_rings(
-    faces: np.ndarray,
-    vertices: np.ndarray,
-    boundary_indices: set[int] | None = None,
-    target_n: int | None = None,
-    despike_cos: float = 0.0,
-) -> list[list[int]]:
-    """Order the open boundary of *faces* into rings, without touching the mesh.
-
-    Read-only counterpart to :func:`_clean_open_boundary`: it reports the rings
-    the current faces actually have, so a debug view shows the real state of the
-    mesh rather than an idealised one.  *target_n* therefore defaults to
-    ``None`` - every ring found is reported, and none are silently merged.
-
-    Parameters
-    ----------
-    faces : (F, 3) int array
-        Faces of the mesh whose rim is wanted.
-    vertices : (V, 3) float array
-        Vertex coordinates, used when joining leftover arcs.
-    boundary_indices : set[int], optional
-        Seed vertices; only the connected rims containing one of them are
-        reported.  When omitted every open boundary is reported.
-    target_n : int, optional
-        When given, reduce to this many rings (joining leftover arcs by nearest
-        endpoints).  ``None`` (the default) reports every ring as found.
-    despike_cos : float
-        Unused here; kept so callers can pass the same arguments as
-        :func:`_clean_open_boundary`.
-
-    Returns
-    -------
-    list[list[int]]
-        Ordered rings of vertex indices - all of them, or the *target_n*
-        largest when *target_n* is given.
-    """
-    graph = _rims_touching(_boundary_graph(faces), boundary_indices or set())
-    if not graph:
-        return []
-    rings = [r for r in _walk_rings(graph) if r]
-    rings.sort(key=len, reverse=True)
-    if target_n is None:
-        return rings
-    if len(rings) > target_n:
-        rings = _join_rings_to_target(rings, vertices, target_n)
-        rings.sort(key=len, reverse=True)
-    return rings[:target_n]
 
 
 def stitch_ccta_to_intravascular(

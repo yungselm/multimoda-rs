@@ -8,7 +8,7 @@ import trimesh
 from trimesh.points import PointCloud
 from trimesh.visual import ColorVisuals
 
-from .stitching import _open_boundary_edges, _order_boundary_rings
+from .boundary import open_boundary_edges, order_boundary_rings
 
 if TYPE_CHECKING:
     from ..multimodars import PyCenterline, PyDiscretizedVesselTree
@@ -520,13 +520,11 @@ def plot_boundary_edges(
 ) -> None:
     """Open an interactive trimesh scene of a stored boundary ring set and its edges.
 
-    Re-orders the stored boundary into clean rings with the same routine the
-    trimming code uses (:func:`~multimodars.ccta.stitching._order_boundary_rings`
-    - chord-free connectivity from the mesh's open edges, spikes/stragglers
-    pruned), draws each ring's edges as connected line segments, and colours the
-    ring vertices red -> blue by their walk order.  This makes both the seam
-    direction and any split into multiple disconnected rings immediately
-    visible.
+    Re-derives the rings from the mesh's open edges with
+    :func:`~multimodars.ccta.boundary.order_boundary_rings`, draws each ring's
+    edges as connected line segments, and colours the ring vertices red -> blue
+    by their walk order.  This makes both the seam direction and any split into
+    multiple disconnected rings immediately visible.
 
     Colour coding
     -------------
@@ -570,7 +568,7 @@ def plot_boundary_edges(
         print("Nothing to show - no boundary point matched a mesh vertex.")
         return
 
-    rings = _order_boundary_rings(
+    rings = order_boundary_rings(
         mesh.faces,
         mesh.vertices,
         boundary_indices,
@@ -581,13 +579,9 @@ def plot_boundary_edges(
         f"{[len(r) for r in rings]}"
     )
 
-    # Open boundary edges of this rim, for an honest loop-closure test.
-    bnd_edges = _open_boundary_edges(mesh.faces)
-    edge_set = {
-        frozenset((int(a), int(b)))
-        for a, b in bnd_edges
-        if a in boundary_indices and b in boundary_indices
-    }
+    # Every open boundary edge, so a ring is only drawn closed when its two ends
+    # really are joined on the mesh.
+    edge_set = {frozenset((int(a), int(b))) for a, b in open_boundary_edges(mesh.faces)}
 
     scene_geoms: list = []
     if show_mesh:
