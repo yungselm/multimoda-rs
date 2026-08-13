@@ -8,11 +8,17 @@ Covers:
   - labeling: _keep_largest_connected_component (island-point filter for
                 find_points_by_cl_region's proximal/distal/anomalous output)
   - fixing_functions: manual_hole_fill, postprocess_stitched_mesh
-  - manipulating: remove_labeled_points_from_mesh,
-                  keep_labeled_points_from_mesh, sync_results_to_mesh,
-                  order_points_list, scale_region_centerline_morphing,
-                  _rotate_to_nearest_iv, _fix_ring_direction_by_distance,
-                  _stitch_boundary_ring
+  - stitching: remove_labeled_points_from_mesh,
+               keep_labeled_points_from_mesh, order_points_list,
+               _rotate_to_nearest_iv, _fix_ring_direction_by_distance,
+               _stitch_rings, _prepare_prox_dist_boundary_pts,
+               _condition_ostium_ring, _clamp_to_plane,
+               _enforce_layer_gap_from_plane, and the ring conditioning
+               helpers (_redistribute_ring_evenly,
+               _smooth_ring_preserving_size, _densify_boundary,
+               _assign_rings_to_ends, _shift_plane_clear_of, _toward_aorta)
+  - boundary: open_boundary_edges, order_boundary_rings, clean_open_boundary
+  - scaling: scale_region_centerline_morphing, sync_results_to_mesh
 """
 
 from __future__ import annotations
@@ -34,14 +40,27 @@ from multimodars.multimodars import (
     find_aortic_points,
     final_reclassification,
 )
+from multimodars.ccta.boundary import (
+    clean_open_boundary,
+    open_boundary_edges,
+    order_boundary_rings,
+)
 from multimodars.ccta.stitching import (
+    _assign_rings_to_ends,
     _clamp_to_plane,
+    _condition_ostium_ring,
+    _densify_boundary,
     _enforce_layer_gap_from_plane,
     _fast_fix_normals,
     _fix_ring_direction_by_distance,
     _prepare_prox_dist_boundary_pts,
+    _redistribute_ring_evenly,
+    _ring_calibre,
     _rotate_to_nearest_iv,
-    _stitch_boundary_ring,
+    _shift_plane_clear_of,
+    _smooth_ring_preserving_size,
+    _stitch_rings,
+    _toward_aorta,
     keep_labeled_points_from_mesh,
     order_points_list,
     remove_labeled_points_from_mesh,
@@ -914,54 +933,70 @@ class TestFixRingDirectionByDistance:
 
 
 # ===========================================================================
-# manipulating._stitch_boundary_ring
+# stitching._stitch_rings
 # ===========================================================================
 
 
-class TestStitchBoundaryRing:
+def _ring_coords(n: int, radius: float = 1.0, z: float = 0.0):
+    angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
+    return [(radius * float(np.cos(a)), radius * float(np.sin(a)), z) for a in angles]
+
+
+class TestStitchRings:
     def _ring_pts(self, n: int, radius: float = 1.0, z: float = 0.0):
-        angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
-        return [
-            (radius * float(np.cos(a)), radius * float(np.sin(a)), z) for a in angles
-        ]
+        return _ring_coords(n, radius, z)
 
     def test_creates_trimesh(self):
-        n_b, n_iv = 6, 12
-        boundary_pts = self._ring_pts(n_b, radius=1.0)
-        iv_pts = _make_iv_pts(self._ring_pts(n_iv, radius=1.2))
-        patch = _stitch_boundary_ring(boundary_pts, iv_pts, n_iv // n_b)
+        patch = _stitch_rings(
+            self._ring_pts(6), _make_iv_pts(self._ring_pts(12, radius=1.2))
+        )
         assert isinstance(patch, trimesh.Trimesh)
 
     def test_vertex_count(self):
         n_b, n_iv = 6, 12
-        boundary_pts = self._ring_pts(n_b)
-        iv_pts = _make_iv_pts(self._ring_pts(n_iv, radius=1.2))
-        patch = _stitch_boundary_ring(boundary_pts, iv_pts, n_iv // n_b)
+        patch = _stitch_rings(
+            self._ring_pts(n_b), _make_iv_pts(self._ring_pts(n_iv, radius=1.2))
+        )
         assert len(patch.vertices) == n_b + n_iv
 
     def test_no_nan_vertices(self):
-        n_b, n_iv = 4, 8
-        boundary_pts = self._ring_pts(n_b)
-        iv_pts = _make_iv_pts(self._ring_pts(n_iv, radius=1.5))
-        patch = _stitch_boundary_ring(boundary_pts, iv_pts, n_iv // n_b)
+        patch = _stitch_rings(
+            self._ring_pts(4), _make_iv_pts(self._ring_pts(8, radius=1.5))
+        )
         assert not np.isnan(patch.vertices).any()
 
-    def test_has_faces(self):
-        n_b, n_iv = 6, 12
-        boundary_pts = self._ring_pts(n_b)
-        iv_pts = _make_iv_pts(self._ring_pts(n_iv, radius=1.2))
-        patch = _stitch_boundary_ring(boundary_pts, iv_pts, n_iv // n_b)
-        assert len(patch.faces) > 0
+    @pytest.mark.parametrize(
+        "n_b, n_iv", [(6, 6), (4, 6), (8, 24), (10, 100), (67, 100), (33, 50)]
+    )
+    def test_strip_is_closed_annulus(self, n_b, n_iv):
+        """A closed annulus needs exactly n_b + n_iv triangles and no extra holes.
+
+        The predecessor emitted only n_iv triangles, leaving one hole per boundary
+        segment; the surface only closed because fill_holes ran afterwards.
+        """
+        patch = _stitch_rings(
+            self._ring_pts(n_b), _make_iv_pts(self._ring_pts(n_iv, radius=1.6, z=1.0))
+        )
+        assert len(patch.faces) == n_b + n_iv
+        # The only open edges are the two rings the strip is bounded by.
+        assert len(open_boundary_edges(patch.faces)) == n_b + n_iv
+
+    def test_no_degenerate_faces(self):
+        patch = _stitch_rings(
+            self._ring_pts(10), _make_iv_pts(self._ring_pts(100, radius=1.6, z=1.0))
+        )
+        assert patch.area_faces.min() > 0.0
+
+    def test_rejects_tiny_rings(self):
+        with pytest.raises(ValueError, match="at least 3 points"):
+            _stitch_rings(self._ring_pts(2), _make_iv_pts(self._ring_pts(8)))
 
     def test_outward_direction_orients_patch(self):
         """When outward_direction is given, average face normal should align with it."""
-        n_b, n_iv = 6, 12
-        boundary_pts = self._ring_pts(n_b, z=0.0)
-        iv_pts = _make_iv_pts(self._ring_pts(n_iv, radius=1.2, z=0.0))
+        boundary_pts = self._ring_pts(6, z=0.0)
+        iv_pts = _make_iv_pts(self._ring_pts(12, radius=1.2, z=0.0))
         outward = np.array([0.0, 0.0, 1.0])
-        patch = _stitch_boundary_ring(
-            boundary_pts, iv_pts, n_iv // n_b, outward_direction=outward
-        )
+        patch = _stitch_rings(boundary_pts, iv_pts, outward_direction=outward)
         valid = ~np.isnan(patch.face_normals).any(axis=1)
         if valid.any():
             avg_normal = patch.face_normals[valid].mean(axis=0)
@@ -1141,157 +1176,694 @@ class TestEnforceLayerGapFromPlane:
 # ===========================================================================
 
 
+def _make_two_rim_tube(n_theta: int = 12, jitter: float = 0.0) -> trimesh.Trimesh:
+    """Open tube split into two halves, giving four rims at z=0,1,2,3.
+
+    The band between z=1 and z=2 is omitted, so the two halves are separate and
+    the outermost rims (z=0 and z=3) are unambiguously nearest to a centroid
+    below and above the tube.  *jitter* roughens those two outer rims radially
+    and along z, so ring conditioning (projection + respacing) has visible work
+    to do - a perfect circle would be conditioned into itself.
+    """
+    angles = np.linspace(0, 2 * np.pi, n_theta, endpoint=False)
+    rings = [0.0, 1.0, 2.0, 3.0]
+    rng = np.random.default_rng(0)
+    verts = []
+    for j, z in enumerate(rings):
+        outer_rim = j in (0, 3)
+        for a in angles:
+            r = 1.0
+            dz = 0.0
+            if jitter and outer_rim:
+                r += jitter * float(rng.standard_normal())
+                dz = jitter * float(rng.standard_normal())
+            verts.append([r * np.cos(a), r * np.sin(a), z + dz])
+    verts = np.array(verts, dtype=float)
+
+    def vid(i, j):
+        return j * n_theta + (i % n_theta)
+
+    faces = []
+    for j in (0, 2):  # skip the band between z=1 and z=2 -> separate halves
+        for i in range(n_theta):
+            faces.extend(
+                [
+                    [vid(i, j), vid(i + 1, j), vid(i + 1, j + 1)],
+                    [vid(i, j), vid(i + 1, j + 1), vid(i, j + 1)],
+                ]
+            )
+    return trimesh.Trimesh(vertices=verts, faces=np.array(faces), process=False)
+
+
 class TestPrepareProxDistBoundaryPts:
-    """Two sub-cases: non-anomalous (proximal_is_ostium=False) and anomalous."""
+    """Stitching now consumes two whole rings rather than one flat point list."""
 
-    # ------------------------------------------------------------------
-    # Non-anomalous: proximal path must be identical to the distal path
-    # (both use order_points_list — no projection, no clamping).
-    # ------------------------------------------------------------------
+    N_THETA = 12
 
-    def test_non_anomalous_prox_same_as_distal_algo(self):
-        """proximal_is_ostium=False: prox result is just ordered by adjacency, same as dist."""
+    def _two_rim_results(self, jitter: float = 0.0):
+        mesh = _make_two_rim_tube(self.N_THETA, jitter=jitter)
+        rings = order_boundary_rings(mesh.faces, mesh.vertices)
+        assert len(rings) == 4, "tube should expose 4 rims (2 per half)"
+        results = {
+            f"boundary_points_{k + 1}": [tuple(mesh.vertices[i]) for i in ring]
+            for k, ring in enumerate(rings)
+        }
+        return mesh, results
+
+    def test_requires_two_rings(self):
+        """A single stored ring is a usage error, not a ZeroDivisionError deeper in."""
         mesh = _make_hex_fan_mesh()
-        outer = [tuple(mesh.vertices[i]) for i in range(6)]
+        results = {"boundary_points_1": [tuple(mesh.vertices[i]) for i in range(6)]}
+        with pytest.raises(ValueError, match="target_boundaries=2"):
+            _prepare_prox_dist_boundary_pts(
+                mesh, results, (1.0, 0.0, 0.0), (-1.0, 0.0, 0.0)
+            )
 
-        # Put three outer vertices near prox_centroid, three near dist_centroid
-        prox_centroid = (1.0, 0.0, 0.0)  # near vertex 0
-        dist_centroid = (-1.0, 0.0, 0.0)  # near vertex 3
-        results = {"boundary_points": outer}
+    def test_rings_assigned_whole_not_split(self):
+        """Each returned ring must come from exactly one stored ring, never a mix."""
+        mesh, results = self._two_rim_results()
+        stored = [set(v) for k, v in results.items()]
 
         prox_pts, dist_pts, _ = _prepare_prox_dist_boundary_pts(
-            mesh, results, prox_centroid, dist_centroid, proximal_is_ostium=False
+            mesh,
+            results,
+            (0.0, 0.0, -5.0),
+            (0.0, 0.0, 8.0),
+            proximal_is_ostium=False,
         )
 
-        # Sets must cover all outer vertices between them
-        assert set(prox_pts) | set(dist_pts) == set(outer)
-        # Both halves are non-empty
         assert len(prox_pts) > 0 and len(dist_pts) > 0
+        # Points move (projection/respacing), so compare counts against a stored
+        # ring rather than coordinates: a torn ring would not match any of them.
+        assert any(len(prox_pts) == len(s) for s in stored)
+        assert any(len(dist_pts) == len(s) for s in stored)
 
-    def test_non_anomalous_prox_points_are_mesh_adjacent(self):
-        """Proximal points returned by non-anomalous path are edge-connected in order."""
-        from multimodars.multimodars import build_adjacency_map
-
-        mesh = _make_hex_fan_mesh()
-        outer = [tuple(mesh.vertices[i]) for i in range(6)]
-        prox_centroid = (1.0, 0.0, 0.0)
-        dist_centroid = (-100.0, 0.0, 0.0)  # all vertices are proximal
-        results = {"boundary_points": outer}
-
-        prox_pts, _, _ = _prepare_prox_dist_boundary_pts(
-            mesh, results, prox_centroid, dist_centroid, proximal_is_ostium=False
+    def test_prox_ring_is_nearer_prox_centroid(self):
+        mesh, results = self._two_rim_results()
+        prox_pts, dist_pts, _ = _prepare_prox_dist_boundary_pts(
+            mesh,
+            results,
+            (0.0, 0.0, -5.0),
+            (0.0, 0.0, 8.0),
+            proximal_is_ostium=False,
         )
+        assert np.mean([p[2] for p in prox_pts]) < np.mean([p[2] for p in dist_pts])
 
-        adj = build_adjacency_map(mesh.faces.tolist())
-        coord_to_idx = {tuple(v): i for i, v in enumerate(mesh.vertices)}
-        for k in range(len(prox_pts) - 1):
-            a = coord_to_idx[tuple(prox_pts[k])]
-            b = coord_to_idx[tuple(prox_pts[k + 1])]
-            assert b in adj.get(a, [])
+    def test_densifies_both_rings_to_target(self):
+        mesh, results = self._two_rim_results()
+        prox_pts, dist_pts, _ = _prepare_prox_dist_boundary_pts(
+            mesh,
+            results,
+            (0.0, 0.0, -5.0),
+            (0.0, 0.0, 8.0),
+            proximal_is_ostium=False,
+            target_n=40,
+        )
+        assert len(prox_pts) == 40
+        assert len(dist_pts) == 40
 
-    # ------------------------------------------------------------------
-    # Anomalous: boundary ring in XZ plane (normal [0,1,0]),
-    # IV frame in XY plane (normal [0,0,1]).  Angle = 90° > 45° threshold
-    # → clamping + overshoot are applied.
-    # ------------------------------------------------------------------
+    def test_conditioning_applies_to_both_rims(self):
+        """Both rims are conditioned now, not just the proximal ostium one."""
+        mesh, results = self._two_rim_results(jitter=0.15)
+        _, _, updated = _prepare_prox_dist_boundary_pts(
+            mesh,
+            results,
+            (0.0, 0.0, -5.0),
+            (0.0, 0.0, 8.0),
+            proximal_is_ostium=False,
+        )
+        # Rings z=0 and z=3 are the two chosen rims; both must have been moved.
+        for j in (0, 3):
+            idx = list(range(j * self.N_THETA, (j + 1) * self.N_THETA))
+            assert not np.allclose(
+                updated.vertices[idx], mesh.vertices[idx]
+            ), f"rim at ring {j} was not conditioned"
 
-    def _make_anomalous_results(self):
+    def test_conditioned_rim_is_planar_and_evenly_spaced(self):
+        mesh, results = self._two_rim_results(jitter=0.15)
+        prox_pts, _, _ = _prepare_prox_dist_boundary_pts(
+            mesh,
+            results,
+            (0.0, 0.0, -5.0),
+            (0.0, 0.0, 8.0),
+            proximal_is_ostium=False,
+        )
+        pts = np.asarray(prox_pts, dtype=np.float64)
+        # Planar: spread along the best-fit normal collapses.
+        centred = pts - pts.mean(axis=0)
+        normal = np.linalg.svd(centred, full_matrices=False)[2][-1]
+        assert np.abs(centred @ normal).max() < 1e-9
+        # Evenly spaced: segment lengths are near-uniform.
+        loop = np.vstack([pts, pts[:1]])
+        seg = np.linalg.norm(np.diff(loop, axis=0), axis=1)
+        assert seg.max() / seg.min() < 1.05
+
+
+# ===========================================================================
+# stitching._condition_ostium_ring
+# ===========================================================================
+
+
+class TestConditionOstiumRing:
+    """Boundary ring in the XZ plane (normal [0,1,0]) vs IV frame in XY
+    (normal [0,0,1]).  The 90 deg angle triggers the clamping path."""
+
+    def _make_anomalous(self):
         mesh = _make_annular_xz_mesh()
-        inner = [tuple(mesh.vertices[i]) for i in range(8)]
-        return mesh, {"boundary_points": inner}
+        ring = [tuple(mesh.vertices[i]) for i in range(8)]
+        return mesh, ring
 
     def _make_iv_frame_xy(self, n: int = 8, radius: float = 0.5):
-        """IV lumen ring in the XY plane (z=0), normal ≈ [0,0,1]."""
-        angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
-        coords = [
-            (radius * float(np.cos(a)), radius * float(np.sin(a)), 0.0) for a in angles
-        ]
-        return _make_iv_pts(coords)
+        """IV lumen ring in the XY plane (z=0), normal ~ [0,0,1]."""
+        return _make_iv_pts(_ring_coords(n, radius, 0.0))
 
-    def test_anomalous_prox_boundary_pts_respect_overshoot(self):
-        """After clamping, all proximal boundary points must be >= overshoot from IV plane."""
-        mesh, results = self._make_anomalous_results()
-        iv_pts = self._make_iv_frame_xy()
+    def test_boundary_pts_respect_overshoot(self):
+        mesh, ring = self._make_anomalous()
         overshoot = 1.0
-        # IV plane: z=0 (normal [0,0,1]), prox_centroid at origin
-        prox_centroid = (0.0, 0.0, 0.0)
-        dist_centroid = (100.0, 0.0, 0.0)  # all boundary pts go to prox
-
-        prox_pts, _, _ = _prepare_prox_dist_boundary_pts(
+        out, _ = _condition_ostium_ring(
             mesh,
-            results,
-            prox_centroid,
-            dist_centroid,
-            proximal_is_ostium=True,
-            proximal_iv_frame_pts=iv_pts,
-            clamp_overshoot=overshoot,
+            ring,
+            (0.0, 0.0, 0.0),
+            self._make_iv_frame_xy(),
+            None,
+            45.0,
+            overshoot,
+        )
+        assert all(abs(p[2]) >= overshoot - 1e-6 for p in out), (
+            f"Some points are closer than {overshoot} mm to the IV plane: "
+            f"{[p[2] for p in out]}"
         )
 
-        # IV plane normal is [0,0,1]; correct side is z>0 after clamping.
-        # All returned proximal points must be >= overshoot from IV plane.
-        assert all(p[2] >= overshoot - 1e-6 for p in prox_pts), (
-            f"Some prox boundary points are closer than {overshoot} mm to IV plane: "
-            f"{[p[2] for p in prox_pts]}"
+    def test_no_point_left_on_wrong_side(self):
+        mesh, ring = self._make_anomalous()
+        out, _ = _condition_ostium_ring(
+            mesh, ring, (0.0, 0.0, 0.0), self._make_iv_frame_xy(), None, 45.0, 0.5
         )
+        signs = {np.sign(round(p[2], 9)) for p in out}
+        assert len(signs - {0.0}) == 1, f"points straddle the IV plane: {signs}"
 
-    def test_anomalous_no_prox_point_on_wrong_side(self):
-        """No proximal boundary point must end up on the intravascular (z<0) side."""
-        mesh, results = self._make_anomalous_results()
-        iv_pts = self._make_iv_frame_xy()
-        prox_centroid = (0.0, 0.0, 0.0)
-        dist_centroid = (100.0, 0.0, 0.0)
-
-        prox_pts, _, _ = _prepare_prox_dist_boundary_pts(
-            mesh,
-            results,
-            prox_centroid,
-            dist_centroid,
-            proximal_is_ostium=True,
-            proximal_iv_frame_pts=iv_pts,
+    def test_outer_ring_pushed_radially_outward(self):
+        mesh, ring = self._make_anomalous()
+        _, updated = _condition_ostium_ring(
+            mesh, ring, (0.0, 0.0, 0.0), self._make_iv_frame_xy(), None, 45.0, 0.5
         )
-
-        assert all(p[2] >= -1e-6 for p in prox_pts)
-
-    def test_anomalous_outer_ring_pushed_radially_outward(self):
-        """After clamping, outer-ring mesh vertices are shifted radially away from IV centre."""
-        mesh, results = self._make_anomalous_results()
-        iv_pts = self._make_iv_frame_xy()
-        prox_centroid = (0.0, 0.0, 0.0)
-        dist_centroid = (100.0, 0.0, 0.0)
-
-        _, _, updated_mesh = _prepare_prox_dist_boundary_pts(
-            mesh,
-            results,
-            prox_centroid,
-            dist_centroid,
-            proximal_is_ostium=True,
-            proximal_iv_frame_pts=iv_pts,
-        )
-
-        # Outer ring (indices 8-15) should be pushed radially outward.
-        # Vertices with x != 0 in the IV-plane projection are the ones that move.
         moved = False
         for i in range(8, 16):
-            old_r = np.linalg.norm(mesh.vertices[i, [0, 1]])  # XY radius
-            new_r = np.linalg.norm(updated_mesh.vertices[i, [0, 1]])
-            if old_r > 1e-6:  # skip vertices projecting to IV centre
+            old_r = float(np.linalg.norm(mesh.vertices[i, [0, 1]]))
+            new_r = float(np.linalg.norm(updated.vertices[i, [0, 1]]))
+            if old_r > 1e-6:
                 assert (
                     new_r >= old_r - 1e-6
-                ), f"Vertex {i} moved inward: {old_r:.4f} → {new_r:.4f}"
+                ), f"Vertex {i} moved inward: {old_r:.4f} -> {new_r:.4f}"
                 if new_r > old_r + 1e-6:
                     moved = True
         assert moved, "Expected at least some outer-ring vertices to move outward"
 
-    def test_non_anomalous_mesh_unchanged(self):
-        """proximal_is_ostium=False must not modify mesh vertex positions."""
-        mesh = _make_hex_fan_mesh()
-        outer = [tuple(mesh.vertices[i]) for i in range(6)]
-        results = {"boundary_points": outer}
-        prox_centroid = (1.0, 0.0, 0.0)
-        dist_centroid = (-100.0, 0.0, 0.0)
+    def test_noop_without_iv_frame(self):
+        mesh, ring = self._make_anomalous()
+        out, updated = _condition_ostium_ring(
+            mesh, ring, (0.0, 0.0, 0.0), None, None, 45.0, 0.5
+        )
+        assert out == ring
+        np.testing.assert_allclose(updated.vertices, mesh.vertices)
 
-        _, _, updated_mesh = _prepare_prox_dist_boundary_pts(
-            mesh, results, prox_centroid, dist_centroid, proximal_is_ostium=False
+
+# ---------------------------------------------------------------------------
+# Grid-with-hole factory for boundary-ring tests
+# ---------------------------------------------------------------------------
+
+
+def _make_grid_with_hole(n: int = 9, remove=None):
+    """Triangulated n x n grid with *remove* vertices' faces dropped.
+
+    Defaults to the single centre vertex, leaving two open boundaries: the outer
+    perimeter and a small inner rim around the hole.  Returns
+    ``(mesh, removed_indices, rim_seed_indices)``.
+    """
+
+    def vid(i, j):
+        return j * n + i
+
+    xs, ys = np.meshgrid(np.arange(n), np.arange(n))
+    verts = np.column_stack(
+        [xs.ravel().astype(float), ys.ravel().astype(float), np.zeros(n * n)]
+    )
+    faces = []
+    for j in range(n - 1):
+        for i in range(n - 1):
+            faces.append([vid(i, j), vid(i + 1, j), vid(i + 1, j + 1)])
+            faces.append([vid(i, j), vid(i + 1, j + 1), vid(i, j + 1)])
+    faces = np.array(faces)
+
+    removed = [vid(n // 2, n // 2)] if remove is None else [vid(*p) for p in remove]
+    keep = ~np.any(np.isin(faces, removed), axis=1)
+    kept_faces = faces[keep]
+
+    # Rim seeds: kept vertices that shared a face with a removed vertex.
+    touching = set(faces[~keep].ravel().tolist()) - set(removed)
+    mesh = trimesh.Trimesh(vertices=verts, faces=kept_faces, process=False)
+    return mesh, removed, touching
+
+
+def _open_edge_degrees(faces):
+    from collections import Counter
+
+    counts = Counter()
+    for a, b in open_boundary_edges(faces):
+        counts[int(a)] += 1
+        counts[int(b)] += 1
+    return set(counts.values())
+
+
+def _traces_real_edges(faces, ring_indices) -> bool:
+    """True when every consecutive pair in *ring_indices* is a real open edge."""
+    edges = {frozenset((int(a), int(b))) for a, b in open_boundary_edges(faces)}
+    n = len(ring_indices)
+    return all(
+        frozenset((ring_indices[k], ring_indices[(k + 1) % n])) in edges
+        for k in range(n)
+    )
+
+
+# ===========================================================================
+# boundary.open_boundary_edges
+# ===========================================================================
+
+
+class TestOpenBoundaryEdges:
+    def test_empty_faces(self):
+        assert len(open_boundary_edges(np.empty((0, 3), dtype=np.int64))) == 0
+
+    def test_closed_mesh_has_none(self):
+        sphere = trimesh.creation.icosphere(subdivisions=2)
+        assert len(open_boundary_edges(sphere.faces)) == 0
+
+    def test_hole_and_perimeter_are_open(self):
+        mesh, _, _ = _make_grid_with_hole()
+        edges = open_boundary_edges(mesh.faces)
+        # 9x9 grid perimeter = 32 edges, plus a 6-edge rim around the removed vertex
+        assert len(edges) == 32 + 6
+
+    def test_every_returned_edge_used_once(self):
+        mesh, _, _ = _make_grid_with_hole()
+        from collections import Counter
+
+        tri = mesh.faces[:, [0, 1, 1, 2, 2, 0]].reshape(-1, 2)
+        counts = Counter(frozenset((int(a), int(b))) for a, b in tri)
+        for a, b in open_boundary_edges(mesh.faces):
+            assert counts[frozenset((int(a), int(b)))] == 1
+
+
+# ===========================================================================
+# boundary.order_boundary_rings
+# ===========================================================================
+
+
+class TestOrderBoundaryRings:
+    def test_reports_every_rim_without_seeds(self):
+        mesh, _, _ = _make_grid_with_hole()
+        rings = order_boundary_rings(mesh.faces, mesh.vertices)
+        assert sorted(len(r) for r in rings) == [6, 32]
+
+    def test_seeds_select_only_the_touching_rim(self):
+        mesh, _, seeds = _make_grid_with_hole()
+        rings = order_boundary_rings(mesh.faces, mesh.vertices, seeds)
+        assert [len(r) for r in rings] == [6]
+
+    def test_ring_traces_real_mesh_edges(self):
+        mesh, _, seeds = _make_grid_with_hole()
+        rings = order_boundary_rings(mesh.faces, mesh.vertices, seeds)
+        assert _traces_real_edges(mesh.faces, rings[0])
+
+    def test_target_n_reduces_ring_count(self):
+        mesh, _, _ = _make_grid_with_hole()
+        rings = order_boundary_rings(mesh.faces, mesh.vertices, target_n=1)
+        assert len(rings) == 1
+
+    def test_no_open_boundary_returns_empty(self):
+        sphere = trimesh.creation.icosphere(subdivisions=2)
+        assert order_boundary_rings(sphere.faces, sphere.vertices) == []
+
+
+# ===========================================================================
+# boundary.clean_open_boundary
+# ===========================================================================
+
+
+class TestCleanOpenBoundary:
+    def test_clean_hole_needs_no_culling(self):
+        mesh, _, seeds = _make_grid_with_hole()
+        drop, rings = clean_open_boundary(mesh.faces, mesh.vertices, seeds)
+        assert drop == set()
+        assert [len(r) for r in rings] == [6]
+
+    def test_pinch_junction_is_culled_from_the_mesh(self):
+        """Two diagonally-touching holes share one rim vertex of degree 4.
+
+        That vertex cannot sit on a clean ring, so it is removed from the mesh
+        rather than merely skipped in the ring list.
+        """
+        mesh, _, seeds = _make_grid_with_hole(remove=[(4, 4), (6, 6)])
+        raw_degrees = _open_edge_degrees(mesh.faces)
+        assert 4 in raw_degrees, "fixture should expose a pinch junction"
+
+        drop, rings = clean_open_boundary(mesh.faces, mesh.vertices, seeds)
+        assert len(drop) == 1
+
+        surviving = mesh.faces[~np.any(np.isin(mesh.faces, list(drop)), axis=1)]
+        assert not np.isin(surviving, list(drop)).any()
+        assert _open_edge_degrees(surviving) == {2}
+        assert _traces_real_edges(surviving, rings[0])
+
+    def test_returns_empty_when_seeds_match_nothing(self):
+        mesh, _, _ = _make_grid_with_hole()
+        drop, rings = clean_open_boundary(mesh.faces, mesh.vertices, {10_000})
+        assert rings == []
+
+
+# ===========================================================================
+# stitching._redistribute_ring_evenly
+# ===========================================================================
+
+
+def _seg_lengths(pts):
+    arr = np.asarray(pts, dtype=np.float64)
+    loop = np.vstack([arr, arr[:1]])
+    return np.linalg.norm(np.diff(loop, axis=0), axis=1)
+
+
+class TestRedistributeRingEvenly:
+    def _clustered_ring(self, n: int = 24):
+        """Half the points crammed into a short arc."""
+        half = n // 2
+        angles = np.concatenate(
+            [
+                np.linspace(0, 0.4, half),
+                np.linspace(0.5, 2 * np.pi, n - half, endpoint=False),
+            ]
+        )
+        return [(float(np.cos(a)), float(np.sin(a)), 0.0) for a in angles]
+
+    def test_spacing_becomes_uniform(self):
+        ring = self._clustered_ring()
+        before = _seg_lengths(ring)
+        after = _seg_lengths(_redistribute_ring_evenly(ring))
+        assert before.max() / before.min() > 5.0  # fixture really is clustered
+        assert after.max() / after.min() < 1.05
+
+    def test_count_preserved_and_start_fixed(self):
+        ring = self._clustered_ring()
+        out = _redistribute_ring_evenly(ring)
+        assert len(out) == len(ring)
+        np.testing.assert_allclose(out[0], ring[0])
+
+    def test_does_not_shrink_the_ring(self):
+        ring = self._clustered_ring()
+        before = _seg_lengths(ring).sum()
+        after = _seg_lengths(_redistribute_ring_evenly(ring)).sum()
+        assert after == pytest.approx(before, rel=0.02)
+
+    def test_can_change_count(self):
+        assert len(_redistribute_ring_evenly(self._clustered_ring(), n_out=40)) == 40
+
+    def test_degenerate_input_passes_through(self):
+        pts = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]
+        assert _redistribute_ring_evenly(pts) == pts
+
+
+# ===========================================================================
+# stitching._smooth_ring_preserving_size
+# ===========================================================================
+
+
+class TestSmoothRingPreservingSize:
+    def _noisy_ring(self, n: int, radius: float = 2.0, noise: float = 0.08):
+        rng = np.random.default_rng(n)
+        angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
+        radii = radius + noise * rng.standard_normal(n)
+        return [
+            (
+                float(radii[i] * np.cos(a)),
+                float(radii[i] * np.sin(a)),
+                float(0.15 * rng.standard_normal()),
+            )
+            for i, a in enumerate(angles)
+        ]
+
+    @pytest.mark.parametrize("n", [17, 29, 50, 100])
+    def test_calibre_is_preserved(self, n):
+        """Plain Laplacian smoothing shrinks a ring, worst on coarse ones
+        (~16 % at n=17), which showed up as a pinched distal seam."""
+        ring = self._noisy_ring(n)
+        before = _ring_calibre(np.asarray(ring, dtype=np.float64))
+        after = _ring_calibre(
+            np.asarray(_smooth_ring_preserving_size(ring), dtype=np.float64)
+        )
+        assert after == pytest.approx(before, rel=0.01)
+
+    def test_still_reduces_roughness(self):
+        ring = self._noisy_ring(17)
+
+        def roughness(pts):
+            arr = np.asarray(pts, dtype=np.float64)
+            return float(np.linalg.norm(arr - arr.mean(axis=0), axis=1).std())
+
+        assert roughness(_smooth_ring_preserving_size(ring)) < 0.5 * roughness(ring)
+
+    def test_does_not_circularise_an_ellipse(self):
+        """Scaling is uniform about the centroid - ostia are elliptical."""
+        angles = np.linspace(0, 2 * np.pi, 24, endpoint=False)
+        ellipse = [
+            (3.0 * float(np.cos(a)), 1.5 * float(np.sin(a)), 0.0) for a in angles
+        ]
+        out = np.asarray(_smooth_ring_preserving_size(ellipse), dtype=np.float64)
+        assert np.ptp(out[:, 0]) / 2 == pytest.approx(3.0, rel=0.02)
+        assert np.ptp(out[:, 1]) / 2 == pytest.approx(1.5, rel=0.02)
+
+
+# ===========================================================================
+# stitching._densify_boundary
+# ===========================================================================
+
+
+class TestDensifyBoundary:
+    def _hole_rim(self):
+        mesh, _, seeds = _make_grid_with_hole()
+        ring_idx = order_boundary_rings(mesh.faces, mesh.vertices, seeds)[0]
+        return mesh, [tuple(mesh.vertices[i]) for i in ring_idx]
+
+    @pytest.mark.parametrize("target", [6, 12, 24, 100])
+    def test_hits_exact_target_count(self, target):
+        mesh, ring = self._hole_rim()
+        _, dense = _densify_boundary(mesh, ring, target)
+        assert len(dense) == max(target, len(ring))
+
+    def test_adds_one_vertex_and_one_face_per_inserted_point(self):
+        mesh, ring = self._hole_rim()
+        target = 30
+        new_mesh, dense = _densify_boundary(mesh, ring, target)
+        extra = target - len(ring)
+        assert len(new_mesh.vertices) == len(mesh.vertices) + extra
+        assert len(new_mesh.faces) == len(mesh.faces) + extra
+
+    def test_leaves_no_t_junctions(self):
+        """Each subdivided edge's face is refanned onto its opposite vertex, so
+        every rim vertex keeps open-edge degree 2."""
+        mesh, ring = self._hole_rim()
+        new_mesh, _ = _densify_boundary(mesh, ring, 40)
+        assert _open_edge_degrees(new_mesh.faces) == {2}
+
+    def test_dense_ring_traces_real_mesh_edges(self):
+        mesh, ring = self._hole_rim()
+        new_mesh, dense = _densify_boundary(mesh, ring, 40)
+        coord_to_idx = {tuple(v): i for i, v in enumerate(new_mesh.vertices)}
+        idx = [coord_to_idx[tuple(p)] for p in dense]
+        assert _traces_real_edges(new_mesh.faces, idx)
+
+    def test_target_below_current_count_is_ignored(self, capsys):
+        mesh, ring = self._hole_rim()
+        new_mesh, dense = _densify_boundary(mesh, ring, len(ring) - 1)
+        assert dense == list(ring)
+        assert len(new_mesh.faces) == len(mesh.faces)
+        assert "more than the target" in capsys.readouterr().out
+
+
+# ===========================================================================
+# stitching._assign_rings_to_ends
+# ===========================================================================
+
+
+class TestAssignRingsToEnds:
+    def _rings(self):
+        return [_ring_coords(8, 1.0, 0.0), _ring_coords(8, 1.0, 10.0)]
+
+    def test_picks_nearest_pairing(self):
+        prox, dist, leftover = _assign_rings_to_ends(
+            self._rings(), (0.0, 0.0, -2.0), (0.0, 0.0, 12.0)
+        )
+        assert np.mean([p[2] for p in prox]) == pytest.approx(0.0)
+        assert np.mean([p[2] for p in dist]) == pytest.approx(10.0)
+        assert leftover == []
+
+    def test_swaps_when_centroids_swap(self):
+        prox, _, _ = _assign_rings_to_ends(
+            self._rings(), (0.0, 0.0, 12.0), (0.0, 0.0, -2.0)
+        )
+        assert np.mean([p[2] for p in prox]) == pytest.approx(10.0)
+
+    def test_reports_leftover_rings(self):
+        rings = self._rings() + [_ring_coords(8, 1.0, 5.0)]
+        _, _, leftover = _assign_rings_to_ends(
+            rings, (0.0, 0.0, -2.0), (0.0, 0.0, 12.0)
+        )
+        assert leftover == [2]
+
+    def test_assigns_whole_rings(self):
+        """A ring is handed over intact, never split between the two ends."""
+        rings = self._rings()
+        prox, dist, _ = _assign_rings_to_ends(rings, (0.0, 0.0, -2.0), (0.0, 0.0, 12.0))
+        assert set(prox) in (set(rings[0]), set(rings[1]))
+        assert set(dist) in (set(rings[0]), set(rings[1]))
+        assert set(prox).isdisjoint(set(dist))
+
+
+# ===========================================================================
+# stitching._toward_aorta / _shift_plane_clear_of
+# ===========================================================================
+
+
+class TestTowardAorta:
+    def test_uses_aorta_centroid_not_vessel_axis(self):
+        """The vessel axis is unusable for an intramural course: the coronary runs
+        inside the aortic wall, so the lumen sits roughly perpendicular to it."""
+        ring_centroid = np.zeros(3)
+        aorta = [(-8.0, a, b) for a in (-3, 0, 3) for b in (-3, 0, 3)]  # aorta at -x
+        vessel_axis = np.array([0.0, 1.0, 0.0])  # perpendicular to that
+
+        direction, source = _toward_aorta(ring_centroid, aorta, vessel_axis)
+        assert direction[0] < 0, "must point at the aorta, not along the axis"
+        assert "aorta_points" in source
+
+    def test_falls_back_to_vessel_axis(self):
+        direction, source = _toward_aorta(np.zeros(3), [], np.array([0.0, 1.0, 0.0]))
+        np.testing.assert_allclose(direction, [0.0, 1.0, 0.0])
+        assert "vessel axis" in source
+
+    def test_none_when_nothing_available(self):
+        direction, _ = _toward_aorta(np.zeros(3), [], None)
+        assert direction is None
+
+
+class TestShiftPlaneClearOf:
+    def _straddling_points(self):
+        angles = np.linspace(0, 2 * np.pi, 12, endpoint=False)
+        return np.array(
+            [[0.3 * np.cos(a), 0.3 * np.sin(a), z] for a in angles for z in (-0.5, 0.5)]
         )
 
-        np.testing.assert_allclose(updated_mesh.vertices, mesh.vertices)
+    def test_shifts_until_all_points_are_behind(self):
+        pts = self._straddling_points()
+        origin = np.zeros(3)
+        normal = np.array([0.0, 0.0, 1.0])
+        overshoot = 0.5
+
+        new_origin, new_normal, moved = _shift_plane_clear_of(
+            origin, normal, pts, normal, overshoot
+        )
+        assert moved == pytest.approx(1.0)
+        assert ((pts - new_origin) @ new_normal).max() <= -overshoot + 1e-9
+
+    def test_orients_normal_along_outward(self):
+        pts = self._straddling_points()
+        _, new_normal, _ = _shift_plane_clear_of(
+            np.zeros(3),
+            np.array([0.0, 0.0, -1.0]),  # points the wrong way
+            pts,
+            np.array([0.0, 0.0, 1.0]),
+            0.5,
+        )
+        assert new_normal[2] > 0
+
+    def test_no_move_when_already_clear(self):
+        pts = self._straddling_points()
+        origin = np.zeros(3)
+        normal = np.array([0.0, 0.0, 1.0])
+        new_origin, new_normal, _ = _shift_plane_clear_of(
+            origin, normal, pts, normal, 0.5
+        )
+        _, _, moved_again = _shift_plane_clear_of(
+            new_origin, new_normal, pts, normal, 0.5
+        )
+        assert moved_again == 0.0
+
+
+# ===========================================================================
+# Per-ring boundary storage
+# ===========================================================================
+
+
+class TestBoundaryRingStorage:
+    def _results(self):
+        mesh, removed, _ = _make_grid_with_hole()
+        return {
+            "mesh": mesh,
+            "anomalous_points": [tuple(mesh.vertices[i]) for i in removed],
+            "aorta_points": [],
+        }
+
+    def test_stores_per_ring_and_flat_keys(self):
+        updated = remove_labeled_points_from_mesh(
+            self._results(), "anomalous_points", target_boundaries=1
+        )
+        assert "boundary_points_1" in updated
+        assert updated["boundary_points"] == updated["boundary_points_1"]
+
+    def test_flat_key_is_the_concatenation(self):
+        mesh, removed, _ = _make_grid_with_hole(remove=[(2, 2), (6, 6)])
+        results = {
+            "mesh": mesh,
+            "anomalous_points": [tuple(mesh.vertices[i]) for i in removed],
+        }
+        updated = remove_labeled_points_from_mesh(
+            results, "anomalous_points", target_boundaries=2
+        )
+        rings = [updated["boundary_points_1"], updated["boundary_points_2"]]
+        assert updated["boundary_points"] == rings[0] + rings[1]
+
+    def test_stale_per_ring_keys_are_cleared(self):
+        """A later trim producing fewer rings must not leave a phantom ring."""
+        results = self._results()
+        results["boundary_points_2"] = [(99.0, 99.0, 99.0)]
+        results["boundary_points_3"] = [(98.0, 98.0, 98.0)]
+        updated = remove_labeled_points_from_mesh(
+            results, "anomalous_points", target_boundaries=1
+        )
+        assert "boundary_points_2" not in updated
+        assert "boundary_points_3" not in updated
+
+    def test_keep_labeled_points_also_stores_rings(self):
+        # Keep a contiguous block, so surviving faces (and therefore a rim) exist.
+        n = 9
+        mesh, _, _ = _make_grid_with_hole(n)
+        keep = [
+            tuple(mesh.vertices[j * n + i]) for j in range(2, 7) for i in range(2, 7)
+        ]
+        updated = keep_labeled_points_from_mesh({"mesh": mesh, "k": keep}, "k")
+        assert len(updated["mesh"].faces) > 0
+        assert "boundary_points_1" in updated
+        assert updated["boundary_points"] == updated["boundary_points_1"]
+
+    def test_sync_results_to_mesh_remaps_per_ring_keys(self):
+        updated = remove_labeled_points_from_mesh(
+            self._results(), "anomalous_points", target_boundaries=1
+        )
+        old_mesh = updated["mesh"]
+        moved = old_mesh.copy()
+        moved.vertices = moved.vertices + np.array([0.0, 0.0, 5.0])
+
+        synced = sync_results_to_mesh(updated, old_mesh, moved)
+        assert len(synced["boundary_points_1"]) == len(updated["boundary_points_1"])
+        assert all(
+            p[2] == pytest.approx(q[2] + 5.0)
+            for p, q in zip(synced["boundary_points_1"], updated["boundary_points_1"])
+        )
