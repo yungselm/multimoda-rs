@@ -340,6 +340,8 @@ def sync_results_to_mesh(
         "distal_points",
         "anomalous_points",
         "boundary_points",
+        # Per-ring boundary lists, so they stay in step with "boundary_points".
+        *sorted(k for k in updated if k.startswith("boundary_points_")),
     ):
         if key not in updated or not updated[key]:
             continue

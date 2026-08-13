@@ -9,7 +9,102 @@ from ..multimodars import (
     fix_mesh_winding,
 )
 from .._converters import geometry_to_trimesh
-from .boundary import clean_open_boundary
+from .boundary import clean_open_boundary, order_boundary_rings
+
+# Per-ring boundary keys: "boundary_points_1", "boundary_points_2", ...
+_BOUNDARY_RING_PREFIX = "boundary_points_"
+
+
+def _store_boundary_rings(
+    updated: dict,
+    vertices: np.ndarray,
+    rings: list[list[int]],
+) -> None:
+    """Store *rings* in *updated* as one list per ring, plus the flat total.
+
+    Each ring becomes ``boundary_points_1``, ``boundary_points_2``, ... in walk
+    order, so downstream code can treat a rim as a unit instead of guessing the
+    split back out of a flat list.  ``boundary_points`` still holds the
+    concatenation of all rings for callers that just want every boundary vertex.
+    Per-ring keys from an earlier call are cleared first, so a stale ring from a
+    previous removal cannot linger and be mistaken for a current one.
+    """
+    for key in [k for k in updated if k.startswith(_BOUNDARY_RING_PREFIX)]:
+        del updated[key]
+    per_ring = [[tuple(vertices[i]) for i in ring] for ring in rings]
+    for n, pts in enumerate(per_ring, start=1):
+        updated[f"{_BOUNDARY_RING_PREFIX}{n}"] = pts
+    updated["boundary_points"] = [pt for pts in per_ring for pt in pts]
+
+
+def _boundary_rings(results: dict, mesh: trimesh.Trimesh) -> list[list[tuple]]:
+    """Return the boundary rings stored in *results*, each in walk order.
+
+    Prefers the per-ring ``boundary_points_<n>`` lists written by
+    :func:`_store_boundary_rings`.  If only the flat ``boundary_points`` is
+    present - a results dict built before ring grouping, or by hand - the rings
+    are recovered from the mesh's open edges instead, so callers always get
+    properly ordered rings rather than an arbitrary point order.
+    """
+    rings: list[list[tuple]] = []
+    n = 1
+    while (key := f"{_BOUNDARY_RING_PREFIX}{n}") in results:
+        if results[key]:
+            rings.append([tuple(p) for p in results[key]])
+        n += 1
+    if rings:
+        return rings
+
+    flat = results.get("boundary_points") or []
+    if not flat:
+        return []
+    coord_to_idx = {tuple(v): i for i, v in enumerate(mesh.vertices)}
+    seeds = {idx for pt in flat if (idx := coord_to_idx.get(tuple(pt))) is not None}
+    return [
+        [tuple(mesh.vertices[i]) for i in ring]
+        for ring in order_boundary_rings(mesh.faces, mesh.vertices, seeds)
+    ]
+
+
+def _assign_rings_to_ends(
+    rings: list[list[tuple]],
+    prox_centroid: tuple[float, float, float],
+    dist_centroid: tuple[float, float, float],
+) -> tuple[list[tuple], list[tuple], list[int]]:
+    """Choose which whole ring stitches to each end of the intravascular mesh.
+
+    Of every way to hand two distinct rings to the proximal and distal ends, the
+    pairing with the smallest total centroid distance wins.  Assigning whole
+    rings - rather than each boundary point independently - means a stray point
+    that happens to sit nearer the far centroid can no longer tear one ring
+    across both seams.
+
+    Returns
+    -------
+    (list, list, list[int])
+        The proximal ring, the distal ring, and the indices of any rings left
+        over.
+    """
+    prox = np.asarray(prox_centroid, dtype=np.float64)
+    dist = np.asarray(dist_centroid, dtype=np.float64)
+    centroids = [np.asarray(r, dtype=np.float64).mean(axis=0) for r in rings]
+
+    best_cost = float("inf")
+    best = (0, 1)
+    for i in range(len(rings)):
+        for j in range(len(rings)):
+            if i == j:
+                continue
+            cost = float(
+                np.linalg.norm(centroids[i] - prox)
+                + np.linalg.norm(centroids[j] - dist)
+            )
+            if cost < best_cost:
+                best_cost, best = cost, (i, j)
+
+    i, j = best
+    leftover = [k for k in range(len(rings)) if k not in (i, j)]
+    return rings[i], rings[j], leftover
 
 
 def remove_labeled_points_from_mesh(
@@ -46,9 +141,9 @@ def remove_labeled_points_from_mesh(
     dict
         Updated *results* dict with ``"mesh"`` replaced by the trimmed mesh,
         all *region_keys* cleared, and all other coordinate lists remapped to
-        the new vertex set.  A new ``"boundary_points"`` entry is added
-        containing the open-boundary ring vertices adjacent to the removed
-        region(s).
+        the new vertex set.  The open boundary exposed by the removal is stored
+        both per ring - ``"boundary_points_1"``, ``"boundary_points_2"``, ... in
+        walk order - and flattened into ``"boundary_points"``.
     """
     if isinstance(region_keys, str):
         region_keys = [region_keys]
@@ -103,10 +198,6 @@ def remove_labeled_points_from_mesh(
         face_keep_mask = np.all(keep_mask[mesh.faces], axis=1)
     new_faces = mesh.faces[face_keep_mask]
 
-    boundary_points: list[tuple] = [
-        tuple(mesh.vertices[i]) for component in components for i in component
-    ]
-
     # 5. Remap vertex indices in the kept faces
     new_index = np.full(n_vertices, -1, dtype=np.int64)
     new_index[keep_mask] = np.arange(keep_mask.sum(), dtype=np.int64)
@@ -120,7 +211,7 @@ def remove_labeled_points_from_mesh(
 
     updated = dict(results)
     updated["mesh"] = new_mesh
-    updated["boundary_points"] = boundary_points
+    _store_boundary_rings(updated, mesh.vertices, components)
 
     print(f"Applying removal of '{region_keys}'")
     print(f"Removed {len(points_to_remove)}")
@@ -181,8 +272,9 @@ def keep_labeled_points_from_mesh(
     dict
         Updated *results* dict with ``"mesh"`` replaced by the trimmed mesh
         and all other coordinate lists filtered to the surviving vertex set.
-        A new ``"boundary_points"`` entry is added containing the open-boundary
-        ring vertices adjacent to the removed region.
+        The open boundary is stored both per ring - ``"boundary_points_1"``,
+        ``"boundary_points_2"``, ... in walk order - and flattened into
+        ``"boundary_points"``.
     """
     mesh: trimesh.Trimesh = results["mesh"]
 
@@ -230,10 +322,6 @@ def keep_labeled_points_from_mesh(
         face_keep_mask = np.all(keep_mask[mesh.faces], axis=1)
     new_faces = mesh.faces[face_keep_mask]
 
-    boundary_points: list[tuple] = [
-        tuple(mesh.vertices[i]) for component in components for i in component
-    ]
-
     # Remap vertex indices
     new_index = np.full(n_vertices, -1, dtype=np.int64)
     new_index[keep_mask] = np.arange(keep_mask.sum(), dtype=np.int64)
@@ -246,7 +334,7 @@ def keep_labeled_points_from_mesh(
 
     updated = dict(results)
     updated["mesh"] = new_mesh
-    updated["boundary_points"] = boundary_points
+    _store_boundary_rings(updated, mesh.vertices, components)
 
     for key in (
         "aorta_points",
@@ -275,6 +363,11 @@ def stitch_ccta_to_intravascular(
     clamp_overshoot: float = 0.5,
 ) -> dict:
     """Stitch an aligned intravascular mesh to a CCTA mesh.
+
+    *results* must carry two boundary rings (see
+    :func:`remove_labeled_points_from_mesh` with ``target_boundaries=2``).  Each
+    ring is assigned to an IV end as a whole, by whichever pairing of rings to
+    the proximal and distal frame centroids is closest overall.
 
     ``prox_start_mode`` / ``dist_start_mode`` control how index 0 of each
     boundary ring is chosen before stitching:
@@ -399,15 +492,23 @@ def _prepare_prox_dist_boundary_pts(
     ostium_angle_threshold_deg: float = 45.0,
     clamp_overshoot: float = 1.0,
 ) -> tuple[list, list, trimesh.Trimesh]:
-    proximal_boundary_pts = []
-    distal_boundary_pts = []
-    for pt in results["boundary_points"]:
-        distance_prox = np.linalg.norm(np.array(prox_centroid) - np.array(pt))
-        distance_dist = np.linalg.norm(np.array(dist_centroid) - np.array(pt))
-        if distance_prox <= distance_dist:
-            proximal_boundary_pts.append(pt)
-        else:
-            distal_boundary_pts.append(pt)
+    rings = _boundary_rings(results, mesh)
+    if len(rings) < 2:
+        raise ValueError(
+            f"Stitching needs a proximal and a distal boundary ring, but "
+            f"{len(rings)} were found. Re-run the removal with "
+            f"target_boundaries=2 so both rims are kept as separate rings."
+        )
+
+    proximal_boundary_pts, distal_boundary_pts, leftover = _assign_rings_to_ends(
+        rings, prox_centroid, dist_centroid
+    )
+    if leftover:
+        print(
+            f"Warning: {len(leftover)} boundary ring(s) "
+            f"{[len(rings[k]) for k in leftover]} are not adjacent to either IV "
+            f"end and are left unstitched."
+        )
 
     if proximal_is_ostium:
         # Project onto best-fit plane + Laplacian smooth.
@@ -456,9 +557,11 @@ def _prepare_prox_dist_boundary_pts(
                 mesh, fixed_indices, iv_origin, iv_normal
             )
     else:
-        prox_boundary_pts_ord = order_points_list(mesh, proximal_boundary_pts)
+        prox_boundary_pts_ord = proximal_boundary_pts
 
-    dist_boundary_pts_ord = order_points_list(mesh, distal_boundary_pts)
+    # Both rings already come in walk order from the boundary extraction, so no
+    # re-ordering is needed here.
+    dist_boundary_pts_ord = distal_boundary_pts
 
     return prox_boundary_pts_ord, dist_boundary_pts_ord, mesh
 
