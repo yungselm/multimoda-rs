@@ -573,10 +573,28 @@ def _convex_hull_ring(
         # Degenerate (collinear / near-zero-area) ring: leave it untouched.
         return list(points)
 
-    hull_pts = [tuple(pts[i]) for i in hull.vertices]
-    if len(hull_pts) < 3:
+    hull_indices = list(hull.vertices)
+    if len(hull_indices) < 3:
         return list(points)
 
+    # _write_ring_to_mesh moves vertices by positional pairing (old_pts[i] ->
+    # new_pts[i]), which only makes sense if new_pts[0] sits near old points[0]
+    # and both walk the ring in the same direction.  scipy always returns hull
+    # vertices CCW in (u, v), but (u, v)'s handedness depends on the sign of
+    # `normal` - which SVD leaves arbitrary - so the hull can come back walking
+    # backwards relative to `points`.  Match winding first, then rotate the
+    # hull's start to the original ring's own index 0, so the resample below
+    # preserves both direction and start point like the non-hull path does.
+    if _signed_area_projected([tuple(p) for p in pts], normal) < 0:
+        hull_indices = hull_indices[::-1]
+    n = len(pts)
+    start = min(
+        range(len(hull_indices)),
+        key=lambda k: min(hull_indices[k], n - hull_indices[k]),
+    )
+    hull_indices = hull_indices[start:] + hull_indices[:start]
+
+    hull_pts = [tuple(pts[i]) for i in hull_indices]
     return _redistribute_ring_evenly(hull_pts, n_out=len(points))
 
 
