@@ -8,7 +8,7 @@ import trimesh
 from trimesh.points import PointCloud
 from trimesh.visual import ColorVisuals
 
-from .boundary import open_boundary_edges, order_boundary_rings
+from .stitching.boundary import open_boundary_edges, order_boundary_rings
 
 if TYPE_CHECKING:
     from ..multimodars import PyCenterline, PyDiscretizedVesselTree
@@ -521,7 +521,7 @@ def plot_boundary_edges(
     """Open an interactive trimesh scene of a stored boundary ring set and its edges.
 
     Re-derives the rings from the mesh's open edges with
-    :func:`~multimodars.ccta.boundary.order_boundary_rings`, draws each ring's
+    :func:`~multimodars.ccta.stitching.boundary.order_boundary_rings`, draws each ring's
     edges as connected line segments, and colours the ring vertices red -> blue
     by their walk order.  This makes both the seam direction and any split into
     multiple disconnected rings immediately visible.
