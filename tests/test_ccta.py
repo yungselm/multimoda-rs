@@ -659,15 +659,11 @@ class TestManualHoleFill:
 
 
 class TestPostprocessStitchedMesh:
-    def test_passthrough_when_disabled(self, grid_mesh):
-        result = postprocess_stitched_mesh(grid_mesh, postprocessing=False)
-        assert result is grid_mesh  # exact same object
-
     def test_raises_import_error_without_pymeshlab(self, grid_mesh):
         if importlib.util.find_spec("pymeshlab") is not None:
             pytest.skip("pymeshlab installed; ImportError path not triggered")
         with pytest.raises(ImportError, match="pymeshlab"):
-            postprocess_stitched_mesh(grid_mesh, postprocessing=True)
+            postprocess_stitched_mesh(grid_mesh)
 
 
 # ===========================================================================

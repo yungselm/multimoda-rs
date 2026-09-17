@@ -264,13 +264,11 @@ def scale(
 def stitch(
     results: dict,
     geometry: PyGeometry,
-    postprocessing: bool = False,
     region_remove: list[str] | str = ["anomalous_points", "proximal_points"],
     prox_start_mode: str = "highest_z",
     dist_start_mode: str = "nearest_iv",
-    **postprocessing_kwargs,
 ) -> dict:
-    """Stitch a CCTA mesh to the intravascular geometry and optionally remesh.
+    """Stitch a CCTA mesh to the intravascular geometry.
 
     Removes labeled anatomical regions from the CCTA mesh, then stitches the
     remaining surface to the intravascular geometry reconstructed from
@@ -280,9 +278,9 @@ def stitch(
     and proximal points and stitch the intravascular vessel directly to aorta with highest_z
     approach (default).
 
-    When *postprocessing* is ``True`` **and** pymeshlab is
-    installed, the stitched mesh is repaired, isotropically remeshed, and
-    smoothed with a Taubin filter before being returned.
+    The result is only hole-filled, not remeshed or smoothed.  For that, run
+    :func:`postprocessing.postprocess_stitched_mesh` on the returned mesh as a
+    separate, explicit step (requires pymeshlab).
 
     Parameters
     ----------
@@ -293,33 +291,19 @@ def stitch(
     geometry : PyGeometry
         Intravascular imaging geometry whose contours define the vessel lumen
         used as the stitching target.
-    postprocessing : bool, optional
-        When ``True``, run :func:`postprocessing.fix_and_remesh_stitched_mesh`
-        followed by Taubin smoothing on the stitched mesh.  Silently skipped
-        if pymeshlab is not installed.  Default is ``False``.
     prox_start_mode : str, optional
         How to choose index 0 of the proximal boundary ring before stitching.
         ``"nearest_iv"`` (default) rotates to the point closest to IV point 0;
         ``"highest_z"`` rotates to the point with the largest z-coordinate.
     dist_start_mode : str, optional
         Same as *prox_start_mode* but for the distal boundary ring.
-    **postprocessing_kwargs
-        Keyword arguments forwarded to
-        :func:`postprocessing.fix_and_remesh_stitched_mesh`, e.g.
-        ``target_edge_length_mm``, ``remesh_iterations``, ``verbose``.
 
     Returns
     -------
     dict
         Stitched results dictionary with the same structure as *results*, where
-        ``"mesh"`` is the stitched (and optionally postprocessed) surface.
+        ``"mesh"`` is the stitched, hole-filled surface.
     """
-    if postprocessing and _postprocessing.pymeshlab is None:
-        raise ImportError(
-            "postprocessing=True requires pymeshlab. "
-            "Install it with: pip install 'multimodars[meshlab]'"
-        )
-
     updated_results = mesh_regions.remove_labeled_points_from_mesh(
         results, region_remove
     )
@@ -333,12 +317,6 @@ def stitch(
     )
 
     stitched["mesh"] = _postprocessing.manual_hole_fill(stitched["mesh"])
-
-    stitched["mesh"] = _postprocessing.postprocess_stitched_mesh(
-        stitched["mesh"],
-        postprocessing=postprocessing,
-        **postprocessing_kwargs,
-    )
 
     return stitched
 
