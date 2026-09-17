@@ -5,11 +5,11 @@ import trimesh
 
 cwd = Path.cwd()
 for candidate in [cwd, cwd.parent, cwd.parent.parent]:
-    if (candidate / "examples" / "data").exists():
-        os.chdir(candidate / "examples" / "data")
+    if (candidate / "examples" / "test").exists():
+        os.chdir(candidate / "examples" / "test")
         break
-    elif (candidate / "data").exists():
-        os.chdir(candidate / "data")
+    elif (candidate / "test").exists():
+        os.chdir(candidate / "test")
         break
 print(f"Working directory: {os.getcwd()}")
 
@@ -22,12 +22,12 @@ aorta_cl = mm.prepare_centerline(aorta_cl, spacing_mm=1.0)
 
 rca_cl = mm.load_centerline("./rca_cl.vtp", name="RCA")
 rca_cl = mm.prepare_centerline(
-    rca_cl, ref_centerline=aorta_cl, spacing_mm=1.0, rm_start_mm=5.0
+    rca_cl, ref_centerline=aorta_cl, spacing_mm=1.0, rm_start_mm=6.0
 )
 
 lca_cl = mm.load_centerline("./lca_cl.vtp", name="LCA")
 lca_cl = mm.prepare_centerline(
-    lca_cl, ref_centerline=aorta_cl, spacing_mm=1.0, rm_start_mm=5.0
+    lca_cl, ref_centerline=aorta_cl, spacing_mm=1.0, rm_start_mm=6.0
 )
 
 results = mm.label_geometry(
@@ -35,9 +35,9 @@ results = mm.label_geometry(
     centerline_aorta=aorta_cl,
     centerline_rca=rca_cl,
     centerline_lca=lca_cl,
-    bounding_sphere_radius_mm_rca=3.0,
-    bounding_sphere_radius_mm_lca=3.0,
-    range_mm_takeoff_rca=60.0,  # mm, was a point count before
+    bounding_sphere_radius_mm_rca=4.0,
+    bounding_sphere_radius_mm_lca=4.0,
+    range_mm_takeoff_rca=50.0,  # mm, was a point count before
     range_mm_takeoff_lca=40.0,  # mm, was a point count before
     acute_takeoff_rca=True,
     acute_takeoff_lca=False,
@@ -178,13 +178,13 @@ print(f"Watertight? {remeshed['mesh'].is_watertight}")
 trimesh.smoothing.filter_taubin(remeshed["mesh"], lamb=0.6)
 
 results_final = mm.label_geometry(
-    path_ccta_geometry="fixed_mesh.stl",
+    path_ccta_geometry="prefixed_mesh.stl",
     centerline_aorta=aorta_cl,
     centerline_rca=rca_cl,
     centerline_lca=lca_cl,
-    bounding_sphere_radius_mm_rca=3.0,
-    bounding_sphere_radius_mm_lca=3.0,
-    range_mm_takeoff_rca=60.0,  # mm, was a point count before
+    bounding_sphere_radius_mm_rca=3.5,
+    bounding_sphere_radius_mm_lca=4.0,
+    range_mm_takeoff_rca=45.0,  # mm, was a point count before
     range_mm_takeoff_lca=40.0,  # mm, was a point count before
     acute_takeoff_rca=True,
     acute_takeoff_lca=False,
