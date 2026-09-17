@@ -20,6 +20,7 @@ from collections.abc import Mapping
 
 import numpy as np
 import trimesh
+from scipy.spatial import ConvexHull
 
 from ...multimodars import build_adjacency_map
 from .helpers import (
@@ -533,6 +534,52 @@ def _redistribute_ring_evenly(
     return out
 
 
+def _convex_hull_ring(
+    points: list[tuple[float, float, float]],
+) -> list[tuple[float, float, float]]:
+    """Replace a ring with its convex hull, evenly resampled back to size.
+
+    Highly irregular real CCTA anatomy can leave a removal boundary with a
+    concave detour - a stray bite the rim takes inward and back, sometimes
+    almost touching itself into a "half island" - rather than a clean loop
+    around the vessel.  This has so far only been observed on rings prepared
+    with the ``"highest_z"`` start-point strategy, so
+    :func:`_prepare_prox_dist_boundary_pts` applies it there only, leaving the
+    ``"nearest_iv"`` path (:func:`_smooth_ring_preserving_size`) untouched.
+
+    Taking the convex hull of the ring's own best-fit-plane projection drops
+    exactly those concave detours while keeping every point that defines the
+    outer silhouette; the hull is then walked back out to *len(points)* evenly
+    spaced points (:func:`_redistribute_ring_evenly`) so it slots into the
+    same pipeline as an ordinary conditioned ring.
+    """
+    pts = np.asarray(points, dtype=np.float64)
+    if len(pts) < 4:
+        return list(points)
+
+    centroid = pts.mean(axis=0)
+    normal = _plane_normal_svd(pts)
+    ref = (
+        np.array([1.0, 0.0, 0.0]) if abs(normal[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+    )
+    u = np.cross(normal, ref)
+    u /= np.linalg.norm(u)
+    v = np.cross(normal, u)
+    coords_2d = np.column_stack(((pts - centroid) @ u, (pts - centroid) @ v))
+
+    try:
+        hull = ConvexHull(coords_2d)
+    except Exception:
+        # Degenerate (collinear / near-zero-area) ring: leave it untouched.
+        return list(points)
+
+    hull_pts = [tuple(pts[i]) for i in hull.vertices]
+    if len(hull_pts) < 3:
+        return list(points)
+
+    return _redistribute_ring_evenly(hull_pts, n_out=len(points))
+
+
 def _toward_aorta(
     ring_centroid: np.ndarray,
     aorta_pts,
@@ -905,15 +952,28 @@ def _prepare_prox_dist_boundary_pts(
     clamp_overshoot: float = 1.0,
     target_n: int | None = None,
     prox_outward: np.ndarray | None = None,
+    prox_start_mode: str = "nearest_iv",
+    dist_start_mode: str = "nearest_iv",
 ) -> tuple[list, list, trimesh.Trimesh]:
     """Pick and condition the two boundary rings that will be stitched.
 
-    Both rims get the same treatment: the ring is flattened onto its own
-    best-fit plane, smoothed, respaced evenly along its perimeter, and finally
-    densified to *target_n* points so the stitch is a clean strip.  Every one of
-    those steps is written back into the mesh, so the returned rings are the
-    mesh's real open edge.  An ostial proximal ring gets the extra plane
+    Both rims get flattened onto their own best-fit plane and finally
+    densified to *target_n* points so the stitch is a clean strip.  Every one
+    of those steps is written back into the mesh, so the returned rings are
+    the mesh's real open edge.  An ostial proximal ring gets the extra plane
     handling in :func:`_condition_ostium_ring` before densification.
+
+    In between, each ring is respaced evenly along its own perimeter, using
+    one of two strategies depending on the corresponding ``*_start_mode``:
+
+    * ``"nearest_iv"`` - :func:`_smooth_ring_preserving_size` then
+      :func:`_redistribute_ring_evenly`, which follows the ring's true (and
+      possibly slightly jagged) shape.
+    * ``"highest_z"`` - :func:`_convex_hull_ring`, which forces the ring
+      convex.  Irregular real CCTA anatomy can leave a ``"highest_z"``-style
+      removal boundary with a concave "half island" detour; this has not been
+      observed on ``"nearest_iv"`` rings, so only ``"highest_z"`` rings get
+      the more aggressive treatment.
     """
     rings = _boundary_rings(results, mesh)
     if len(rings) < 2:
@@ -938,14 +998,22 @@ def _prepare_prox_dist_boundary_pts(
     # makes the interpolated points land uniformly around the ring.  The
     # size-preserving smoother matters here: plain Laplacian smoothing shrinks a
     # coarse ring badly (~16 % at 17 points), which showed up as a distal seam
-    # pinched well inside the vessel.
-    prox_pts = _redistribute_ring_evenly(
-        _smooth_ring_preserving_size(_project_to_best_fit_plane(prox_ring))
-    )
+    # pinched well inside the vessel.  "highest_z" rings instead get forced
+    # convex - see the docstring above.
+    if prox_start_mode == "highest_z":
+        prox_pts = _convex_hull_ring(_project_to_best_fit_plane(prox_ring))
+    else:
+        prox_pts = _redistribute_ring_evenly(
+            _smooth_ring_preserving_size(_project_to_best_fit_plane(prox_ring))
+        )
     mesh, _ = _write_ring_to_mesh(mesh, prox_ring, prox_pts)
-    dist_pts = _redistribute_ring_evenly(
-        _smooth_ring_preserving_size(_project_to_best_fit_plane(dist_ring))
-    )
+
+    if dist_start_mode == "highest_z":
+        dist_pts = _convex_hull_ring(_project_to_best_fit_plane(dist_ring))
+    else:
+        dist_pts = _redistribute_ring_evenly(
+            _smooth_ring_preserving_size(_project_to_best_fit_plane(dist_ring))
+        )
     mesh, _ = _write_ring_to_mesh(mesh, dist_ring, dist_pts)
 
     if proximal_is_ostium:

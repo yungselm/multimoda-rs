@@ -79,6 +79,8 @@ def stitch_ccta_to_intravascular(
         clamp_overshoot=clamp_overshoot,
         target_n=target_n,
         prox_outward=prox_outward,
+        prox_start_mode=prox_start_mode,
+        dist_start_mode=dist_start_mode,
     )
     prox_point_step = max(1, len(proximal_points) // len(prox_boundary_pts))
     dist_point_step = max(1, len(distal_points) // len(dist_boundary_pts))
