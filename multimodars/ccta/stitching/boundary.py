@@ -972,6 +972,11 @@ def _condition_ostium_ring_two_half(
 
     original = list(half_a) + list(half_b)
     new_ring = duplicated_a + conditioned_b
+    # Half A (a genuine resample) and Half B (spline-fit only, no resample)
+    # don't share a spacing scale on their own; redistribute the whole
+    # combined ring evenly by arc length so every point on the border - both
+    # halves together - sits the same distance from its neighbours.
+    new_ring = _redistribute_ring_evenly(new_ring)
 
     # Final safety net: clamp any point still behind (or too close in front
     # of) the IV plane, same as the per-point step in _condition_ostium_ring.
@@ -986,11 +991,15 @@ def _condition_ostium_ring_two_half(
     mesh, moved_indices = _write_ring_to_mesh(mesh, original, new_ring)
     # Half A's rim was replaced wholesale (see above) and can sit far from
     # where the mesh's next layers still are; fade that displacement inward
-    # over a few layers instead of leaving an abrupt jump.
+    # over a few layers instead of leaving an abrupt jump.  Use Half A's
+    # *actual final* positions (post-redistribute/clamp), not the pre-
+    # redistribute duplicated_a - otherwise the taper can't recognise most of
+    # Half A's own rim vertices by their (now stale) coordinate, and ends up
+    # treating a few of them as ordinary interior neighbours instead.
     mesh = _taper_ring_displacement(
         mesh,
         half_a,
-        duplicated_a,
+        new_ring[: len(half_a)],
         n_layers=taper_layers,
         protected_pts=new_ring[len(half_a) :],
     )
