@@ -20,7 +20,7 @@ from collections.abc import Mapping
 
 import numpy as np
 import trimesh
-from scipy.spatial import ConvexHull
+from scipy.interpolate import splev, splprep
 
 from ...multimodars import build_adjacency_map
 from .helpers import (
@@ -534,70 +534,6 @@ def _redistribute_ring_evenly(
     return out
 
 
-def _convex_hull_ring(
-    points: list[tuple[float, float, float]],
-) -> list[tuple[float, float, float]]:
-    """Replace a ring with its convex hull, evenly resampled back to size.
-
-    Highly irregular real CCTA anatomy can leave a removal boundary with a
-    concave detour - a stray bite the rim takes inward and back, sometimes
-    almost touching itself into a "half island" - rather than a clean loop
-    around the vessel.  This has so far only been observed on rings prepared
-    with the ``"highest_z"`` start-point strategy, so
-    :func:`_prepare_prox_dist_boundary_pts` applies it there only, leaving the
-    ``"nearest_iv"`` path (:func:`_smooth_ring_preserving_size`) untouched.
-
-    Taking the convex hull of the ring's own best-fit-plane projection drops
-    exactly those concave detours while keeping every point that defines the
-    outer silhouette; the hull is then walked back out to *len(points)* evenly
-    spaced points (:func:`_redistribute_ring_evenly`) so it slots into the
-    same pipeline as an ordinary conditioned ring.
-    """
-    pts = np.asarray(points, dtype=np.float64)
-    if len(pts) < 4:
-        return list(points)
-
-    centroid = pts.mean(axis=0)
-    normal = _plane_normal_svd(pts)
-    ref = (
-        np.array([1.0, 0.0, 0.0]) if abs(normal[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
-    )
-    u = np.cross(normal, ref)
-    u /= np.linalg.norm(u)
-    v = np.cross(normal, u)
-    coords_2d = np.column_stack(((pts - centroid) @ u, (pts - centroid) @ v))
-
-    try:
-        hull = ConvexHull(coords_2d)
-    except Exception:
-        # Degenerate (collinear / near-zero-area) ring: leave it untouched.
-        return list(points)
-
-    hull_indices = list(hull.vertices)
-    if len(hull_indices) < 3:
-        return list(points)
-
-    # _write_ring_to_mesh moves vertices by positional pairing (old_pts[i] ->
-    # new_pts[i]), which only makes sense if new_pts[0] sits near old points[0]
-    # and both walk the ring in the same direction.  scipy always returns hull
-    # vertices CCW in (u, v), but (u, v)'s handedness depends on the sign of
-    # `normal` - which SVD leaves arbitrary - so the hull can come back walking
-    # backwards relative to `points`.  Match winding first, then rotate the
-    # hull's start to the original ring's own index 0, so the resample below
-    # preserves both direction and start point like the non-hull path does.
-    if _signed_area_projected([tuple(p) for p in pts], normal) < 0:
-        hull_indices = hull_indices[::-1]
-    n = len(pts)
-    start = min(
-        range(len(hull_indices)),
-        key=lambda k: min(hull_indices[k], n - hull_indices[k]),
-    )
-    hull_indices = hull_indices[start:] + hull_indices[:start]
-
-    hull_pts = [tuple(pts[i]) for i in hull_indices]
-    return _redistribute_ring_evenly(hull_pts, n_out=len(points))
-
-
 def _toward_aorta(
     ring_centroid: np.ndarray,
     aorta_pts,
@@ -685,6 +621,272 @@ def _condition_ostium_ring(
     if clamped and moved_indices:
         mesh = _enforce_layer_gap_from_plane(mesh, moved_indices, iv_origin, iv_normal)
     return ring, mesh
+
+
+def _largest_circular_true_run(mask: np.ndarray) -> tuple[int, int]:
+    """Return ``(start, length)`` of the longest contiguous run of ``True``
+    in a circular boolean array, allowing wraparound."""
+    n = len(mask)
+    if n == 0 or not mask.any():
+        return 0, 0
+    if mask.all():
+        return 0, n
+
+    doubled = np.concatenate([mask, mask])
+    best_start, best_len = 0, 0
+    i = 0
+    while i < n:
+        if not doubled[i]:
+            i += 1
+            continue
+        j = i
+        while j < i + n and doubled[j]:
+            j += 1
+        if j - i > best_len:
+            best_start, best_len = i, j - i
+        i = j
+    return best_start % n, min(best_len, n)
+
+
+def _split_ring_by_aorta_direction(
+    ring: list[tuple[float, float, float]],
+    center: np.ndarray,
+    aorta_direction: np.ndarray,
+) -> tuple[list[tuple[float, float, float]], list[tuple[float, float, float]]]:
+    """Split a ring into its aorta-facing half and coronary-facing half.
+
+    Classifies each point by which side of *center* it falls on along
+    *aorta_direction* (a full 3-D half-space test - no plane projection, so a
+    steeply bent, non-planar ring splits correctly).  The ring is rotated so
+    it starts at the aorta-facing run, then that run's own length is taken as
+    "Half A"; everything else is "Half B".  Using the single largest
+    aorta-facing run (rather than every point testing positive) keeps a
+    handful of stray misclassified points near the transition out of Half A,
+    since Half A gets a hard geometric correction while Half B only gets a
+    gentle one.
+
+    Returns
+    -------
+    (half_a, half_b)
+        Each in the ring's own walk order; ``half_a[-1]`` is adjacent to
+        ``half_b[0]``, and ``half_b[-1]`` is adjacent to ``half_a[0]``.
+    """
+    pts = np.asarray(ring, dtype=np.float64)
+    n = len(pts)
+    is_aorta = ((pts - center) @ aorta_direction) > 0.0
+    best_start, best_len = _largest_circular_true_run(is_aorta)
+
+    order = [(best_start + k) % n for k in range(n)]
+    half_a = [ring[order[k]] for k in range(best_len)]
+    half_b = [ring[order[k]] for k in range(best_len, n)]
+    return half_a, half_b
+
+
+def _ostium_aortic_side_points(iv_frame_pts) -> np.ndarray:
+    """Return the IV ostial frame's own aortic-side lumen points, in order.
+
+    Uses each point's own ``aortic`` flag - ground truth from the imaging
+    labelling - rather than assuming any fixed point-index split.  Takes the
+    largest contiguous run of ``aortic=True`` points (allowing wraparound),
+    so a stray mislabeled point near the transition can't fragment it.
+    """
+    mask = np.array([bool(p.aortic) for p in iv_frame_pts])
+    n = len(mask)
+    start, length = _largest_circular_true_run(mask)
+    order = [(start + k) % n for k in range(length)]
+    return np.array(
+        [[iv_frame_pts[i].x, iv_frame_pts[i].y, iv_frame_pts[i].z] for i in order],
+        dtype=np.float64,
+    )
+
+
+def _resample_open_polyline(
+    points: list[tuple[float, float, float]],
+    n_out: int,
+) -> list[tuple[float, float, float]]:
+    """Resample an open polyline to *n_out* evenly (by arc length) spaced
+    points, keeping both endpoints exactly.
+
+    Unlike :func:`_redistribute_ring_evenly` (which treats its input as a
+    closed loop), this does not wrap the last point back to the first - it is
+    for an arc, not a ring.
+    """
+    pts = np.asarray(points, dtype=np.float64)
+    n = len(pts)
+    if n < 2 or n_out < 2:
+        return [tuple(p) for p in pts]
+
+    seg_len = np.linalg.norm(np.diff(pts, axis=0), axis=1)
+    cum = np.concatenate([[0.0], np.cumsum(seg_len)])
+    total = float(cum[-1])
+    if total <= 0.0:
+        return [tuple(pts[0])] * n_out
+
+    out: list[tuple[float, float, float]] = []
+    for target in np.linspace(0.0, total, n_out):
+        k = int(np.clip(np.searchsorted(cum, target, side="right") - 1, 0, n - 2))
+        span = float(cum[k + 1] - cum[k])
+        frac = 0.0 if span <= 0.0 else (float(target) - float(cum[k])) / span
+        out.append(tuple(pts[k] + frac * (pts[k + 1] - pts[k])))
+    return out
+
+
+def _duplicate_ostium_half_offset(
+    aorta_side_pts: np.ndarray,
+    aorta_direction: np.ndarray,
+    distance: float,
+    target_ring_half: list[tuple[float, float, float]],
+) -> list[tuple[float, float, float]]:
+    """Build Half A's target: the ostium's own aorta-side contour, offset.
+
+    A literal copy of the IV ostial frame's own aorta-side lumen contour
+    (*aorta_side_pts*, from :func:`_ostium_aortic_side_points` - the points
+    actually flagged ``aortic=True``, the same ones used to build the "Wall"
+    extras) - same plane, same shape, no CCTA data involved at all -
+    translated as a rigid body by *distance* along *aorta_direction*.  The
+    CCTA surface at this half sits *distance* mm short of the true aortic
+    wall (the compressed intramural interface), so this recovers the wall's
+    real position and shape without inheriting any of the CCTA mesh's own
+    (possibly badly distorted) geometry there.
+
+    Resampled to ``len(target_ring_half)`` points and reversed if needed so
+    it starts/ends next to the same neighbours as *target_ring_half* does -
+    matched by nearest endpoints, since the IV frame's own point order has no
+    guaranteed relationship to the CCTA ring's mesh-walk order.
+    """
+    shifted = aorta_side_pts + distance * aorta_direction
+    resampled = _resample_open_polyline(
+        [tuple(p) for p in shifted], len(target_ring_half)
+    )
+
+    ref = np.asarray(target_ring_half, dtype=np.float64)
+    cand = np.asarray(resampled, dtype=np.float64)
+    d_forward = np.linalg.norm(ref[0] - cand[0]) + np.linalg.norm(ref[-1] - cand[-1])
+    d_reversed = np.linalg.norm(ref[0] - cand[-1]) + np.linalg.norm(ref[-1] - cand[0])
+    if d_reversed < d_forward:
+        resampled = resampled[::-1]
+    return resampled
+
+
+def _fit_open_spline_ring(
+    points: list[tuple[float, float, float]],
+    smoothing: float = 0.0,
+) -> list[tuple[float, float, float]]:
+    """Fit a non-periodic cubic spline through an open arc and resample it.
+
+    Unlike :func:`_project_to_best_fit_plane`, this does not flatten the arc
+    onto a single plane, so real non-planar 3-D curvature survives.  With
+    *smoothing* > 0 the fitted curve need not pass through every point, which
+    is what actually lets it iron out an island or other outlier - an exact
+    (``smoothing=0``) interpolating spline is forced through every point,
+    however noisy, and changes nothing.  Endpoints are preserved exactly
+    regardless, since callers rely on them as fixed junctions to the ring's
+    other half.
+    """
+    pts = np.asarray(points, dtype=np.float64)
+    n = len(pts)
+    if n < 4:
+        return list(points)
+
+    try:
+        tck, _ = splprep([pts[:, 0], pts[:, 1], pts[:, 2]], s=smoothing, k=3, per=False)
+    except Exception:
+        # Degenerate (coincident / collinear) arc: leave it untouched.
+        return list(points)
+
+    u = np.linspace(0.0, 1.0, n)
+    x, y, z = splev(u, tck)
+    out = list(np.column_stack([x, y, z]))
+    out[0] = pts[0]
+    out[-1] = pts[-1]
+    return [tuple(p) for p in out]
+
+
+def _condition_ostium_ring_two_half(
+    mesh: trimesh.Trimesh,
+    ring: list[tuple[float, float, float]],
+    prox_centroid: tuple[float, float, float],
+    iv_frame_pts,
+    aortic_thickness: float | None,
+    clamp_overshoot: float,
+    angle_threshold_deg: float = 45.0,
+    smoothing: float | None = None,
+) -> tuple[list[tuple[float, float, float]], trimesh.Trimesh]:
+    """Condition an anomalous ostial ring as two anatomically different halves.
+
+    A steep-angle (e.g. anomalous, intramural) takeoff leaves the aorta-facing
+    half of the ring almost perpendicular to the coronary-facing half - not a
+    single circle or oval, and not even necessarily planar.  Treating the
+    whole ring with one shape assumption (a plane, a circle, a convex hull)
+    fights that real geometry.  Instead:
+
+    * The aorta-facing half - identified from each IV ostial frame point's
+      own ``aortic`` flag (ground truth from the imaging labelling), tested
+      in full 3-D so it doesn't require planarity - is entirely replaced by
+      :func:`_duplicate_ostium_half_offset`: a copy of the ostium's own
+      aorta-side contour, offset by *aortic_thickness* (the same measurement
+      used to build the "Wall" extras, i.e. ``frame.lumen.aortic_thickness``
+      / ``measurement_1``; *clamp_overshoot* is the fallback when it's
+      unavailable).  None of the CCTA mesh's own (possibly badly distorted)
+      geometry there survives - only the trusted, correctly-shaped IV data.
+    * The coronary-facing half keeps its own shape almost entirely -
+      :func:`_fit_open_spline_ring` only irons out an island or other
+      outlier, it does not pull points toward any idealised target.
+
+    The existing per-point IV-plane clamp (:func:`_clamp_to_plane`, the
+    second half of :func:`_condition_ostium_ring`) still runs afterward, as a
+    final safety net.  Its *whole-ring* plane-shift-and-reproject step does
+    not - re-flattening the result onto one plane would undo the point of
+    treating the two halves separately.
+    """
+    if iv_frame_pts is None or len(ring) < 6:
+        return ring, mesh
+
+    iv_arr = np.array([[p.x, p.y, p.z] for p in iv_frame_pts], dtype=np.float64)
+    center = np.asarray(prox_centroid, dtype=np.float64)
+    iv_normal = _plane_normal_svd(iv_arr)
+    aorta_side = _ostium_aortic_side_points(iv_frame_pts)
+    if len(aorta_side) < 2:
+        return ring, mesh
+
+    # Keep the split/offset direction strictly in the ostial plane, so the
+    # duplicated half in _duplicate_ostium_half_offset really does end up on
+    # "the same plane" as the ostium, not tilted out of it by noise.
+    aorta_direction = aorta_side.mean(axis=0) - center
+    aorta_direction -= float(np.dot(aorta_direction, iv_normal)) * iv_normal
+    norm = float(np.linalg.norm(aorta_direction))
+    if norm < 1e-9:
+        return ring, mesh
+    aorta_direction /= norm
+
+    half_a, half_b = _split_ring_by_aorta_direction(ring, center, aorta_direction)
+    if len(half_a) < 2 or len(half_b) < 2:
+        return ring, mesh
+
+    distance = aortic_thickness if aortic_thickness is not None else clamp_overshoot
+    duplicated_a = _duplicate_ostium_half_offset(
+        aorta_side, aorta_direction, distance, half_a
+    )
+    spline_smoothing = smoothing if smoothing is not None else 0.5 * len(half_b)
+    conditioned_b = _fit_open_spline_ring(half_b, smoothing=spline_smoothing)
+
+    original = list(half_a) + list(half_b)
+    new_ring = duplicated_a + conditioned_b
+
+    # Final safety net: clamp any point still behind (or too close in front
+    # of) the IV plane, same as the per-point step in _condition_ostium_ring.
+    if (
+        _angle_between_planes_deg(_plane_normal_svd(np.asarray(new_ring)), iv_normal)
+        >= angle_threshold_deg
+    ):
+        new_ring = _clamp_to_plane(
+            new_ring, center, iv_normal, overshoot=clamp_overshoot
+        )
+
+    mesh, moved_indices = _write_ring_to_mesh(mesh, original, new_ring)
+    if moved_indices:
+        mesh = _enforce_layer_gap_from_plane(mesh, moved_indices, center, iv_normal)
+    return new_ring, mesh
 
 
 def _densify_boundary(
@@ -971,27 +1173,24 @@ def _prepare_prox_dist_boundary_pts(
     target_n: int | None = None,
     prox_outward: np.ndarray | None = None,
     prox_start_mode: str = "nearest_iv",
-    dist_start_mode: str = "nearest_iv",
+    proximal_aortic_thickness: float | None = None,
 ) -> tuple[list, list, trimesh.Trimesh]:
     """Pick and condition the two boundary rings that will be stitched.
 
-    Both rims get flattened onto their own best-fit plane and finally
-    densified to *target_n* points so the stitch is a clean strip.  Every one
-    of those steps is written back into the mesh, so the returned rings are
-    the mesh's real open edge.  An ostial proximal ring gets the extra plane
+    Both rims get the same treatment: the ring is flattened onto its own
+    best-fit plane, smoothed, respaced evenly along its perimeter, and finally
+    densified to *target_n* points so the stitch is a clean strip.  Every one of
+    those steps is written back into the mesh, so the returned rings are the
+    mesh's real open edge.  An ostial proximal ring gets the extra plane
     handling in :func:`_condition_ostium_ring` before densification.
 
-    In between, each ring is respaced evenly along its own perimeter, using
-    one of two strategies depending on the corresponding ``*_start_mode``:
-
-    * ``"nearest_iv"`` - :func:`_smooth_ring_preserving_size` then
-      :func:`_redistribute_ring_evenly`, which follows the ring's true (and
-      possibly slightly jagged) shape.
-    * ``"highest_z"`` - :func:`_convex_hull_ring`, which forces the ring
-      convex.  Irregular real CCTA anatomy can leave a ``"highest_z"``-style
-      removal boundary with a concave "half island" detour; this has not been
-      observed on ``"nearest_iv"`` rings, so only ``"highest_z"`` rings get
-      the more aggressive treatment.
+    A ``"highest_z"`` proximal ring skips all of that in favour of
+    :func:`_condition_ostium_ring_two_half` instead: a steep-angle (e.g.
+    anomalous, intramural) takeoff can leave that ring's aorta-facing half
+    almost perpendicular to its coronary-facing half, so a single flatten
+    -smooth-or-clamp treatment for the whole ring fights the real geometry.
+    This has only been observed on the ostial proximal ring, so only that
+    ring takes this path - the distal ring always takes the plain path above.
     """
     rings = _boundary_rings(results, mesh)
     if len(rings) < 2:
@@ -1011,40 +1210,44 @@ def _prepare_prox_dist_boundary_pts(
             f"end and are left unstitched."
         )
 
-    # Flatten + even out both rims.  Smoothing removes the in-plane jaggedness
-    # that would otherwise show up as ragged stitch triangles; respacing then
-    # makes the interpolated points land uniformly around the ring.  The
-    # size-preserving smoother matters here: plain Laplacian smoothing shrinks a
-    # coarse ring badly (~16 % at 17 points), which showed up as a distal seam
-    # pinched well inside the vessel.  "highest_z" rings instead get forced
-    # convex - see the docstring above.
-    if prox_start_mode == "highest_z":
-        prox_pts = _convex_hull_ring(_project_to_best_fit_plane(prox_ring))
+    if prox_start_mode == "highest_z" and proximal_is_ostium:
+        prox_pts, mesh = _condition_ostium_ring_two_half(
+            mesh,
+            prox_ring,
+            prox_centroid,
+            proximal_iv_frame_pts,
+            proximal_aortic_thickness,
+            clamp_overshoot,
+            angle_threshold_deg=ostium_angle_threshold_deg,
+        )
     else:
+        # Flatten + even out the rim.  Smoothing removes the in-plane
+        # jaggedness that would otherwise show up as ragged stitch triangles;
+        # respacing then makes the interpolated points land uniformly around
+        # the ring.  The size-preserving smoother matters here: plain
+        # Laplacian smoothing shrinks a coarse ring badly (~16 % at 17
+        # points), which showed up as a distal seam pinched well inside the
+        # vessel.
         prox_pts = _redistribute_ring_evenly(
             _smooth_ring_preserving_size(_project_to_best_fit_plane(prox_ring))
         )
-    mesh, _ = _write_ring_to_mesh(mesh, prox_ring, prox_pts)
+        mesh, _ = _write_ring_to_mesh(mesh, prox_ring, prox_pts)
+        if proximal_is_ostium:
+            prox_pts, mesh = _condition_ostium_ring(
+                mesh,
+                prox_pts,
+                prox_centroid,
+                proximal_iv_frame_pts,
+                prox_outward,
+                ostium_angle_threshold_deg,
+                clamp_overshoot,
+                aorta_pts=results.get("aorta_points"),
+            )
 
-    if dist_start_mode == "highest_z":
-        dist_pts = _convex_hull_ring(_project_to_best_fit_plane(dist_ring))
-    else:
-        dist_pts = _redistribute_ring_evenly(
-            _smooth_ring_preserving_size(_project_to_best_fit_plane(dist_ring))
-        )
+    dist_pts = _redistribute_ring_evenly(
+        _smooth_ring_preserving_size(_project_to_best_fit_plane(dist_ring))
+    )
     mesh, _ = _write_ring_to_mesh(mesh, dist_ring, dist_pts)
-
-    if proximal_is_ostium:
-        prox_pts, mesh = _condition_ostium_ring(
-            mesh,
-            prox_pts,
-            prox_centroid,
-            proximal_iv_frame_pts,
-            prox_outward,
-            ostium_angle_threshold_deg,
-            clamp_overshoot,
-            aorta_pts=results.get("aorta_points"),
-        )
 
     # Densify last, so the inserted points interpolate between final positions
     # and inherit the ring's planarity for free.

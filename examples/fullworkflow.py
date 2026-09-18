@@ -164,6 +164,12 @@ stitched = mm.stitch_ccta_to_intravascular(
     prox_start_mode="highest_z",
     clamp_overshoot=0.5,
 )
+
+# The "highest_z" ring-conditioning fix (cull-concave-fold + convex-hull) only
+# runs inside stitch_ccta_to_intravascular, so it never shows up in the
+# pre-stitch "boundary_points" plot above - check the conditioned ring here.
+mm.plot_boundary_edges(stitched, key="prox_boundary_points")
+
 stitched["mesh"].export("prefixed_mesh.stl")
 print("Raw stitched mesh exported → prefixed_mesh.stl")
 
