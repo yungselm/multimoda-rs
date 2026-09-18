@@ -733,30 +733,36 @@ def _resample_open_polyline(
 
 def _duplicate_ostium_half_offset(
     aorta_side_pts: np.ndarray,
-    aorta_direction: np.ndarray,
+    center: np.ndarray,
     distance: float,
     target_ring_half: list[tuple[float, float, float]],
 ) -> list[tuple[float, float, float]]:
-    """Build Half A's target: the ostium's own aorta-side contour, offset.
+    """Build Half A's target: the ostium's own aorta-side contour, scaled up.
 
-    A literal copy of the IV ostial frame's own aorta-side lumen contour
-    (*aorta_side_pts*, from :func:`_ostium_aortic_side_points` - the points
-    actually flagged ``aortic=True``, the same ones used to build the "Wall"
-    extras) - same plane, same shape, no CCTA data involved at all -
-    translated as a rigid body by *distance* along *aorta_direction*.  The
-    CCTA surface at this half sits *distance* mm short of the true aortic
-    wall (the compressed intramural interface), so this recovers the wall's
-    real position and shape without inheriting any of the CCTA mesh's own
-    (possibly badly distorted) geometry there.
+    A uniformly scaled copy of the IV ostial frame's own aorta-side lumen
+    contour (*aorta_side_pts*, from :func:`_ostium_aortic_side_points` - the
+    points actually flagged ``aortic=True``, the same ones used to build the
+    "Wall" extras) about the frame's own centroid (*center*) - same shape,
+    same relative angles, no CCTA data involved at all - just enlarged so its
+    mean radius from *center* grows by *distance* (the measured aortic wall
+    thickness, i.e. ``frame.lumen.aortic_thickness`` / ``measurement_1``).
 
-    Resampled to ``len(target_ring_half)`` points and reversed if needed so
-    it starts/ends next to the same neighbours as *target_ring_half* does -
-    matched by nearest endpoints, since the IV frame's own point order has no
-    guaranteed relationship to the CCTA ring's mesh-walk order.
+    Resampled to ``len(target_ring_half)`` points *after* scaling, not
+    before, and reversed if needed so it starts/ends next to the same
+    neighbours as *target_ring_half* does - matched by nearest endpoints,
+    since the IV frame's own point order has no guaranteed relationship to
+    the CCTA ring's mesh-walk order.
     """
-    shifted = aorta_side_pts + distance * aorta_direction
+    radial = aorta_side_pts - center
+    mean_radius = float(np.linalg.norm(radial, axis=1).mean())
+    scaled = (
+        center + (1.0 + distance / mean_radius) * radial
+        if mean_radius > 1e-9
+        else aorta_side_pts
+    )
+
     resampled = _resample_open_polyline(
-        [tuple(p) for p in shifted], len(target_ring_half)
+        [tuple(p) for p in scaled], len(target_ring_half)
     )
 
     ref = np.asarray(target_ring_half, dtype=np.float64)
@@ -765,6 +771,7 @@ def _duplicate_ostium_half_offset(
     d_reversed = np.linalg.norm(ref[0] - cand[-1]) + np.linalg.norm(ref[-1] - cand[0])
     if d_reversed < d_forward:
         resampled = resampled[::-1]
+
     return resampled
 
 
@@ -808,6 +815,7 @@ def _taper_ring_displacement(
     new_ring_pts: list[tuple[float, float, float]],
     n_layers: int = 3,
     protected_pts: list[tuple[float, float, float]] | None = None,
+    seam_damping: float = 0.25,
 ) -> trimesh.Trimesh:
     """Fade a rim's displacement into the surrounding mesh over *n_layers*.
 
@@ -828,7 +836,13 @@ def _taper_ring_displacement(
     are graph-adjacent to the rim - e.g. the ring's *other* half, whose own
     two endpoints are topologically adjacent to this rim's endpoints and
     would otherwise get treated as an ordinary "layer 1" neighbour and pulled
-    off their own, separately-computed position.
+    off their own, separately-computed position.  A vertex that is itself
+    adjacent to one of those protected points - the interior vertex shared by
+    the triangle spanning the seam between the two halves - gets its pull cut
+    further by *seam_damping* on top of the usual layer weight: at full
+    layer-1 weight it would move most of the way while its other neighbour
+    (on the barely-moved protected side) stays almost still, which is enough
+    to fold that one triangle over.
     """
     coord_to_idx = {tuple(v): i for i, v in enumerate(mesh.vertices)}
     rim_disp: dict[int, np.ndarray] = {}
@@ -849,6 +863,9 @@ def _taper_ring_displacement(
         for p in (protected_pts or [])
         if (idx := coord_to_idx.get(tuple(p))) is not None
     }
+    seam_adjacent = {
+        nb for p in protected for nb in adj_map.get(p, []) if nb not in protected
+    }
     visited = set(rim_disp) | protected
     frontier = set(rim_disp)
     layer_disp = dict(rim_disp)
@@ -866,7 +883,8 @@ def _taper_ring_displacement(
         averaged: dict[int, np.ndarray] = {}
         for vi, disps in next_layer_disp.items():
             avg = np.mean(disps, axis=0)
-            new_vertices[vi] = new_vertices[vi] + weight * avg
+            damping = seam_damping if vi in seam_adjacent else 1.0
+            new_vertices[vi] = new_vertices[vi] + weight * damping * avg
             averaged[vi] = avg  # undecayed, for the next layer to inherit
 
         layer_disp = averaged
@@ -900,12 +918,13 @@ def _condition_ostium_ring_two_half(
     * The aorta-facing half - identified from each IV ostial frame point's
       own ``aortic`` flag (ground truth from the imaging labelling), tested
       in full 3-D so it doesn't require planarity - is entirely replaced by
-      :func:`_duplicate_ostium_half_offset`: a copy of the ostium's own
-      aorta-side contour, offset by *aortic_thickness* (the same measurement
-      used to build the "Wall" extras, i.e. ``frame.lumen.aortic_thickness``
-      / ``measurement_1``; *clamp_overshoot* is the fallback when it's
-      unavailable).  None of the CCTA mesh's own (possibly badly distorted)
-      geometry there survives - only the trusted, correctly-shaped IV data.
+      :func:`_duplicate_ostium_half_offset`: a uniformly scaled-up copy of
+      the ostium's own aorta-side contour, its mean radius grown by
+      *aortic_thickness* (the same measurement used to build the "Wall"
+      extras, i.e. ``frame.lumen.aortic_thickness`` / ``measurement_1``;
+      *clamp_overshoot* is the fallback when it's unavailable).  None of the
+      CCTA mesh's own (possibly badly distorted) geometry there survives -
+      only the trusted, correctly-shaped IV data, same shape, just bigger.
     * The coronary-facing half keeps its own shape almost entirely -
       :func:`_fit_open_spline_ring` only irons out an island or other
       outlier, it does not pull points toward any idealised target.
@@ -913,7 +932,8 @@ def _condition_ostium_ring_two_half(
     Replacing Half A wholesale can leave it far from where the mesh's very
     next layer of vertices still is; :func:`_taper_ring_displacement` fades
     that jump into the surrounding mesh over *taper_layers* rings instead of
-    leaving it as an abrupt fold.
+    leaving it as an abrupt fold - and, since the taper never touches Half B,
+    that half's own connection is left exactly as it is.
 
     The existing per-point IV-plane clamp (:func:`_clamp_to_plane`, the
     second half of :func:`_condition_ostium_ring`) still runs afterward, as a
@@ -931,9 +951,9 @@ def _condition_ostium_ring_two_half(
     if len(aorta_side) < 2:
         return ring, mesh
 
-    # Keep the split/offset direction strictly in the ostial plane, so the
-    # duplicated half in _duplicate_ostium_half_offset really does end up on
-    # "the same plane" as the ostium, not tilted out of it by noise.
+    # In-plane direction, used only to decide which ring points are Half A vs
+    # Half B - kept strictly in the ostial plane so the split doesn't depend
+    # on how far off-plane a given CCTA ring point happens to be.
     aorta_direction = aorta_side.mean(axis=0) - center
     aorta_direction -= float(np.dot(aorta_direction, iv_normal)) * iv_normal
     norm = float(np.linalg.norm(aorta_direction))
@@ -946,9 +966,7 @@ def _condition_ostium_ring_two_half(
         return ring, mesh
 
     distance = aortic_thickness if aortic_thickness is not None else clamp_overshoot
-    duplicated_a = _duplicate_ostium_half_offset(
-        aorta_side, aorta_direction, distance, half_a
-    )
+    duplicated_a = _duplicate_ostium_half_offset(aorta_side, center, distance, half_a)
     spline_smoothing = smoothing if smoothing is not None else 0.5 * len(half_b)
     conditioned_b = _fit_open_spline_ring(half_b, smoothing=spline_smoothing)
 
