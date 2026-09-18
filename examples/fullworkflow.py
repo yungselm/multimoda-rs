@@ -196,3 +196,5 @@ results_final = mm.label_geometry(
     acute_takeoff_lca=False,
     control_plot=True,
 )
+
+results_final["mesh"].export("fixed_mesh.stl")

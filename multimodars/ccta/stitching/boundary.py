@@ -802,6 +802,82 @@ def _fit_open_spline_ring(
     return [tuple(p) for p in out]
 
 
+def _taper_ring_displacement(
+    mesh: trimesh.Trimesh,
+    old_ring_pts: list[tuple[float, float, float]],
+    new_ring_pts: list[tuple[float, float, float]],
+    n_layers: int = 3,
+    protected_pts: list[tuple[float, float, float]] | None = None,
+) -> trimesh.Trimesh:
+    """Fade a rim's displacement into the surrounding mesh over *n_layers*.
+
+    Replacing a rim wholesale (e.g. with a duplicated, offset "neo-ostium",
+    see :func:`_duplicate_ostium_half_offset`) can move it far from where the
+    mesh's very next layer of vertices still sits - unlike the small nudges
+    :func:`_enforce_layer_gap_from_plane` was built for, this is a large
+    enough jump to fold the faces bridging the two.  This assumes *mesh*
+    already has the rim at *new_ring_pts* (i.e. run after
+    :func:`_write_ring_to_mesh`), finds each rim vertex's displacement
+    (``new - old``), and propagates a decreasing fraction of it outward
+    through the face-adjacency graph: layer 1 (the rim's immediate
+    neighbours) moves by most of it, layer *n_layers* by only a little, and
+    anything further is untouched - so the mesh eases into the new rim
+    position over several rings instead of jumping straight to it.
+
+    *protected_pts* are excluded from ever being moved by this, even if they
+    are graph-adjacent to the rim - e.g. the ring's *other* half, whose own
+    two endpoints are topologically adjacent to this rim's endpoints and
+    would otherwise get treated as an ordinary "layer 1" neighbour and pulled
+    off their own, separately-computed position.
+    """
+    coord_to_idx = {tuple(v): i for i, v in enumerate(mesh.vertices)}
+    rim_disp: dict[int, np.ndarray] = {}
+    for old, new in zip(old_ring_pts, new_ring_pts):
+        idx = coord_to_idx.get(tuple(new))
+        if idx is not None:
+            rim_disp[idx] = np.asarray(new, dtype=np.float64) - np.asarray(
+                old, dtype=np.float64
+            )
+    if not rim_disp:
+        return mesh
+
+    adj_map = build_adjacency_map(mesh.faces.tolist())
+    new_vertices = mesh.vertices.copy()
+
+    protected = {
+        idx
+        for p in (protected_pts or [])
+        if (idx := coord_to_idx.get(tuple(p))) is not None
+    }
+    visited = set(rim_disp) | protected
+    frontier = set(rim_disp)
+    layer_disp = dict(rim_disp)
+
+    for layer in range(1, n_layers + 1):
+        weight = 1.0 - layer / (n_layers + 1)
+        next_frontier: set[int] = set()
+        next_layer_disp: dict[int, list[np.ndarray]] = {}
+        for vi in frontier:
+            for nb in adj_map.get(vi, []):
+                if nb in visited:
+                    continue
+                next_layer_disp.setdefault(nb, []).append(layer_disp[vi])
+                next_frontier.add(nb)
+        averaged: dict[int, np.ndarray] = {}
+        for vi, disps in next_layer_disp.items():
+            avg = np.mean(disps, axis=0)
+            new_vertices[vi] = new_vertices[vi] + weight * avg
+            averaged[vi] = avg  # undecayed, for the next layer to inherit
+
+        layer_disp = averaged
+        visited.update(next_frontier)
+        frontier = next_frontier
+        if not frontier:
+            break
+
+    return trimesh.Trimesh(vertices=new_vertices, faces=mesh.faces, process=False)
+
+
 def _condition_ostium_ring_two_half(
     mesh: trimesh.Trimesh,
     ring: list[tuple[float, float, float]],
@@ -811,6 +887,7 @@ def _condition_ostium_ring_two_half(
     clamp_overshoot: float,
     angle_threshold_deg: float = 45.0,
     smoothing: float | None = None,
+    taper_layers: int = 3,
 ) -> tuple[list[tuple[float, float, float]], trimesh.Trimesh]:
     """Condition an anomalous ostial ring as two anatomically different halves.
 
@@ -832,6 +909,11 @@ def _condition_ostium_ring_two_half(
     * The coronary-facing half keeps its own shape almost entirely -
       :func:`_fit_open_spline_ring` only irons out an island or other
       outlier, it does not pull points toward any idealised target.
+
+    Replacing Half A wholesale can leave it far from where the mesh's very
+    next layer of vertices still is; :func:`_taper_ring_displacement` fades
+    that jump into the surrounding mesh over *taper_layers* rings instead of
+    leaving it as an abrupt fold.
 
     The existing per-point IV-plane clamp (:func:`_clamp_to_plane`, the
     second half of :func:`_condition_ostium_ring`) still runs afterward, as a
@@ -884,6 +966,16 @@ def _condition_ostium_ring_two_half(
         )
 
     mesh, moved_indices = _write_ring_to_mesh(mesh, original, new_ring)
+    # Half A's rim was replaced wholesale (see above) and can sit far from
+    # where the mesh's next layers still are; fade that displacement inward
+    # over a few layers instead of leaving an abrupt jump.
+    mesh = _taper_ring_displacement(
+        mesh,
+        half_a,
+        duplicated_a,
+        n_layers=taper_layers,
+        protected_pts=new_ring[len(half_a) :],
+    )
     if moved_indices:
         mesh = _enforce_layer_gap_from_plane(mesh, moved_indices, center, iv_normal)
     return new_ring, mesh
