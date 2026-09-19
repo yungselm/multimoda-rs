@@ -1,5 +1,6 @@
-use crate::intravascular::processing::process_utils::hausdorff_distance;
-use crate::types::native;
+use crate::intravascular::processing::process_utils::{
+    hausdorff_sq_3d_grid, to_xyz, SpatialGrid, Xyz,
+};
 use crate::types::native::contour::Contour;
 use crate::types::native::geometry::Geometry;
 use crate::types::native::ContourPoint;
@@ -94,18 +95,18 @@ impl FrameTransformation {
 }
 
 pub fn get_transformations(
-    geometry: Geometry,
+    geometry: &Geometry,
     centerline: &Centerline,
     ref_pt: &(f64, f64, f64),
 ) -> Vec<FrameTransformation> {
-    let mut transformations = Vec::new();
+    let mut transformations = Vec::with_capacity(geometry.frames.len());
 
     // Find the reference point in the centerline
     let ref_idx_cl = centerline.find_reference_cl_point_idx(ref_pt);
 
     // The geometry frames are ordered, and we assume they correspond to centerline points
     // starting from the reference point and moving in the same direction
-    for (i, frame) in geometry.frames.into_iter().enumerate() {
+    for (i, frame) in geometry.frames.iter().enumerate() {
         // Calculate which centerline point corresponds to this geometry frame
         // We start from the reference centerline point and move through the centerline
         // based on the geometry frame's position relative to the reference frame
@@ -350,7 +351,7 @@ pub fn refine_alignment_hausdorff<T: AlignTarget>(
 
     let mut best_angle = initial_rotation;
     let mut best_cl_ref_idx = initial_cl_ref_idx;
-    let mut min_hausdorff = f64::MAX;
+    let mut min_hausdorff_sq = f64::MAX;
 
     println!("---------------------Refining alignment with Hausdorff---------------------");
     println!(
@@ -359,12 +360,24 @@ pub fn refine_alignment_hausdorff<T: AlignTarget>(
         initial_cl_ref_idx
     );
 
-    // When index_search_range == 0 only test the initial index; no loop over candidates needed.
+    if len_frames == 0 || target.primary_geometry().frames[0].lumen.points.is_empty() {
+        eprintln!("Nothing to refine: geometry has no frames or no lumen points");
+        return (best_angle, best_cl_ref_idx);
+    }
+
     let delta_range = if index_search_range == 0 {
         0isize..=0isize
     } else {
         -(index_search_range as isize)..=(index_search_range as isize)
     };
+
+    let n_angle_steps = if angle_step > 0.0 {
+        (2.0 * angle_search_range / angle_step).round().max(0.0) as usize
+    } else {
+        0
+    };
+
+    let mut geometry_xyz: Vec<Xyz> = Vec::new();
 
     for delta_idx in delta_range {
         let signed = initial_cl_ref_idx as isize + delta_idx;
@@ -383,13 +396,31 @@ pub fn refine_alignment_hausdorff<T: AlignTarget>(
             branch_start_indices: vec![0],
         };
 
-        let mut angle = initial_rotation - angle_search_range;
-        while angle <= initial_rotation + angle_search_range {
-            let ref_pt = (
-                centerline.points[current_cl_ref_idx].contour_point.x,
-                centerline.points[current_cl_ref_idx].contour_point.y,
-                centerline.points[current_cl_ref_idx].contour_point.z,
-            );
+        let ref_pt = (
+            centerline.points[current_cl_ref_idx].contour_point.x,
+            centerline.points[current_cl_ref_idx].contour_point.y,
+            centerline.points[current_cl_ref_idx].contour_point.z,
+        );
+
+        let filtered_points = filter_points_in_region(
+            mutated_points,
+            &centerline.points[current_cl_ref_idx],
+            &centerline.points[cl_end_idx - 1],
+        );
+
+        if filtered_points.is_empty() {
+            continue;
+        }
+        let filtered_xyz = to_xyz(&filtered_points);
+        let filtered_grid = SpatialGrid::build(&filtered_xyz);
+
+        let n_points_per_frame = target.primary_geometry().frames[0].lumen.points.len();
+        let ratio = filtered_points.len() as f64 / (n_points_per_frame as f64 * len_frames as f64);
+        let mut n_downsample = (ratio * n_points_per_frame as f64).ceil() as usize;
+        n_downsample = n_downsample.clamp(1, n_points_per_frame);
+
+        for step_idx in 0..=n_angle_steps {
+            let angle = initial_rotation - angle_search_range + (step_idx as f64) * angle_step;
 
             let transformed = apply_transformations(
                 rotate_by_best_rotation(target.clone(), angle),
@@ -397,46 +428,28 @@ pub fn refine_alignment_hausdorff<T: AlignTarget>(
                 &ref_pt,
             );
 
-            let filtered_points = filter_points_in_region(
-                mutated_points,
-                &centerline.points[current_cl_ref_idx],
-                &centerline.points[cl_end_idx - 1],
-            );
+            geometry_xyz.clear();
+            for frame in transformed.primary_geometry().frames.iter() {
+                push_downsampled_xyz(&mut geometry_xyz, &frame.lumen.points, n_downsample);
+            }
 
-            if filtered_points.is_empty() {
-                angle += angle_step;
+            let geometry_grid = SpatialGrid::build(&geometry_xyz);
+
+            let Some(hausdorff_sq) = hausdorff_sq_3d_grid(
+                &filtered_xyz,
+                &filtered_grid,
+                &geometry_xyz,
+                &geometry_grid,
+                min_hausdorff_sq,
+            ) else {
                 continue;
-            }
+            };
 
-            let frames = &transformed.primary_geometry().frames;
-            let n_points_per_frame = frames[0].lumen.points.len();
-            let mut nested: Vec<Vec<ContourPoint>> = Vec::with_capacity(len_frames);
-
-            let ratio =
-                filtered_points.len() as f64 / (n_points_per_frame as f64 * len_frames as f64);
-            let mut n_downsample = (ratio * n_points_per_frame as f64).ceil() as usize;
-            n_downsample = n_downsample.clamp(1, n_points_per_frame);
-
-            for frame in frames.iter() {
-                if n_downsample < n_points_per_frame {
-                    let downsampled =
-                        native::downsample_contour_points(&frame.lumen.points, n_downsample);
-                    nested.push(downsampled);
-                } else {
-                    nested.push(frame.lumen.points.clone());
-                }
-            }
-
-            let flat_geometry_points: Vec<ContourPoint> = nested.into_iter().flatten().collect();
-            let hausdorff_dist = hausdorff_distance(&filtered_points, &flat_geometry_points);
-
-            if hausdorff_dist < min_hausdorff {
-                min_hausdorff = hausdorff_dist;
+            if hausdorff_sq < min_hausdorff_sq {
+                min_hausdorff_sq = hausdorff_sq;
                 best_angle = angle;
                 best_cl_ref_idx = current_cl_ref_idx;
             }
-
-            angle += angle_step;
         }
     }
 
@@ -444,10 +457,26 @@ pub fn refine_alignment_hausdorff<T: AlignTarget>(
         "Refined rotation: {:.2}°, Refined CL index: {}, Hausdorff: {:.2}",
         best_angle.to_degrees(),
         best_cl_ref_idx,
-        min_hausdorff
+        min_hausdorff_sq.sqrt()
     );
 
     (best_angle, best_cl_ref_idx)
+}
+
+/// Appends the xyz coordinates of an evenly spaced subset of `points` to `dst`.
+///
+/// Picks the same indices as [`native::downsample_contour_points`] but writes
+/// straight into a reused buffer, avoiding a `Vec` per frame plus a flattening pass.
+fn push_downsampled_xyz(dst: &mut Vec<Xyz>, points: &[ContourPoint], n: usize) {
+    if points.len() <= n {
+        dst.extend(points.iter().map(|p| [p.x, p.y, p.z]));
+        return;
+    }
+    let step = points.len() as f64 / n as f64;
+    dst.extend((0..n).map(|i| {
+        let p = &points[(i as f64 * step) as usize];
+        [p.x, p.y, p.z]
+    }));
 }
 
 /// Filter points to region between two centerline points
@@ -513,8 +542,7 @@ pub fn apply_transformations<T: AlignTarget>(
     centerline: &Centerline,
     ref_pt: &(f64, f64, f64),
 ) -> T {
-    let transformations =
-        get_transformations(target.primary_geometry().clone(), centerline, ref_pt);
+    let transformations = get_transformations(target.primary_geometry(), centerline, ref_pt);
     target.apply_frame_transforms(&transformations)
 }
 
@@ -874,7 +902,7 @@ mod align_algorithms_tests {
         };
         let ref_pt = (10.0, 10.0, 10.0);
 
-        let transformations = get_transformations(geometry, &centerline, &ref_pt);
+        let transformations = get_transformations(&geometry, &centerline, &ref_pt);
 
         // Should get one transformation for the one frame
         assert_eq!(transformations.len(), 1);

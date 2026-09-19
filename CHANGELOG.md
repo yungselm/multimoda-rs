@@ -31,6 +31,25 @@ kind of a dome on top of this plane.
   into `stitching/` and `labeling/` packages (core logic separated from helpers). `export_section_stl`
   moved to `multimodars/io/write_geometries.py`. No behaviour change beyond the fixes above.
 
+## [0.7.1] - 2026-09-09
+
+### Changed
+- **`align_combined` results will move**: `refine_alignment_hausdorff` now measures in 3D instead of
+  dropping z, so the centerline-index search finally has longitudinal signal. On `examples/data`
+  (RCA) the refined result moves from 1.00°/index 35 to -3.00°/index 32 - and since that run hit the
+  boundary of `index_range`, the default of 2 may now be too tight.
+- `refine_alignment_hausdorff` is much faster, increasingly so with cloud size: ~1.45x on the RCA
+  example (1.98 s → 1.37 s), ~78x on a 180-frame geometry against a 90k-point cloud (391 s → 5.0 s).
+  Nearest-neighbour lookups now use a bucket grid (O(n·m) → ~O(n + m)), candidates are abandoned once
+  they can no longer beat the best score, angle-invariant work is hoisted out of the angle loop, and
+  points are packed into bare coordinates. None of this alters the score.
+
+### Fixed
+- The angle sweep accumulated rounding error through repeated `angle += angle_step`, so the endpoint
+  was included or excluded unpredictably. Angles now derive from an integer index.
+- `refine_alignment_hausdorff` panicked on a geometry with no frames or no lumen points; it now
+  returns the initial rotation and index unchanged.
+
 ## [0.7.0] - 2026-08-13
 
 ### Added

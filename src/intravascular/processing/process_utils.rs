@@ -74,11 +74,278 @@ where
         .unwrap_or(center)
 }
 
-/// Computes the Hausdorff distance between two point sets.
+/// Computes the **in-plane (xy)** Hausdorff distance between two point sets.
+///
+/// The z coordinate is deliberately ignored: every caller of this function scores
+/// candidate in-plane rotations of one frame's contour against another frame's
+/// contour, and those frames sit at different z. Including z would add a constant
+/// offset that swamps the shape term the rotation search is trying to minimise.
+///
+/// For genuinely three-dimensional comparisons (e.g. a whole geometry against a
+/// point cloud) use [`hausdorff_sq_3d_grid`] instead.
 pub fn hausdorff_distance(set1: &[ContourPoint], set2: &[ContourPoint]) -> f64 {
     let forward = directed_hausdorff(set1, set2);
     let backward = directed_hausdorff(set2, set1);
     forward.max(backward)
+}
+
+/// Bare xyz coordinates, for the distance kernels.
+///
+/// A [`ContourPoint`] is 40 bytes, of which the inner loop reads 24. Packing the
+/// coordinates cuts the memory traffic of the O(n·m) scan accordingly and lets the
+/// compiler vectorise it.
+pub type Xyz = [f64; 3];
+
+/// Strips a contour point slice down to bare coordinates.
+pub fn to_xyz(points: &[ContourPoint]) -> Vec<Xyz> {
+    points.iter().map(|p| [p.x, p.y, p.z]).collect()
+}
+
+/// A uniform 3D bucket grid over a point set, for nearest-neighbour queries.
+///
+/// Brute-force Hausdorff is O(n·m), which dominates any alignment search over many
+/// candidates. Bucketing one side turns each nearest-neighbour lookup into a scan of
+/// a handful of nearby cells, taking the pair cost to roughly O(n + m).
+///
+/// Points are stored reordered by cell (a counting sort) so that a cell's points are
+/// contiguous in memory.
+pub struct SpatialGrid {
+    cell: f64,
+    inv_cell: f64,
+    min: [f64; 3],
+    dims: [usize; 3],
+    /// CSR offsets: cell `c` owns `points[cell_start[c]..cell_start[c + 1]]`.
+    cell_start: Vec<u32>,
+    points: Vec<Xyz>,
+}
+
+impl SpatialGrid {
+    /// Buckets `points`, choosing a cell size that averages a few points per cell.
+    pub fn build(points: &[Xyz]) -> Self {
+        let mut min = [f64::INFINITY; 3];
+        let mut max = [f64::NEG_INFINITY; 3];
+        for p in points {
+            for axis in 0..3 {
+                min[axis] = min[axis].min(p[axis]);
+                max[axis] = max[axis].max(p[axis]);
+            }
+        }
+        if points.is_empty() {
+            min = [0.0; 3];
+            max = [0.0; 3];
+        }
+
+        let extent = [
+            (max[0] - min[0]).max(1e-9),
+            (max[1] - min[1]).max(1e-9),
+            (max[2] - min[2]).max(1e-9),
+        ];
+
+        // Target a handful of points per occupied cell. Contours are surfaces, so
+        // the occupied fraction of the bounding box is well under 1 and the true
+        // occupancy runs higher than this estimate — which is the safe direction.
+        let volume = extent[0] * extent[1] * extent[2];
+        let n = points.len().max(1) as f64;
+        let mut cell = (volume / n).cbrt().max(1e-6);
+
+        // Keep the cell count bounded regardless of how degenerate the extent is.
+        let max_cells = (8 * points.len().max(1)).min(1 << 22) as f64;
+        loop {
+            let dims: Vec<f64> = (0..3).map(|a| (extent[a] / cell).ceil().max(1.0)).collect();
+            if dims[0] * dims[1] * dims[2] <= max_cells {
+                break;
+            }
+            cell *= 1.5;
+        }
+
+        let dims = [
+            (extent[0] / cell).ceil().max(1.0) as usize,
+            (extent[1] / cell).ceil().max(1.0) as usize,
+            (extent[2] / cell).ceil().max(1.0) as usize,
+        ];
+        let inv_cell = 1.0 / cell;
+        let n_cells = dims[0] * dims[1] * dims[2];
+
+        let cell_of = |p: &Xyz| -> usize {
+            let ix = (((p[0] - min[0]) * inv_cell) as usize).min(dims[0] - 1);
+            let iy = (((p[1] - min[1]) * inv_cell) as usize).min(dims[1] - 1);
+            let iz = (((p[2] - min[2]) * inv_cell) as usize).min(dims[2] - 1);
+            (iz * dims[1] + iy) * dims[0] + ix
+        };
+
+        // Counting sort of the points into their cells.
+        let mut cell_start = vec![0u32; n_cells + 1];
+        for p in points {
+            cell_start[cell_of(p) + 1] += 1;
+        }
+        for c in 0..n_cells {
+            cell_start[c + 1] += cell_start[c];
+        }
+        let mut cursor = cell_start.clone();
+        let mut sorted = vec![[0.0; 3]; points.len()];
+        for p in points {
+            let c = cell_of(p);
+            sorted[cursor[c] as usize] = *p;
+            cursor[c] += 1;
+        }
+
+        SpatialGrid {
+            cell,
+            inv_cell,
+            min,
+            dims,
+            cell_start,
+            points: sorted,
+        }
+    }
+
+    /// Squared distance from `q` to the nearest stored point.
+    ///
+    /// Returns a value `v` that is either exactly the squared nearest distance, or —
+    /// when the search can prove the answer is no greater than `floor_sq` — some
+    /// `v <= floor_sq`. That is precisely the contract a max-of-mins needs: a point
+    /// whose nearest neighbour is already within the running maximum cannot raise it,
+    /// so the exact value is not worth finding. Pass `0.0` for an always-exact query.
+    pub fn nearest_sq(&self, q: &Xyz, floor_sq: f64) -> f64 {
+        if self.points.is_empty() {
+            return f64::INFINITY;
+        }
+
+        // Cell containing q, clamped into the grid (q may lie outside the bounds).
+        let mut base = [0isize; 3];
+        for axis in 0..3 {
+            let raw = ((q[axis] - self.min[axis]) * self.inv_cell).floor();
+            base[axis] = raw.clamp(0.0, (self.dims[axis] - 1) as f64) as isize;
+        }
+
+        let mut best_sq = f64::INFINITY;
+        let mut radius = 0isize;
+
+        loop {
+            // Scan the Chebyshev shell at `radius`, skipping the already-scanned interior.
+            let lo = [
+                (base[0] - radius).max(0),
+                (base[1] - radius).max(0),
+                (base[2] - radius).max(0),
+            ];
+            let hi = [
+                (base[0] + radius).min(self.dims[0] as isize - 1),
+                (base[1] + radius).min(self.dims[1] as isize - 1),
+                (base[2] + radius).min(self.dims[2] as isize - 1),
+            ];
+
+            for iz in lo[2]..=hi[2] {
+                for iy in lo[1]..=hi[1] {
+                    // A cell is scanned at the radius equal to its Chebyshev distance
+                    // from `base`. If y or z already achieves `radius`, the whole x row
+                    // is new; otherwise only the two x faces are.
+                    let yz_achieves_radius = radius == 0
+                        || (iz - base[2]).abs() == radius
+                        || (iy - base[1]).abs() == radius;
+
+                    if yz_achieves_radius {
+                        for ix in lo[0]..=hi[0] {
+                            self.scan_cell(ix, iy, iz, q, &mut best_sq);
+                        }
+                    } else {
+                        for &ix in &[base[0] - radius, base[0] + radius] {
+                            if ix >= lo[0] && ix <= hi[0] {
+                                self.scan_cell(ix, iy, iz, q, &mut best_sq);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if best_sq <= floor_sq {
+                return best_sq;
+            }
+
+            // Smallest distance from q to anything outside the scanned box. Faces that
+            // sit on the grid boundary have nothing beyond them, so they do not limit us.
+            let mut outside_dist = f64::INFINITY;
+            let mut any_open = false;
+            for axis in 0..3 {
+                if base[axis] - radius > 0 {
+                    any_open = true;
+                    let face = self.min[axis] + ((base[axis] - radius) as f64) * self.cell;
+                    outside_dist = outside_dist.min((q[axis] - face).abs());
+                }
+                if base[axis] + radius < self.dims[axis] as isize - 1 {
+                    any_open = true;
+                    let face = self.min[axis] + ((base[axis] + radius + 1) as f64) * self.cell;
+                    outside_dist = outside_dist.min((face - q[axis]).abs());
+                }
+            }
+
+            if !any_open {
+                return best_sq; // Whole grid scanned.
+            }
+            if best_sq <= outside_dist * outside_dist {
+                return best_sq;
+            }
+
+            radius += 1;
+        }
+    }
+
+    #[inline]
+    fn scan_cell(&self, ix: isize, iy: isize, iz: isize, q: &Xyz, best_sq: &mut f64) {
+        let c = ((iz as usize) * self.dims[1] + iy as usize) * self.dims[0] + ix as usize;
+        let (start, end) = (self.cell_start[c] as usize, self.cell_start[c + 1] as usize);
+        for p in &self.points[start..end] {
+            let dx = q[0] - p[0];
+            let dy = q[1] - p[1];
+            let dz = q[2] - p[2];
+            let d2 = dx * dx + dy * dy + dz * dz;
+            if d2 < *best_sq {
+                *best_sq = d2;
+            }
+        }
+    }
+}
+
+/// Squared 3D Hausdorff distance using prebuilt grids, abandoned early once it
+/// provably exceeds `bound_sq`.
+///
+/// O(n + m) rather than the O(n·m) of a brute-force scan.
+/// Supply the grid built over each set; when one side is reused across many
+/// candidates (as in an alignment search) its grid should be built once and shared.
+pub fn hausdorff_sq_3d_grid(
+    set1: &[Xyz],
+    grid1: &SpatialGrid,
+    set2: &[Xyz],
+    grid2: &SpatialGrid,
+    bound_sq: f64,
+) -> Option<f64> {
+    if set1.is_empty() || set2.is_empty() {
+        return Some(0.0);
+    }
+    let forward = directed_hausdorff_sq_grid(set1, grid2, bound_sq)?;
+    let backward = directed_hausdorff_sq_grid(set2, grid1, bound_sq)?;
+    Some(forward.max(backward))
+}
+
+fn directed_hausdorff_sq_grid(a: &[Xyz], b: &SpatialGrid, bound_sq: f64) -> Option<f64> {
+    let threads = rayon::current_num_threads().max(1);
+    let chunk_size = a.len().div_ceil(threads * 4).max(1);
+
+    a.par_chunks(chunk_size)
+        .map(|chunk| {
+            let mut local_max_sq = 0.0_f64;
+            for pa in chunk {
+                // Points already within the running maximum need no exact answer.
+                let min_sq = b.nearest_sq(pa, local_max_sq);
+                if min_sq > bound_sq {
+                    return None;
+                }
+                if min_sq > local_max_sq {
+                    local_max_sq = min_sq;
+                }
+            }
+            Some(local_max_sq)
+        })
+        .try_reduce(|| 0.0_f64, |x, y| Some(x.max(y)))
 }
 
 fn directed_hausdorff(contour_a: &[ContourPoint], contour_b: &[ContourPoint]) -> f64 {
@@ -544,5 +811,242 @@ mod process_utils_tests {
 
         // Distance should be 0.5 (the constant offset)
         assert_relative_eq!(distance, 0.5, epsilon = 1e-10);
+    }
+
+    /// Straightforward O(n·m) 3D reference to validate the bounded kernel against.
+    fn brute_force_hausdorff_3d(a: &[Xyz], b: &[Xyz]) -> f64 {
+        if a.is_empty() || b.is_empty() {
+            return 0.0;
+        }
+        let directed = |from: &[Xyz], to: &[Xyz]| {
+            from.iter()
+                .map(|p| {
+                    to.iter()
+                        .map(|q| {
+                            (p[0] - q[0]).powi(2) + (p[1] - q[1]).powi(2) + (p[2] - q[2]).powi(2)
+                        })
+                        .fold(f64::INFINITY, f64::min)
+                })
+                .fold(0.0_f64, f64::max)
+        };
+        directed(a, b).max(directed(b, a))
+    }
+
+    /// Deterministic pseudo-random cloud (no rand dependency in the test path).
+    fn pseudo_random_cloud(n: usize, seed: u64) -> Vec<Xyz> {
+        let mut state = seed | 1;
+        let mut next = || {
+            // xorshift64*
+            state ^= state >> 12;
+            state ^= state << 25;
+            state ^= state >> 27;
+            (state.wrapping_mul(0x2545_F491_4F6C_DD1D) >> 11) as f64 / (1u64 << 53) as f64
+        };
+        (0..n)
+            .map(|_| [next() * 20.0, next() * 20.0, next() * 60.0])
+            .collect()
+    }
+
+    #[test]
+    fn test_hausdorff_3d_matches_brute_force() {
+        let a = pseudo_random_cloud(300, 12345);
+        let b = pseudo_random_cloud(250, 67890);
+
+        let (ga, gb) = (SpatialGrid::build(&a), SpatialGrid::build(&b));
+        let expected = brute_force_hausdorff_3d(&a, &b);
+        let actual = hausdorff_sq_3d_grid(&a, &ga, &b, &gb, f64::MAX)
+            .expect("unbounded must return a value");
+
+        assert_relative_eq!(actual, expected, epsilon = 1e-9);
+    }
+
+    #[test]
+    fn test_hausdorff_3d_is_symmetric() {
+        let a = pseudo_random_cloud(200, 11);
+        let b = pseudo_random_cloud(150, 22);
+
+        let (ga, gb) = (SpatialGrid::build(&a), SpatialGrid::build(&b));
+        let forward = hausdorff_sq_3d_grid(&a, &ga, &b, &gb, f64::MAX).unwrap();
+        let backward = hausdorff_sq_3d_grid(&b, &gb, &a, &ga, f64::MAX).unwrap();
+
+        assert_relative_eq!(forward, backward, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn test_hausdorff_3d_bound_prunes_without_changing_the_winner() {
+        let a = pseudo_random_cloud(300, 999);
+        let b = pseudo_random_cloud(300, 1000);
+        let (ga, gb) = (SpatialGrid::build(&a), SpatialGrid::build(&b));
+        let truth = brute_force_hausdorff_3d(&a, &b);
+
+        // A bound at or above the true value must return the exact value.
+        assert_relative_eq!(
+            hausdorff_sq_3d_grid(&a, &ga, &b, &gb, truth).unwrap(),
+            truth,
+            epsilon = 1e-9
+        );
+        assert_relative_eq!(
+            hausdorff_sq_3d_grid(&a, &ga, &b, &gb, truth * 2.0).unwrap(),
+            truth,
+            epsilon = 1e-9
+        );
+
+        // A bound below it must prune.
+        assert!(hausdorff_sq_3d_grid(&a, &ga, &b, &gb, truth * 0.5).is_none());
+        assert!(hausdorff_sq_3d_grid(&a, &ga, &b, &gb, 0.0).is_none());
+    }
+
+    #[test]
+    fn test_hausdorff_3d_accounts_for_z() {
+        // Two identical squares separated purely in z. The 2D kernel must see them
+        // as coincident; the 3D kernel must report the separation.
+        let flat: Vec<ContourPoint> = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+            .iter()
+            .enumerate()
+            .map(|(i, &(x, y))| ContourPoint {
+                frame_index: 0,
+                point_index: i as u32,
+                x,
+                y,
+                z: 0.0,
+                aortic: false,
+            })
+            .collect();
+        let raised: Vec<ContourPoint> =
+            flat.iter().map(|p| ContourPoint { z: 7.0, ..*p }).collect();
+
+        assert_relative_eq!(hausdorff_distance(&flat, &raised), 0.0, epsilon = 1e-12);
+
+        let (fxyz, rxyz) = (to_xyz(&flat), to_xyz(&raised));
+        let (gf, gr) = (SpatialGrid::build(&fxyz), SpatialGrid::build(&rxyz));
+        let distance_3d = hausdorff_sq_3d_grid(&fxyz, &gf, &rxyz, &gr, f64::MAX)
+            .unwrap()
+            .sqrt();
+        assert_relative_eq!(distance_3d, 7.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn test_grid_nearest_matches_brute_force() {
+        let cloud = pseudo_random_cloud(500, 31337);
+        let grid = SpatialGrid::build(&cloud);
+
+        // Queries inside the cloud, and well outside it on every side.
+        let mut queries = pseudo_random_cloud(200, 424242);
+        queries.extend([
+            [-50.0, -50.0, -50.0],
+            [100.0, 100.0, 100.0],
+            [10.0, 10.0, -80.0],
+            [-80.0, 10.0, 30.0],
+            [0.0, 0.0, 0.0],
+        ]);
+
+        for q in &queries {
+            let expected = cloud
+                .iter()
+                .map(|p| (q[0] - p[0]).powi(2) + (q[1] - p[1]).powi(2) + (q[2] - p[2]).powi(2))
+                .fold(f64::INFINITY, f64::min);
+            // floor_sq = 0.0 forces an exact answer.
+            assert_relative_eq!(grid.nearest_sq(q, 0.0), expected, epsilon = 1e-9);
+        }
+    }
+
+    #[test]
+    fn test_grid_nearest_respects_floor() {
+        let cloud = pseudo_random_cloud(400, 5150);
+        let grid = SpatialGrid::build(&cloud);
+
+        for q in &pseudo_random_cloud(100, 6161) {
+            let exact = grid.nearest_sq(q, 0.0);
+            // With a generous floor the query may bail out early, but never above it
+            // and never below the true value.
+            let approx = grid.nearest_sq(q, exact * 4.0 + 1.0);
+            assert!(approx >= exact - 1e-9, "{approx} < {exact}");
+            assert!(approx <= exact * 4.0 + 1.0 + 1e-9);
+        }
+    }
+
+    #[test]
+    fn test_grid_handles_degenerate_clouds() {
+        // Single point, and a set collapsed onto a line — both give zero extent on
+        // at least one axis, which the cell sizing has to survive.
+        for cloud in [
+            vec![[1.0, 2.0, 3.0]],
+            (0..50).map(|i| [0.0, 0.0, i as f64]).collect::<Vec<_>>(),
+            vec![[4.0, 4.0, 4.0]; 20],
+        ] {
+            let grid = SpatialGrid::build(&cloud);
+            let q = [1.0, 1.0, 1.0];
+            let expected = cloud
+                .iter()
+                .map(|p| (q[0] - p[0]).powi(2) + (q[1] - p[1]).powi(2) + (q[2] - p[2]).powi(2))
+                .fold(f64::INFINITY, f64::min);
+            assert_relative_eq!(grid.nearest_sq(&q, 0.0), expected, epsilon = 1e-9);
+        }
+
+        // An empty grid has no nearest neighbour at all.
+        assert_eq!(
+            SpatialGrid::build(&[]).nearest_sq(&[0.0; 3], 0.0),
+            f64::INFINITY
+        );
+    }
+
+    #[test]
+    fn test_hausdorff_3d_grid_matches_brute_force() {
+        let a = pseudo_random_cloud(400, 2024);
+        let b = pseudo_random_cloud(350, 2025);
+        let (ga, gb) = (SpatialGrid::build(&a), SpatialGrid::build(&b));
+
+        let expected = brute_force_hausdorff_3d(&a, &b);
+        let actual = hausdorff_sq_3d_grid(&a, &ga, &b, &gb, f64::MAX).unwrap();
+
+        assert_relative_eq!(actual, expected, epsilon = 1e-9);
+    }
+
+    #[test]
+    fn test_hausdorff_3d_grid_bound_prunes() {
+        let a = pseudo_random_cloud(300, 88);
+        let b = pseudo_random_cloud(300, 99);
+        let (ga, gb) = (SpatialGrid::build(&a), SpatialGrid::build(&b));
+        let truth = brute_force_hausdorff_3d(&a, &b);
+
+        assert_relative_eq!(
+            hausdorff_sq_3d_grid(&a, &ga, &b, &gb, truth).unwrap(),
+            truth,
+            epsilon = 1e-9
+        );
+        assert!(hausdorff_sq_3d_grid(&a, &ga, &b, &gb, truth * 0.5).is_none());
+    }
+
+    #[test]
+    fn test_hausdorff_3d_grid_disjoint_clouds() {
+        // Far-apart clouds: every query lands outside the other grid's bounds, which
+        // exercises the clamped-cell and boundary-face logic.
+        let a: Vec<Xyz> = (0..100).map(|i| [i as f64 * 0.1, 0.0, 0.0]).collect();
+        let b: Vec<Xyz> = (0..100).map(|i| [i as f64 * 0.1, 0.0, 500.0]).collect();
+        let (ga, gb) = (SpatialGrid::build(&a), SpatialGrid::build(&b));
+
+        let actual = hausdorff_sq_3d_grid(&a, &ga, &b, &gb, f64::MAX).unwrap();
+        assert_relative_eq!(actual, brute_force_hausdorff_3d(&a, &b), epsilon = 1e-9);
+        assert_relative_eq!(actual.sqrt(), 500.0, epsilon = 1e-9);
+    }
+
+    #[test]
+    fn test_hausdorff_3d_empty_sets() {
+        let points = pseudo_random_cloud(10, 7);
+        let empty: Vec<Xyz> = Vec::new();
+        let (gp, ge) = (SpatialGrid::build(&points), SpatialGrid::build(&empty));
+
+        assert_eq!(
+            hausdorff_sq_3d_grid(&empty, &ge, &points, &gp, f64::MAX),
+            Some(0.0)
+        );
+        assert_eq!(
+            hausdorff_sq_3d_grid(&points, &gp, &empty, &ge, f64::MAX),
+            Some(0.0)
+        );
+        assert_eq!(
+            hausdorff_sq_3d_grid(&empty, &ge, &empty, &ge, f64::MAX),
+            Some(0.0)
+        );
     }
 }
