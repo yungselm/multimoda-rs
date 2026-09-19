@@ -3,6 +3,34 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.2] - 2026-09-19
+More anatomical approach in creating the anomalous ostium. Takes the wall measurement to create
+and offset. This ensures that the ostium is represented like the ostium from the intravascular
+images, and works more reliably now. One thing to do: Now ends as a sharp edge, here should form
+kind of a dome on top of this plane.
+
+### Fixed
+- Anomalous/intramural ostia could develop a severe concave "half island" fold in the stitched
+  proximal boundary ring, since a single flatten/smooth/clamp treatment assumes the ring is
+  planar, which is not true when one half sits flush against the aortic wall. `_condition_ostium_ring_two_half`
+  now conditions each half separately: the aorta-facing half is replaced by the ostium's own IV
+  frame contour scaled up by its `aortic_thickness`, the coronary-facing half only gets a light
+  denoising spline, and the jump into the surrounding mesh is faded over a few layers
+  (`_taper_ring_displacement`) instead of left as an abrupt fold. Only active for
+  `prox_start_mode="highest_z"`.
+- The two halves didn't share a spacing scale (one resampled, one spline-fit only), leaving uneven
+  point spacing across the seam; the combined ring is now redistributed evenly by arc length.
+
+### Added
+- `stitch_ccta_to_intravascular` gained `fillet_bulge`/`fillet_layers`: purely cosmetic, replaces
+  the sharp direct strut between each CCTA boundary point and its IV point with a small rounded
+  arc, without moving either endpoint.
+
+### Internal
+- `ccta/stitching.py`, `ccta/boundary.py`, `ccta/labeling.py`, `ccta/fixing_functions.py` split
+  into `stitching/` and `labeling/` packages (core logic separated from helpers). `export_section_stl`
+  moved to `multimodars/io/write_geometries.py`. No behaviour change beyond the fixes above.
+
 ## [0.7.0] - 2026-08-13
 
 ### Added
