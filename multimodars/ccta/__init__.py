@@ -5,12 +5,15 @@ from . import scaling
 from . import labeling
 from . import centerline_prep
 from . import debug_plots as debug_plots
-from . import fixing_functions
+from . import mesh_regions
+from . import postprocessing as _postprocessing
 
 from pathlib import Path
 from typing import TYPE_CHECKING
 import numpy as np
 import trimesh
+
+from ..io.write_geometries import export_section_stl as export_section_stl
 
 if TYPE_CHECKING:
     from ..multimodars import PyCenterline, PyFrame, PyGeometry
@@ -261,13 +264,11 @@ def scale(
 def stitch(
     results: dict,
     geometry: PyGeometry,
-    postprocessing: bool = False,
     region_remove: list[str] | str = ["anomalous_points", "proximal_points"],
     prox_start_mode: str = "highest_z",
     dist_start_mode: str = "nearest_iv",
-    **postprocessing_kwargs,
 ) -> dict:
-    """Stitch a CCTA mesh to the intravascular geometry and optionally remesh.
+    """Stitch a CCTA mesh to the intravascular geometry.
 
     Removes labeled anatomical regions from the CCTA mesh, then stitches the
     remaining surface to the intravascular geometry reconstructed from
@@ -277,9 +278,9 @@ def stitch(
     and proximal points and stitch the intravascular vessel directly to aorta with highest_z
     approach (default).
 
-    When *postprocessing* is ``True`` **and** pymeshlab is
-    installed, the stitched mesh is repaired, isotropically remeshed, and
-    smoothed with a Taubin filter before being returned.
+    The result is only hole-filled, not remeshed or smoothed.  For that, run
+    :func:`postprocessing.postprocess_stitched_mesh` on the returned mesh as a
+    separate, explicit step (requires pymeshlab).
 
     Parameters
     ----------
@@ -290,34 +291,22 @@ def stitch(
     geometry : PyGeometry
         Intravascular imaging geometry whose contours define the vessel lumen
         used as the stitching target.
-    postprocessing : bool, optional
-        When ``True``, run :func:`fixing_functions.fix_and_remesh_stitched_mesh`
-        followed by Taubin smoothing on the stitched mesh.  Silently skipped
-        if pymeshlab is not installed.  Default is ``False``.
     prox_start_mode : str, optional
         How to choose index 0 of the proximal boundary ring before stitching.
         ``"nearest_iv"`` (default) rotates to the point closest to IV point 0;
         ``"highest_z"`` rotates to the point with the largest z-coordinate.
     dist_start_mode : str, optional
         Same as *prox_start_mode* but for the distal boundary ring.
-    **postprocessing_kwargs
-        Keyword arguments forwarded to
-        :func:`fixing_functions.fix_and_remesh_stitched_mesh`, e.g.
-        ``target_edge_length_mm``, ``remesh_iterations``, ``verbose``.
 
     Returns
     -------
     dict
         Stitched results dictionary with the same structure as *results*, where
-        ``"mesh"`` is the stitched (and optionally postprocessed) surface.
+        ``"mesh"`` is the stitched, hole-filled surface.
     """
-    if postprocessing and fixing_functions.pymeshlab is None:
-        raise ImportError(
-            "postprocessing=True requires pymeshlab. "
-            "Install it with: pip install 'multimodars[meshlab]'"
-        )
-
-    updated_results = stitching.remove_labeled_points_from_mesh(results, region_remove)
+    updated_results = mesh_regions.remove_labeled_points_from_mesh(
+        results, region_remove
+    )
 
     stitched = stitching.stitch_ccta_to_intravascular(
         geometry,
@@ -327,106 +316,9 @@ def stitch(
         dist_start_mode=dist_start_mode,
     )
 
-    stitched["mesh"] = fixing_functions.manual_hole_fill(stitched["mesh"])
-
-    stitched["mesh"] = fixing_functions.postprocess_stitched_mesh(
-        stitched["mesh"],
-        postprocessing=postprocessing,
-        **postprocessing_kwargs,
-    )
+    stitched["mesh"] = _postprocessing.manual_hole_fill(stitched["mesh"])
 
     return stitched
-
-
-def _extract_region_with_border_faces(
-    mesh: trimesh.Trimesh,
-    region_points: list,
-) -> trimesh.Trimesh:
-    """Return a sub-mesh containing every face that touches at least one vertex
-    in *region_points*.
-
-    Unlike :func:`manipulating.keep_labeled_points_from_mesh`, which only keeps
-    faces whose *all* vertices belong to the region, this function uses an
-    **at-least-one-vertex** criterion.  The result therefore includes the thin
-    ring of adjacent-region vertices that share a face with the target region,
-    giving seamless overlapping boundaries when meshes of different labels are
-    exported side-by-side.
-    """
-    coord_to_idx = {tuple(v): i for i, v in enumerate(mesh.vertices)}
-    keep_indices = np.array(
-        [coord_to_idx[tuple(p)] for p in region_points if tuple(p) in coord_to_idx],
-        dtype=np.int64,
-    )
-    if keep_indices.size == 0:
-        return trimesh.Trimesh()
-
-    face_mask = np.isin(mesh.faces, keep_indices).any(axis=1)
-    selected_faces = mesh.faces[face_mask]
-
-    used = np.unique(selected_faces)
-    remap = np.full(len(mesh.vertices), -1, dtype=np.int64)
-    remap[used] = np.arange(len(used), dtype=np.int64)
-
-    return trimesh.Trimesh(
-        vertices=mesh.vertices[used],
-        faces=remap[selected_faces],
-        process=False,
-    )
-
-
-def export_section_stl(
-    results: dict,
-    type: str = "all",
-    output_dir: Path | str | None = None,
-) -> None:
-    """Export the mesh (or a labeled sub-region) as an STL file.
-
-    Parameters
-    ----------
-    results : dict
-        Labeled results dictionary containing ``"mesh"`` and the point-label
-        lists produced by :func:`label` / :func:`scale`.
-    type : str, optional
-        Which region to export.  One of:
-
-        * ``"all"``   - the full mesh as-is.
-        * ``"aorta"`` - only the aorta region.
-        * ``"rca"``   - only the RCA region (includes adjacent aorta ring).
-        * ``"lca"``   - only the LCA region (includes adjacent aorta ring).
-
-        Default is ``"all"``.
-    output_dir : Path, str, or None, optional
-        Directory in which to write the STL file.  Defaults to the current
-        working directory when ``None``.
-    """
-    output_dir = Path(output_dir) if output_dir is not None else Path(".")
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    mesh: trimesh.Trimesh = results["mesh"]
-
-    _REGION_KEYS = {
-        "aorta": "aorta_points",
-        "rca": "rca_points",
-        "lca": "lca_points",
-    }
-
-    if type == "all":
-        mesh.export(str(output_dir / "all.stl"))
-    elif type in _REGION_KEYS:
-        region_points = results.get(_REGION_KEYS[type], [])
-        if type == "aorta":
-            sub_mesh_dict = stitching.keep_labeled_points_from_mesh(
-                results, ["aorta_points", "rca_removed_points", "lca_removed_points"]
-            )
-            sub_mesh = sub_mesh_dict["mesh"]
-        else:
-            sub_mesh = _extract_region_with_border_faces(mesh, region_points)
-        sub_mesh.export(str(output_dir / f"{type}.stl"))
-    else:
-        raise ValueError(
-            f"Unknown export type {type!r}. "
-            f"Choose one of: 'all', 'aorta', 'rca', 'lca'."
-        )
 
 
 def create_wall_mesh(
@@ -461,11 +353,11 @@ def create_wall_mesh(
         scaling_factor = aortic_scaling
 
     # Extract aorta sub-mesh, fill ostia holes, then scale the closed aorta directly
-    sub_mesh_dict = stitching.keep_labeled_points_from_mesh(
+    sub_mesh_dict = mesh_regions.keep_labeled_points_from_mesh(
         results, ["aorta_points", "rca_removed_points", "lca_removed_points"]
     )
     sub_mesh = sub_mesh_dict["mesh"]
-    sub_mesh_filled = fixing_functions.manual_hole_fill(sub_mesh)
+    sub_mesh_filled = _postprocessing.manual_hole_fill(sub_mesh)
     filled_vertices = [
         (float(p[0]), float(p[1]), float(p[2])) for p in sub_mesh_filled.vertices
     ]
@@ -478,7 +370,7 @@ def create_wall_mesh(
     )
 
     # Extract and scale each coronary sub-mesh independently
-    rca_sub_dict = stitching.keep_labeled_points_from_mesh(results, ["rca_points"])
+    rca_sub_dict = mesh_regions.keep_labeled_points_from_mesh(results, ["rca_points"])
     scaled_rca = scaling.scale_region_centerline_morphing(
         mesh=rca_sub_dict["mesh"],
         region_points=rca_sub_dict["rca_points"],
@@ -486,7 +378,7 @@ def create_wall_mesh(
         diameter_adjustment_mm=coronary_scaling,
     )
 
-    lca_sub_dict = stitching.keep_labeled_points_from_mesh(results, ["lca_points"])
+    lca_sub_dict = mesh_regions.keep_labeled_points_from_mesh(results, ["lca_points"])
     scaled_lca = scaling.scale_region_centerline_morphing(
         mesh=lca_sub_dict["mesh"],
         region_points=lca_sub_dict["lca_points"],

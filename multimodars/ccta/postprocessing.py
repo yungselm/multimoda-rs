@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import trimesh
-from .stitching import order_points_list
+from .stitching.boundary import order_points_list
 
 try:
     import pymeshlab
@@ -52,7 +52,6 @@ def manual_hole_fill(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
 def postprocess_stitched_mesh(
     mesh: trimesh.Trimesh,
     *,
-    postprocessing: bool = False,
     target_edge_length_mm: float | None = None,
     remesh_iterations: int = 10,
     lamb: float = 0.5,
@@ -60,15 +59,16 @@ def postprocess_stitched_mesh(
     verbose: bool = False,
     **kwargs,
 ) -> trimesh.Trimesh:
-    """Optionally remesh and smooth a stitched mesh.
+    """Remesh and smooth a stitched mesh.
+
+    A separate, explicit step from :func:`~multimodars.ccta.stitch` - call this
+    on its result when the heavier remesh/smooth pass is wanted.  Requires
+    pymeshlab to be installed.
 
     Parameters
     ----------
     mesh:
         Input stitched mesh.
-    postprocessing:
-        When ``True``, run :func:`fix_and_remesh_stitched_mesh` followed by
-        Taubin smoothing.  Requires pymeshlab to be installed.
     target_edge_length_mm:
         Passed to :func:`fix_and_remesh_stitched_mesh`.
     remesh_iterations:
@@ -78,9 +78,6 @@ def postprocess_stitched_mesh(
     **kwargs:
         Additional keyword arguments passed to :func:`fix_and_remesh_stitched_mesh`.
     """
-    if not postprocessing:
-        return mesh
-
     mesh = fix_and_remesh_stitched_mesh(
         mesh,
         target_edge_length_mm=target_edge_length_mm,

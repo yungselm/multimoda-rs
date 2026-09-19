@@ -8,7 +8,7 @@ import trimesh
 from trimesh.points import PointCloud
 from trimesh.visual import ColorVisuals
 
-from .boundary import open_boundary_edges, order_boundary_rings
+from .stitching.boundary import open_boundary_edges, order_boundary_rings
 
 if TYPE_CHECKING:
     from ..multimodars import PyCenterline, PyDiscretizedVesselTree
@@ -521,10 +521,14 @@ def plot_boundary_edges(
     """Open an interactive trimesh scene of a stored boundary ring set and its edges.
 
     Re-derives the rings from the mesh's open edges with
-    :func:`~multimodars.ccta.boundary.order_boundary_rings`, draws each ring's
+    :func:`~multimodars.ccta.stitching.boundary.order_boundary_rings`, draws each ring's
     edges as connected line segments, and colours the ring vertices red -> blue
     by their walk order.  This makes both the seam direction and any split into
-    multiple disconnected rings immediately visible.
+    multiple disconnected rings immediately visible.  If the requested points
+    no longer sit on an open edge at all - e.g. ``"prox_boundary_points"`` /
+    ``"dist_boundary_points"`` once :func:`~multimodars.ccta.stitching.stitch_ccta_to_intravascular`
+    has sealed that seam shut - falls back to the stored list's own order
+    instead of showing nothing.
 
     Colour coding
     -------------
@@ -574,6 +578,25 @@ def plot_boundary_edges(
         boundary_indices,
         target_n=target_boundaries,
     )
+    force_closed = False
+    if not rings:
+        # These points may no longer sit on an open edge at all - e.g.
+        # "prox_boundary_points"/"dist_boundary_points" once
+        # stitch_ccta_to_intravascular has sealed that seam shut, at which
+        # point re-deriving from mesh topology can only ever find nothing.
+        # Fall back to the stored list's own order, which is already a
+        # proper ring by construction, rather than silently showing nothing.
+        fallback_ring = [
+            idx for pt in pts if (idx := coord_to_idx.get(tuple(pt))) is not None
+        ]
+        if fallback_ring:
+            print(
+                f"  {len(boundary_indices)} points do not form an open "
+                f"boundary on the mesh (already stitched?) - showing the "
+                f"stored order instead."
+            )
+            rings = [fallback_ring]
+            force_closed = True
     print(
         f"  {len(boundary_indices)} points in {len(rings)} ring(s): "
         f"{[len(r) for r in rings]}"
@@ -614,7 +637,7 @@ def plot_boundary_edges(
         # Edges: connect consecutive ring vertices.  Close the loop only when the
         # ring's ends are a real boundary edge, so an open arc gets no false edge.
         segs = np.stack([coords[:-1], coords[1:]], axis=1)
-        closed = n > 2 and frozenset((ring[0], ring[-1])) in edge_set
+        closed = n > 2 and (force_closed or frozenset((ring[0], ring[-1])) in edge_set)
         if closed:
             segs = np.concatenate([segs, coords[[n - 1, 0]][None]], axis=0)
         if len(segs):
