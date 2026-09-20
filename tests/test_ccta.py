@@ -5,19 +5,19 @@ Covers:
                 final_reclassification (Rust bindings backing
                 labeling.label_geometry's occlusion-removal and
                 adjacency-based label-smoothing steps)
-  - labeling: _keep_largest_connected_component (island-point filter for
-                find_points_by_cl_region's proximal/distal/anomalous output)
-  - fixing_functions: manual_hole_fill, postprocess_stitched_mesh
-  - stitching: remove_labeled_points_from_mesh,
-               keep_labeled_points_from_mesh, order_points_list,
-               _rotate_to_nearest_iv, _fix_ring_direction_by_distance,
-               _stitch_rings, _prepare_prox_dist_boundary_pts,
-               _condition_ostium_ring, _clamp_to_plane,
-               _enforce_layer_gap_from_plane, and the ring conditioning
-               helpers (_redistribute_ring_evenly,
-               _smooth_ring_preserving_size, _densify_boundary,
-               _assign_rings_to_ends, _shift_plane_clear_of, _toward_aorta)
-  - boundary: open_boundary_edges, order_boundary_rings, clean_open_boundary
+  - labeling.helpers: _keep_largest_connected_component (island-point filter
+                for find_points_by_cl_region's proximal/distal/anomalous output)
+  - postprocessing: manual_hole_fill, postprocess_stitched_mesh
+  - mesh_regions: remove_labeled_points_from_mesh, keep_labeled_points_from_mesh
+  - stitching.boundary: open_boundary_edges, order_boundary_rings,
+               clean_open_boundary, order_points_list, _rotate_to_nearest_iv,
+               _fix_ring_direction_by_distance, _prepare_prox_dist_boundary_pts,
+               _condition_ostium_ring, and the ring conditioning helpers
+               (_redistribute_ring_evenly, _smooth_ring_preserving_size,
+               _densify_boundary, _assign_rings_to_ends, _toward_aorta)
+  - stitching.core: _stitch_rings
+  - stitching.helpers: _clamp_to_plane, _enforce_layer_gap_from_plane,
+               _fast_fix_normals, _shift_plane_clear_of
   - scaling: scale_region_centerline_morphing, sync_results_to_mesh
 """
 
@@ -30,39 +30,41 @@ import pytest
 import trimesh
 
 from multimodars import PyContourPoint
-from multimodars.ccta.fixing_functions import (
+from multimodars.ccta.postprocessing import (
     manual_hole_fill,
     postprocess_stitched_mesh,
 )
-from multimodars.ccta.labeling import _keep_largest_connected_component
+from multimodars.ccta.labeling.helpers import _keep_largest_connected_component
 from multimodars.multimodars import (
     find_faces_near_points,
     find_aortic_points,
     final_reclassification,
 )
-from multimodars.ccta.boundary import (
+from multimodars.ccta.stitching.boundary import (
     clean_open_boundary,
     open_boundary_edges,
     order_boundary_rings,
-)
-from multimodars.ccta.stitching import (
     _assign_rings_to_ends,
-    _clamp_to_plane,
     _condition_ostium_ring,
     _densify_boundary,
-    _enforce_layer_gap_from_plane,
-    _fast_fix_normals,
     _fix_ring_direction_by_distance,
     _prepare_prox_dist_boundary_pts,
     _redistribute_ring_evenly,
     _ring_calibre,
     _rotate_to_nearest_iv,
-    _shift_plane_clear_of,
     _smooth_ring_preserving_size,
-    _stitch_rings,
     _toward_aorta,
-    keep_labeled_points_from_mesh,
     order_points_list,
+)
+from multimodars.ccta.stitching.core import _stitch_rings
+from multimodars.ccta.stitching.helpers import (
+    _clamp_to_plane,
+    _enforce_layer_gap_from_plane,
+    _fast_fix_normals,
+    _shift_plane_clear_of,
+)
+from multimodars.ccta.mesh_regions import (
+    keep_labeled_points_from_mesh,
     remove_labeled_points_from_mesh,
 )
 
@@ -544,7 +546,7 @@ class TestFinalReclassification:
 
 
 # ===========================================================================
-# labeling._keep_largest_connected_component
+# labeling.helpers._keep_largest_connected_component
 # (island-point filter for find_points_by_cl_region's proximal/distal/
 # anomalous output - see grid_mesh layout in the module docstring above:
 # vertices {0,1,3,4} are mutually mesh-adjacent; vertex 8's neighbours are
@@ -620,7 +622,7 @@ class TestFastFixNormals:
 
 
 # ===========================================================================
-# fixing_functions.manual_hole_fill
+# postprocessing.manual_hole_fill
 # ===========================================================================
 
 
@@ -652,20 +654,16 @@ class TestManualHoleFill:
 
 
 # ===========================================================================
-# fixing_functions.postprocess_stitched_mesh
+# postprocessing.postprocess_stitched_mesh
 # ===========================================================================
 
 
 class TestPostprocessStitchedMesh:
-    def test_passthrough_when_disabled(self, grid_mesh):
-        result = postprocess_stitched_mesh(grid_mesh, postprocessing=False)
-        assert result is grid_mesh  # exact same object
-
     def test_raises_import_error_without_pymeshlab(self, grid_mesh):
         if importlib.util.find_spec("pymeshlab") is not None:
             pytest.skip("pymeshlab installed; ImportError path not triggered")
         with pytest.raises(ImportError, match="pymeshlab"):
-            postprocess_stitched_mesh(grid_mesh, postprocessing=True)
+            postprocess_stitched_mesh(grid_mesh)
 
 
 # ===========================================================================
@@ -933,7 +931,7 @@ class TestFixRingDirectionByDistance:
 
 
 # ===========================================================================
-# stitching._stitch_rings
+# stitching.core._stitch_rings
 # ===========================================================================
 
 
@@ -1320,7 +1318,7 @@ class TestPrepareProxDistBoundaryPts:
 
 
 # ===========================================================================
-# stitching._condition_ostium_ring
+# stitching.boundary._condition_ostium_ring
 # ===========================================================================
 
 
@@ -1446,7 +1444,7 @@ def _traces_real_edges(faces, ring_indices) -> bool:
 
 
 # ===========================================================================
-# boundary.open_boundary_edges
+# stitching.boundary.open_boundary_edges
 # ===========================================================================
 
 
@@ -1475,7 +1473,7 @@ class TestOpenBoundaryEdges:
 
 
 # ===========================================================================
-# boundary.order_boundary_rings
+# stitching.boundary.order_boundary_rings
 # ===========================================================================
 
 
@@ -1506,7 +1504,7 @@ class TestOrderBoundaryRings:
 
 
 # ===========================================================================
-# boundary.clean_open_boundary
+# stitching.boundary.clean_open_boundary
 # ===========================================================================
 
 
@@ -1542,7 +1540,7 @@ class TestCleanOpenBoundary:
 
 
 # ===========================================================================
-# stitching._redistribute_ring_evenly
+# stitching.boundary._redistribute_ring_evenly
 # ===========================================================================
 
 
@@ -1592,7 +1590,7 @@ class TestRedistributeRingEvenly:
 
 
 # ===========================================================================
-# stitching._smooth_ring_preserving_size
+# stitching.boundary._smooth_ring_preserving_size
 # ===========================================================================
 
 
@@ -1642,7 +1640,7 @@ class TestSmoothRingPreservingSize:
 
 
 # ===========================================================================
-# stitching._densify_boundary
+# stitching.boundary._densify_boundary
 # ===========================================================================
 
 
@@ -1689,7 +1687,7 @@ class TestDensifyBoundary:
 
 
 # ===========================================================================
-# stitching._assign_rings_to_ends
+# stitching.boundary._assign_rings_to_ends
 # ===========================================================================
 
 
@@ -1728,7 +1726,7 @@ class TestAssignRingsToEnds:
 
 
 # ===========================================================================
-# stitching._toward_aorta / _shift_plane_clear_of
+# stitching.boundary._toward_aorta / stitching.helpers._shift_plane_clear_of
 # ===========================================================================
 
 

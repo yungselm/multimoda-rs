@@ -52,9 +52,11 @@ from .ccta.centerline_prep import (
     load_centerline,
     prepare_centerline,
 )
-from .ccta.stitching import (
+from .ccta.mesh_regions import (
     remove_labeled_points_from_mesh,
     keep_labeled_points_from_mesh,
+)
+from .ccta.stitching import (
     stitch_ccta_to_intravascular,
 )
 from .ccta.scaling import (
@@ -69,7 +71,7 @@ from .ccta.discretization_map import (
     discretize_vessel_tree,
     find_sharp_angles,
 )
-from .ccta.fixing_functions import fix_and_remesh_stitched_mesh, manual_hole_fill
+from .ccta.postprocessing import fix_and_remesh_stitched_mesh, manual_hole_fill
 from .ccta.debug_plots import (
     plot_results_key,
     plot_centerline_edges,
