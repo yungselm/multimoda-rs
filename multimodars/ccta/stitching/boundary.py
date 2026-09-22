@@ -534,6 +534,24 @@ def _redistribute_ring_evenly(
     return out
 
 
+def _flatten_smooth_respace(
+    mesh: trimesh.Trimesh,
+    ring: list[tuple[float, float, float]],
+) -> tuple[trimesh.Trimesh, list[tuple[float, float, float]]]:
+    """Flatten *ring* onto its best-fit plane, smooth it, and respace it evenly.
+
+    The size-preserving smoother matters here: plain Laplacian smoothing
+    shrinks a coarse ring badly (~16% at 17 points), which showed up as a
+    distal seam pinched well inside the vessel.  The result is written back
+    into *mesh* so it stays the mesh's real open edge.
+    """
+    pts = _redistribute_ring_evenly(
+        _smooth_ring_preserving_size(_project_to_best_fit_plane(ring))
+    )
+    mesh, _ = _write_ring_to_mesh(mesh, ring, pts)
+    return mesh, pts
+
+
 def _toward_aorta(
     ring_centroid: np.ndarray,
     aorta_pts,
@@ -656,13 +674,12 @@ def _split_ring_by_aorta_direction(
     """Split a ring into its aorta-facing half and coronary-facing half.
 
     Classifies each point by which side of *center* it falls on along
-    *aorta_direction* (a full 3-D half-space test - no plane projection, so a
-    steeply bent, non-planar ring splits correctly).  The ring is rotated so
-    it starts at the aorta-facing run, then that run's own length is taken as
-    "Half A"; everything else is "Half B".  Using the single largest
-    aorta-facing run (rather than every point testing positive) keeps a
-    handful of stray misclassified points near the transition out of Half A,
-    since Half A gets a hard geometric correction while Half B only gets a
+    *aorta_direction* (a full 3-D half-space test, so a steeply bent,
+    non-planar ring splits correctly).  The ring is rotated to start at the
+    largest aorta-facing run ("Half A"; everything else is "Half B") - using
+    the single largest run, rather than every positively-classified point,
+    keeps stray misclassified points near the transition out of Half A,
+    since it gets a hard geometric correction while Half B only gets a
     gentle one.
 
     Returns
@@ -739,19 +756,16 @@ def _duplicate_ostium_half_offset(
 ) -> list[tuple[float, float, float]]:
     """Build Half A's target: the ostium's own aorta-side contour, scaled up.
 
-    A uniformly scaled copy of the IV ostial frame's own aorta-side lumen
-    contour (*aorta_side_pts*, from :func:`_ostium_aortic_side_points` - the
-    points actually flagged ``aortic=True``, the same ones used to build the
-    "Wall" extras) about the frame's own centroid (*center*) - same shape,
-    same relative angles, no CCTA data involved at all - just enlarged so its
-    mean radius from *center* grows by *distance* (the measured aortic wall
-    thickness, i.e. ``frame.lumen.aortic_thickness`` / ``measurement_1``).
+    A uniformly scaled copy of *aorta_side_pts* (the IV frame's own
+    ``aortic=True`` lumen points, from :func:`_ostium_aortic_side_points`)
+    about *center* - same shape and angles, no CCTA data involved - just
+    enlarged so its mean radius grows by *distance* (the measured aortic
+    wall thickness, i.e. ``frame.lumen.aortic_thickness`` / ``measurement_1``).
 
-    Resampled to ``len(target_ring_half)`` points *after* scaling, not
-    before, and reversed if needed so it starts/ends next to the same
-    neighbours as *target_ring_half* does - matched by nearest endpoints,
-    since the IV frame's own point order has no guaranteed relationship to
-    the CCTA ring's mesh-walk order.
+    Resampled to ``len(target_ring_half)`` points after scaling, and
+    reversed if needed so its ends line up with *target_ring_half*'s -
+    matched by nearest endpoints, since the IV frame's own point order has
+    no relationship to the CCTA ring's mesh-walk order.
     """
     radial = aorta_side_pts - center
     mean_radius = float(np.linalg.norm(radial, axis=1).mean())
@@ -819,30 +833,24 @@ def _taper_ring_displacement(
 ) -> trimesh.Trimesh:
     """Fade a rim's displacement into the surrounding mesh over *n_layers*.
 
-    Replacing a rim wholesale (e.g. with a duplicated, offset "neo-ostium",
-    see :func:`_duplicate_ostium_half_offset`) can move it far from where the
-    mesh's very next layer of vertices still sits - unlike the small nudges
-    :func:`_enforce_layer_gap_from_plane` was built for, this is a large
-    enough jump to fold the faces bridging the two.  This assumes *mesh*
+    Replacing a rim wholesale (e.g. a duplicated, offset "neo-ostium") can
+    leave it far from where the mesh's next layer of vertices still sits -
+    too large a jump for :func:`_enforce_layer_gap_from_plane`'s small
+    nudges, and enough to fold the faces bridging the two.  Assumes *mesh*
     already has the rim at *new_ring_pts* (i.e. run after
-    :func:`_write_ring_to_mesh`), finds each rim vertex's displacement
-    (``new - old``), and propagates a decreasing fraction of it outward
-    through the face-adjacency graph: layer 1 (the rim's immediate
-    neighbours) moves by most of it, layer *n_layers* by only a little, and
-    anything further is untouched - so the mesh eases into the new rim
+    :func:`_write_ring_to_mesh`); finds each rim vertex's displacement
+    (``new - old``) and propagates a decreasing fraction of it outward
+    through the face-adjacency graph, so the mesh eases into the new
     position over several rings instead of jumping straight to it.
 
-    *protected_pts* are excluded from ever being moved by this, even if they
-    are graph-adjacent to the rim - e.g. the ring's *other* half, whose own
-    two endpoints are topologically adjacent to this rim's endpoints and
-    would otherwise get treated as an ordinary "layer 1" neighbour and pulled
-    off their own, separately-computed position.  A vertex that is itself
-    adjacent to one of those protected points - the interior vertex shared by
-    the triangle spanning the seam between the two halves - gets its pull cut
-    further by *seam_damping* on top of the usual layer weight: at full
-    layer-1 weight it would move most of the way while its other neighbour
-    (on the barely-moved protected side) stays almost still, which is enough
-    to fold that one triangle over.
+    *protected_pts* (e.g. the ring's other half) are never moved, even when
+    graph-adjacent to the rim - otherwise their own, separately-computed
+    endpoints would get pulled off-position as an ordinary "layer 1"
+    neighbour.  A vertex adjacent to one of those - the interior vertex
+    shared by the triangle spanning the seam between the two halves - gets
+    its pull cut further by *seam_damping*: at full layer-1 weight it would
+    move most of the way while its other neighbour (on the barely-moved
+    protected side) stays still, folding that triangle over.
     """
     coord_to_idx = {tuple(v): i for i, v in enumerate(mesh.vertices)}
     rim_disp: dict[int, np.ndarray] = {}
@@ -909,37 +917,38 @@ def _condition_ostium_ring_two_half(
 ) -> tuple[list[tuple[float, float, float]], trimesh.Trimesh]:
     """Condition an anomalous ostial ring as two anatomically different halves.
 
-    A steep-angle (e.g. anomalous, intramural) takeoff leaves the aorta-facing
-    half of the ring almost perpendicular to the coronary-facing half - not a
-    single circle or oval, and not even necessarily planar.  Treating the
-    whole ring with one shape assumption (a plane, a circle, a convex hull)
-    fights that real geometry.  Instead:
+    A steep-angle (e.g. anomalous, intramural) takeoff can leave the ring's
+    aorta-facing half almost perpendicular to its coronary-facing half - not a
+    single circle, oval, or even necessarily planar shape, so treating the
+    whole ring with one shape assumption fights the real geometry. Instead:
 
     * The aorta-facing half - identified from each IV ostial frame point's
-      own ``aortic`` flag (ground truth from the imaging labelling), tested
-      in full 3-D so it doesn't require planarity - is entirely replaced by
-      :func:`_duplicate_ostium_half_offset`: a uniformly scaled-up copy of
-      the ostium's own aorta-side contour, its mean radius grown by
-      *aortic_thickness* (the same measurement used to build the "Wall"
-      extras, i.e. ``frame.lumen.aortic_thickness`` / ``measurement_1``;
-      *clamp_overshoot* is the fallback when it's unavailable).  None of the
-      CCTA mesh's own (possibly badly distorted) geometry there survives -
-      only the trusted, correctly-shaped IV data, same shape, just bigger.
-    * The coronary-facing half keeps its own shape almost entirely -
-      :func:`_fit_open_spline_ring` only irons out an island or other
-      outlier, it does not pull points toward any idealised target.
+      own ``aortic`` flag (ground truth, tested in full 3-D so it doesn't
+      require planarity) - is replaced wholesale by
+      :func:`_duplicate_ostium_half_offset`: a scaled-up copy of the
+      ostium's own aorta-side contour, its mean radius grown by
+      *aortic_thickness* (falling back to *clamp_overshoot*).  None of the
+      CCTA mesh's own geometry there survives - only the trusted IV shape,
+      just bigger.
+    * The coronary-facing half keeps its own shape - :func:`_fit_open_spline_ring`
+      only irons out an island or other outlier, it doesn't pull points
+      toward an idealised target.
 
-    Replacing Half A wholesale can leave it far from where the mesh's very
-    next layer of vertices still is; :func:`_taper_ring_displacement` fades
-    that jump into the surrounding mesh over *taper_layers* rings instead of
-    leaving it as an abrupt fold - and, since the taper never touches Half B,
-    that half's own connection is left exactly as it is.
+    Replacing Half A wholesale can leave it far from where the mesh's next
+    layer of vertices still is; :func:`_taper_ring_displacement` fades that
+    jump in over *taper_layers* rings instead of leaving an abrupt fold, and
+    never touches Half B.
 
-    The existing per-point IV-plane clamp (:func:`_clamp_to_plane`, the
-    second half of :func:`_condition_ostium_ring`) still runs afterward, as a
-    final safety net.  Its *whole-ring* plane-shift-and-reproject step does
-    not - re-flattening the result onto one plane would undo the point of
-    treating the two halves separately.
+    The per-point IV-plane clamp from :func:`_condition_ostium_ring` still
+    runs afterward as a final safety net - but not its whole-ring
+    plane-shift-and-reproject step, which would undo the point of treating
+    the two halves separately.
+
+    Joining the two independently-built halves - and clamping some points to
+    the IV plane - leaves sharp kinks at the two seams even though each half
+    is smooth on its own.  A light, size-preserving smoothing pass over the
+    whole ring is applied last, after every other correction, to round those
+    off without undoing the shape corrections before it.
     """
     if iv_frame_pts is None or len(ring) < 6:
         return ring, mesh
@@ -987,6 +996,14 @@ def _condition_ostium_ring_two_half(
         new_ring = _clamp_to_plane(
             new_ring, center, iv_normal, overshoot=clamp_overshoot
         )
+
+    # Very last step: round off the sharp kinks left at the Half A / Half B
+    # seams (and at any point the clamp above just moved) with a
+    # size-preserving smoothing pass over the whole ring - after everything
+    # else, so it can't be undone by a later correction, and before the ring
+    # is written into the mesh and the connecting (stitch) triangles are built
+    # from it.
+    new_ring = _smooth_ring_preserving_size(new_ring, iterations=4, alpha=0.3)
 
     mesh, moved_indices = _write_ring_to_mesh(mesh, original, new_ring)
     # Half A's rim was replaced wholesale (see above) and can sit far from
@@ -1174,7 +1191,6 @@ def order_points_list(mesh: trimesh.Trimesh, points: list) -> list:
     boundary_set = set(boundary_indices)
     adj_map = build_adjacency_map(mesh.faces.tolist())
 
-    # Restrict adjacency to boundary-only neighbours
     boundary_adj = {
         i: [n for n in adj_map.get(i, []) if n in boundary_set]
         for i in boundary_indices
@@ -1193,26 +1209,24 @@ def order_points_list(mesh: trimesh.Trimesh, points: list) -> list:
         ordered.append(current)
         visited.add(current)
 
-    # If connectivity reached all points, done
     if len(visited) == len(boundary_indices):
         return [idx_to_pt[i] for i in ordered]
 
-    # Connectivity is broken —> fall back to plane-fit + counterclockwise projection
+    # Broken connectivity: fall back to plane-fit + counterclockwise projection.
     pts_array = np.array([idx_to_pt[i] for i in boundary_indices], dtype=np.float64)
     centroid = pts_array.mean(axis=0)
     centered = pts_array - centroid
 
-    # Fit plane via SVD: the normal is the right-singular vector with smallest singular value
+    # Plane normal via SVD: right-singular vector with smallest singular value.
     _, _, Vt = np.linalg.svd(centered)
-    normal = Vt[-1]  # plane normal
+    normal = Vt[-1]
 
-    # Build an orthonormal 2-D basis on the plane
+    # Orthonormal 2-D basis on the plane, to project each point and compute
+    # its angle around the centroid.
     u = Vt[0]
     v = np.cross(normal, u)
-
-    # Project each point to 2-D and compute its angle around the centroid
     angles = np.arctan2(centered @ v, centered @ u)
-    order = np.argsort(angles)  # counterclockwise by ascending angle
+    order = np.argsort(angles)
 
     return [idx_to_pt[boundary_indices[k]] for k in order]
 
@@ -1296,20 +1310,18 @@ def _prepare_prox_dist_boundary_pts(
 ) -> tuple[list, list, trimesh.Trimesh]:
     """Pick and condition the two boundary rings that will be stitched.
 
-    Both rims get the same treatment: the ring is flattened onto its own
-    best-fit plane, smoothed, respaced evenly along its perimeter, and finally
-    densified to *target_n* points so the stitch is a clean strip.  Every one of
-    those steps is written back into the mesh, so the returned rings are the
-    mesh's real open edge.  An ostial proximal ring gets the extra plane
-    handling in :func:`_condition_ostium_ring` before densification.
+    Both rims get :func:`_flatten_smooth_respace`, then densified to
+    *target_n* points so the stitch is a clean strip.  An ostial proximal
+    ring additionally gets the plane handling in :func:`_condition_ostium_ring`
+    before densification.
 
     A ``"highest_z"`` proximal ring skips all of that in favour of
     :func:`_condition_ostium_ring_two_half` instead: a steep-angle (e.g.
     anomalous, intramural) takeoff can leave that ring's aorta-facing half
     almost perpendicular to its coronary-facing half, so a single flatten
-    -smooth-or-clamp treatment for the whole ring fights the real geometry.
-    This has only been observed on the ostial proximal ring, so only that
-    ring takes this path - the distal ring always takes the plain path above.
+    -smooth-or-clamp treatment fights the real geometry.  This has only been
+    observed on the ostial proximal ring - the distal ring always takes the
+    plain path above.
     """
     rings = _boundary_rings(results, mesh)
     if len(rings) < 2:
@@ -1340,17 +1352,7 @@ def _prepare_prox_dist_boundary_pts(
             angle_threshold_deg=ostium_angle_threshold_deg,
         )
     else:
-        # Flatten + even out the rim.  Smoothing removes the in-plane
-        # jaggedness that would otherwise show up as ragged stitch triangles;
-        # respacing then makes the interpolated points land uniformly around
-        # the ring.  The size-preserving smoother matters here: plain
-        # Laplacian smoothing shrinks a coarse ring badly (~16 % at 17
-        # points), which showed up as a distal seam pinched well inside the
-        # vessel.
-        prox_pts = _redistribute_ring_evenly(
-            _smooth_ring_preserving_size(_project_to_best_fit_plane(prox_ring))
-        )
-        mesh, _ = _write_ring_to_mesh(mesh, prox_ring, prox_pts)
+        mesh, prox_pts = _flatten_smooth_respace(mesh, prox_ring)
         if proximal_is_ostium:
             prox_pts, mesh = _condition_ostium_ring(
                 mesh,
@@ -1363,13 +1365,9 @@ def _prepare_prox_dist_boundary_pts(
                 aorta_pts=results.get("aorta_points"),
             )
 
-    dist_pts = _redistribute_ring_evenly(
-        _smooth_ring_preserving_size(_project_to_best_fit_plane(dist_ring))
-    )
-    mesh, _ = _write_ring_to_mesh(mesh, dist_ring, dist_pts)
+    mesh, dist_pts = _flatten_smooth_respace(mesh, dist_ring)
 
-    # Densify last, so the inserted points interpolate between final positions
-    # and inherit the ring's planarity for free.
+    # Densify last, so inserted points interpolate between final positions.
     if target_n:
         mesh, prox_pts = _densify_boundary(mesh, prox_pts, target_n)
         mesh, dist_pts = _densify_boundary(mesh, dist_pts, target_n)
