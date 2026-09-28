@@ -37,6 +37,11 @@ the slit-like ostium, where the aortic wall touches the first millimetres of the
   Half B's moved rim folded through the intravascular tube. The whole ring's displacement is now
   faded in.
 - A zero-length strut no longer misaligns the fillet's intermediate rings.
+- `stitch` (the one-call wrapper) failed with its default regions: it removed them with
+  `target_boundaries=1`, merging the two rims into one ring, which stitching then rejected. It now
+  keeps both rims.
+- `read_mesh` no longer falls back to face-cleanup methods that trimesh 4 removed; they could only
+  hide an error.
 
 ### Internal
 - `_redistribute_ring_evenly`'s arc-length sampling moved into `_even_arclength_samples`, so

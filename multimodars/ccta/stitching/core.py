@@ -33,53 +33,92 @@ def stitch_ccta_to_intravascular(
     seam_points_a: int = 2,
     seam_points_b: int = 4,
 ) -> dict:
-    """Stitch an aligned intravascular mesh to a CCTA mesh.
+    """Stitch an aligned intravascular geometry into a CCTA mesh.
 
-    *results* must carry two boundary rings (see
-    :func:`~multimodars.ccta.mesh_regions.remove_labeled_points_from_mesh` with
-    ``target_boundaries=2``).  Each ring is assigned to an IV end as a whole, by
-    whichever pairing of rings to the proximal and distal frame centroids is
-    closest overall.
+    Each of the two open boundary rings left in *mesh* by
+    :func:`~multimodars.ccta.mesh_regions.remove_labeled_points_from_mesh`
+    (with ``target_boundaries=2``) is joined to one end of the intravascular
+    lumen by a triangulated patch.  Each ring is assigned to an end as a whole,
+    by whichever pairing of rings to the proximal and distal frame centroids is
+    closest overall.  The rings are conditioned first - flattened, smoothed,
+    respaced and densified, with an ostial proximal ring also kept clear of the
+    intravascular plane - and the result is merged into one surface and
+    hole-filled, but not remeshed.
 
-    ``prox_start_mode`` / ``dist_start_mode`` control how index 0 of each
-    boundary ring is chosen before stitching:
+    With ``prox_start_mode="highest_z"`` and ``proximal_is_ostium=True`` the
+    proximal ring is treated as a two-half ostium instead: its aorta-facing
+    Half A is rebuilt from the ostial frame's own aorta-side contour, offset by
+    the frame's ``aortic_thickness``, while its coronary-facing Half B keeps
+    the CCTA's shape.  *seam_points_a*, *seam_points_b* and *fillet_bulge* only
+    apply in this mode.
 
-    * ``"nearest_iv"`` (default) - rotate to the point closest to IV point 0.
-    * ``"highest_z"`` - rotate to the point with the largest z-coordinate.
+    Parameters
+    ----------
+    iv_mesh : PyGeometry
+        Intravascular geometry aligned to the CCTA; ``frames[0]`` is the
+        proximal (ostial) end and ``frames[-1]`` the distal end.
+    mesh : trimesh.Trimesh
+        CCTA mesh with the region to stitch over already removed, leaving two
+        open boundary rings.
+    results : dict
+        Results dictionary from the removal step.  Needs the boundary rings
+        (``"boundary_points_1"`` / ``"boundary_points_2"``, or the flat
+        ``"boundary_points"``) and the ``"proximal_points"`` /
+        ``"distal_points"`` lists; ``"aorta_points"`` steers the ostium
+        correction with ``prox_start_mode="nearest_iv"``.  Updated in place.
+    n_points_iv_cont : int, optional
+        Points each intravascular contour is downsampled to before stitching
+        (default 100).  Also sets the stitching resolution.
+    prox_start_mode, dist_start_mode : {"nearest_iv", "highest_z"}, optional
+        How index 0 of the proximal / distal boundary ring is chosen:
+        ``"nearest_iv"`` (default) rotates to the point closest to
+        intravascular point 0, ``"highest_z"`` to the point with the largest
+        z-coordinate.  On an ostial proximal ring, ``"highest_z"`` also
+        selects the two-half ostium.
+    proximal_is_ostium : bool, optional
+        Whether the proximal ring is the ostium on the aortic wall (default
+        ``True``); only then are the ostium corrections applied.
+    clamp_overshoot : float, optional
+        Minimum distance in mm every proximal boundary point is kept from the
+        intravascular plane (default 0.5), and the fallback Half A offset when
+        the ostial frame has no ``aortic_thickness``.  The clamp only runs
+        when the boundary-ring plane and the intravascular plane are at least
+        45° apart.
+    boundary_point_ratio : float, optional
+        Points the CCTA ring is densified to, as a fraction of
+        *n_points_iv_cont* (default 1.0).  At 1.0 both rings have equal counts
+        and the patch is a clean quad strip.
+    fillet_bulge : float, optional
+        Rounds the strip between the two-half ostium's Half A and the
+        intravascular ring into an arc bulging away from the intravascular
+        geometry, *fillet_bulge* times each strut's length high (default 0.0,
+        a sharp direct strip).  Purely cosmetic - neither end of a strut
+        moves.  It fades out along the seam arcs, so Half B and the distal
+        seam stay direct strips.  Needs equal ring counts
+        (``boundary_point_ratio=1.0``); without the two-half ostium it prints
+        a warning and is ignored.
+    fillet_layers : int, optional
+        Intermediate rings each fillet arc is built from (default 2).
+    seam_points_a, seam_points_b : int, optional
+        How many Half A / Half B points either side of each of the two seams
+        where the halves meet are replaced by a smooth arc (default 2 / 4).
+        Counted on the CCTA ring as cut from the mesh, before densification.
+        Everything outside those ranges stays in place, so Half A's
+        mid-section keeps its offset; ``0`` / ``0`` leaves the seams sharp.
 
-    ``clamp_overshoot`` sets the minimum distance (mm) that every proximal
-    boundary point must sit away from the IV plane after clamping.  Points
-    that land too close are pushed further until they are exactly
-    ``clamp_overshoot`` mm from the plane, creating a slight inward step that
-    softens the stitching angle.  The two mesh rings adjacent to the boundary
-    are also pushed radially outward (ring 1: 0.1 mm, ring 2: 0.2 mm) within
-    the IV plane to avoid ridges at the clamping zone.  Only active when the
-    boundary-ring plane and the IV plane form an angle ≥ ``ostium_angle_threshold_deg``
-    (default 45°).
+    Returns
+    -------
+    dict
+        *results*, with ``"mesh"`` replaced by the stitched, hole-filled
+        surface, ``"prox_boundary_points"`` / ``"dist_boundary_points"``
+        holding the ordered rings that were stitched, ``"anomalous_points"``
+        set to the intravascular lumen points, and ``"rca_points"`` rebuilt
+        from those plus the proximal and distal points.
 
-    With ``prox_start_mode="highest_z"`` and ``proximal_is_ostium``, the
-    ostial ring is conditioned as two halves - an aorta-facing Half A offset
-    from the IV ostium by the aortic wall thickness, and a coronary-facing
-    Half B (see :func:`~.boundary._condition_ostium_ring_two_half`).
-    ``seam_points_a`` / ``seam_points_b`` set how many Half A / Half B points
-    either side of each of the two seams where the halves meet are replaced
-    by a smooth arc - the same counts at both seams, counted on the CCTA ring
-    as cut from the mesh (before it is densified to the IV point count).
-    Everything outside those ranges stays exactly in place, so Half A's
-    mid-section keeps its distance from the IV ostium.  ``0`` / ``0`` leaves
-    the seams sharp.
-
-    ``fillet_bulge`` > 0 rounds that ostial Half A seam - the strip between
-    each CCTA boundary point and its IV point - into a small arc instead of a
-    sharp, direct strut (see :func:`_stitch_rings_rounded`).  The arcs bulge
-    away from the IV geometry and fade out along the Half A / Half B seam
-    arcs, so Half B and the distal seam always stay direct strips.  It is
-    purely cosmetic - neither endpoint moves, so the aortic-thickness
-    correction stays exact - and only applies with the two-half ostium
-    above.  It also needs the boundary ring and IV ring to have the same
-    point count (true by default, since ``boundary_point_ratio=1.0``);
-    otherwise the direct strip is used.  ``0`` (default) keeps the direct
-    strip.
+    Raises
+    ------
+    ValueError
+        If *results* holds fewer than two boundary rings.
     """
     iv_mesh = iv_mesh.downsample(n_points_iv_cont)
     iv_mesh_points = [

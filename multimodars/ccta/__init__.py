@@ -1,19 +1,15 @@
 from __future__ import annotations
 
-from . import stitching
-from . import scaling
-from . import labeling
-from . import centerline_prep
-from . import debug_plots as debug_plots
-from . import mesh_regions
-from . import postprocessing as _postprocessing
-
 from pathlib import Path
 from typing import TYPE_CHECKING
+
 import numpy as np
 import trimesh
 
 from ..io.write_geometries import export_section_stl as export_section_stl
+from . import centerline_prep, labeling, mesh_regions, scaling, stitching
+from . import debug_plots as debug_plots
+from . import postprocessing as _postprocessing
 
 if TYPE_CHECKING:
     from ..multimodars import PyCenterline, PyFrame, PyGeometry
@@ -264,7 +260,7 @@ def scale(
 def stitch(
     results: dict,
     geometry: PyGeometry,
-    region_remove: list[str] | str = ["anomalous_points", "proximal_points"],
+    region_remove: list[str] | str | None = None,
     prox_start_mode: str = "highest_z",
     dist_start_mode: str = "nearest_iv",
 ) -> dict:
@@ -291,12 +287,18 @@ def stitch(
     geometry : PyGeometry
         Intravascular imaging geometry whose contours define the vessel lumen
         used as the stitching target.
+    region_remove : str or list of str, optional
+        Labeled regions cut out of the CCTA mesh before stitching (default
+        ``["anomalous_points", "proximal_points"]``).
     prox_start_mode : str, optional
         How to choose index 0 of the proximal boundary ring before stitching.
-        ``"nearest_iv"`` (default) rotates to the point closest to IV point 0;
-        ``"highest_z"`` rotates to the point with the largest z-coordinate.
+        ``"highest_z"`` (default here) rotates to the point with the largest
+        z-coordinate and treats the ostium as two halves (see
+        :func:`~multimodars.ccta.stitching.stitch_ccta_to_intravascular`);
+        ``"nearest_iv"`` rotates to the point closest to IV point 0.
     dist_start_mode : str, optional
-        Same as *prox_start_mode* but for the distal boundary ring.
+        Same as *prox_start_mode* but for the distal boundary ring (default
+        ``"nearest_iv"``).
 
     Returns
     -------
@@ -304,8 +306,12 @@ def stitch(
         Stitched results dictionary with the same structure as *results*, where
         ``"mesh"`` is the stitched, hole-filled surface.
     """
+    if region_remove is None:
+        region_remove = ["anomalous_points", "proximal_points"]
+    # Cutting a segment out of the vessel opens a rim at each end, and the
+    # stitch needs both as separate rings.
     updated_results = mesh_regions.remove_labeled_points_from_mesh(
-        results, region_remove
+        results, region_remove, target_boundaries=2
     )
 
     stitched = stitching.stitch_ccta_to_intravascular(
