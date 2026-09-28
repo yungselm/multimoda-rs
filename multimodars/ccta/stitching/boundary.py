@@ -27,13 +27,13 @@ from .helpers import (
     _angle_between_planes_deg,
     _clamp_to_plane,
     _enforce_layer_gap_from_plane,
+    _newell_normal,
     _plane_normal_svd,
     _project_onto_plane,
     _project_to_best_fit_plane,
     _shift_plane_clear_of,
-    _write_ring_to_mesh,
-    _newell_normal,
     _signed_area_projected,
+    _write_ring_to_mesh,
 )
 
 # Per-ring boundary keys: "boundary_points_1", "boundary_points_2", ...
@@ -501,6 +501,31 @@ def _smooth_ring_preserving_size(
     return [tuple(p) for p in restored]
 
 
+def _even_arclength_samples(
+    pts: np.ndarray,
+    count: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    """Locate *count* evenly spaced arc-length samples on the closed polyline *pts*.
+
+    Returns ``(i, j, t)``: sample ``s`` lies a fraction ``t[s]`` of the way from
+    ``pts[i[s]]`` to ``pts[j[s]]``, so any per-vertex quantity ``v`` resamples
+    exactly like the points do, as ``v[i] + t * (v[j] - v[i])``.  Sample 0 is
+    ``pts[0]`` itself.  ``None`` when the ring has no length.
+    """
+    loop = np.vstack([pts, pts[:1]])
+    seg_len = np.linalg.norm(np.diff(loop, axis=0), axis=1)
+    cum = np.concatenate([[0.0], np.cumsum(seg_len)])
+    perimeter = float(cum[-1])
+    if perimeter <= 0.0:
+        return None
+
+    targets = np.linspace(0.0, perimeter, count, endpoint=False)
+    i = np.minimum(np.searchsorted(cum, targets, side="right") - 1, len(seg_len) - 1)
+    span = seg_len[i]
+    t = np.divide(targets - cum[i], span, out=np.zeros_like(targets), where=span > 0.0)
+    return i, (i + 1) % len(pts), t
+
+
 def _redistribute_ring_evenly(
     points: list[tuple[float, float, float]],
     n_out: int | None = None,
@@ -518,20 +543,11 @@ def _redistribute_ring_evenly(
     if len(pts) < 3 or count < 3:
         return [tuple(p) for p in pts]
 
-    loop = np.vstack([pts, pts[:1]])
-    seg_len = np.linalg.norm(np.diff(loop, axis=0), axis=1)
-    cum = np.concatenate([[0.0], np.cumsum(seg_len)])
-    perimeter = float(cum[-1])
-    if perimeter <= 0.0:
+    samples = _even_arclength_samples(pts, count)
+    if samples is None:
         return [tuple(p) for p in pts]
-
-    out: list[tuple[float, float, float]] = []
-    for target in np.linspace(0.0, perimeter, count, endpoint=False):
-        k = min(int(np.searchsorted(cum, target, side="right") - 1), len(seg_len) - 1)
-        span = float(seg_len[k])
-        frac = 0.0 if span <= 0.0 else (float(target) - float(cum[k])) / span
-        out.append(tuple(loop[k] + frac * (loop[k + 1] - loop[k])))
-    return out
+    i, j, t = samples
+    return [tuple(p) for p in pts[i] + t[:, None] * (pts[j] - pts[i])]
 
 
 def _flatten_smooth_respace(
@@ -811,8 +827,8 @@ def _fit_open_spline_ring(
 
     try:
         tck, _ = splprep([pts[:, 0], pts[:, 1], pts[:, 2]], s=smoothing, k=3, per=False)
-    except Exception:
-        # Degenerate (coincident / collinear) arc: leave it untouched.
+    except ValueError:
+        # Degenerate arc (coincident or repeated points): leave it untouched.
         return list(points)
 
     u = np.linspace(0.0, 1.0, n)
@@ -823,13 +839,122 @@ def _fit_open_spline_ring(
     return [tuple(p) for p in out]
 
 
+def _hermite_arc(
+    p0: np.ndarray,
+    tangent0: np.ndarray,
+    p1: np.ndarray,
+    tangent1: np.ndarray,
+    count: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """*count* points strictly between *p0* and *p1* on a cubic Hermite arc.
+
+    The arc leaves *p0* along *tangent0* and arrives at *p1* along *tangent1*
+    (unit vectors, scaled to the chord length, which keeps the arc from
+    looping), so it continues the curves on either side without a kink.  The
+    points are evenly spaced by arc length; each one's arc-length fraction
+    (0 at *p0*, 1 at *p1*) is returned alongside.
+    """
+    u = np.arange(1, count + 1) / (count + 1)
+    chord = float(np.linalg.norm(p1 - p0))
+    s = np.linspace(0.0, 1.0, max(64, 8 * (count + 1)))[:, None]
+    curve = (
+        (2 * s**3 - 3 * s**2 + 1) * p0
+        + (s**3 - 2 * s**2 + s) * chord * tangent0
+        + (-2 * s**3 + 3 * s**2) * p1
+        + (s**3 - s**2) * chord * tangent1
+    )
+    arc = np.concatenate(
+        [[0.0], np.cumsum(np.linalg.norm(np.diff(curve, axis=0), axis=1))]
+    )
+    if arc[-1] <= 0.0:
+        return np.repeat(p0[None], count, axis=0), u
+    targets = u * arc[-1]
+    points = np.column_stack([np.interp(targets, arc, curve[:, k]) for k in range(3)])
+    return points, u
+
+
+def _blend_half_seams(
+    half_a: list[tuple[float, float, float]],
+    half_b: list[tuple[float, float, float]],
+    seam_points_a: int,
+    seam_points_b: int,
+) -> tuple[list[tuple[float, float, float]], np.ndarray]:
+    """Replace the two Half A / Half B seams with smooth arcs.
+
+    The closed ring ``half_a + half_b`` has two seams: Half A's end into
+    Half B's start, and Half B's end back round into Half A's start.  At each
+    one, the *seam_points_a* Half A points and *seam_points_b* Half B points
+    nearest the seam are replaced - one-for-one, so the count is unchanged -
+    by a :func:`_hermite_arc` between the last kept point on either side,
+    following each half's own direction there.  Nothing outside those ranges
+    moves, so Half A's mid-section keeps its exact offset from the IV ostium,
+    which a whole-ring smoothing pass would not.
+
+    Each half has to keep at least two points (the arcs take their tangents
+    from them), so larger counts are reduced, with a warning.
+
+    Returns
+    -------
+    (ring, half_a_weight)
+        The blended ring, still in ``half_a + half_b`` order, and each point's
+        Half A weight: 1 on Half A's kept mid-section, 0 on Half B's, easing
+        between the two (half-cosine) along each arc.
+    """
+    a = np.asarray(half_a, dtype=np.float64)
+    b = np.asarray(half_b, dtype=np.float64)
+    n_a, n_b = len(a), len(b)
+    want_a, want_b = max(seam_points_a, 0), max(seam_points_b, 0)
+    k_a = min(want_a, max((n_a - 2) // 2, 0))
+    k_b = min(want_b, max((n_b - 2) // 2, 0))
+    if (k_a, k_b) != (want_a, want_b):
+        print(
+            f"Warning: seam points ({want_a}, {want_b}) are more than Half A "
+            f"({n_a} points) / Half B ({n_b} points) can give; using ({k_a}, {k_b})."
+        )
+
+    ring = np.vstack([a, b])
+    weight = np.concatenate([np.ones(n_a), np.zeros(n_b)])
+    if k_a + k_b == 0:
+        return [tuple(p) for p in ring], weight
+
+    def unit(v: np.ndarray, fallback: np.ndarray) -> np.ndarray:
+        norm = float(np.linalg.norm(v))
+        return v / norm if norm > 1e-12 else fallback
+
+    def blend(p_prev, p0, p1, p_next, slots, weight_of_u):
+        chord = unit(p1 - p0, np.zeros(3))
+        pts, u = _hermite_arc(
+            p0, unit(p0 - p_prev, chord), p1, unit(p_next - p1, chord), len(slots)
+        )
+        ring[slots] = pts
+        weight[slots] = weight_of_u(u)
+
+    # Seam 1: Half A's end -> Half B's start.
+    blend(
+        a[n_a - k_a - 2],
+        a[n_a - k_a - 1],
+        b[k_b],
+        b[k_b + 1],
+        np.r_[n_a - k_a : n_a + k_b],
+        lambda u: 0.5 * (1.0 + np.cos(np.pi * u)),
+    )
+    # Seam 2: Half B's end -> round to Half A's start.
+    blend(
+        b[n_b - k_b - 2],
+        b[n_b - k_b - 1],
+        a[k_a],
+        a[k_a + 1],
+        np.r_[n_a + n_b - k_b : n_a + n_b, 0:k_a],
+        lambda u: 0.5 * (1.0 - np.cos(np.pi * u)),
+    )
+    return [tuple(p) for p in ring], weight
+
+
 def _taper_ring_displacement(
     mesh: trimesh.Trimesh,
     old_ring_pts: list[tuple[float, float, float]],
     new_ring_pts: list[tuple[float, float, float]],
     n_layers: int = 3,
-    protected_pts: list[tuple[float, float, float]] | None = None,
-    seam_damping: float = 0.25,
 ) -> trimesh.Trimesh:
     """Fade a rim's displacement into the surrounding mesh over *n_layers*.
 
@@ -843,14 +968,9 @@ def _taper_ring_displacement(
     through the face-adjacency graph, so the mesh eases into the new
     position over several rings instead of jumping straight to it.
 
-    *protected_pts* (e.g. the ring's other half) are never moved, even when
-    graph-adjacent to the rim - otherwise their own, separately-computed
-    endpoints would get pulled off-position as an ordinary "layer 1"
-    neighbour.  A vertex adjacent to one of those - the interior vertex
-    shared by the triangle spanning the seam between the two halves - gets
-    its pull cut further by *seam_damping*: at full layer-1 weight it would
-    move most of the way while its other neighbour (on the barely-moved
-    protected side) stays still, folding that triangle over.
+    Pass the whole rim: every rim vertex is a seed and is never moved again
+    as some other seed's neighbour, and a vertex bordering two differently
+    displaced rim stretches follows their average rather than only one.
     """
     coord_to_idx = {tuple(v): i for i, v in enumerate(mesh.vertices)}
     rim_disp: dict[int, np.ndarray] = {}
@@ -866,15 +986,7 @@ def _taper_ring_displacement(
     adj_map = build_adjacency_map(mesh.faces.tolist())
     new_vertices = mesh.vertices.copy()
 
-    protected = {
-        idx
-        for p in (protected_pts or [])
-        if (idx := coord_to_idx.get(tuple(p))) is not None
-    }
-    seam_adjacent = {
-        nb for p in protected for nb in adj_map.get(p, []) if nb not in protected
-    }
-    visited = set(rim_disp) | protected
+    visited = set(rim_disp)
     frontier = set(rim_disp)
     layer_disp = dict(rim_disp)
 
@@ -891,9 +1003,8 @@ def _taper_ring_displacement(
         averaged: dict[int, np.ndarray] = {}
         for vi, disps in next_layer_disp.items():
             avg = np.mean(disps, axis=0)
-            damping = seam_damping if vi in seam_adjacent else 1.0
-            new_vertices[vi] = new_vertices[vi] + weight * damping * avg
-            averaged[vi] = avg  # undecayed, for the next layer to inherit
+            new_vertices[vi] = new_vertices[vi] + weight * avg
+            averaged[vi] = avg
 
         layer_disp = averaged
         visited.update(next_frontier)
@@ -914,7 +1025,9 @@ def _condition_ostium_ring_two_half(
     angle_threshold_deg: float = 45.0,
     smoothing: float | None = None,
     taper_layers: int = 3,
-) -> tuple[list[tuple[float, float, float]], trimesh.Trimesh]:
+    seam_points_a: int = 2,
+    seam_points_b: int = 4,
+) -> tuple[list[tuple[float, float, float]], trimesh.Trimesh, np.ndarray | None]:
     """Condition an anomalous ostial ring as two anatomically different halves.
 
     A steep-angle (e.g. anomalous, intramural) takeoff can leave the ring's
@@ -934,31 +1047,42 @@ def _condition_ostium_ring_two_half(
       only irons out an island or other outlier, it doesn't pull points
       toward an idealised target.
 
-    Replacing Half A wholesale can leave it far from where the mesh's next
-    layer of vertices still is; :func:`_taper_ring_displacement` fades that
-    jump in over *taper_layers* rings instead of leaving an abrupt fold, and
-    never touches Half B.
+    Replacing Half A wholesale - and moving Half B's rim along the seam arcs
+    below - can leave the rim far from where the mesh's next layer of
+    vertices still is; :func:`_taper_ring_displacement` fades that jump in
+    over *taper_layers* rings instead of leaving an abrupt fold.
 
     The per-point IV-plane clamp from :func:`_condition_ostium_ring` still
-    runs afterward as a final safety net - but not its whole-ring
-    plane-shift-and-reproject step, which would undo the point of treating
-    the two halves separately.
+    runs as a safety net - but not its whole-ring plane-shift-and-reproject
+    step, which would undo the point of treating the two halves separately.
 
-    Joining the two independently-built halves - and clamping some points to
-    the IV plane - leaves sharp kinks at the two seams even though each half
-    is smooth on its own.  A light, size-preserving smoothing pass over the
-    whole ring is applied last, after every other correction, to round those
-    off without undoing the shape corrections before it.
+    Joining the two independently-built halves leaves sharp kinks at the two
+    seams where they meet, even though each half is smooth on its own.
+    :func:`_blend_half_seams` replaces *seam_points_a* Half A points and
+    *seam_points_b* Half B points either side of each seam with a smooth arc,
+    and leaves everything else in place - so Half A's mid-section keeps its
+    exact offset from the IV ostium.  The arcs are built after the clamp, so
+    it can't flatten them back into a kink; they run between clamped points
+    but are not re-clamped themselves.
+
+    Returns
+    -------
+    (ring, mesh, half_a_weight)
+        The conditioned ring (written into *mesh*) and each ring point's
+        Half A weight - 1 on Half A's mid-section, 0 on Half B's, easing
+        between along the seam arcs - so the stitch can confine its fillet to
+        Half A.  ``half_a_weight`` is ``None`` when the ring couldn't be split
+        and is returned unchanged.
     """
     if iv_frame_pts is None or len(ring) < 6:
-        return ring, mesh
+        return ring, mesh, None
 
     iv_arr = np.array([[p.x, p.y, p.z] for p in iv_frame_pts], dtype=np.float64)
     center = np.asarray(prox_centroid, dtype=np.float64)
     iv_normal = _plane_normal_svd(iv_arr)
     aorta_side = _ostium_aortic_side_points(iv_frame_pts)
     if len(aorta_side) < 2:
-        return ring, mesh
+        return ring, mesh, None
 
     # In-plane direction, used only to decide which ring points are Half A vs
     # Half B - kept strictly in the ostial plane so the split doesn't depend
@@ -967,12 +1091,12 @@ def _condition_ostium_ring_two_half(
     aorta_direction -= float(np.dot(aorta_direction, iv_normal)) * iv_normal
     norm = float(np.linalg.norm(aorta_direction))
     if norm < 1e-9:
-        return ring, mesh
+        return ring, mesh, None
     aorta_direction /= norm
 
     half_a, half_b = _split_ring_by_aorta_direction(ring, center, aorta_direction)
     if len(half_a) < 2 or len(half_b) < 2:
-        return ring, mesh
+        return ring, mesh, None
 
     distance = aortic_thickness if aortic_thickness is not None else clamp_overshoot
     duplicated_a = _duplicate_ostium_half_offset(aorta_side, center, distance, half_a)
@@ -981,14 +1105,9 @@ def _condition_ostium_ring_two_half(
 
     original = list(half_a) + list(half_b)
     new_ring = duplicated_a + conditioned_b
-    # Half A (a genuine resample) and Half B (spline-fit only, no resample)
-    # don't share a spacing scale on their own; redistribute the whole
-    # combined ring evenly by arc length so every point on the border - both
-    # halves together - sits the same distance from its neighbours.
-    new_ring = _redistribute_ring_evenly(new_ring)
 
-    # Final safety net: clamp any point still behind (or too close in front
-    # of) the IV plane, same as the per-point step in _condition_ostium_ring.
+    # Safety net: clamp any point behind (or too close in front of) the IV
+    # plane, same as the per-point step in _condition_ostium_ring.
     if (
         _angle_between_planes_deg(_plane_normal_svd(np.asarray(new_ring)), iv_normal)
         >= angle_threshold_deg
@@ -997,32 +1116,66 @@ def _condition_ostium_ring_two_half(
             new_ring, center, iv_normal, overshoot=clamp_overshoot
         )
 
-    # Very last step: round off the sharp kinks left at the Half A / Half B
-    # seams (and at any point the clamp above just moved) with a
-    # size-preserving smoothing pass over the whole ring - after everything
-    # else, so it can't be undone by a later correction, and before the ring
-    # is written into the mesh and the connecting (stitch) triangles are built
-    # from it.
-    new_ring = _smooth_ring_preserving_size(new_ring, iterations=4, alpha=0.3)
+    n_a = len(duplicated_a)
+    new_ring, half_a_weight = _blend_half_seams(
+        new_ring[:n_a], new_ring[n_a:], seam_points_a, seam_points_b
+    )
+
+    # Half A (a genuine resample) and Half B (spline-fit only, no resample)
+    # don't share a spacing scale on their own; redistribute the whole
+    # combined ring evenly by arc length so every point on the border - both
+    # halves together - sits the same distance from its neighbours.  The
+    # Half A weights are resampled alongside, so they stay with their points.
+    pts = np.asarray(new_ring, dtype=np.float64)
+    samples = _even_arclength_samples(pts, len(pts))
+    if samples is not None:
+        i, j, t = samples
+        new_ring = [tuple(p) for p in pts[i] + t[:, None] * (pts[j] - pts[i])]
+        half_a_weight = half_a_weight[i] + t * (half_a_weight[j] - half_a_weight[i])
 
     mesh, moved_indices = _write_ring_to_mesh(mesh, original, new_ring)
-    # Half A's rim was replaced wholesale (see above) and can sit far from
-    # where the mesh's next layers still are; fade that displacement inward
-    # over a few layers instead of leaving an abrupt jump.  Use Half A's
-    # *actual final* positions (post-redistribute/clamp), not the pre-
-    # redistribute duplicated_a - otherwise the taper can't recognise most of
-    # Half A's own rim vertices by their (now stale) coordinate, and ends up
-    # treating a few of them as ordinary interior neighbours instead.
-    mesh = _taper_ring_displacement(
-        mesh,
-        half_a,
-        new_ring[: len(half_a)],
-        n_layers=taper_layers,
-        protected_pts=new_ring[len(half_a) :],
-    )
+    # Half A's rim was replaced wholesale (see above), and the seam arcs can
+    # move Half B's rim a long way too, so the rim can sit far from where the
+    # mesh's next layers still are; fade that displacement inward over a few
+    # layers instead of leaving an abrupt jump.  The whole rim goes in, with
+    # its *actual final* positions (post-clamp/blend/redistribute), so every
+    # rim vertex that moved pulls the mesh behind it along - otherwise the
+    # faces behind an un-faded stretch (e.g. a seam arc) fold through the IV
+    # tube.
+    mesh = _taper_ring_displacement(mesh, original, new_ring, n_layers=taper_layers)
     if moved_indices:
         mesh = _enforce_layer_gap_from_plane(mesh, moved_indices, center, iv_normal)
-    return new_ring, mesh
+    return new_ring, mesh, half_a_weight
+
+
+def _carry_ring_weights(
+    ring: list[tuple[float, float, float]],
+    weights: np.ndarray,
+    new_ring: list[tuple[float, float, float]],
+) -> np.ndarray:
+    """Carry per-point *weights* of *ring* over to *new_ring*.
+
+    *new_ring* holds *ring*'s points - in any order, e.g. rotated to a new
+    start or reversed - plus possibly new ones between them, e.g. inserted by
+    :func:`_densify_boundary`.  Known points are matched by coordinate; new
+    ones interpolate linearly between their nearest known neighbours along
+    *new_ring*.
+    """
+    weight_of = {tuple(p): float(w) for p, w in zip(ring, weights)}
+    carried = np.array(
+        [weight_of.get(tuple(p), np.nan) for p in new_ring], dtype=np.float64
+    )
+    known = np.flatnonzero(~np.isnan(carried))
+    n = len(carried)
+    if len(known) == 0:
+        return np.zeros(n)
+    if len(known) < n:
+        carried = np.interp(
+            np.arange(n),
+            np.concatenate([known - n, known, known + n]),
+            np.tile(carried[known], 3),
+        )
+    return carried
 
 
 def _densify_boundary(
@@ -1307,7 +1460,9 @@ def _prepare_prox_dist_boundary_pts(
     prox_outward: np.ndarray | None = None,
     prox_start_mode: str = "nearest_iv",
     proximal_aortic_thickness: float | None = None,
-) -> tuple[list, list, trimesh.Trimesh]:
+    seam_points_a: int = 2,
+    seam_points_b: int = 4,
+) -> tuple[list, list, trimesh.Trimesh, np.ndarray | None]:
     """Pick and condition the two boundary rings that will be stitched.
 
     Both rims get :func:`_flatten_smooth_respace`, then densified to
@@ -1316,12 +1471,20 @@ def _prepare_prox_dist_boundary_pts(
     before densification.
 
     A ``"highest_z"`` proximal ring skips all of that in favour of
-    :func:`_condition_ostium_ring_two_half` instead: a steep-angle (e.g.
-    anomalous, intramural) takeoff can leave that ring's aorta-facing half
-    almost perpendicular to its coronary-facing half, so a single flatten
+    :func:`_condition_ostium_ring_two_half` instead (which takes
+    *seam_points_a* / *seam_points_b*): a steep-angle (e.g. anomalous,
+    intramural) takeoff can leave that ring's aorta-facing half almost
+    perpendicular to its coronary-facing half, so a single flatten
     -smooth-or-clamp treatment fights the real geometry.  This has only been
     observed on the ostial proximal ring - the distal ring always takes the
     plain path above.
+
+    Returns
+    -------
+    (prox_pts, dist_pts, mesh, prox_half_a_weight)
+        ``prox_half_a_weight`` gives each ``prox_pts`` point's Half A weight
+        from the two-half path (see :func:`_blend_half_seams`), and is
+        ``None`` whenever that path didn't run.
     """
     rings = _boundary_rings(results, mesh)
     if len(rings) < 2:
@@ -1341,8 +1504,9 @@ def _prepare_prox_dist_boundary_pts(
             f"end and are left unstitched."
         )
 
+    prox_half_a_weight = None
     if prox_start_mode == "highest_z" and proximal_is_ostium:
-        prox_pts, mesh = _condition_ostium_ring_two_half(
+        prox_pts, mesh, prox_half_a_weight = _condition_ostium_ring_two_half(
             mesh,
             prox_ring,
             prox_centroid,
@@ -1350,6 +1514,8 @@ def _prepare_prox_dist_boundary_pts(
             proximal_aortic_thickness,
             clamp_overshoot,
             angle_threshold_deg=ostium_angle_threshold_deg,
+            seam_points_a=seam_points_a,
+            seam_points_b=seam_points_b,
         )
     else:
         mesh, prox_pts = _flatten_smooth_respace(mesh, prox_ring)
@@ -1369,7 +1535,12 @@ def _prepare_prox_dist_boundary_pts(
 
     # Densify last, so inserted points interpolate between final positions.
     if target_n:
+        conditioned_prox = prox_pts
         mesh, prox_pts = _densify_boundary(mesh, prox_pts, target_n)
         mesh, dist_pts = _densify_boundary(mesh, dist_pts, target_n)
+        if prox_half_a_weight is not None:
+            prox_half_a_weight = _carry_ring_weights(
+                conditioned_prox, prox_half_a_weight, prox_pts
+            )
 
-    return prox_pts, dist_pts, mesh
+    return prox_pts, dist_pts, mesh, prox_half_a_weight

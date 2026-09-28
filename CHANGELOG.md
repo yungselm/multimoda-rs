@@ -3,6 +3,51 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.3] - 2026-09-28
+Smoother anomalous ostium. The two halves of the ostial ring now meet in smooth arcs instead of
+sharp kinks, the ring's correction is faded into the aortic mesh all the way round, and the fillet
+only rounds the aorta-facing half - towards the aorta rather than back into the vessel. On
+`examples/data` the raw stitched mesh goes from 220 to 81 self-intersecting faces at the ostium
+(235 to 47 after `fix_and_remesh_stitched_mesh`). Still to do: most of the rest sit at one tip of
+the slit-like ostium, where the aortic wall touches the first millimetres of the intravascular tube.
+
+### Added
+- `stitch_ccta_to_intravascular` gained `seam_points_a` / `seam_points_b` (default 2 / 4). At both
+  seams where the ostium's aorta-facing Half A meets its coronary-facing Half B, that many Half A /
+  Half B points are replaced by a smooth arc that follows each half's own direction. Everything
+  outside those ranges stays exactly in place, so Half A's mid-section keeps its wall-thickness
+  offset from the intravascular ostium. The counts are points on the CCTA ring as cut from the
+  mesh, before it is densified; more than a half can give are reduced with a warning. Only used
+  with `prox_start_mode="highest_z"` and `proximal_is_ostium=True`.
+
+### Changed
+- `fillet_bulge` now only rounds the ostium's Half A, fading out along the seam arcs; Half B and
+  the distal seam stay direct strips (0.7.2 rounded every strut of both seams). It needs
+  `prox_start_mode="highest_z"` with `proximal_is_ostium=True`, otherwise a warning is printed and
+  the direct strip is used.
+- The two-half ostium's IV-plane clamp now runs before the seam arcs are built, so it cannot
+  flatten them back into a kink. What triggers it (ring and IV plane at least 45° apart) is
+  unchanged.
+
+### Fixed
+- The fillet's arcs bulged away from the combined centroid of both rings, which on an anomalous
+  ostium sent many of them back into the vessel (47 of 100 on `examples/data`). They now bulge
+  away from the intravascular geometry, along the ostial frame's outward normal.
+- Only Half A's displacement was faded into the surrounding aortic mesh, so the faces behind
+  Half B's moved rim folded through the intravascular tube. The whole ring's displacement is now
+  faded in.
+- A zero-length strut no longer misaligns the fillet's intermediate rings.
+
+### Internal
+- `_redistribute_ring_evenly`'s arc-length sampling moved into `_even_arclength_samples`, so
+  per-point values (the Half A weights) resample with the points.
+- `_condition_ostium_ring_two_half` and `_prepare_prox_dist_boundary_pts` also return the Half A
+  weights; `_carry_ring_weights` keeps them with their points through densification, start-point
+  rotation and winding fixes.
+- `_bulge_arc_points` is replaced by the vectorised `_fillet_arc_layers`.
+  `_taper_ring_displacement` lost `protected_pts` / `seam_damping`, which fading the whole ring
+  no longer needs.
+
 ## [0.7.2] - 2026-09-19
 More anatomical approach in creating the anomalous ostium. Takes the wall measurement to create
 and offset. This ensures that the ostium is represented like the ostium from the intravascular
@@ -162,7 +207,7 @@ kind of a dome on top of this plane.
 ### Fixed
 - `align_manual` no explicitly states `rotation_angle_deg` instead of `rotation_angle`
 
-## Changed
+### Changed
 - `align_manual`, `align_combined` and `align_three_points` all return their rotation angle now.
 
 ## [0.5.4] - 2026-08-03 Hotfix

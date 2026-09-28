@@ -12,10 +12,13 @@ Covers:
   - stitching.boundary: open_boundary_edges, order_boundary_rings,
                clean_open_boundary, order_points_list, _rotate_to_nearest_iv,
                _fix_ring_direction_by_distance, _prepare_prox_dist_boundary_pts,
-               _condition_ostium_ring, and the ring conditioning helpers
-               (_redistribute_ring_evenly, _smooth_ring_preserving_size,
-               _densify_boundary, _assign_rings_to_ends, _toward_aorta)
-  - stitching.core: _stitch_rings
+               _condition_ostium_ring, _condition_ostium_ring_two_half, and the
+               ring conditioning helpers (_redistribute_ring_evenly,
+               _smooth_ring_preserving_size, _densify_boundary,
+               _assign_rings_to_ends, _toward_aorta, _blend_half_seams,
+               _carry_ring_weights)
+  - stitching.core: _stitch_rings (incl. the ostial fillet), and where
+               stitch_ccta_to_intravascular applies that fillet
   - stitching.helpers: _clamp_to_plane, _enforce_layer_gap_from_plane,
                _fast_fix_normals, _shift_plane_clear_of
   - scaling: scale_region_centerline_morphing, sync_results_to_mesh
@@ -29,23 +32,27 @@ import numpy as np
 import pytest
 import trimesh
 
-from multimodars import PyContourPoint
+from multimodars import PyContour, PyContourPoint, PyFrame, PyGeometry
+from multimodars.ccta.labeling.helpers import _keep_largest_connected_component
+from multimodars.ccta.mesh_regions import (
+    keep_labeled_points_from_mesh,
+    remove_labeled_points_from_mesh,
+)
 from multimodars.ccta.postprocessing import (
     manual_hole_fill,
     postprocess_stitched_mesh,
 )
-from multimodars.ccta.labeling.helpers import _keep_largest_connected_component
-from multimodars.multimodars import (
-    find_faces_near_points,
-    find_aortic_points,
-    final_reclassification,
+from multimodars.ccta.scaling import (
+    scale_region_centerline_morphing,
+    sync_results_to_mesh,
 )
+from multimodars.ccta.stitching import core as stitching_core
 from multimodars.ccta.stitching.boundary import (
-    clean_open_boundary,
-    open_boundary_edges,
-    order_boundary_rings,
     _assign_rings_to_ends,
+    _blend_half_seams,
+    _carry_ring_weights,
     _condition_ostium_ring,
+    _condition_ostium_ring_two_half,
     _densify_boundary,
     _fix_ring_direction_by_distance,
     _prepare_prox_dist_boundary_pts,
@@ -54,6 +61,9 @@ from multimodars.ccta.stitching.boundary import (
     _rotate_to_nearest_iv,
     _smooth_ring_preserving_size,
     _toward_aorta,
+    clean_open_boundary,
+    open_boundary_edges,
+    order_boundary_rings,
     order_points_list,
 )
 from multimodars.ccta.stitching.core import _stitch_rings
@@ -63,14 +73,10 @@ from multimodars.ccta.stitching.helpers import (
     _fast_fix_normals,
     _shift_plane_clear_of,
 )
-from multimodars.ccta.mesh_regions import (
-    keep_labeled_points_from_mesh,
-    remove_labeled_points_from_mesh,
-)
-
-from multimodars.ccta.scaling import (
-    scale_region_centerline_morphing,
-    sync_results_to_mesh,
+from multimodars.multimodars import (
+    final_reclassification,
+    find_aortic_points,
+    find_faces_near_points,
 )
 
 # ---------------------------------------------------------------------------
@@ -1001,6 +1007,68 @@ class TestStitchRings:
             assert np.dot(avg_normal, outward) > 0
 
 
+class TestStitchRingsFillet:
+    """Coplanar rings in z=0, so every strut is radial and the fillet can only
+    bulge along +-z."""
+
+    N = 12
+    UP = np.array([0.0, 0.0, 1.0])
+
+    def _rings(self):
+        return _ring_coords(self.N, 2.0), _make_iv_pts(_ring_coords(self.N, 1.0))
+
+    def _arc_z(self, patch) -> np.ndarray:
+        """z of the fillet layers, which sit between the two rings' vertices."""
+        return patch.vertices[self.N : -self.N].reshape(-1, self.N, 3)[..., 2]
+
+    def test_bulges_to_the_fillet_direction(self):
+        boundary, iv = self._rings()
+        for sign in (1.0, -1.0):
+            patch = _stitch_rings(
+                boundary, iv, fillet_bulge=0.3, fillet_direction=sign * self.UP
+            )
+            assert (sign * self._arc_z(patch) > 0.0).all()
+
+    def test_only_weighted_points_bulge(self):
+        boundary, iv = self._rings()
+        weight = np.zeros(self.N)
+        weight[:4] = 1.0
+        weight[4] = 0.5
+        patch = _stitch_rings(
+            boundary,
+            iv,
+            fillet_bulge=0.3,
+            fillet_weight=weight,
+            fillet_direction=self.UP,
+        )
+        z = self._arc_z(patch)
+        assert (z[:, :4] > 0.0).all()
+        np.testing.assert_allclose(z[:, 4], 0.5 * z[:, 0])
+        np.testing.assert_allclose(z[:, 5:], 0.0, atol=1e-12)
+
+    def test_rings_stay_put_and_strip_stays_closed(self):
+        boundary, iv = self._rings()
+        patch = _stitch_rings(
+            boundary, iv, fillet_bulge=0.3, fillet_layers=3, fillet_direction=self.UP
+        )
+        np.testing.assert_allclose(patch.vertices[: self.N], boundary)
+        np.testing.assert_allclose(
+            patch.vertices[-self.N :], [(p.x, p.y, p.z) for p in iv]
+        )
+        assert len(open_boundary_edges(patch.faces)) == 2 * self.N
+
+    def test_zero_weight_uses_the_direct_strip(self):
+        boundary, iv = self._rings()
+        patch = _stitch_rings(
+            boundary,
+            iv,
+            fillet_bulge=0.3,
+            fillet_weight=np.zeros(self.N),
+            fillet_direction=self.UP,
+        )
+        assert len(patch.vertices) == 2 * self.N
+
+
 # ---------------------------------------------------------------------------
 # Additional mesh factories for ostium tests
 # ---------------------------------------------------------------------------
@@ -1123,7 +1191,7 @@ class TestEnforceLayerGapFromPlane:
 
     _origin = np.array([0.0, 0.0, 0.0])
     _normal = np.array([0.0, 0.0, 1.0])
-    _seeds = {0, 1, 2, 3}
+    _seeds = frozenset({0, 1, 2, 3})
 
     def test_ring1_pushed_radially_outward(self):
         mesh = _make_concentric_ring_mesh()
@@ -1242,7 +1310,7 @@ class TestPrepareProxDistBoundaryPts:
         mesh, results = self._two_rim_results()
         stored = [set(v) for k, v in results.items()]
 
-        prox_pts, dist_pts, _ = _prepare_prox_dist_boundary_pts(
+        prox_pts, dist_pts, _, _ = _prepare_prox_dist_boundary_pts(
             mesh,
             results,
             (0.0, 0.0, -5.0),
@@ -1258,7 +1326,7 @@ class TestPrepareProxDistBoundaryPts:
 
     def test_prox_ring_is_nearer_prox_centroid(self):
         mesh, results = self._two_rim_results()
-        prox_pts, dist_pts, _ = _prepare_prox_dist_boundary_pts(
+        prox_pts, dist_pts, _, _ = _prepare_prox_dist_boundary_pts(
             mesh,
             results,
             (0.0, 0.0, -5.0),
@@ -1269,7 +1337,7 @@ class TestPrepareProxDistBoundaryPts:
 
     def test_densifies_both_rings_to_target(self):
         mesh, results = self._two_rim_results()
-        prox_pts, dist_pts, _ = _prepare_prox_dist_boundary_pts(
+        prox_pts, dist_pts, _, _ = _prepare_prox_dist_boundary_pts(
             mesh,
             results,
             (0.0, 0.0, -5.0),
@@ -1283,7 +1351,7 @@ class TestPrepareProxDistBoundaryPts:
     def test_conditioning_applies_to_both_rims(self):
         """Both rims are conditioned now, not just the proximal ostium one."""
         mesh, results = self._two_rim_results(jitter=0.15)
-        _, _, updated = _prepare_prox_dist_boundary_pts(
+        _, _, updated, _ = _prepare_prox_dist_boundary_pts(
             mesh,
             results,
             (0.0, 0.0, -5.0),
@@ -1299,7 +1367,7 @@ class TestPrepareProxDistBoundaryPts:
 
     def test_conditioned_rim_is_planar_and_evenly_spaced(self):
         mesh, results = self._two_rim_results(jitter=0.15)
-        prox_pts, _, _ = _prepare_prox_dist_boundary_pts(
+        prox_pts, _, _, _ = _prepare_prox_dist_boundary_pts(
             mesh,
             results,
             (0.0, 0.0, -5.0),
@@ -1384,6 +1452,278 @@ class TestConditionOstiumRing:
         )
         assert out == ring
         np.testing.assert_allclose(updated.vertices, mesh.vertices)
+
+
+# ===========================================================================
+# stitching.boundary._blend_half_seams
+# ===========================================================================
+
+
+def _two_radius_halves(n_a: int = 8, n_b: int = 8, r_a: float = 1.5, r_b: float = 2.0):
+    """A ring split at x=0 into Half A (x > 0, radius *r_a*) and Half B (radius
+    *r_b*), walked counter-clockwise - a radial jump at both seams, like a
+    duplicated aorta-side half meeting the CCTA's own coronary-side half."""
+    angles_a = np.linspace(-np.pi / 2, np.pi / 2, n_a + 2)[1:-1]
+    angles_b = np.linspace(np.pi / 2, 3 * np.pi / 2, n_b + 2)[1:-1]
+    half_a = [(r_a * np.cos(t), r_a * np.sin(t), 0.0) for t in angles_a]
+    half_b = [(r_b * np.cos(t), r_b * np.sin(t), 0.0) for t in angles_b]
+    return half_a, half_b
+
+
+def _max_turn_deg(ring) -> float:
+    """Largest angle (deg) the closed polyline *ring* turns through at a vertex."""
+    pts = np.asarray(ring, dtype=np.float64)
+    d0 = pts - np.roll(pts, 1, axis=0)
+    d1 = np.roll(pts, -1, axis=0) - pts
+    cos = np.sum(d0 * d1, axis=1) / (
+        np.linalg.norm(d0, axis=1) * np.linalg.norm(d1, axis=1)
+    )
+    return float(np.degrees(np.arccos(np.clip(cos, -1.0, 1.0))).max())
+
+
+class TestBlendHalfSeams:
+    def test_count_kept_and_rest_untouched(self):
+        half_a, half_b = _two_radius_halves()
+        n_a = len(half_a)
+        ring, _ = _blend_half_seams(half_a, half_b, 2, 3)
+        assert len(ring) == n_a + len(half_b)
+        np.testing.assert_array_equal(ring[2 : n_a - 2], half_a[2:-2])
+        np.testing.assert_array_equal(ring[n_a + 3 : -3], half_b[3:-3])
+
+    def test_smooths_the_seams(self):
+        """The ~70 deg kink the radial jump leaves at each seam is spread
+        along the arcs instead."""
+        half_a, half_b = _two_radius_halves(r_a=1.0)
+        ring, _ = _blend_half_seams(half_a, half_b, 2, 2)
+        assert _max_turn_deg(ring) < 0.6 * _max_turn_deg(half_a + half_b)
+
+    def test_half_a_weight(self):
+        """1 on Half A's kept points, 0 on Half B's, easing monotonically
+        between the two along each seam arc."""
+        half_a, half_b = _two_radius_halves()
+        n_a = len(half_a)
+        _, weight = _blend_half_seams(half_a, half_b, 2, 3)
+        np.testing.assert_array_equal(weight[2 : n_a - 2], 1.0)
+        np.testing.assert_array_equal(weight[n_a + 3 : -3], 0.0)
+        into_b = weight[n_a - 2 : n_a + 3]
+        into_a = np.r_[weight[-3:], weight[:2]]
+        for arc in (into_b, into_a):
+            assert ((arc > 0.0) & (arc < 1.0)).all()
+        assert (np.diff(into_b) < 0.0).all()
+        assert (np.diff(into_a) > 0.0).all()
+
+    def test_zero_points_leave_the_ring_as_is(self):
+        half_a, half_b = _two_radius_halves()
+        ring, weight = _blend_half_seams(half_a, half_b, 0, 0)
+        np.testing.assert_array_equal(ring, half_a + half_b)
+        np.testing.assert_array_equal(weight, [1.0] * len(half_a) + [0.0] * len(half_b))
+
+    def test_too_many_points_are_reduced(self, capsys):
+        """Each half keeps two points for the arcs' tangents."""
+        half_a, half_b = _two_radius_halves(n_a=6, n_b=8)
+        ring, weight = _blend_half_seams(half_a, half_b, 10, 10)
+        assert len(ring) == 14
+        assert "using (2, 3)" in capsys.readouterr().out
+        assert (weight == 1.0).sum() == 2
+        assert (weight == 0.0).sum() == 2
+
+
+# ===========================================================================
+# stitching.boundary._carry_ring_weights
+# ===========================================================================
+
+
+class TestCarryRingWeights:
+    def test_follows_points_through_reversal_and_rotation(self):
+        ring = _ring_coords(6)
+        weight = np.arange(6, dtype=float)
+        moved = [ring[0]] + ring[1:][::-1]
+        moved = moved[2:] + moved[:2]
+        np.testing.assert_array_equal(
+            _carry_ring_weights(ring, weight, moved),
+            [weight[ring.index(p)] for p in moved],
+        )
+
+    def test_inserted_points_interpolate(self):
+        ring = _ring_coords(4)
+        weight = np.array([0.0, 1.0, 1.0, 0.0])
+        mid = tuple((np.asarray(ring[0]) + np.asarray(ring[1])) / 2)
+        dense = [ring[0], mid, ring[1], ring[2], ring[3]]
+        np.testing.assert_allclose(
+            _carry_ring_weights(ring, weight, dense), [0.0, 0.5, 1.0, 1.0, 0.0]
+        )
+
+    def test_interpolation_wraps_around(self):
+        ring = _ring_coords(4)
+        weight = np.array([1.0, 0.0, 0.0, 0.0])
+        mid = tuple((np.asarray(ring[3]) + np.asarray(ring[0])) / 2)
+        carried = _carry_ring_weights(ring, weight, ring + [mid])
+        assert carried[-1] == pytest.approx(0.5)
+
+
+# ===========================================================================
+# stitching.boundary._condition_ostium_ring_two_half
+# ===========================================================================
+
+N_OSTIUM = 16
+
+
+def _ostium_circle(radius: float, z: float = 0.0) -> np.ndarray:
+    """N_OSTIUM points, offset half a step so none sits exactly on x=0."""
+    angles = (np.arange(N_OSTIUM) + 0.5) * 2 * np.pi / N_OSTIUM
+    return np.column_stack(
+        [radius * np.cos(angles), radius * np.sin(angles), np.full(N_OSTIUM, z)]
+    )
+
+
+def _annulus_mesh(radii, z: float = 0.0) -> trimesh.Trimesh:
+    """Concentric N_OSTIUM-point rings in the plane *z*; the first is the open rim."""
+    verts = np.vstack([_ostium_circle(r, z) for r in radii])
+    faces = []
+    for layer in range(len(radii) - 1):
+        for i in range(N_OSTIUM):
+            a = layer * N_OSTIUM + i
+            b = layer * N_OSTIUM + (i + 1) % N_OSTIUM
+            faces.extend([[a, b, a + N_OSTIUM], [b, b + N_OSTIUM, a + N_OSTIUM]])
+    return trimesh.Trimesh(vertices=verts, faces=np.array(faces), process=False)
+
+
+def _aortic_iv_pts(coords, frame_index: int = 0) -> list[PyContourPoint]:
+    """IV lumen points flagged ``aortic`` on the +x side, where the aorta is."""
+    return [
+        PyContourPoint(
+            frame_index=frame_index,
+            point_index=i,
+            x=float(x),
+            y=float(y),
+            z=float(z),
+            aortic=bool(x > 0),
+        )
+        for i, (x, y, z) in enumerate(coords)
+    ]
+
+
+class TestConditionOstiumRingTwoHalf:
+    """CCTA rim at radius 2 around an IV ostium of radius 1, both in z=0, with
+    the aorta on the +x side: Half A is rebuilt at radius 1.5 (aortic
+    thickness 0.5) and Half B stays near radius 2."""
+
+    def _condition(self, iv_pts=None, **kwargs):
+        mesh = _annulus_mesh([2.0, 3.0, 4.0])
+        ring = [tuple(p) for p in _ostium_circle(2.0)]
+        if iv_pts is None:
+            iv_pts = _aortic_iv_pts(_ostium_circle(1.0))
+        return ring, _condition_ostium_ring_two_half(
+            mesh, ring, (0.0, 0.0, 0.0), iv_pts, 0.5, 0.5, **kwargs
+        )
+
+    def test_half_a_mid_section_keeps_its_offset(self):
+        """Only the seams are smoothed, so Half A's mid-section stays on the
+        offset contour (radius 1.5, down to its chords) - the whole-ring
+        smoothing pass this replaced pulled it to anywhere in 1.42-1.86."""
+        _, (out, _, weight) = self._condition(seam_points_a=1, seam_points_b=1)
+        core = np.asarray(out)[weight == 1.0]
+        radius = np.linalg.norm(core[:, :2], axis=1)
+        assert len(core) >= 3
+        assert radius.min() >= 1.5 * np.cos(np.pi / N_OSTIUM) - 1e-9
+        assert radius.max() <= 1.5 + 1e-9
+        np.testing.assert_allclose(core[:, 2], 0.0, atol=1e-12)
+
+    def test_weight_marks_the_aorta_side(self):
+        _, (out, _, weight) = self._condition(seam_points_a=1, seam_points_b=1)
+        x = np.asarray(out)[:, 0]
+        assert len(weight) == len(out)
+        assert (weight[x > 0.5] > 0.0).all()
+        assert (weight[x < -1.5] == 0.0).all()
+
+    def test_ring_is_written_into_the_mesh(self):
+        _, (out, mesh, _) = self._condition()
+        coords = {tuple(v) for v in mesh.vertices}
+        assert all(tuple(p) in coords for p in out)
+
+    def test_without_aortic_points_ring_is_unchanged(self):
+        ring, (out, _, weight) = self._condition(
+            iv_pts=_make_iv_pts(_ostium_circle(1.0))
+        )
+        assert out == ring
+        assert weight is None
+
+
+# ===========================================================================
+# stitching.core.stitch_ccta_to_intravascular - which seam gets the fillet
+# ===========================================================================
+
+
+def _iv_frame(index: int, z: float, aortic_thickness: float | None = None) -> PyFrame:
+    points = _aortic_iv_pts(_ostium_circle(1.0, z), frame_index=index)
+    lumen = PyContour(
+        id=index,
+        original_frame=index,
+        points=points,
+        centroid=(0.0, 0.0, z),
+        aortic_thickness=aortic_thickness,
+        pulmonary_thickness=None,
+        kind="Lumen",
+    )
+    return PyFrame(
+        id=index, centroid=(0.0, 0.0, z), lumen=lumen, extras={}, reference_point=None
+    )
+
+
+class TestStitchFilletPlacement:
+    """IV vessel from an ostium at z=0 down to z=-2, with a CCTA rim at each
+    end; spies on _stitch_rings to see which seam gets the fillet."""
+
+    @pytest.fixture
+    def stitch_calls(self, monkeypatch):
+        calls = []
+        real = stitching_core._stitch_rings
+
+        def spy(*args, **kwargs):
+            calls.append(kwargs)
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(stitching_core, "_stitch_rings", spy)
+        return calls
+
+    def _stitch(self, **kwargs):
+        geometry = PyGeometry(
+            frames=[_iv_frame(0, 0.0, 0.5), _iv_frame(1, -1.0), _iv_frame(2, -2.0)],
+            label="test",
+        )
+        mesh = trimesh.util.concatenate(
+            [_annulus_mesh([2.0, 3.0, 4.0]), _annulus_mesh([1.5, 2.5, 3.5], z=-3.0)]
+        )
+        results = {
+            "boundary_points_1": [tuple(p) for p in _ostium_circle(2.0)],
+            "boundary_points_2": [tuple(p) for p in _ostium_circle(1.5, -3.0)],
+            "distal_points": [],
+            "proximal_points": [],
+        }
+        stitching_core.stitch_ccta_to_intravascular(
+            geometry,
+            mesh,
+            results,
+            fillet_bulge=0.3,
+            seam_points_a=1,
+            seam_points_b=1,
+            **kwargs,
+        )
+
+    def test_only_the_ostium_half_a_is_rounded(self, stitch_calls):
+        self._stitch(prox_start_mode="highest_z")
+        prox, dist = stitch_calls
+        assert prox["fillet_bulge"] == 0.3
+        assert prox["fillet_weight"].max() == 1.0
+        assert prox["fillet_weight"].min() == 0.0
+        # Away from the rest of the vessel, which runs down to z=-2.
+        np.testing.assert_allclose(prox["fillet_direction"], [0.0, 0.0, 1.0], atol=1e-9)
+        assert dist.get("fillet_bulge", 0.0) == 0.0
+
+    def test_no_fillet_without_the_two_half_ostium(self, stitch_calls, capsys):
+        self._stitch()
+        assert all(call.get("fillet_bulge", 0.0) == 0.0 for call in stitch_calls)
+        assert "fillet_bulge only rounds" in capsys.readouterr().out
 
 
 # ---------------------------------------------------------------------------
@@ -1535,7 +1875,7 @@ class TestCleanOpenBoundary:
 
     def test_returns_empty_when_seeds_match_nothing(self):
         mesh, _, _ = _make_grid_with_hole()
-        drop, rings = clean_open_boundary(mesh.faces, mesh.vertices, {10_000})
+        _, rings = clean_open_boundary(mesh.faces, mesh.vertices, {10_000})
         assert rings == []
 
 
@@ -1659,7 +1999,7 @@ class TestDensifyBoundary:
     def test_adds_one_vertex_and_one_face_per_inserted_point(self):
         mesh, ring = self._hole_rim()
         target = 30
-        new_mesh, dense = _densify_boundary(mesh, ring, target)
+        new_mesh, _ = _densify_boundary(mesh, ring, target)
         extra = target - len(ring)
         assert len(new_mesh.vertices) == len(mesh.vertices) + extra
         assert len(new_mesh.faces) == len(mesh.faces) + extra

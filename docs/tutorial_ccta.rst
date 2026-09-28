@@ -545,11 +545,13 @@ triangulated patch:
 
 Each ring is assigned to an intravascular end **as a whole**, by whichever pairing of rings to
 the proximal and distal frame centroids is closest overall - so a single ring is never torn
-across both seams.  Both rings are then conditioned identically: projected onto their own
-best-fit plane, smoothed, respaced evenly along their perimeter, and finally densified to the
-stitching resolution by inserting points along their edges.  Each subdivided edge's adjacent
-face is retriangulated onto its opposite vertex, so the inserted points are real mesh vertices
-rather than T-junctions.
+across both seams.  Each ring is then projected onto its own best-fit plane, smoothed, and
+respaced evenly along its perimeter - except an ostial proximal ring stitched with
+``prox_start_mode="highest_z"``, which is conditioned as two halves instead (see
+`Two-half ostium`_ below).  Finally both rings are densified to the stitching resolution by
+inserting points along their edges.  Each subdivided edge's adjacent face is retriangulated
+onto its opposite vertex, so the inserted points are real mesh vertices rather than
+T-junctions.
 
 .. note::
 
@@ -574,13 +576,23 @@ rather than T-junctions.
     point 0.  Works well when the two point sets share a consistent anatomical orientation.
   * ``"highest_z"`` - rotate to the boundary vertex with the largest z-coordinate.  Prefer
     this when the pullback axis is nearly aligned with the image z-axis, as is common for
-    straight intramural segments.
+    straight intramural segments.  On an ostial proximal ring it also switches to the
+    `Two-half ostium`_ conditioning.
 
+- ``proximal_is_ostium``: whether the proximal ring is the ostium on the aortic wall (default
+  ``True``).  Only then are the ostium corrections below applied.
 - ``clamp_overshoot``: minimum distance in mm that every proximal boundary point must sit
   away from the IV plane (default 0.5).  Only active for anomalous ostia where the
   boundary-ring plane and the IV plane diverge by ≥ 45°.  Increase this value if stitching
   artefacts remain visible near the ostium; decrease it (toward 0.0) for more tightly fitted
-  geometries.  It also sets the clearance used by the whole-plane correction below.
+  geometries.  It also sets the clearance used by the whole-plane correction below, and the
+  Half A offset of a `Two-half ostium`_ whose ostial frame has no ``aortic_thickness``.
+- ``seam_points_a`` / ``seam_points_b``: how many Half A / Half B points either side of each
+  seam of a `Two-half ostium`_ are replaced by a smooth arc (default 2 / 4).
+- ``fillet_bulge`` / ``fillet_layers``: round the Half A strip of a `Two-half ostium`_ into an
+  arc whose height is ``fillet_bulge`` times each strut's length (default ``0.0``, a sharp
+  direct strip), built from ``fillet_layers`` intermediate rings (default 2).  Without the
+  two-half ostium a warning is printed and the direct strip is used.
 
 The return value is a new ``results``-like dictionary that additionally contains:
 
@@ -599,8 +611,9 @@ Anomalous ostium corrections
 For an anomalous coronary the intramural course runs roughly *perpendicular* to the aortic
 wall, so the plane of the intravascular ring at the ostium sits at nearly 90° to the plane of
 the aortic boundary ring.  Without correction, boundary vertices end up on the wrong side of
-the ostium plane - inside the coronary lumen - producing a jagged seam.  When the angle between
-the two planes exceeds 45°, three corrections are applied automatically:
+the ostium plane - inside the coronary lumen - producing a jagged seam.  With the default
+``prox_start_mode="nearest_iv"``, three corrections are applied automatically when the angle
+between the two planes exceeds 45° (for ``"highest_z"`` see `Two-half ostium`_ below):
 
 1. **Whole-plane shift** - if the boundary ring's own plane cuts through the intravascular
    ostial frame, the entire plane is slid toward the aorta until it clears every frame point by
@@ -622,6 +635,61 @@ the two planes exceeds 45°, three corrections are applied automatically:
     If the console reports ``direction from vessel axis (no aorta_points)``, the aortic label
     was empty at stitch time and step 1 fell back to the unreliable heuristic.  ``aorta_points``
     is filtered by every removal step, so check it survived.
+
+Two-half ostium
+"""""""""""""""
+
+A steep, intramural take-off can leave the aorta-facing half of the ring almost perpendicular to
+its coronary-facing half, so no single plane or circle fits it.  With
+``prox_start_mode="highest_z"`` (and the default ``proximal_is_ostium=True``) the proximal ring
+is therefore conditioned as two halves instead of by the corrections above:
+
+1. **Split** - the ring is split into the aorta-facing *Half A* and the coronary-facing
+   *Half B*, using the ostial frame's own ``aortic`` point flags.
+2. **Half A** is replaced by the ostial frame's aorta-side lumen contour, scaled up so its mean
+   radius grows by the frame's ``aortic_thickness`` (``clamp_overshoot`` when it has none).
+   None of the CCTA geometry there survives.
+3. **Half B** keeps the CCTA's own shape; a light spline only irons out outliers.
+4. **Per-point clamp** - as in step 2 above, when the ring and the IV plane diverge by ≥ 45°.
+5. **Seam arcs** - at both seams where the halves meet, ``seam_points_a`` Half A points and
+   ``seam_points_b`` Half B points are replaced by a smooth arc that follows each half's own
+   direction.  Nothing else moves, so Half A's mid-section keeps its exact wall-thickness
+   offset.
+6. **Fade-in** - the ring's displacement is faded into the surrounding aortic mesh over a few
+   layers, so the mesh behind the rim follows it instead of folding; the layer propagation of
+   step 3 above then runs as well.
+
+``fillet_bulge`` then rounds the strip between Half A and the intravascular ring into an arc
+that bulges away from the intravascular geometry - towards the aorta - instead of leaving a
+sharp edge.  It fades out along the seam arcs, so Half B and the distal seam stay direct
+strips:
+
+.. code-block:: python
+
+    stitched = mm.stitch_ccta_to_intravascular(
+        aligned.geom_a,
+        updated_results['mesh'],
+        updated_results,
+        prox_start_mode="highest_z",
+        seam_points_a=2,   # Half A points replaced at each seam
+        seam_points_b=4,   # Half B points replaced at each seam
+        fillet_bulge=0.3,  # arc height as a fraction of each strut's length
+    )
+
+.. note::
+
+    The seam counts are points on the CCTA ring as cut from the mesh - often only 20-40 at the
+    ostium - not on the ring after densification.  Raise ``seam_points_b`` if Half B's end
+    curls in towards the lumen and leaves a hook at a seam; a large ``seam_points_a`` shortens
+    the part of Half A that keeps the exact offset.  Counts a half cannot give are reduced with
+    a warning.
+
+.. warning::
+
+    At the tips of a slit-like ostium the aortic wall can still touch the first millimetres of
+    the intravascular tube, leaving a few self-intersecting faces that
+    :func:`multimodars.fix_and_remesh_stitched_mesh` does not remove.  Check the ostium before
+    running simulations on the result.
 
 8. Remesh and smooth
 ^^^^^^^^^^^^^^^^^^^^^

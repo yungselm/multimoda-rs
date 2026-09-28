@@ -1,7 +1,9 @@
 import os
 from pathlib import Path
-import multimodars as mm
+
 import trimesh
+
+import multimodars as mm
 
 cwd = Path.cwd()
 for candidate in [cwd, cwd.parent, cwd.parent.parent]:
@@ -164,7 +166,7 @@ stitched = mm.stitch_ccta_to_intravascular(
     prox_start_mode="highest_z",
     clamp_overshoot=0.5,
 )
-stitched["mesh"].export("prefixed_mesh.stl")
+stitched["mesh"].export("prefixed.stl")
 print("Raw stitched mesh exported → prefixed_mesh.stl")
 
 remeshed = stitched.copy()
@@ -174,19 +176,21 @@ remeshed["mesh"] = mm.fix_and_remesh_stitched_mesh(
     verbose=True,
 )
 print(f"Watertight? {remeshed['mesh'].is_watertight}")
-
+remeshed["mesh"].export("fixed.stl")
 trimesh.smoothing.filter_taubin(remeshed["mesh"], lamb=0.6)
 
 results_final = mm.label_geometry(
-    path_ccta_geometry="fixed_mesh.stl",
+    path_ccta_geometry="fixed.stl",
     centerline_aorta=aorta_cl,
     centerline_rca=rca_cl,
     centerline_lca=lca_cl,
-    bounding_sphere_radius_mm_rca=3.0,
-    bounding_sphere_radius_mm_lca=3.0,
+    bounding_sphere_radius_mm_rca=3.5,
+    bounding_sphere_radius_mm_lca=3.5,
     range_mm_takeoff_rca=60.0,  # mm, was a point count before
     range_mm_takeoff_lca=40.0,  # mm, was a point count before
     acute_takeoff_rca=True,
     acute_takeoff_lca=False,
     control_plot=True,
 )
+
+results_final["mesh"].export("final.stl")

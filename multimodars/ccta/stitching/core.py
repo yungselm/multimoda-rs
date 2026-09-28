@@ -1,18 +1,21 @@
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 import trimesh
 
-from ...multimodars import PyGeometry
 from ..._converters import geometry_to_trimesh
+from ...multimodars import PyGeometry
 from .boundary import (
     _adjust_start_point_by_z,
+    _carry_ring_weights,
     _fix_ring_direction_by_distance,
     _fix_ring_direction_by_winding,
     _prepare_prox_dist_boundary_pts,
     _rotate_to_nearest_iv,
 )
-from .helpers import _fast_fix_normals
+from .helpers import _fast_fix_normals, _plane_normal_svd
 
 
 def stitch_ccta_to_intravascular(
@@ -27,6 +30,8 @@ def stitch_ccta_to_intravascular(
     boundary_point_ratio: float = 1.0,
     fillet_bulge: float = 0.0,
     fillet_layers: int = 2,
+    seam_points_a: int = 2,
+    seam_points_b: int = 4,
 ) -> dict:
     """Stitch an aligned intravascular mesh to a CCTA mesh.
 
@@ -52,13 +57,29 @@ def stitch_ccta_to_intravascular(
     boundary-ring plane and the IV plane form an angle ≥ ``ostium_angle_threshold_deg``
     (default 45°).
 
-    ``fillet_bulge`` > 0 replaces the sharp, direct seam between each CCTA
-    boundary point and its corresponding IV point with a small rounded arc
-    (see :func:`_stitch_rings_rounded`), purely cosmetic - it doesn't move
-    either endpoint, so the aortic-thickness correction stays exact.  ``0``
-    (default) keeps the original direct strip.  Only used when the boundary
-    ring and IV ring have the same point count (true by default, since
-    ``boundary_point_ratio=1.0``); otherwise falls back to the direct strip.
+    With ``prox_start_mode="highest_z"`` and ``proximal_is_ostium``, the
+    ostial ring is conditioned as two halves - an aorta-facing Half A offset
+    from the IV ostium by the aortic wall thickness, and a coronary-facing
+    Half B (see :func:`~.boundary._condition_ostium_ring_two_half`).
+    ``seam_points_a`` / ``seam_points_b`` set how many Half A / Half B points
+    either side of each of the two seams where the halves meet are replaced
+    by a smooth arc - the same counts at both seams, counted on the CCTA ring
+    as cut from the mesh (before it is densified to the IV point count).
+    Everything outside those ranges stays exactly in place, so Half A's
+    mid-section keeps its distance from the IV ostium.  ``0`` / ``0`` leaves
+    the seams sharp.
+
+    ``fillet_bulge`` > 0 rounds that ostial Half A seam - the strip between
+    each CCTA boundary point and its IV point - into a small arc instead of a
+    sharp, direct strut (see :func:`_stitch_rings_rounded`).  The arcs bulge
+    away from the IV geometry and fade out along the Half A / Half B seam
+    arcs, so Half B and the distal seam always stay direct strips.  It is
+    purely cosmetic - neither endpoint moves, so the aortic-thickness
+    correction stays exact - and only applies with the two-half ostium
+    above.  It also needs the boundary ring and IV ring to have the same
+    point count (true by default, since ``boundary_point_ratio=1.0``);
+    otherwise the direct strip is used.  ``0`` (default) keeps the direct
+    strip.
     """
     iv_mesh = iv_mesh.downsample(n_points_iv_cont)
     iv_mesh_points = [
@@ -79,19 +100,24 @@ def stitch_ccta_to_intravascular(
 
     target_n = max(3, round(boundary_point_ratio * len(proximal_points)))
 
-    prox_boundary_pts, dist_boundary_pts, mesh = _prepare_prox_dist_boundary_pts(
-        mesh,
-        results,
-        proximal_centroid,
-        distal_centroid,
-        proximal_is_ostium=proximal_is_ostium,
-        proximal_iv_frame_pts=iv_mesh.frames[0].lumen.points,
-        clamp_overshoot=clamp_overshoot,
-        target_n=target_n,
-        prox_outward=prox_outward,
-        prox_start_mode=prox_start_mode,
-        proximal_aortic_thickness=iv_mesh.frames[0].lumen.aortic_thickness,
+    prox_boundary_pts, dist_boundary_pts, mesh, prox_half_a_weight = (
+        _prepare_prox_dist_boundary_pts(
+            mesh,
+            results,
+            proximal_centroid,
+            distal_centroid,
+            proximal_is_ostium=proximal_is_ostium,
+            proximal_iv_frame_pts=iv_mesh.frames[0].lumen.points,
+            clamp_overshoot=clamp_overshoot,
+            target_n=target_n,
+            prox_outward=prox_outward,
+            prox_start_mode=prox_start_mode,
+            proximal_aortic_thickness=iv_mesh.frames[0].lumen.aortic_thickness,
+            seam_points_a=seam_points_a,
+            seam_points_b=seam_points_b,
+        )
     )
+    conditioned_prox = prox_boundary_pts
     prox_point_step = max(1, len(proximal_points) // len(prox_boundary_pts))
     dist_point_step = max(1, len(distal_points) // len(dist_boundary_pts))
 
@@ -129,26 +155,38 @@ def stitch_ccta_to_intravascular(
             dist_boundary_pts, distal_points, dist_point_step
         )
 
-    # Step 3: stitch each boundary ring to its IV ring
+    # Step 3: stitch each boundary ring to its IV ring.  The fillet only ever
+    # rounds the ostium's Half A, so the distal seam is always a direct strip.
+    prox_fillet_weight = None
+    if prox_half_a_weight is not None:
+        prox_fillet_weight = _carry_ring_weights(
+            conditioned_prox, prox_half_a_weight, prox_boundary_pts
+        )
+    elif fillet_bulge > 0.0:
+        print(
+            "Warning: fillet_bulge only rounds the ostium's Half A, which needs "
+            "prox_start_mode='highest_z' and proximal_is_ostium=True (and a ring "
+            "that splits into two halves); stitching without it."
+        )
     prox_patch = _stitch_rings(
         prox_boundary_pts,
         proximal_points,
         prox_outward,
-        fillet_bulge=fillet_bulge,
+        fillet_bulge=fillet_bulge if prox_fillet_weight is not None else 0.0,
         fillet_layers=fillet_layers,
+        fillet_weight=prox_fillet_weight,
+        fillet_direction=_ostium_away_direction(iv_mesh),
     )
-    dist_patch = _stitch_rings(
-        dist_boundary_pts,
-        distal_points,
-        dist_outward,
-        fillet_bulge=fillet_bulge,
-        fillet_layers=fillet_layers,
-    )
+    dist_patch = _stitch_rings(dist_boundary_pts, distal_points, dist_outward)
     test_mesh = geometry_to_trimesh(iv_mesh)
     test_mesh.update_faces(test_mesh.unique_faces())
     test_mesh.update_faces(test_mesh.nondegenerate_faces())
     _fast_fix_normals(test_mesh)
-    mesh = trimesh.util.concatenate([mesh, prox_patch, dist_patch, test_mesh])
+    # Concatenating Trimeshes gives a Trimesh; trimesh only types it as Geometry.
+    mesh = cast(
+        trimesh.Trimesh,
+        trimesh.util.concatenate([mesh, prox_patch, dist_patch, test_mesh]),
+    )
     trimesh.tol.merge = 0.001
     mesh.merge_vertices()
     if not mesh.is_watertight:
@@ -169,12 +207,28 @@ def stitch_ccta_to_intravascular(
     return results
 
 
+def _ostium_away_direction(iv_mesh: PyGeometry) -> np.ndarray:
+    """Unit normal of the IV ostial frame, pointing away from the rest of the
+    IV geometry - the side the ostial fillet bulges to, so it rounds the seam
+    off toward the aorta instead of folding back into the vessel.
+    """
+    frame = iv_mesh.frames[0]
+    pts = np.array([(p.x, p.y, p.z) for p in frame.lumen.points], dtype=np.float64)
+    normal = _plane_normal_svd(pts)
+    rest = np.array([f.centroid for f in iv_mesh.frames[1:]], dtype=np.float64)
+    if len(rest) and np.dot(normal, np.asarray(frame.centroid) - rest.mean(axis=0)) < 0:
+        normal = -normal
+    return normal
+
+
 def _stitch_rings(
     boundary_pts: list,
     iv_pts,
     outward_direction: np.ndarray | None = None,
     fillet_bulge: float = 0.0,
     fillet_layers: int = 2,
+    fillet_weight: np.ndarray | None = None,
+    fillet_direction: np.ndarray | None = None,
 ) -> trimesh.Trimesh:
     """Stitch an IV lumen ring to a CCTA boundary ring as a closed triangle strip.
 
@@ -202,6 +256,17 @@ def _stitch_rings(
         strip below.
     fillet_layers : int, optional
         Passed through to :func:`_stitch_rings_rounded`.
+    fillet_weight : np.ndarray, optional
+        How much of *fillet_bulge* each strut gets, one value per boundary
+        point: strut ``i`` bulges ``fillet_bulge * fillet_weight[i]`` of its
+        length (``0`` = straight, ``1`` = the full bulge).
+        :func:`stitch_ccta_to_intravascular` passes the ostium's Half A
+        weights here - that is what confines the fillet to Half A.  ``None``
+        gives every strut the full bulge.
+    fillet_direction : np.ndarray, optional
+        The side the arcs bulge to (see :func:`_fillet_arc_layers`).
+        Defaults to *outward_direction*; with neither, the direct strip is
+        used.
 
     Returns
     -------
@@ -215,13 +280,16 @@ def _stitch_rings(
             f"Need at least 3 points per ring to stitch (got boundary={n_b}, iv={n_iv})."
         )
 
-    if fillet_bulge > 0.0 and n_b == n_iv:
+    direction = outward_direction if fillet_direction is None else fillet_direction
+    weight = np.ones(n_b) if fillet_weight is None else np.asarray(fillet_weight, float)
+    if fillet_bulge > 0.0 and n_b == n_iv and direction is not None and weight.any():
         return _stitch_rings_rounded(
             boundary_pts,
             iv_pts,
             outward_direction,
-            bulge_fraction=fillet_bulge,
+            bulge_fraction=fillet_bulge * weight,
             n_layers=fillet_layers,
+            bulge_direction=direction,
         )
 
     b_arr = np.asarray(boundary_pts, dtype=np.float64)
@@ -266,86 +334,72 @@ def _orient_patch(patch: trimesh.Trimesh, outward_direction: np.ndarray | None) 
         patch.faces = patch.faces[:, ::-1]
 
 
-def _bulge_arc_points(
-    p1: np.ndarray,
-    p2: np.ndarray,
-    centroid: np.ndarray,
+def _fillet_arc_layers(
+    start: np.ndarray,
+    end: np.ndarray,
+    bulge_direction: np.ndarray,
+    bulge_fraction: np.ndarray,
     n_layers: int,
-    bulge_fraction: float,
-) -> list[np.ndarray]:
-    """*n_layers* points on a smooth arc from *p1* to *p2*, bulging away from
-    *centroid*.
+) -> np.ndarray:
+    """The *n_layers* intermediate rings of a rounded seam from *start* to *end*.
 
-    Used to round the direct seam between a CCTA boundary point and its IV
-    point into a small fillet instead of a sharp straight strut.  The bulge
-    direction is perpendicular to the ``p1 -> p2`` chord and points away from
-    *centroid* (in practice, radially outward from the vessel), with a
-    sine profile so it's zero at both endpoints (which stay exactly at *p1*
-    and *p2*) and maximal at the midpoint.
+    Each pair ``start[i] -> end[i]`` gets its own arc, used to round the
+    direct seam between a CCTA boundary point and its IV point into a small
+    fillet instead of a sharp straight strut.  The arc bulges perpendicular
+    to the pair's chord, on the side *bulge_direction* points to (its part
+    perpendicular to the chord, so the side follows each chord's own
+    orientation), with a sine profile: zero at both endpoints, which stay
+    exactly where they are, and ``bulge_fraction[i]`` times the chord length
+    at the midpoint.  A chord parallel to *bulge_direction* has no such side
+    and stays straight.
+
+    Returns an ``(n_layers, len(start), 3)`` array, ordered from *start* to
+    *end*.
     """
-    chord = p2 - p1
-    chord_len = float(np.linalg.norm(chord))
-    if chord_len < 1e-9 or n_layers <= 0:
-        return []
-    axis = chord / chord_len
+    chord = end - start
+    length = np.linalg.norm(chord, axis=1)
+    axis = np.divide(
+        chord, length[:, None], out=np.zeros_like(chord), where=length[:, None] > 1e-9
+    )
+    away = np.asarray(bulge_direction, dtype=np.float64)
+    away = away / np.linalg.norm(away)
+    side = away - (axis @ away)[:, None] * axis
+    side_len = np.linalg.norm(side, axis=1)
+    side = np.divide(
+        side, side_len[:, None], out=np.zeros_like(side), where=side_len[:, None] > 1e-6
+    )
 
-    outward = (p1 + p2) / 2.0 - centroid
-    outward -= float(np.dot(outward, axis)) * axis
-    norm = float(np.linalg.norm(outward))
-    if norm < 1e-9:
-        ref = (
-            np.array([1.0, 0.0, 0.0])
-            if abs(axis[0]) < 0.9
-            else np.array([0.0, 1.0, 0.0])
-        )
-        outward = np.cross(axis, ref)
-        norm = float(np.linalg.norm(outward))
-    outward /= norm
-
-    bulge = bulge_fraction * chord_len
-    points = []
-    for k in range(1, n_layers + 1):
-        t = k / (n_layers + 1)
-        height = bulge * np.sin(np.pi * t)
-        points.append(p1 + t * chord + height * outward)
-    return points
+    t = np.arange(1, n_layers + 1) / (n_layers + 1)
+    height = np.sin(np.pi * t)[:, None] * (bulge_fraction * length)[None, :]
+    return start[None] + t[:, None, None] * chord[None] + height[..., None] * side[None]
 
 
 def _stitch_rings_rounded(
     boundary_pts: list,
     iv_pts,
     outward_direction: np.ndarray | None,
-    bulge_fraction: float,
+    bulge_fraction: np.ndarray,
     n_layers: int,
+    bulge_direction: np.ndarray,
 ) -> trimesh.Trimesh:
     """Like :func:`_stitch_rings`, but with a rounded fillet instead of a
     direct strut between each boundary point and its corresponding IV point.
 
     Requires ``len(boundary_pts) == len(iv_pts)`` - a 1:1 correspondence, so
-    every point pair gets its own arc.  Builds *n_layers* intermediate rings
-    between the boundary ring and the IV ring (see :func:`_bulge_arc_points`)
-    and triangulates each consecutive pair of rings as an ordinary quad
-    strip, so the two original rings' points stay exactly where they were
-    (the aortic-thickness correction is untouched) and only the surface
-    between them curves.
+    every point pair gets its own arc, bulging by its own entry of
+    *bulge_fraction* to the *bulge_direction* side.  Builds *n_layers*
+    intermediate rings between the boundary ring and the IV ring (see
+    :func:`_fillet_arc_layers`) and triangulates each consecutive pair of
+    rings as an ordinary quad strip, so the two original rings' points stay
+    exactly where they were (the aortic-thickness correction is untouched)
+    and only the surface between them curves.
     """
     n = len(boundary_pts)
     b_arr = np.asarray(boundary_pts, dtype=np.float64)
     iv_arr = np.array([(p.x, p.y, p.z) for p in iv_pts], dtype=np.float64)
-    centroid = np.vstack([b_arr, iv_arr]).mean(axis=0)
 
-    arc_layers: list[list[np.ndarray]] = [[] for _ in range(n_layers)]
-    for i in range(n):
-        for k, p in enumerate(
-            _bulge_arc_points(b_arr[i], iv_arr[i], centroid, n_layers, bulge_fraction)
-        ):
-            arc_layers[k].append(p)
-
-    rings = (
-        [b_arr]
-        + [np.asarray(layer, dtype=np.float64) for layer in arc_layers]
-        + [iv_arr]
-    )
+    arcs = _fillet_arc_layers(b_arr, iv_arr, bulge_direction, bulge_fraction, n_layers)
+    rings = [b_arr, *arcs, iv_arr]
     vertices = np.vstack(rings)
 
     faces: list[tuple[int, int, int]] = []
