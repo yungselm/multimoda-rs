@@ -82,7 +82,6 @@ impl FrameTransformation {
         let rotated_relative = self.rotation * relative_vector;
         let rotated_point = self.pivot + rotated_relative;
 
-        // Preserve other fields from the original ContourPoint
         ContourPoint {
             frame_index: point.frame_index,
             point_index: point.point_index,
@@ -127,7 +126,6 @@ pub fn get_transformations(
 }
 
 fn align_frame(frame: &Contour, cl_point: &CenterlinePoint) -> FrameTransformation {
-    // Get centroid or compute if None
     let centroid = frame.centroid.unwrap_or_else(|| {
         let x_avg = frame.points.iter().map(|p| p.x).sum::<f64>() / frame.points.len() as f64;
         let y_avg = frame.points.iter().map(|p| p.y).sum::<f64>() / frame.points.len() as f64;
@@ -135,14 +133,12 @@ fn align_frame(frame: &Contour, cl_point: &CenterlinePoint) -> FrameTransformati
         (x_avg, y_avg, z_avg)
     });
 
-    // === Translation Step ===
     let translation_vec = Vector3::new(
         cl_point.contour_point.x - centroid.0,
         cl_point.contour_point.y - centroid.1,
         cl_point.contour_point.z - centroid.2,
     );
 
-    // === Rotation Step ===
     let current_normal = calculate_normal(&frame.points, &centroid);
     let desired_normal = cl_point.tangent;
     let angle = current_normal.angle(&desired_normal);
@@ -183,7 +179,6 @@ pub fn apply_transformation_to_contour(
         *point = transformed_point;
     }
 
-    // Update centroid if it exists
     if let Some(centroid) = contour.centroid.as_mut() {
         let centroid_point = ContourPoint {
             frame_index: transformation.frame_index,
@@ -209,7 +204,6 @@ fn calculate_normal(points: &[ContourPoint], centroid: &(f64, f64, f64)) -> Vect
         return Vector3::new(0.0, 0.0, 1.0); // Default to Z-axis for degenerate cases
     }
 
-    // Use a more stable method: Newell's method for polygon normal
     let mut normal = Vector3::zeros();
 
     for i in 0..points.len() {
@@ -224,7 +218,6 @@ fn calculate_normal(points: &[ContourPoint], centroid: &(f64, f64, f64)) -> Vect
             - (current.y - centroid.1) * (next.x - centroid.0);
     }
 
-    // Normalize the result
     let norm = normal.norm();
     if norm > 1e-12 {
         normal /= norm;

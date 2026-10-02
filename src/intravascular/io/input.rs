@@ -2,6 +2,7 @@ use crate::types::native::centerline::Centerline;
 use crate::types::native::contour::ContourType;
 use crate::types::native::contour_point::ContourPoint;
 use crate::types::native::record::Record;
+use crate::types::native::Point3D;
 use anyhow::{anyhow, Context, Result};
 use csv::ReaderBuilder;
 use std::collections::HashMap;
@@ -350,8 +351,10 @@ pub fn read_centerline_vtp<P: AsRef<Path>>(path: P) -> anyhow::Result<Centerline
         );
     }
     let coords: Vec<_> = pts_raw
-        .chunks_exact(3)
-        .map(|c| (c[0], c[1], c[2]))
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .map(|&[x, y, z]| (x, y, z))
         .collect();
     let n_pts = coords.len();
 
@@ -387,11 +390,7 @@ pub fn read_centerline_vtp<P: AsRef<Path>>(path: P) -> anyhow::Result<Centerline
     let branch_arc_length = |branch: &[usize]| -> f64 {
         branch
             .windows(2)
-            .map(|w| {
-                let (x0, y0, z0) = coords[w[0]];
-                let (x1, y1, z1) = coords[w[1]];
-                ((x1 - x0).powi(2) + (y1 - y0).powi(2) + (z1 - z0).powi(2)).sqrt()
-            })
+            .map(|w| coords[w[0]].distance_to(&coords[w[1]]))
             .sum()
     };
     let branch_lengths: Vec<f64> = vtk_branches.iter().map(|b| branch_arc_length(b)).collect();

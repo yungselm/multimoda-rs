@@ -1,6 +1,6 @@
 use super::centerline_point::CenterlinePoint;
 use super::contour_point::ContourPoint;
-use super::Point3D;
+use super::{cumulative_arc_length, Point3D};
 use nalgebra::Vector3;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -307,15 +307,7 @@ impl Centerline {
             .get(1)
             .copied()
             .unwrap_or(self.points.len());
-        let main = &self.points[..end];
-        if main.len() < 2 {
-            return 1.0;
-        }
-        let sum: f64 = main
-            .windows(2)
-            .map(|w| w[0].contour_point.distance_to(&w[1].contour_point))
-            .sum();
-        sum / (main.len() - 1) as f64
+        super::mean_spacing(&self.points[..end]).unwrap_or(1.0)
     }
 
     /// 95th-percentile of consecutive-point spacings — O(n).
@@ -732,24 +724,15 @@ impl Centerline {
             return points.to_vec();
         }
 
-        let mut cum = vec![0.0f64; points.len()];
-        for i in 1..points.len() {
-            cum[i] = cum[i - 1]
-                + points[i - 1]
-                    .contour_point
-                    .distance_to(&points[i].contour_point);
-        }
+        let cum = cumulative_arc_length(points);
         let total = cum[points.len() - 1];
         if total < 1e-12 {
             return points.to_vec();
         }
 
-        let mut targets = Vec::new();
-        let mut s = 0.0;
-        while s < total {
-            targets.push(s);
-            s += spacing_mm;
-        }
+        // Index-based targets avoid accumulated float drift
+        let n_before_end = ((total - 1e-9) / spacing_mm).ceil().max(1.0) as usize;
+        let mut targets: Vec<f64> = (0..n_before_end).map(|i| i as f64 * spacing_mm).collect();
         targets.push(total);
 
         let mut seg = 0usize;
@@ -1386,6 +1369,20 @@ mod centerline_tests {
             assert!((p.contour_point.x - i as f64 * 2.5).abs() < 1e-9);
         }
         assert!((cl.points.last().unwrap().contour_point.x - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_resample_no_near_duplicate_endpoint() {
+        // 10 × 0.1 accumulates to 0.9999999999999999 < 1.0, which used to add an
+        // extra sample a hair before the endpoint.
+        let mut cl = cl_from_coords(&[(0., 0., 0.), (1., 0., 0.)]);
+        cl.resample(0.1);
+
+        assert_eq!(cl.points.len(), 11);
+        for w in cl.points.windows(2) {
+            let gap = w[0].contour_point.distance_to(&w[1].contour_point);
+            assert!((gap - 0.1).abs() < 1e-9, "uneven gap {gap}");
+        }
     }
 
     #[test]

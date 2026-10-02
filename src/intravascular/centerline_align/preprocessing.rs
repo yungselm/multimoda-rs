@@ -1,14 +1,15 @@
-use nalgebra::Vector3;
-
 use crate::types::native::geometry::Geometry;
-use crate::types::native::{Centerline, CenterlinePoint, ContourPoint};
+use crate::types::native::{mean_spacing, Centerline, CenterlinePoint};
 
 /// Resample `centerline` along its arc-length so that adjacent points are spaced at the
-/// mean Euclidean distance between consecutive contour centroids in `ref_mesh`.
+/// mean Euclidean distance between consecutive contour centroids in `ref_mesh`, falling
+/// back to the centerline's own mean point spacing when the mesh has fewer than two frames.
 ///
 /// Only branch-0 points are used for resampling — side branches (branch_id > 0) are
 /// stripped before processing so that `ensure_descending_z` and the arc-length
-/// calculation see only the main-vessel path.
+/// calculation see only the main-vessel path. Resampling goes through
+/// [`Centerline::resample`], so tangents are recomputed in the final (descending-z)
+/// point order.
 ///
 /// Returns the resampled centerline alongside the spacing (mm) that was used, so
 /// callers can apply the same spacing to other centerlines via `Centerline::resample`
@@ -28,12 +29,23 @@ pub fn preprocess_centerline(
     if pts.is_empty() {
         return Err("Centerline has no branch-0 points");
     }
+    if ref_mesh.frames.is_empty() {
+        return Err("Reference mesh has no frames");
+    }
     let mut cl = Centerline {
         points: pts,
         branch_start_indices: vec![0],
     };
     ensure_descending_z(&mut cl);
-    resample_centerline_by_contours(&cl, ref_mesh)
+
+    let Some(spacing) = decide_spacing(ref_mesh, &cl) else {
+        eprintln!("preprocess_centerline: invalid spacing computed, returning original centerline");
+        return Ok((cl, 0.0));
+    };
+    cl.resample(spacing);
+
+    eprintln!("preprocess_centerline: produced {} points", cl.points.len());
+    Ok((cl, spacing))
 }
 
 fn ensure_descending_z(centerline: &mut Centerline) {
@@ -46,244 +58,72 @@ fn ensure_descending_z(centerline: &mut Centerline) {
     }
 }
 
-fn resample_centerline_by_contours(
-    centerline: &Centerline,
-    ref_mesh: &Geometry,
-) -> Result<(Centerline, f64), &'static str> {
-    if centerline.points.is_empty() {
-        return Err("Centerline is empty");
-    }
-    if ref_mesh.frames.is_empty() {
-        return Err("Reference mesh has no frames");
-    }
-
-    let (centroids, mean_spacing_opt) = calculate_mean_spacing(ref_mesh);
-
-    let cum = cumulative_arc_length(centerline);
-    let total_length = *cum.last().unwrap_or(&0.0);
-
-    // Use n_segments = original segments count
-    let n_segments = centerline.points.len().saturating_sub(1);
-
-    let spacing = match decide_spacing(mean_spacing_opt, total_length, n_segments) {
-        Some(s) => s,
-        None => {
-            eprintln!("resample_centerline_by_contours: invalid spacing computed, returning original centerline");
-            return Ok((centerline.clone(), 0.0));
-        }
-    };
-
-    eprintln!(
-        "resample_centerline_by_contours: centroid_count={}, centroid_mean_spacing={:?}, centerline_length={}, spacing={:.6}",
-        centroids.len(),
-        mean_spacing_opt,
-        total_length,
-        spacing
-    );
-
-    let s_new = build_samples(total_length, spacing);
-
-    let mut new_points = Vec::with_capacity(s_new.len());
-    for (k, &target_s) in s_new.iter().enumerate() {
-        new_points.push(interpolate_centerline_at_s(centerline, &cum, target_s, k));
-    }
-
-    eprintln!(
-        "resample_centerline_by_contours: produced {} points",
-        new_points.len()
-    );
-
-    let branch_start_indices = if new_points.is_empty() {
-        vec![]
-    } else {
-        vec![0]
-    };
-    Ok((
-        Centerline {
-            points: new_points,
-            branch_start_indices,
-        },
-        spacing,
-    ))
+fn calculate_mean_spacing(ref_mesh: &Geometry) -> Option<f64> {
+    let centroids: Vec<(f64, f64, f64)> = ref_mesh.frames.iter().map(|f| f.centroid).collect();
+    mean_spacing(&centroids)
 }
 
-fn cumulative_arc_length(centerline: &Centerline) -> Vec<f64> {
-    let mut cum: Vec<f64> = Vec::with_capacity(centerline.points.len());
-    if centerline.points.is_empty() {
-        return cum;
-    }
-    cum.push(0.0f64);
-    for i in 1..centerline.points.len() {
-        let p0 = &centerline.points[i - 1].contour_point;
-        let p1 = &centerline.points[i].contour_point;
-        let dx = p1.x - p0.x;
-        let dy = p1.y - p0.y;
-        let dz = p1.z - p0.z;
-        let d = (dx * dx + dy * dy + dz * dz).sqrt();
-        cum.push(cum.last().unwrap() + d);
-    }
-    cum
-}
-
-fn decide_spacing(mean_opt: Option<f64>, total_length: f64, n_segments: usize) -> Option<f64> {
-    if let Some(s) = mean_opt {
-        if s.is_finite() && s > 1e-12 {
-            return Some(s);
-        }
-    }
-    if n_segments >= 1 {
-        // n_segments is number of segments in original centerline: len-1
-        let denom = n_segments as f64;
-        let fallback = total_length / denom;
-        if fallback.is_finite() && fallback > 1e-12 {
-            return Some(fallback);
-        }
-    }
-    None
-}
-
-fn build_samples(total_length: f64, spacing: f64) -> Vec<f64> {
-    let mut s_new = Vec::new();
-    let mut s = 0.0f64;
-    let eps = 1e-9;
-    while s <= total_length + eps {
-        s_new.push(s);
-        s += spacing;
-    }
-    if let Some(&last) = s_new.last() {
-        if last > total_length + 1e-6 {
-            s_new.pop();
-            s_new.push(total_length);
-        }
-    }
-    s_new
-}
-
-fn interpolate_centerline_at_s(
-    centerline: &Centerline,
-    cum: &[f64],
-    target_s: f64,
-    sample_index: usize,
-) -> CenterlinePoint {
-    // find segment idx
-    let idx = match cum.binary_search_by(|v| v.partial_cmp(&target_s).unwrap()) {
-        Ok(i) => i,          // exact match
-        Err(0) => 0usize,    // before first
-        Err(pos) => pos - 1, // segment index
-    };
-
-    // if at the very end, return last point
-    if idx >= centerline.points.len().saturating_sub(1) {
-        let last_pt = &centerline.points.last().unwrap().contour_point;
-        let tangent = centerline.points.last().unwrap().tangent;
-        let radius = centerline.points.last().unwrap().radius;
-        return CenterlinePoint {
-            contour_point: ContourPoint {
-                frame_index: sample_index as u32,
-                point_index: sample_index as u32,
-                x: last_pt.x,
-                y: last_pt.y,
-                z: last_pt.z,
-                aortic: false,
-            },
-            tangent,
-            branch_id: 0,
-            radius,
-        };
-    }
-
-    // Interpolate between idx and idx+1
-    let p0 = &centerline.points[idx].contour_point;
-    let p1 = &centerline.points[idx + 1].contour_point;
-    let s0 = cum[idx];
-    let s1 = cum[idx + 1];
-    let denom = s1 - s0;
-    let t = if denom.abs() < 1e-12 {
-        0.0
-    } else {
-        (target_s - s0) / denom
-    };
-
-    let x = p0.x + t * (p1.x - p0.x);
-    let y = p0.y + t * (p1.y - p0.y);
-    let z = p0.z + t * (p1.z - p0.z);
-
-    // interpolate tangent if available, else zeros
-    let t0 = centerline.points[idx].tangent;
-    let t1 = centerline.points[idx + 1].tangent;
-    let mut tangent = Vector3::zeros();
-    if t0.norm() > 0.0 || t1.norm() > 0.0 {
-        tangent = t0 * (1.0 - t) + t1 * t;
-        let t_norm = tangent.norm();
-        if t_norm > 1e-12 {
-            tangent /= t_norm;
-        } else {
-            tangent = Vector3::zeros();
-        }
-    }
-
-    let radius0 = centerline.points[idx].radius;
-    let radius1 = centerline.points[idx + 1].radius;
-    let radius = radius0 * (1.0 - t) + radius1 * t;
-
-    CenterlinePoint {
-        contour_point: ContourPoint {
-            frame_index: sample_index as u32,
-            point_index: sample_index as u32,
-            x,
-            y,
-            z,
-            aortic: false,
-        },
-        tangent,
-        branch_id: 0,
-        radius,
-    }
-}
-
-fn calculate_mean_spacing(ref_mesh: &Geometry) -> (Vec<(f64, f64, f64)>, Option<f64>) {
-    // 1) Compute centroid positions from ref_mesh
-    let centroids: Vec<(f64, f64, f64)> = ref_mesh
-        .frames
-        .iter()
-        .map(|f| (f.centroid.0, f.centroid.1, f.centroid.2))
-        .collect();
-
-    // 2) Compute distances between consecutive centroids (Euclidean)
-    let centroid_dists: Vec<f64> = centroids
-        .windows(2)
-        .map(|w| {
-            let dx = w[1].0 - w[0].0;
-            let dy = w[1].1 - w[0].1;
-            let dz = w[1].2 - w[0].2;
-            (dx * dx + dy * dy + dz * dz).sqrt()
-        })
-        .collect();
-
-    // 3) Mean spacing from contours (fallbacks later)
-    let mean_spacing_opt = if !centroid_dists.is_empty() {
-        let sum: f64 = centroid_dists.iter().sum();
-        let mean = sum / centroid_dists.len() as f64;
-        if mean.is_finite() && mean > 1e-12 {
-            Some(mean)
-        } else {
-            // Error: mean spacing is invalid
-            eprintln!("calculate_mean_spacing: invalid mean spacing computed");
-            None
-        }
-    } else {
-        // Error: no centroid distances
-        eprintln!("calculate_mean_spacing: no centroid distances found");
-        None
-    };
-    (centroids, mean_spacing_opt)
+/// Mean contour-centroid spacing of `ref_mesh`, or the centerline's own mean point
+/// spacing if the mesh gives no usable value. `None` if neither is usable.
+fn decide_spacing(ref_mesh: &Geometry, centerline: &Centerline) -> Option<f64> {
+    let is_valid = |s: &f64| s.is_finite() && *s > 1e-12;
+    calculate_mean_spacing(ref_mesh)
+        .filter(is_valid)
+        .or_else(|| mean_spacing(&centerline.points).filter(is_valid))
 }
 
 #[cfg(test)]
 mod cl_preprocessing_tests {
     use super::*;
+    use crate::types::native::contour::{Contour, ContourType};
+    use crate::types::native::frame::Frame;
     use crate::types::native::ContourPoint;
     use approx::assert_relative_eq;
+    use nalgebra::Vector3;
+    use std::collections::HashMap;
+
+    fn geom_from_centroids(centroids: &[(f64, f64, f64)]) -> Geometry {
+        let frames = centroids
+            .iter()
+            .enumerate()
+            .map(|(i, &centroid)| Frame {
+                id: i as u32,
+                centroid,
+                lumen: Contour {
+                    id: i as u32,
+                    original_frame: i as u32,
+                    points: vec![],
+                    centroid: Some(centroid),
+                    aortic_thickness: None,
+                    pulmonary_thickness: None,
+                    kind: ContourType::Lumen,
+                },
+                extras: HashMap::new(),
+                reference_point: None,
+            })
+            .collect();
+        Geometry {
+            frames,
+            label: "test".to_string(),
+        }
+    }
+
+    fn cl_from_coords(coords: &[(f64, f64, f64)]) -> Centerline {
+        Centerline::from_contour_points(
+            coords
+                .iter()
+                .enumerate()
+                .map(|(i, &(x, y, z))| ContourPoint {
+                    frame_index: i as u32,
+                    point_index: i as u32,
+                    x,
+                    y,
+                    z,
+                    aortic: false,
+                })
+                .collect(),
+        )
+    }
 
     #[test]
     fn test_ensure_descending_z() {
@@ -360,246 +200,88 @@ mod cl_preprocessing_tests {
 
     #[test]
     fn test_calculate_mean_spacing() {
-        use crate::types::native::contour::{Contour, ContourType};
-        use crate::types::native::frame::Frame;
-        use crate::types::native::geometry::Geometry;
-        use crate::types::native::ContourPoint;
-        use std::collections::HashMap;
+        // distances 5.0 and 5.0
+        let geom = geom_from_centroids(&[(0.0, 0.0, 0.0), (3.0, 4.0, 0.0), (6.0, 8.0, 0.0)]);
+        assert_eq!(calculate_mean_spacing(&geom), Some(5.0));
 
-        // Case 1: multiple frames → valid mean spacing
-        let geom = Geometry {
-            frames: vec![
-                Frame {
-                    id: 0,
-                    centroid: (0.0, 0.0, 0.0),
-                    lumen: Contour {
-                        id: 0,
-                        original_frame: 0,
-                        points: vec![ContourPoint {
-                            frame_index: 0,
-                            point_index: 0,
-                            x: 0.0,
-                            y: 0.0,
-                            z: 0.0,
-                            aortic: false,
-                        }],
-                        centroid: Some((0.0, 0.0, 0.0)),
-                        aortic_thickness: None,
-                        pulmonary_thickness: None,
-                        kind: ContourType::Lumen,
-                    },
-                    extras: HashMap::new(),
-                    reference_point: None,
-                },
-                Frame {
-                    id: 1,
-                    centroid: (3.0, 4.0, 0.0), // distance from (0,0,0) = 5
-                    lumen: Contour {
-                        id: 1,
-                        original_frame: 1,
-                        points: vec![],
-                        centroid: Some((3.0, 4.0, 0.0)),
-                        aortic_thickness: None,
-                        pulmonary_thickness: None,
-                        kind: ContourType::Lumen,
-                    },
-                    extras: HashMap::new(),
-                    reference_point: None,
-                },
-                Frame {
-                    id: 2,
-                    centroid: (6.0, 8.0, 0.0), // distance from (3,4,0) = 5
-                    lumen: Contour {
-                        id: 2,
-                        original_frame: 2,
-                        points: vec![],
-                        centroid: Some((6.0, 8.0, 0.0)),
-                        aortic_thickness: None,
-                        pulmonary_thickness: None,
-                        kind: ContourType::Lumen,
-                    },
-                    extras: HashMap::new(),
-                    reference_point: None,
-                },
-            ],
-            label: "test".to_string(),
-        };
-
-        let (centroids, mean_opt) = calculate_mean_spacing(&geom);
-        assert_eq!(centroids.len(), 3);
-        assert_eq!(centroids[0], (0.0, 0.0, 0.0));
-        assert_eq!(centroids[1], (3.0, 4.0, 0.0));
-        assert_eq!(centroids[2], (6.0, 8.0, 0.0));
-
-        // Mean of [5.0, 5.0] = 5.0
-        assert_eq!(mean_opt, Some(5.0));
-
-        // Case 2: single frame → no distances
-        let geom2 = Geometry {
-            frames: vec![Frame {
-                id: 0,
-                centroid: (1.0, 2.0, 3.0),
-                lumen: Contour {
-                    id: 0,
-                    original_frame: 0,
-                    points: vec![],
-                    centroid: Some((1.0, 2.0, 3.0)),
-                    aortic_thickness: None,
-                    pulmonary_thickness: None,
-                    kind: ContourType::Lumen,
-                },
-                extras: HashMap::new(),
-                reference_point: None,
-            }],
-            label: "test2".to_string(),
-        };
-        let (centroids2, mean_opt2) = calculate_mean_spacing(&geom2);
-        assert_eq!(centroids2.len(), 1);
-        assert_eq!(centroids2[0], (1.0, 2.0, 3.0));
-        assert!(mean_opt2.is_none());
+        // single frame → no distances
+        let geom = geom_from_centroids(&[(1.0, 2.0, 3.0)]);
+        assert_eq!(calculate_mean_spacing(&geom), None);
     }
 
     #[test]
-    fn test_cumulative_arc_length_and_decide_spacing() {
-        // create a simple centerline along z = 0..3 with 4 points
-        let cl = Centerline {
-            points: vec![
-                CenterlinePoint {
-                    contour_point: ContourPoint {
-                        frame_index: 0,
-                        point_index: 0,
-                        x: 0.0,
-                        y: 0.0,
-                        z: 0.0,
-                        aortic: false,
-                    },
-                    tangent: Vector3::new(0.0, 0.0, 1.0),
-                    branch_id: 0,
-                    radius: 0.0,
-                },
-                CenterlinePoint {
-                    contour_point: ContourPoint {
-                        frame_index: 1,
-                        point_index: 1,
-                        x: 0.0,
-                        y: 0.0,
-                        z: 1.0,
-                        aortic: false,
-                    },
-                    tangent: Vector3::new(0.0, 0.0, 1.0),
-                    branch_id: 0,
-                    radius: 0.0,
-                },
-                CenterlinePoint {
-                    contour_point: ContourPoint {
-                        frame_index: 2,
-                        point_index: 2,
-                        x: 0.0,
-                        y: 0.0,
-                        z: 2.0,
-                        aortic: false,
-                    },
-                    tangent: Vector3::new(0.0, 0.0, 1.0),
-                    branch_id: 0,
-                    radius: 0.0,
-                },
-                CenterlinePoint {
-                    contour_point: ContourPoint {
-                        frame_index: 3,
-                        point_index: 3,
-                        x: 0.0,
-                        y: 0.0,
-                        z: 3.0,
-                        aortic: false,
-                    },
-                    tangent: Vector3::new(0.0, 0.0, 1.0),
-                    branch_id: 0,
-                    radius: 0.0,
-                },
-            ],
-            branch_start_indices: vec![0],
-        };
+    fn test_decide_spacing_prefers_mesh_then_centerline() {
+        let cl = cl_from_coords(&[
+            (0.0, 0.0, 3.0),
+            (0.0, 0.0, 2.0),
+            (0.0, 0.0, 1.0),
+            (0.0, 0.0, 0.0),
+        ]);
 
-        let cum = cumulative_arc_length(&cl);
-        assert_eq!(cum, vec![0.0, 1.0, 2.0, 3.0]);
+        let geom = geom_from_centroids(&[(0.0, 0.0, 0.0), (0.0, 0.0, 0.5)]);
+        assert_relative_eq!(decide_spacing(&geom, &cl).unwrap(), 0.5);
 
-        let total_length = *cum.last().unwrap();
-        // no centroid mean -> fallback spacing = total_length / (n_segments)
-        let spacing = decide_spacing(None, total_length, cl.points.len() - 1).unwrap();
-        assert_relative_eq!(spacing, 1.0);
+        // single frame → no mesh spacing → centerline mean spacing
+        let geom = geom_from_centroids(&[(0.0, 0.0, 0.0)]);
+        assert_relative_eq!(decide_spacing(&geom, &cl).unwrap(), 1.0);
+
+        // coincident centroids → zero mesh spacing is rejected as well
+        let geom = geom_from_centroids(&[(1.0, 1.0, 1.0), (1.0, 1.0, 1.0)]);
+        assert_relative_eq!(decide_spacing(&geom, &cl).unwrap(), 1.0);
     }
 
     #[test]
-    fn test_build_samples_and_interpolate() {
-        // same centerline
-        let cl = Centerline {
-            points: vec![
-                CenterlinePoint {
-                    contour_point: ContourPoint {
-                        frame_index: 0,
-                        point_index: 0,
-                        x: 0.0,
-                        y: 0.0,
-                        z: 0.0,
-                        aortic: false,
-                    },
-                    tangent: Vector3::new(0.0, 0.0, 1.0),
-                    branch_id: 0,
-                    radius: 0.0,
-                },
-                CenterlinePoint {
-                    contour_point: ContourPoint {
-                        frame_index: 1,
-                        point_index: 1,
-                        x: 0.0,
-                        y: 0.0,
-                        z: 1.0,
-                        aortic: false,
-                    },
-                    tangent: Vector3::new(0.0, 0.0, 1.0),
-                    branch_id: 0,
-                    radius: 0.0,
-                },
-                CenterlinePoint {
-                    contour_point: ContourPoint {
-                        frame_index: 2,
-                        point_index: 2,
-                        x: 0.0,
-                        y: 0.0,
-                        z: 2.0,
-                        aortic: false,
-                    },
-                    tangent: Vector3::new(0.0, 0.0, 1.0),
-                    branch_id: 0,
-                    radius: 0.0,
-                },
-                CenterlinePoint {
-                    contour_point: ContourPoint {
-                        frame_index: 3,
-                        point_index: 3,
-                        x: 0.0,
-                        y: 0.0,
-                        z: 3.0,
-                        aortic: false,
-                    },
-                    tangent: Vector3::new(0.0, 0.0, 1.0),
-                    branch_id: 0,
-                    radius: 0.0,
-                },
-            ],
-            branch_start_indices: vec![0],
+    fn test_preprocess_centerline_resamples_to_mesh_spacing() {
+        // ascending z → reversed by ensure_descending_z; total length 3.0
+        let cl = cl_from_coords(&[
+            (0.0, 0.0, 0.0),
+            (0.0, 0.0, 1.0),
+            (0.0, 0.0, 2.0),
+            (0.0, 0.0, 3.0),
+        ]);
+        let geom = geom_from_centroids(&[(0.0, 0.0, 0.0), (0.0, 0.0, 0.75), (0.0, 0.0, 1.5)]);
+
+        let (resampled, spacing) = preprocess_centerline(cl, &geom).unwrap();
+
+        assert_relative_eq!(spacing, 0.75);
+        let expected_z = [3.0, 2.25, 1.5, 0.75, 0.0];
+        assert_eq!(resampled.points.len(), expected_z.len());
+        for (i, (p, z)) in resampled.points.iter().zip(expected_z).enumerate() {
+            assert_relative_eq!(p.contour_point.z, z, epsilon = 1e-12);
+            assert_eq!(p.contour_point.frame_index, i as u32);
+            assert_eq!(p.branch_id, 0);
+        }
+    }
+
+    #[test]
+    fn test_preprocess_centerline_tangents_follow_final_order() {
+        // from_contour_points gives +z tangents for ascending input; after the
+        // reversal every tangent must point along the new descending-z order.
+        let cl = cl_from_coords(&[(0.0, 0.0, 0.0), (0.0, 0.0, 1.0), (0.0, 0.0, 2.0)]);
+        let geom = geom_from_centroids(&[(0.0, 0.0, 0.0), (0.0, 0.0, 0.5)]);
+
+        let (resampled, _) = preprocess_centerline(cl, &geom).unwrap();
+
+        for p in &resampled.points {
+            assert_relative_eq!(p.tangent.z, -1.0, epsilon = 1e-12);
+        }
+    }
+
+    #[test]
+    fn test_preprocess_centerline_errors() {
+        let cl = cl_from_coords(&[(0.0, 0.0, 1.0), (0.0, 0.0, 0.0)]);
+        assert_eq!(
+            preprocess_centerline(cl, &geom_from_centroids(&[])).unwrap_err(),
+            "Reference mesh has no frames"
+        );
+
+        let empty = Centerline {
+            points: vec![],
+            branch_start_indices: vec![],
         };
-
-        let cum = cumulative_arc_length(&cl);
-        let samples = build_samples(3.0, 0.75); // 0.0,0.75,1.5,2.25,3.0
-        assert!((samples.len() >= 2) && samples[0] == 0.0 && *samples.last().unwrap() == 3.0);
-
-        // interpolate at s = 1.5 (should be z = 1.5)
-        let pt = interpolate_centerline_at_s(&cl, &cum, 1.5, 0);
-        assert_relative_eq!(pt.contour_point.z, 1.5, epsilon = 1e-12);
-        // tangent should be normalized and in z direction
-        assert_relative_eq!(pt.tangent.z, 1.0, epsilon = 1e-12);
-        // radius should be 0.0
-        assert_relative_eq!(pt.radius, 0.0, epsilon = 1e-12);
+        assert_eq!(
+            preprocess_centerline(empty, &geom_from_centroids(&[(0.0, 0.0, 0.0)])).unwrap_err(),
+            "Centerline has no branch-0 points"
+        );
     }
 }
