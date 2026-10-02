@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.7.4] - 2026-10-02
 
 ### Fixed
 - Alignment: the reference point is found on the full-resolution centerline and the resampling

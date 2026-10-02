@@ -105,6 +105,7 @@ pub fn get_transformations(
 ) -> Vec<FrameTransformation> {
     let mut transformations = Vec::with_capacity(geometry.frames.len());
     let ref_frame = geometry.find_ref_frame_idx().unwrap_or(0);
+    let (mut n_off_start, mut n_off_end) = (0usize, 0usize);
 
     for (i, frame) in geometry.frames.iter().enumerate() {
         let cl_index = ref_idx_cl as isize + i as isize - ref_frame as isize;
@@ -114,10 +115,11 @@ pub fn get_transformations(
             let transformation = align_frame(&frame.lumen, cl_point);
             transformations.push(transformation);
         } else {
-            eprintln!(
-                "Centerline index {} out of bounds for geometry frame {}",
-                cl_index, frame.id
-            );
+            if cl_index < 0 {
+                n_off_start += 1;
+            } else {
+                n_off_end += 1;
+            }
             transformations.push(FrameTransformation {
                 frame_index: frame.lumen.original_frame,
                 translation: Vector3::zeros(),
@@ -125,6 +127,15 @@ pub fn get_transformations(
                 pivot: Point3::origin(),
             });
         }
+    }
+
+    if n_off_start + n_off_end > 0 {
+        eprintln!(
+            "Warning: {n_off_start} frame(s) before and {n_off_end} after the reference frame \
+             (frame {ref_frame}, centerline point {ref_idx_cl} of {}) fall outside the \
+             centerline and are left unaligned; check the reference point",
+            centerline.points.len()
+        );
     }
     transformations
 }
