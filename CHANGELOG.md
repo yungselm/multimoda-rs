@@ -8,6 +8,9 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 - Alignment: the reference point is found on the full-resolution centerline and the resampling
   is anchored on it, instead of snapping to the nearest frame-spaced sample (up to half a spacing).
+- Alignment: the reference frame, not frame 0, is placed on the reference point, matching the
+  rotation search. Frames off either end of the centerline no longer shift the rest.
+- `find_ref_frame_idx` returns the frame's position instead of its `id`.
 - Alignment: centerlines given in ascending z kept backwards tangents after being reversed, so
   frames were rotated to face against the centerline.
 - Alignment: the resampled centerline no longer drops up to one spacing at its distal end.
