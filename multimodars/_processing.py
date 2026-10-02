@@ -1,30 +1,64 @@
 from __future__ import annotations
 
 from .multimodars import (
+    PyCenterline,
     PyContour,
     PyContourType,
+    PyDiscretizedVesselTree,  # noqa: F401 — re-exported for type annotations
     PyGeometry,
     PyGeometryPair,
     PyInputData,
-    PyCenterline,
-    PyDiscretizedVesselTree,  # noqa: F401 — re-exported for type annotations
-    from_file_full as _from_file_full,
-    from_file_doublepair as _from_file_doublepair,
-    from_file_singlepair as _from_file_singlepair,
-    from_file_single as _from_file_single,
-    from_array_full as _from_array_full,
-    from_array_doublepair as _from_array_doublepair,
-    from_array_singlepair as _from_array_singlepair,
-    from_array_single as _from_array_single,
-    align_three_point as _align_three_point,
-    align_manual as _align_manual,
+)
+from .multimodars import (
     align_combined as _align_combined,
-    to_obj as _to_obj,
-    read_centerline_vtp as _read_centerline_vtp,
-    find_centerline_bounded_points_simple as _find_centerline_bounded_points_simple,
-    find_proximal_distal_scaling as _find_proximal_distal_scaling,
+)
+from .multimodars import (
+    align_manual as _align_manual,
+)
+from .multimodars import (
+    align_three_point as _align_three_point,
+)
+from .multimodars import (
     build_adjacency_map as _build_adjacency_map,
+)
+from .multimodars import (
     discretize_vessel as _discretize_vessel,
+)
+from .multimodars import (
+    find_centerline_bounded_points_simple as _find_centerline_bounded_points_simple,
+)
+from .multimodars import (
+    find_proximal_distal_scaling as _find_proximal_distal_scaling,
+)
+from .multimodars import (
+    from_array_doublepair as _from_array_doublepair,
+)
+from .multimodars import (
+    from_array_full as _from_array_full,
+)
+from .multimodars import (
+    from_array_single as _from_array_single,
+)
+from .multimodars import (
+    from_array_singlepair as _from_array_singlepair,
+)
+from .multimodars import (
+    from_file_doublepair as _from_file_doublepair,
+)
+from .multimodars import (
+    from_file_full as _from_file_full,
+)
+from .multimodars import (
+    from_file_single as _from_file_single,
+)
+from .multimodars import (
+    from_file_singlepair as _from_file_singlepair,
+)
+from .multimodars import (
+    read_centerline_vtp as _read_centerline_vtp,
+)
+from .multimodars import (
+    to_obj as _to_obj,
 )
 
 _AlignLog = list[tuple[int, int, float, float, float, float, float]]
@@ -1035,7 +1069,10 @@ def align_three_point(
     geometry : PyGeometryPair or PyGeometry
         Single geometry or diastolic/systolic geometry pair to align.
     main_ref_pt : tuple of float
-        ``(x, y, z)`` reference point at the aortic ostium.
+        ``(x, y, z)`` reference point at the aortic ostium.  The geometry's reference
+        frame (the first frame with a reference point) is placed on the closest
+        centerline point; frames that do not fit on the centerline are left
+        unaligned and reported in a warning.
     counterclockwise_ref_pt : tuple of float
         ``(x, y, z)`` counterclockwise reference point (viewed proximal → distal).
     clockwise_ref_pt : tuple of float
@@ -1131,7 +1168,10 @@ def align_manual(
     rotation_angle_deg : float
         Rotation angle in degrees to apply.
     ref_point : tuple of float
-        ``(x, y, z)`` reference point on the centerline.
+        ``(x, y, z)`` reference point on the centerline.  The geometry's reference
+        frame (the first frame with a reference point, else frame 0) is placed on
+        the closest centerline point; frames that do not fit on the centerline are
+        left unaligned and reported in a warning.
     write : bool, optional
         Whether to write the aligned meshes to OBJ files.  Default is ``False``.
     watertight : bool, optional
@@ -1219,7 +1259,10 @@ def align_combined(
     geometry : PyGeometryPair or PyGeometry
         Single geometry or diastolic/systolic geometry pair to align.
     main_ref_pt : tuple of float
-        ``(x, y, z)`` reference point at the aortic ostium.
+        ``(x, y, z)`` reference point at the aortic ostium.  The geometry's reference
+        frame (the first frame with a reference point) is placed on the closest
+        centerline point; frames that do not fit on the centerline are left
+        unaligned and reported in a warning.
     counterclockwise_ref_pt : tuple of float
         ``(x, y, z)`` counterclockwise reference point (viewed proximal → distal).
     clockwise_ref_pt : tuple of float
@@ -1505,7 +1548,7 @@ def build_adjacency_map(
 
 
 def discretize_vessel(
-    centerline: "PyCenterline",
+    centerline: PyCenterline,
     points: list[tuple[float, float, float]],
     branch_id: int = 0,
     step_size: float = 0.5,

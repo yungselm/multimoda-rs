@@ -1,4 +1,4 @@
-use crate::types::native::{Contour, ContourPoint};
+use crate::types::native::{cumulative_arc_length, Contour, ContourPoint};
 use nalgebra::Vector3;
 
 /// Filters and resamples raw projected slices from `walk_centerline_slices`:
@@ -74,7 +74,7 @@ fn resample_spline(contour: Contour, n_points: usize) -> Option<Contour> {
 
     let ctrl = sort_by_angle(&contour.points, centroid, basis);
     let curve = sample_closed_spline(&ctrl);
-    let arc_lengths = cumulative_arc_lengths(&curve);
+    let arc_lengths = cumulative_arc_length(&curve);
 
     let total_length = *arc_lengths.last().unwrap();
     if total_length < 1e-10 {
@@ -121,15 +121,6 @@ fn sample_closed_spline(ctrl: &[Vector3<f64>]) -> Vec<Vector3<f64>> {
     }
     curve.push(curve[0]); // close the loop
     curve
-}
-
-/// Compute cumulative arc lengths along `curve`, starting at 0.
-fn cumulative_arc_lengths(curve: &[Vector3<f64>]) -> Vec<f64> {
-    let mut arc_lengths = vec![0.0_f64];
-    for idx in 1..curve.len() {
-        arc_lengths.push(arc_lengths[idx - 1] + (curve[idx] - curve[idx - 1]).norm());
-    }
-    arc_lengths
 }
 
 /// Resample `curve` at `n_points` uniformly-spaced arc-length positions.

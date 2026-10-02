@@ -82,7 +82,6 @@ impl FrameTransformation {
         let rotated_relative = self.rotation * relative_vector;
         let rotated_point = self.pivot + rotated_relative;
 
-        // Preserve other fields from the original ContourPoint
         ContourPoint {
             frame_index: point.frame_index,
             point_index: point.point_index,
@@ -94,40 +93,54 @@ impl FrameTransformation {
     }
 }
 
+/// One transformation per frame of `geometry`, placing its reference frame (frame 0 if it
+/// has none) on centerline point `ref_idx_cl` and frame `i` on `ref_idx_cl + i - ref_frame`.
+///
+/// Frames that fall outside the centerline get an identity transformation, so the result
+/// stays index-aligned with `geometry.frames`.
 pub fn get_transformations(
     geometry: &Geometry,
     centerline: &Centerline,
-    ref_pt: &(f64, f64, f64),
+    ref_idx_cl: usize,
 ) -> Vec<FrameTransformation> {
     let mut transformations = Vec::with_capacity(geometry.frames.len());
+    let ref_frame = geometry.find_ref_frame_idx().unwrap_or(0);
+    let (mut n_off_start, mut n_off_end) = (0usize, 0usize);
 
-    // Find the reference point in the centerline
-    let ref_idx_cl = centerline.find_reference_cl_point_idx(ref_pt);
-
-    // The geometry frames are ordered, and we assume they correspond to centerline points
-    // starting from the reference point and moving in the same direction
     for (i, frame) in geometry.frames.iter().enumerate() {
-        // Calculate which centerline point corresponds to this geometry frame
-        // We start from the reference centerline point and move through the centerline
-        // based on the geometry frame's position relative to the reference frame
-        let cl_index = ref_idx_cl as isize + (i as isize);
+        let cl_index = ref_idx_cl as isize + i as isize - ref_frame as isize;
 
         if cl_index >= 0 && cl_index < centerline.points.len() as isize {
             let cl_point = &centerline.points[cl_index as usize];
             let transformation = align_frame(&frame.lumen, cl_point);
             transformations.push(transformation);
         } else {
-            eprintln!(
-                "Centerline index {} out of bounds for geometry frame {}",
-                cl_index, frame.id
-            );
+            if cl_index < 0 {
+                n_off_start += 1;
+            } else {
+                n_off_end += 1;
+            }
+            transformations.push(FrameTransformation {
+                frame_index: frame.lumen.original_frame,
+                translation: Vector3::zeros(),
+                rotation: Rotation3::identity(),
+                pivot: Point3::origin(),
+            });
         }
+    }
+
+    if n_off_start + n_off_end > 0 {
+        eprintln!(
+            "Warning: {n_off_start} frame(s) before and {n_off_end} after the reference frame \
+             (frame {ref_frame}, centerline point {ref_idx_cl} of {}) fall outside the \
+             centerline and are left unaligned; check the reference point",
+            centerline.points.len()
+        );
     }
     transformations
 }
 
 fn align_frame(frame: &Contour, cl_point: &CenterlinePoint) -> FrameTransformation {
-    // Get centroid or compute if None
     let centroid = frame.centroid.unwrap_or_else(|| {
         let x_avg = frame.points.iter().map(|p| p.x).sum::<f64>() / frame.points.len() as f64;
         let y_avg = frame.points.iter().map(|p| p.y).sum::<f64>() / frame.points.len() as f64;
@@ -135,14 +148,12 @@ fn align_frame(frame: &Contour, cl_point: &CenterlinePoint) -> FrameTransformati
         (x_avg, y_avg, z_avg)
     });
 
-    // === Translation Step ===
     let translation_vec = Vector3::new(
         cl_point.contour_point.x - centroid.0,
         cl_point.contour_point.y - centroid.1,
         cl_point.contour_point.z - centroid.2,
     );
 
-    // === Rotation Step ===
     let current_normal = calculate_normal(&frame.points, &centroid);
     let desired_normal = cl_point.tangent;
     let angle = current_normal.angle(&desired_normal);
@@ -183,7 +194,6 @@ pub fn apply_transformation_to_contour(
         *point = transformed_point;
     }
 
-    // Update centroid if it exists
     if let Some(centroid) = contour.centroid.as_mut() {
         let centroid_point = ContourPoint {
             frame_index: transformation.frame_index,
@@ -209,7 +219,6 @@ fn calculate_normal(points: &[ContourPoint], centroid: &(f64, f64, f64)) -> Vect
         return Vector3::new(0.0, 0.0, 1.0); // Default to Z-axis for degenerate cases
     }
 
-    // Use a more stable method: Newell's method for polygon normal
     let mut normal = Vector3::zeros();
 
     for i in 0..points.len() {
@@ -224,7 +233,6 @@ fn calculate_normal(points: &[ContourPoint], centroid: &(f64, f64, f64)) -> Vect
             - (current.y - centroid.1) * (next.x - centroid.0);
     }
 
-    // Normalize the result
     let norm = normal.norm();
     if norm > 1e-12 {
         normal /= norm;
@@ -348,6 +356,7 @@ pub fn refine_alignment_hausdorff<T: AlignTarget>(
     index_search_range: usize,
 ) -> (f64, usize) {
     let len_frames = target.primary_geometry().frames.len();
+    let ref_frame = target.primary_geometry().find_ref_frame_idx().unwrap_or(0);
 
     let mut best_angle = initial_rotation;
     let mut best_cl_ref_idx = initial_cl_ref_idx;
@@ -386,25 +395,18 @@ pub fn refine_alignment_hausdorff<T: AlignTarget>(
         }
         let current_cl_ref_idx = signed as usize;
 
-        if current_cl_ref_idx + len_frames >= centerline.points.len() {
+        // Every frame must land on the centerline (reference frame on current_cl_ref_idx).
+        let Some(cl_start_idx) = current_cl_ref_idx.checked_sub(ref_frame) else {
+            continue;
+        };
+        let cl_end_idx = cl_start_idx + len_frames;
+        if cl_end_idx > centerline.points.len() {
             continue;
         }
 
-        let cl_end_idx = current_cl_ref_idx + len_frames;
-        let cl_segment = Centerline {
-            points: centerline.points[current_cl_ref_idx..cl_end_idx].to_vec(),
-            branch_start_indices: vec![0],
-        };
-
-        let ref_pt = (
-            centerline.points[current_cl_ref_idx].contour_point.x,
-            centerline.points[current_cl_ref_idx].contour_point.y,
-            centerline.points[current_cl_ref_idx].contour_point.z,
-        );
-
         let filtered_points = filter_points_in_region(
             mutated_points,
-            &centerline.points[current_cl_ref_idx],
+            &centerline.points[cl_start_idx],
             &centerline.points[cl_end_idx - 1],
         );
 
@@ -424,8 +426,8 @@ pub fn refine_alignment_hausdorff<T: AlignTarget>(
 
             let transformed = apply_transformations(
                 rotate_by_best_rotation(target.clone(), angle),
-                &cl_segment,
-                &ref_pt,
+                centerline,
+                current_cl_ref_idx,
             );
 
             geometry_xyz.clear();
@@ -540,9 +542,9 @@ pub fn rotate_by_best_rotation<T: AlignTarget>(target: T, angle: f64) -> T {
 pub fn apply_transformations<T: AlignTarget>(
     target: T,
     centerline: &Centerline,
-    ref_pt: &(f64, f64, f64),
+    ref_idx_cl: usize,
 ) -> T {
-    let transformations = get_transformations(target.primary_geometry(), centerline, ref_pt);
+    let transformations = get_transformations(target.primary_geometry(), centerline, ref_idx_cl);
     target.apply_frame_transforms(&transformations)
 }
 
@@ -900,13 +902,63 @@ mod align_algorithms_tests {
             points: centerline_points,
             branch_start_indices: vec![0],
         };
-        let ref_pt = (10.0, 10.0, 10.0);
-
-        let transformations = get_transformations(&geometry, &centerline, &ref_pt);
+        let transformations = get_transformations(&geometry, &centerline, 0);
 
         // Should get one transformation for the one frame
         assert_eq!(transformations.len(), 1);
         assert_eq!(transformations[0].frame_index, 0);
+    }
+
+    #[test]
+    fn test_get_transformations_places_reference_frame_on_ref_idx() {
+        let frames: Vec<Frame> = (0..3)
+            .map(|i| {
+                let points = (0..2)
+                    .map(|p| ContourPoint {
+                        frame_index: i,
+                        point_index: p,
+                        x: p as f64,
+                        y: 0.0,
+                        z: 0.0,
+                        aortic: false,
+                    })
+                    .collect();
+                Frame {
+                    id: i,
+                    centroid: (0.5, 0.0, 0.0),
+                    lumen: create_test_contour(i, i, points),
+                    extras: HashMap::new(),
+                    reference_point: (i == 2).then_some(ContourPoint {
+                        frame_index: i,
+                        point_index: 0,
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                        aortic: false,
+                    }),
+                }
+            })
+            .collect();
+        let geometry = Geometry {
+            frames,
+            label: "test".to_string(),
+        };
+        let centerline = Centerline {
+            points: (0..3)
+                .map(|k| create_test_centerline_point(0.0, 0.0, 10.0 * (k + 1) as f64, k))
+                .collect(),
+            branch_start_indices: vec![0],
+        };
+
+        let transformations = get_transformations(&geometry, &centerline, 1);
+
+        // reference frame 2 → cl point 1, frame 1 → cl point 0, frame 0 falls off the
+        // start and gets an identity so the result stays index-aligned with the frames
+        assert_eq!(transformations.len(), 3);
+        assert_eq!(transformations[2].pivot, Point3::new(0.0, 0.0, 20.0));
+        assert_eq!(transformations[1].pivot, Point3::new(0.0, 0.0, 10.0));
+        assert_eq!(transformations[0].translation, Vector3::zeros());
+        assert_eq!(transformations[0].rotation, Rotation3::identity());
     }
 
     #[test]

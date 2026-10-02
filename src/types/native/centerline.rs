@@ -1,6 +1,6 @@
 use super::centerline_point::CenterlinePoint;
 use super::contour_point::ContourPoint;
-use super::Point3D;
+use super::{cumulative_arc_length, Point3D};
 use nalgebra::Vector3;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -307,15 +307,7 @@ impl Centerline {
             .get(1)
             .copied()
             .unwrap_or(self.points.len());
-        let main = &self.points[..end];
-        if main.len() < 2 {
-            return 1.0;
-        }
-        let sum: f64 = main
-            .windows(2)
-            .map(|w| w[0].contour_point.distance_to(&w[1].contour_point))
-            .sum();
-        sum / (main.len() - 1) as f64
+        super::mean_spacing(&self.points[..end]).unwrap_or(1.0)
     }
 
     /// 95th-percentile of consecutive-point spacings — O(n).
@@ -715,45 +707,91 @@ impl Centerline {
     /// reassigned sequentially per branch since resampled points no longer
     /// correspond 1:1 with source frames.
     pub fn resample(&mut self, spacing_mm: f64) {
-        if self.points.is_empty() || spacing_mm <= 1e-12 {
-            return;
+        self.resample_anchored(spacing_mm, 0);
+    }
+
+    /// Like [`Centerline::resample`], but shifts the sampling grid of the branch holding
+    /// `anchor_idx` so that this point is itself a sample, with `spacing_mm` steps on both
+    /// sides of it (only the first and last segment of the branch can be shorter).
+    ///
+    /// Returns the anchor's index in the resampled centerline. Use it when a point found
+    /// on the dense centerline (e.g. the ostium) must stay exact after resampling to a
+    /// much coarser spacing.
+    pub fn resample_anchored(&mut self, spacing_mm: f64, anchor_idx: usize) -> usize {
+        if anchor_idx >= self.points.len()
+            || self.branch_start_indices.is_empty()
+            || spacing_mm <= 1e-12
+        {
+            return anchor_idx;
         }
+        let anchor_branch = self
+            .branch_start_indices
+            .partition_point(|&start| start <= anchor_idx)
+            - 1;
+        let anchor_local = anchor_idx - self.branch_start_indices[anchor_branch];
 
         let mut branches = self.branches_as_vecs();
-        for branch in branches.iter_mut() {
-            *branch = Self::resample_branch(branch, spacing_mm);
+        let mut new_anchor_local = 0;
+        for (branch_idx, branch) in branches.iter_mut().enumerate() {
+            let anchor = if branch_idx == anchor_branch {
+                anchor_local
+            } else {
+                0
+            };
+            let (resampled, new_anchor) = Self::resample_branch(branch, spacing_mm, anchor);
+            if branch_idx == anchor_branch {
+                new_anchor_local = new_anchor;
+            }
+            *branch = resampled;
         }
         self.rebuild_from_branches(branches);
+        self.branch_start_indices[anchor_branch] + new_anchor_local
     }
 
     /// Resample one branch's points to even arc-length spacing via linear interpolation.
-    fn resample_branch(points: &[CenterlinePoint], spacing_mm: f64) -> Vec<CenterlinePoint> {
+    ///
+    /// The sampling grid is shifted so that local point `anchor` is a sample (`0` starts
+    /// the grid at the branch start); both branch ends are always kept. Returns the
+    /// resampled points and the anchor's index among them.
+    fn resample_branch(
+        points: &[CenterlinePoint],
+        spacing_mm: f64,
+        anchor: usize,
+    ) -> (Vec<CenterlinePoint>, usize) {
         if points.len() < 2 {
-            return points.to_vec();
+            return (points.to_vec(), anchor);
         }
 
-        let mut cum = vec![0.0f64; points.len()];
-        for i in 1..points.len() {
-            cum[i] = cum[i - 1]
-                + points[i - 1]
-                    .contour_point
-                    .distance_to(&points[i].contour_point);
-        }
+        let cum = cumulative_arc_length(points);
         let total = cum[points.len() - 1];
         if total < 1e-12 {
-            return points.to_vec();
+            return (points.to_vec(), anchor);
         }
 
-        let mut targets = Vec::new();
-        let mut s = 0.0;
-        while s < total {
-            targets.push(s);
-            s += spacing_mm;
+        // Index-based targets avoid accumulated float drift; the tolerance stops a grid
+        // sample landing (numerically) on a branch end from duplicating it.
+        const EPS: f64 = 1e-9;
+        let anchor_s = cum[anchor];
+        let n_before = ((anchor_s - EPS) / spacing_mm).ceil().max(0.0) as usize;
+        let n_after = ((total - anchor_s - EPS) / spacing_mm).ceil().max(0.0) as usize;
+
+        let mut targets: Vec<f64> = Vec::with_capacity(n_before + n_after + 1);
+        if n_before > 0 {
+            targets.push(0.0);
         }
-        targets.push(total);
+        targets.extend(
+            (1..n_before)
+                .rev()
+                .map(|k| anchor_s - k as f64 * spacing_mm),
+        );
+        targets.push(anchor_s);
+        targets.extend((1..n_after).map(|k| anchor_s + k as f64 * spacing_mm));
+        if n_after > 0 {
+            targets.push(total);
+        }
 
         let mut seg = 0usize;
-        targets
+        let resampled = targets
             .iter()
             .enumerate()
             .map(|(sample_index, &t)| {
@@ -786,7 +824,8 @@ impl Centerline {
                     radius: r0 + frac * (r1 - r0),
                 }
             })
-            .collect()
+            .collect();
+        (resampled, n_before)
     }
 
     /// Smooth centerline positions with a Gaussian kernel (per branch) and recompute tangents.
@@ -1386,6 +1425,52 @@ mod centerline_tests {
             assert!((p.contour_point.x - i as f64 * 2.5).abs() < 1e-9);
         }
         assert!((cl.points.last().unwrap().contour_point.x - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_resample_no_near_duplicate_endpoint() {
+        // 10 × 0.1 accumulates to 0.9999999999999999 < 1.0, which used to add an
+        // extra sample a hair before the endpoint.
+        let mut cl = cl_from_coords(&[(0., 0., 0.), (1., 0., 0.)]);
+        cl.resample(0.1);
+
+        assert_eq!(cl.points.len(), 11);
+        for w in cl.points.windows(2) {
+            let gap = w[0].contour_point.distance_to(&w[1].contour_point);
+            assert!((gap - 0.1).abs() < 1e-9, "uneven gap {gap}");
+        }
+    }
+
+    #[test]
+    fn test_resample_anchored_keeps_anchor_exact() {
+        let mut cl = cl_from_coords(&[(0., 0., 0.), (2.3, 0., 0.), (10., 0., 0.)]);
+        let anchor = cl.resample_anchored(1.0, 1);
+
+        let xs: Vec<f64> = cl.points.iter().map(|p| p.contour_point.x).collect();
+        let mut expected = vec![0.0, 0.3, 1.3, 2.3];
+        expected.extend((1..=7).map(|k| 2.3 + k as f64));
+        expected.push(10.0);
+        assert_eq!(anchor, 3);
+        assert_eq!(xs.len(), expected.len());
+        for (x, e) in xs.iter().zip(&expected) {
+            assert!((x - e).abs() < 1e-9, "{xs:?}");
+        }
+    }
+
+    #[test]
+    fn test_resample_anchored_on_side_branch_returns_global_index() {
+        let main = &[(0., 0., 0.), (10., 0., 0.)];
+        let side = &[(10., 0., 0.), (10., 2.5, 0.), (10., 5., 0.)];
+        let mut cl = make_multi_branch(&[main, side]);
+
+        // global index 3 = side branch point (10, 2.5, 0)
+        let anchor = cl.resample_anchored(2.0, 3);
+
+        // main: 0, 2, ..., 10 (6 points); side: 0, 0.5, 2.5, 4.5, 5
+        assert_eq!(cl.branch_start_indices, vec![0, 6]);
+        assert_eq!(anchor, 8);
+        assert!((cl.points[anchor].contour_point.y - 2.5).abs() < 1e-9);
+        assert_eq!(cl.points[anchor].branch_id, 1);
     }
 
     #[test]

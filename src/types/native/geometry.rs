@@ -59,13 +59,13 @@ impl Geometry {
         proximal_idx as usize
     }
 
+    /// Position in `frames` of the first frame carrying a reference point (an index into
+    /// `frames`, not the frame's `id`, which can differ).
     pub fn find_ref_frame_idx(&self) -> anyhow::Result<usize> {
-        for frame in self.frames.iter() {
-            if frame.reference_point.is_some() {
-                return Ok(frame.id as usize);
-            }
-        }
-        Err(anyhow::anyhow!("No reference point found in any frame"))
+        self.frames
+            .iter()
+            .position(|f| f.reference_point.is_some())
+            .ok_or_else(|| anyhow::anyhow!("No reference point found in any frame"))
     }
 
     /// Reorder frames based on order of Vec<Record>
@@ -582,6 +582,38 @@ mod geometry_tests {
         assert_eq!(ref_idx, 1);
         assert_eq!(geom.frames[ref_idx].lumen.original_frame, 678);
         assert_eq!(geom.frames[ref_idx].centroid.2, 1.0);
+    }
+
+    #[test]
+    fn test_find_ref_frame_idx_returns_position_not_id() {
+        let frame = |id: u32, has_ref: bool| Frame {
+            id,
+            centroid: (0.0, 0.0, 0.0),
+            lumen: Contour {
+                id,
+                original_frame: id,
+                points: Vec::new(),
+                centroid: None,
+                aortic_thickness: None,
+                pulmonary_thickness: None,
+                kind: ContourType::Lumen,
+            },
+            extras: HashMap::new(),
+            reference_point: has_ref.then_some(ContourPoint {
+                frame_index: id,
+                point_index: 0,
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            }),
+        };
+        let geom = Geometry {
+            frames: vec![frame(7, false), frame(3, true), frame(5, false)],
+            label: "test".to_string(),
+        };
+
+        assert_eq!(geom.find_ref_frame_idx().unwrap(), 1);
     }
 
     #[test]
