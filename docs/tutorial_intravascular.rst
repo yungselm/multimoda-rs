@@ -323,8 +323,11 @@ and another point indicating the inferior position or with :func:`multimodars.al
    :align: center
    :width: 400px
 
-The reference contour is then best matched to these three points, all the leading points on the centerline are removed
-and the spacing is adjusted to match the z-spacing of the :class:`PyGeometry`.
+The centerline is resampled to the z-spacing of the :class:`PyGeometry`, and the reference contour (the first frame
+with a reference point, not necessarily frame 0) is placed on the centerline point closest to the main reference point
+and rotated to best match all three points. The other frames follow along the centerline in both directions; frames
+that do not fit on the centerline are left unaligned and reported in a warning, which usually means the reference point
+is misplaced.
 
 .. code-block:: python
 
@@ -386,7 +389,7 @@ supported ``Py*`` object into numpy arrays.  The return type depends on what is 
 
     stress_dia_arr, stress_sys_arr = mm.to_array(stress)   # PyGeometryPair → (dict, dict)
     aligned_arr = mm.to_array(aligned)                     # PyGeometry → dict
-    centerline_arr = mm.to_array(cl_resampled)             # PyCenterline → ndarray
+    centerline_arr = mm.to_array(centerline)               # PyCenterline → ndarray
     ostial_contour_arr = mm.to_array(rest.geom_a.frames[-1].lumen)  # PyContour → ndarray
     frame_arr = mm.to_array(rest.geom_a.frames[0])         # PyFrame → dict
     input_arr = mm.to_array(before_input_data)             # PyInputData → dict

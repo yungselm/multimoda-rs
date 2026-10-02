@@ -17,7 +17,10 @@ use pyo3::prelude::*;
 /// geometry : PyGeometry or PyGeometryPair
 ///     Single geometry or diastolic/systolic geometry pair to align.
 /// main_ref_pt : tuple of float
-///     ``(x, y, z)`` reference point at the aortic ostium.
+///     ``(x, y, z)`` reference point at the aortic ostium.  The geometry's reference
+///     frame (the first frame with a reference point) is placed on the closest
+///     centerline point; frames that do not fit on the centerline are left
+///     unaligned and reported in a warning.
 /// counterclockwise_ref_pt : tuple of float
 ///     ``(x, y, z)`` counterclockwise reference point (viewed proximal → distal).
 /// clockwise_ref_pt : tuple of float
@@ -169,7 +172,10 @@ pub fn align_three_point(
 /// rotation_angle_deg : float
 ///     Rotation angle in degree to apply.
 /// ref_point : tuple of float
-///     ``(x, y, z)`` reference point on the centerline.
+///     ``(x, y, z)`` reference point on the centerline.  The geometry's reference
+///     frame (the first frame with a reference point, else frame 0) is placed on
+///     the closest centerline point; frames that do not fit on the centerline are
+///     left unaligned and reported in a warning.
 /// write : bool, optional
 ///     Whether to write the aligned meshes to OBJ files.  Default is ``False``.
 /// watertight : bool, optional
@@ -301,7 +307,10 @@ pub fn align_manual(
 /// geometry : PyGeometry or PyGeometryPair
 ///     Single geometry or diastolic/systolic geometry pair to align.
 /// main_ref_pt : tuple of float
-///     ``(x, y, z)`` reference point at the aortic ostium.
+///     ``(x, y, z)`` reference point at the aortic ostium.  The geometry's reference
+///     frame (the first frame with a reference point) is placed on the closest
+///     centerline point; frames that do not fit on the centerline are left
+///     unaligned and reported in a warning.
 /// counterclockwise_ref_pt : tuple of float
 ///     ``(x, y, z)`` counterclockwise reference point (viewed proximal → distal).
 /// clockwise_ref_pt : tuple of float
