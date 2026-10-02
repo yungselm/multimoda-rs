@@ -75,9 +75,13 @@ pub fn align_three_point_rs<T: Processable>(
     case_name: &str,
     align_wall_anomalous: bool,
 ) -> anyhow::Result<(T, f64, f64)> {
-    let (resampled_centerline, spacing_mm) =
-        super::preprocessing::preprocess_centerline(centerline, target.primary_geometry())
-            .map_err(|e| anyhow!("Couldn't resample the centerline: {e}"))?;
+    let (resampled_centerline, cl_ref_idx, spacing_mm) =
+        super::preprocessing::preprocess_centerline(
+            centerline,
+            target.primary_geometry(),
+            &main_ref_pt,
+        )
+        .map_err(|e| anyhow!("Couldn't resample the centerline: {e}"))?;
 
     let ref_idx = target
         .primary_geometry()
@@ -87,7 +91,6 @@ pub fn align_three_point_rs<T: Processable>(
         .reference_point
         .as_ref()
         .ok_or_else(|| anyhow!("missing reference point"))?;
-    let cl_ref_idx = resampled_centerline.find_reference_cl_point_idx(&main_ref_pt);
 
     let total_rotation = best_rotation_three_point(
         &target.primary_geometry().frames[ref_idx].lumen,
@@ -100,7 +103,7 @@ pub fn align_three_point_rs<T: Processable>(
     );
 
     target = rotate_by_best_rotation(target, total_rotation);
-    target = apply_transformations(target, &resampled_centerline, &main_ref_pt);
+    target = apply_transformations(target, &resampled_centerline, cl_ref_idx);
 
     if align_wall_anomalous {
         target = align_walls(target, true);
@@ -136,13 +139,13 @@ pub fn align_manual_rs<T: Processable>(
     case_name: &str,
     align_wall_anomalous: bool,
 ) -> anyhow::Result<(T, f64, f64)> {
-    let (resampled_centerline, spacing_mm) =
-        super::preprocessing::preprocess_centerline(centerline, target.primary_geometry())
+    let (resampled_centerline, cl_ref_idx, spacing_mm) =
+        super::preprocessing::preprocess_centerline(centerline, target.primary_geometry(), &ref_pt)
             .map_err(|e| anyhow!("Couldn't resample the centerline: {e}"))?;
 
     let total_rotation = rotation_angle_deg.to_radians();
     target = rotate_by_best_rotation(target, total_rotation);
-    target = apply_transformations(target, &resampled_centerline, &ref_pt);
+    target = apply_transformations(target, &resampled_centerline, cl_ref_idx);
 
     if align_wall_anomalous {
         target = align_walls(target, true);
@@ -188,11 +191,13 @@ pub fn align_combined_rs<T: Processable>(
 
     println!("\nStep 1: Finding initial rotation via three-point method");
 
-    let (resampled_centerline, spacing_mm) = super::preprocessing::preprocess_centerline(
-        centerline.clone(),
-        original.primary_geometry(),
-    )
-    .map_err(|e| anyhow!("Couldn't resample the centerline: {e}"))?;
+    let (resampled_centerline, initial_cl_ref_idx, spacing_mm) =
+        super::preprocessing::preprocess_centerline(
+            centerline.clone(),
+            original.primary_geometry(),
+            &main_ref_pt,
+        )
+        .map_err(|e| anyhow!("Couldn't resample the centerline: {e}"))?;
 
     let ref_idx = original
         .primary_geometry()
@@ -203,8 +208,6 @@ pub fn align_combined_rs<T: Processable>(
         .reference_point
         .as_ref()
         .ok_or_else(|| anyhow!("missing reference point"))?;
-
-    let initial_cl_ref_idx = resampled_centerline.find_reference_cl_point_idx(&main_ref_pt);
 
     let initial_rotation = best_rotation_three_point(
         &original.primary_geometry().frames[ref_idx].lumen,
@@ -219,7 +222,7 @@ pub fn align_combined_rs<T: Processable>(
     let aligned = apply_transformations(
         rotate_by_best_rotation(original, initial_rotation),
         &resampled_centerline,
-        &main_ref_pt,
+        initial_cl_ref_idx,
     );
 
     let mutated_points = transfrom_tuples_to_contourpoints(points);
@@ -245,22 +248,10 @@ pub fn align_combined_rs<T: Processable>(
     let diff = initial_cl_ref_idx as i32 - refined_cl_ref_idx as i32;
     println!("Moving ostium by {diff} centerline points");
 
-    let refined_ref_pt = (
-        resampled_centerline.points[refined_cl_ref_idx]
-            .contour_point
-            .x,
-        resampled_centerline.points[refined_cl_ref_idx]
-            .contour_point
-            .y,
-        resampled_centerline.points[refined_cl_ref_idx]
-            .contour_point
-            .z,
-    );
-
     let mut final_target = apply_transformations(
         rotate_by_best_rotation(target.clone(), total_rotation),
         &resampled_centerline,
-        &refined_ref_pt,
+        refined_cl_ref_idx,
     );
 
     if align_wall_anomalous {
@@ -283,100 +274,6 @@ pub fn align_combined_rs<T: Processable>(
 
     Ok((final_target, spacing_mm, total_rotation))
 }
-
-// /// Simpler combined alignment that doesn't double-rotate
-// pub fn align_combined_simple_rs(
-//     centerline: Centerline,
-//     geom_pair: GeometryPair,
-//     main_ref_pt: (f64, f64, f64),
-//     counterclockwise_ref_pt: (f64, f64, f64),
-//     clockwise_ref_pt: (f64, f64, f64),
-//     points: &[(f64, f64, f64)],
-//     angle_step: f64,
-//     refine_angle_range: f64,
-//     refine_index_range: usize,
-//     write: bool,
-//     watertight: bool,
-//     interpolation_steps: usize,
-//     output_dir: &str,
-//     contour_types: Vec<ContourType>,
-//     case_name: &str,
-// ) -> anyhow::Result<(GeometryPair, Centerline)> {
-//     // Get the initial rotation from three-point alignment
-//     let resampled_centerline = super::preprocessing::preprocess_centerline(centerline, &geom_pair.geom_a)
-//         .map_err(|e| anyhow!("Couldn't resample the centerline: {}", e))?;
-//
-//     let ref_idx = geom_pair
-//         .geom_a
-//         .find_ref_frame_idx()
-//         .map_err(|e| anyhow!("Couldn't find ref frame idx: {:?}", e))?;
-//
-//     let ref_point = geom_pair.geom_a.frames[ref_idx]
-//         .reference_point
-//         .as_ref()
-//         .ok_or_else(|| anyhow!("missing reference point"))?;
-//
-//     let initial_cl_ref_idx = resampled_centerline.find_reference_cl_point_idx(&main_ref_pt);
-//
-//     let initial_rotation = best_rotation_three_point(
-//         &geom_pair.geom_a.frames[ref_idx].lumen,
-//         ref_point,
-//         main_ref_pt,
-//         counterclockwise_ref_pt,
-//         clockwise_ref_pt,
-//         angle_step,
-//         &resampled_centerline.points[initial_cl_ref_idx],
-//     );
-//
-//     // Apply the initial rotation
-//     let mut aligned_geom_pair = rotate_by_best_rotation(geom_pair, initial_rotation);
-//     aligned_geom_pair = apply_transformations(aligned_geom_pair, &resampled_centerline, &main_ref_pt);
-//
-//     // Refine with Hausdorff
-//     let mutated_points = transfrom_tuples_to_contourpoints(points);
-//
-//     let (rotation_delta, refined_cl_ref_idx) = refine_alignment_hausdorff(
-//         &aligned_geom_pair,
-//         &resampled_centerline,
-//         initial_cl_ref_idx,
-//         0.0, // Start from current rotation
-//         &mutated_points,
-//         refine_angle_range,
-//         angle_step / 2.0, // Use finer step for refinement
-//         refine_index_range,
-//     );
-//
-//     // Apply the delta rotation
-//     if rotation_delta.abs() > 1e-6 {
-//         aligned_geom_pair = rotate_by_best_rotation(aligned_geom_pair, rotation_delta);
-//
-//         // Re-apply transformations with refined centerline point
-//         let refined_ref_pt = (
-//             resampled_centerline.points[refined_cl_ref_idx].contour_point.x,
-//             resampled_centerline.points[refined_cl_ref_idx].contour_point.y,
-//             resampled_centerline.points[refined_cl_ref_idx].contour_point.z,
-//         );
-//
-//         aligned_geom_pair = apply_transformations(aligned_geom_pair, &resampled_centerline, &refined_ref_pt);
-//     }
-//
-//     // Write if requested
-//     let final_geom_pair = if write {
-//         to_object::process_case(
-//             case_name,
-//             aligned_geom_pair,
-//             output_dir,
-//             interpolation_steps,
-//             watertight,
-//             &contour_types,
-//         )
-//         .map_err(|e| anyhow!("Failed to write obj: {}", e))?
-//     } else {
-//         aligned_geom_pair
-//     };
-//
-//     Ok((final_geom_pair, resampled_centerline))
-// }
 
 /// Direction from `frame_centroid` to the centroid of aortic-flagged wall points.
 ///

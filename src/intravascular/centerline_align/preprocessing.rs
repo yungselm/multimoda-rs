@@ -7,17 +7,21 @@ use crate::types::native::{mean_spacing, Centerline, CenterlinePoint};
 ///
 /// Only branch-0 points are used for resampling — side branches (branch_id > 0) are
 /// stripped before processing so that `ensure_descending_z` and the arc-length
-/// calculation see only the main-vessel path. Resampling goes through
-/// [`Centerline::resample`], so tangents are recomputed in the final (descending-z)
-/// point order.
+/// calculation see only the main-vessel path. Tangents are recomputed in the final
+/// (descending-z) point order.
 ///
-/// Returns the resampled centerline alongside the spacing (mm) that was used, so
-/// callers can apply the same spacing to other centerlines via `Centerline::resample`
-/// instead of re-deriving it.
+/// The centerline point closest to `ref_pt` is located on the dense input centerline and
+/// the sampling grid is anchored on it ([`Centerline::resample_anchored`]), so the
+/// reference stays exact instead of snapping to a sample up to half a spacing away.
+///
+/// Returns the resampled centerline, the reference point's index in it, and the spacing
+/// (mm) that was used, so callers can apply the same spacing to other centerlines via
+/// `Centerline::resample` instead of re-deriving it.
 pub fn preprocess_centerline(
     centerline: Centerline,
     ref_mesh: &Geometry,
-) -> Result<(Centerline, f64), &'static str> {
+    ref_pt: &(f64, f64, f64),
+) -> Result<(Centerline, usize, f64), &'static str> {
     // Strip side-branch points so they cannot corrupt ensure_descending_z or the
     // cumulative arc-length (a side-branch tip with high z would trigger an erroneous
     // reversal of the entire array, placing the main-vessel reference at the end).
@@ -37,15 +41,16 @@ pub fn preprocess_centerline(
         branch_start_indices: vec![0],
     };
     ensure_descending_z(&mut cl);
+    let ref_idx = cl.find_reference_cl_point_idx(ref_pt);
 
     let Some(spacing) = decide_spacing(ref_mesh, &cl) else {
         eprintln!("preprocess_centerline: invalid spacing computed, returning original centerline");
-        return Ok((cl, 0.0));
+        return Ok((cl, ref_idx, 0.0));
     };
-    cl.resample(spacing);
+    let ref_idx = cl.resample_anchored(spacing, ref_idx);
 
     eprintln!("preprocess_centerline: produced {} points", cl.points.len());
-    Ok((cl, spacing))
+    Ok((cl, ref_idx, spacing))
 }
 
 fn ensure_descending_z(centerline: &mut Centerline) {
@@ -241,9 +246,11 @@ mod cl_preprocessing_tests {
         ]);
         let geom = geom_from_centroids(&[(0.0, 0.0, 0.0), (0.0, 0.0, 0.75), (0.0, 0.0, 1.5)]);
 
-        let (resampled, spacing) = preprocess_centerline(cl, &geom).unwrap();
+        let (resampled, ref_idx, spacing) =
+            preprocess_centerline(cl, &geom, &(0.0, 0.0, 3.0)).unwrap();
 
         assert_relative_eq!(spacing, 0.75);
+        assert_eq!(ref_idx, 0);
         let expected_z = [3.0, 2.25, 1.5, 0.75, 0.0];
         assert_eq!(resampled.points.len(), expected_z.len());
         for (i, (p, z)) in resampled.points.iter().zip(expected_z).enumerate() {
@@ -260,7 +267,7 @@ mod cl_preprocessing_tests {
         let cl = cl_from_coords(&[(0.0, 0.0, 0.0), (0.0, 0.0, 1.0), (0.0, 0.0, 2.0)]);
         let geom = geom_from_centroids(&[(0.0, 0.0, 0.0), (0.0, 0.0, 0.5)]);
 
-        let (resampled, _) = preprocess_centerline(cl, &geom).unwrap();
+        let (resampled, _, _) = preprocess_centerline(cl, &geom, &(0.0, 0.0, 2.0)).unwrap();
 
         for p in &resampled.points {
             assert_relative_eq!(p.tangent.z, -1.0, epsilon = 1e-12);
@@ -268,10 +275,27 @@ mod cl_preprocessing_tests {
     }
 
     #[test]
+    fn test_preprocess_centerline_keeps_reference_exact() {
+        // Dense 0.1 mm centerline, 1 mm frame spacing. A grid started at the top
+        // (z = 10) would snap the reference to z = 4.0; anchored it stays at 4.3.
+        let coords: Vec<_> = (0..=100).map(|i| (0.0, 0.0, i as f64 * 0.1)).collect();
+        let cl = cl_from_coords(&coords);
+        let geom = geom_from_centroids(&[(0.0, 0.0, 0.0), (0.0, 0.0, 1.0)]);
+
+        let (resampled, ref_idx, _) = preprocess_centerline(cl, &geom, &(0.5, 0.0, 4.32)).unwrap();
+
+        let z = |i: usize| resampled.points[i].contour_point.z;
+        assert_relative_eq!(z(ref_idx), 4.3, epsilon = 1e-9);
+        assert_relative_eq!(z(ref_idx - 1), 5.3, epsilon = 1e-9);
+        assert_relative_eq!(z(ref_idx + 1), 3.3, epsilon = 1e-9);
+        assert_relative_eq!(z(0), 10.0, epsilon = 1e-9);
+    }
+
+    #[test]
     fn test_preprocess_centerline_errors() {
         let cl = cl_from_coords(&[(0.0, 0.0, 1.0), (0.0, 0.0, 0.0)]);
         assert_eq!(
-            preprocess_centerline(cl, &geom_from_centroids(&[])).unwrap_err(),
+            preprocess_centerline(cl, &geom_from_centroids(&[]), &(0.0, 0.0, 0.0)).unwrap_err(),
             "Reference mesh has no frames"
         );
 
@@ -280,7 +304,12 @@ mod cl_preprocessing_tests {
             branch_start_indices: vec![],
         };
         assert_eq!(
-            preprocess_centerline(empty, &geom_from_centroids(&[(0.0, 0.0, 0.0)])).unwrap_err(),
+            preprocess_centerline(
+                empty,
+                &geom_from_centroids(&[(0.0, 0.0, 0.0)]),
+                &(0.0, 0.0, 0.0)
+            )
+            .unwrap_err(),
             "Centerline has no branch-0 points"
         );
     }

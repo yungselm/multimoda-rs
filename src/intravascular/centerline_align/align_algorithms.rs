@@ -96,12 +96,9 @@ impl FrameTransformation {
 pub fn get_transformations(
     geometry: &Geometry,
     centerline: &Centerline,
-    ref_pt: &(f64, f64, f64),
+    ref_idx_cl: usize,
 ) -> Vec<FrameTransformation> {
     let mut transformations = Vec::with_capacity(geometry.frames.len());
-
-    // Find the reference point in the centerline
-    let ref_idx_cl = centerline.find_reference_cl_point_idx(ref_pt);
 
     // The geometry frames are ordered, and we assume they correspond to centerline points
     // starting from the reference point and moving in the same direction
@@ -389,12 +386,6 @@ pub fn refine_alignment_hausdorff<T: AlignTarget>(
             branch_start_indices: vec![0],
         };
 
-        let ref_pt = (
-            centerline.points[current_cl_ref_idx].contour_point.x,
-            centerline.points[current_cl_ref_idx].contour_point.y,
-            centerline.points[current_cl_ref_idx].contour_point.z,
-        );
-
         let filtered_points = filter_points_in_region(
             mutated_points,
             &centerline.points[current_cl_ref_idx],
@@ -418,7 +409,7 @@ pub fn refine_alignment_hausdorff<T: AlignTarget>(
             let transformed = apply_transformations(
                 rotate_by_best_rotation(target.clone(), angle),
                 &cl_segment,
-                &ref_pt,
+                0,
             );
 
             geometry_xyz.clear();
@@ -533,9 +524,9 @@ pub fn rotate_by_best_rotation<T: AlignTarget>(target: T, angle: f64) -> T {
 pub fn apply_transformations<T: AlignTarget>(
     target: T,
     centerline: &Centerline,
-    ref_pt: &(f64, f64, f64),
+    ref_idx_cl: usize,
 ) -> T {
-    let transformations = get_transformations(target.primary_geometry(), centerline, ref_pt);
+    let transformations = get_transformations(target.primary_geometry(), centerline, ref_idx_cl);
     target.apply_frame_transforms(&transformations)
 }
 
@@ -893,9 +884,7 @@ mod align_algorithms_tests {
             points: centerline_points,
             branch_start_indices: vec![0],
         };
-        let ref_pt = (10.0, 10.0, 10.0);
-
-        let transformations = get_transformations(&geometry, &centerline, &ref_pt);
+        let transformations = get_transformations(&geometry, &centerline, 0);
 
         // Should get one transformation for the one frame
         assert_eq!(transformations.len(), 1);

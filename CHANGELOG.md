@@ -3,6 +3,20 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- Alignment: the reference point is found on the full-resolution centerline and the resampling
+  is anchored on it, instead of snapping to the nearest frame-spaced sample (up to half a spacing).
+- Alignment: centerlines given in ascending z kept backwards tangents after being reversed, so
+  frames were rotated to face against the centerline.
+- Alignment: the resampled centerline no longer drops up to one spacing at its distal end.
+- `Centerline.resample` no longer adds a near-duplicate point before the end through float drift.
+
+### Internal
+- Alignment preprocessing uses `Centerline::resample_anchored` instead of its own copy. Shared
+  `cumulative_arc_length` / `mean_spacing` helpers replace the hand-written versions.
+
 ## [0.7.3] - 2026-09-28
 Smoother anomalous ostium. The two halves of the ostial ring now meet in smooth arcs instead of
 sharp kinks, the ring's correction is faded into the aortic mesh all the way round, and the fillet
