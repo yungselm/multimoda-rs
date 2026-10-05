@@ -19,6 +19,42 @@ permissions:
   contents: read
 
 jobs:
+  format:
+    name: Format code
+    runs-on: ubuntu-latest
+    if: >-
+      startsWith(github.ref, 'refs/heads/') ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: 3.12.x
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Format Rust and Python code
+        run: |
+          python -m pip install --upgrade pip black
+          cargo fmt --all
+          black .
+      - name: Commit formatting changes
+        run: |
+          if git diff --quiet; then
+            echo "Code already formatted"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "style: cargo fmt and black"
+          git push
+
   notebook-tests:
     name: Notebook tests
     runs-on: ubuntu-latest
@@ -30,11 +66,6 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Install system dependencies
-        # pymeshlab loads MeshLab filter plugins as shared libraries at import time via
-        # load_default_plugins(). On bare Linux runners this requires libopengl0 to be
-        # present; without it the call silently fails (PyMeshLabException is caught in
-        # pymeshlab's __init__.py) and MeshSet is left with no filter methods, causing
-        # AttributeError on any filter call such as meshing_close_holes().
         run: sudo apt-get install -y libopengl0
       - name: Install dependencies
         run: |
@@ -91,9 +122,6 @@ jobs:
       - name: run Python tests
         run: pytest
 
-      - name: Format Python code
-        run: black .
-
       - name: Build wheels (without sscache)
         uses: PyO3/maturin-action@v1
         with:
@@ -106,9 +134,6 @@ jobs:
         env:
           RUSTC_WRAPPER: ""
         run: cargo test --all --release --verbose
-
-      - name: Run Rust format
-        run: cargo fmt --all
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -140,8 +165,6 @@ jobs:
           pip install --group test
       - name: run Python tests
         run: pytest
-      - name: Format Python code
-        run: black .
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -151,8 +174,6 @@ jobs:
           manylinux: musllinux_1_2
       - name: Run Rust tests
         run: cargo test --all --release --verbose
-      - name: Run Rust format
-        run: cargo fmt --all
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -179,8 +200,6 @@ jobs:
           pip install --group test
       - name: run Python tests
         run: pytest
-      - name: Format Python code
-        run: black .
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -189,8 +208,6 @@ jobs:
           sccache: 'false'
       - name: Run Rust tests
         run: cargo test --all --release --verbose
-      - name: Run Rust format
-        run: cargo fmt --all
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -219,8 +236,6 @@ jobs:
           pip install --group test
       - name: run Python tests
         run: pytest
-      - name: Format Python code
-        run: black .
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -229,8 +244,6 @@ jobs:
           sccache: 'false'
       - name: Run Rust tests
         run: cargo test --all --release --verbose
-      - name: Run Rust format
-        run: cargo fmt --all
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
