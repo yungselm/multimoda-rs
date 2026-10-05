@@ -311,18 +311,19 @@ RCA ostium is available directly from the discretized tree:
     )
 
 ``align_combined`` resamples ``rca_cl_main`` internally to match the intravascular frame
-spacing, but returns that spacing (``spacing_mm``) rather than the resampled centerline itself —
-apply it to other centerlines (e.g. the aorta) directly instead of re-deriving it:
-
-.. code-block:: python
-
-    aorta_cl = aorta_cl.resample(spacing_mm)
+spacing, but returns that spacing (``spacing_mm``) rather than the resampled centerline itself.
+The steps below only look up the nearest centerline point, so the centerlines can be used as
+prepared; resample them with ``aorta_cl.resample(spacing_mm)`` only if you need them at the
+frame spacing.
 
 **Parameter reference:**
 
 - ``angle_range_deg``: angular search window (±degrees) for the Hausdorff refinement step
   around the initial three-point estimate.  Reduce to speed up computation once the
   approximate orientation is known.
+- ``index_range``: number of centerline points (of the centerline you pass in) searched on
+  either side of the initial ostium position during the refinement.  The window in mm is
+  ``index_range`` times that centerline's point spacing (default ``2``).
 - ``write`` / ``watertight`` / ``output_dir``: when ``write=True``, OBJ meshes are exported
   to ``output_dir``; ``watertight=True`` closes the ends with cap vertices.
 

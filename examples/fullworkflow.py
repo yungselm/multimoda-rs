@@ -86,13 +86,6 @@ aligned, spacing_mm, total_rotation_deg = mm.align_combined(
     align_wall_anomalous=True,
 )
 
-# Resample the aorta to the same spacing align_combined derived from the frames,
-# instead of re-deriving it — keeps the two centerlines' point density consistent
-# for the scaling steps below.
-aorta_cl = aorta_cl.resample(spacing_mm)
-rca_cl = rca_cl.resample(spacing_mm)
-lca_cl = lca_cl.resample(spacing_mm)
-
 results = mm.label_anomalous_region(
     centerline=rca_cl,
     frames=aligned.geom_a.frames,

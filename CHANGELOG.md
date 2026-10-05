@@ -3,6 +3,33 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.5] - 2026-10-05
+
+### Changed
+- `align_combined`: `index_range` now counts points of the centerline you pass in, not of its
+  copy resampled to the frame spacing, and so does the "Moving ostium by N centerline points"
+  log. The log now shows the indices (e.g. `index 41 -> 44`) and is positive for a distal move
+  (the sign was reversed before). The window in mm is `index_range` times
+  your centerline's point spacing, so the default `2` searches a narrower window than before
+  whenever your centerline is denser than the frames (±1 mm at 0.5 mm instead of ±2 frame
+  spacings). Raise `index_range` to keep the old reach.
+
+### Fixed
+- `align_combined`: the Hausdorff refinement can put the ostium on any point of the input
+  centerline. Each candidate gets its own frame-spaced resampling anchored on it, and the final
+  placement reuses the grid the winning candidate was scored on. Before, it could only step in
+  whole frame spacings.
+
+### Documentation
+- `examples/fullworkflow.py` and the CCTA tutorial no longer resample the aorta and coronary
+  centerlines to `spacing_mm` after `align_combined`: the labelling and scaling steps only look
+  up nearest centerline points, so the prepared centerlines are used as they are. On
+  `examples/data` the anomalous region changes by 4 of 438 points and the scalings are identical.
+
+### Internal
+- `preprocess_centerline` is split into `prepare_dense_centerline` (strip side branches, order,
+  find the reference, choose the spacing) and `resample_anchored_at`.
+
 ## [0.7.4] - 2026-10-02
 
 ### Fixed

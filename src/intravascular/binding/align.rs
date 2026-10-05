@@ -323,8 +323,13 @@ pub fn align_manual(
 /// angle_range_deg : float, optional
 ///     Total rotation search range in degrees.  Default is ``15.0``.
 /// index_range : int, optional
-///     Number of centerline indices considered around the reference.
-///     Default is ``2``.
+///     Number of *centerline* points searched on either side of the initial
+///     reference point when refining the ostium position.  Counts points of
+///     the centerline as passed in (not of its frame-spaced resampling), so
+///     the window is ``index_range`` times the centerline's point spacing
+///     (e.g. ±1 mm for ``2`` at 0.5 mm).  Each candidate is tried with the frames
+///     resampled to the frame spacing around it, so the ostium can land on any
+///     centerline point.  Default is ``2``.
 /// write : bool, optional
 ///     Whether to write the aligned meshes to OBJ files.  Default is ``False``.
 /// watertight : bool, optional
