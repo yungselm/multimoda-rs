@@ -5,19 +5,34 @@ use crate::types::native::{mean_spacing, Centerline, CenterlinePoint};
 /// mean Euclidean distance between consecutive contour centroids in `ref_mesh`, falling
 /// back to the centerline's own mean point spacing when the mesh has fewer than two frames.
 ///
-/// Only branch-0 points are used for resampling — side branches (branch_id > 0) are
-/// stripped before processing so that `ensure_descending_z` and the arc-length
-/// calculation see only the main-vessel path. Tangents are recomputed in the final
-/// (descending-z) point order.
-///
-/// The centerline point closest to `ref_pt` is located on the dense input centerline and
-/// the sampling grid is anchored on it ([`Centerline::resample_anchored`]), so the
-/// reference stays exact instead of snapping to a sample up to half a spacing away.
+/// Equivalent to [`prepare_dense_centerline`] followed by [`resample_anchored_at`]: the
+/// grid is anchored on the dense centerline point closest to `ref_pt`, so the reference
+/// stays exact instead of snapping to a sample up to half a spacing away.
 ///
 /// Returns the resampled centerline, the reference point's index in it, and the spacing
 /// (mm) that was used, so callers can apply the same spacing to other centerlines via
 /// `Centerline::resample` instead of re-deriving it.
 pub fn preprocess_centerline(
+    centerline: Centerline,
+    ref_mesh: &Geometry,
+    ref_pt: &(f64, f64, f64),
+) -> Result<(Centerline, usize, f64), &'static str> {
+    let (dense, dense_ref_idx, spacing) = prepare_dense_centerline(centerline, ref_mesh, ref_pt)?;
+    let (resampled, ref_idx) = resample_anchored_at(&dense, spacing, dense_ref_idx);
+    Ok((resampled, ref_idx, spacing))
+}
+
+/// Prepare `centerline` for anchored resampling without resampling it yet.
+///
+/// Only branch-0 points are kept — side branches (branch_id > 0) are stripped so that
+/// `ensure_descending_z` and the arc-length calculation see only the main-vessel path —
+/// and the point order is made descending in z.
+///
+/// Returns the dense (input-resolution) centerline, the index of its point closest to
+/// `ref_pt`, and the frame spacing (mm) to resample it to (see `decide_spacing`). The
+/// spacing is `0.0` when no valid spacing can be derived; [`resample_anchored_at`] then
+/// leaves the centerline at its input resolution.
+pub fn prepare_dense_centerline(
     centerline: Centerline,
     ref_mesh: &Geometry,
     ref_pt: &(f64, f64, f64),
@@ -43,14 +58,28 @@ pub fn preprocess_centerline(
     ensure_descending_z(&mut cl);
     let ref_idx = cl.find_reference_cl_point_idx(ref_pt);
 
-    let Some(spacing) = decide_spacing(ref_mesh, &cl) else {
-        eprintln!("preprocess_centerline: invalid spacing computed, returning original centerline");
-        return Ok((cl, ref_idx, 0.0));
-    };
-    let ref_idx = cl.resample_anchored(spacing, ref_idx);
-
-    eprintln!("preprocess_centerline: produced {} points", cl.points.len());
+    let spacing = decide_spacing(ref_mesh, &cl).unwrap_or_else(|| {
+        eprintln!(
+            "prepare_dense_centerline: invalid spacing computed, keeping original centerline"
+        );
+        0.0
+    });
     Ok((cl, ref_idx, spacing))
+}
+
+/// Copy of `dense` resampled to `spacing` mm with the grid anchored on point `dense_idx`
+/// ([`Centerline::resample_anchored`]), plus that point's index in the copy.
+///
+/// Deterministic, so calling it again with the same arguments reproduces the same grid.
+/// With `spacing == 0.0` the copy is left unresampled and the index is `dense_idx`.
+pub fn resample_anchored_at(
+    dense: &Centerline,
+    spacing: f64,
+    dense_idx: usize,
+) -> (Centerline, usize) {
+    let mut cl = dense.clone();
+    let idx = cl.resample_anchored(spacing, dense_idx);
+    (cl, idx)
 }
 
 fn ensure_descending_z(centerline: &mut Centerline) {
@@ -289,6 +318,35 @@ mod cl_preprocessing_tests {
         assert_relative_eq!(z(ref_idx - 1), 5.3, epsilon = 1e-9);
         assert_relative_eq!(z(ref_idx + 1), 3.3, epsilon = 1e-9);
         assert_relative_eq!(z(0), 10.0, epsilon = 1e-9);
+    }
+
+    #[test]
+    fn test_resample_anchored_at_matches_preprocess_and_keeps_dense() {
+        let coords: Vec<_> = (0..=100).map(|i| (0.0, 0.0, i as f64 * 0.1)).collect();
+        let geom = geom_from_centroids(&[(0.0, 0.0, 0.0), (0.0, 0.0, 1.0)]);
+        let ref_pt = (0.5, 0.0, 4.32);
+
+        let (dense, dense_idx, spacing) =
+            prepare_dense_centerline(cl_from_coords(&coords), &geom, &ref_pt).unwrap();
+        assert_eq!(dense.points.len(), 101);
+        assert_eq!(dense_idx, 57); // z = 4.3 after the descending-z reversal
+        assert_relative_eq!(spacing, 1.0);
+
+        let (resampled, idx) = resample_anchored_at(&dense, spacing, dense_idx);
+        let (expected, expected_idx, _) =
+            preprocess_centerline(cl_from_coords(&coords), &geom, &ref_pt).unwrap();
+        assert_eq!(idx, expected_idx);
+        assert_eq!(resampled.points.len(), expected.points.len());
+        assert_eq!(
+            dense.points.len(),
+            101,
+            "dense centerline must be left untouched"
+        );
+
+        // spacing 0.0 (no usable spacing): unresampled copy, index unchanged
+        let (copy, idx) = resample_anchored_at(&dense, 0.0, dense_idx);
+        assert_eq!(copy.points.len(), dense.points.len());
+        assert_eq!(idx, dense_idx);
     }
 
     #[test]

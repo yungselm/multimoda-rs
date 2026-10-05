@@ -78,20 +78,13 @@ aligned, spacing_mm, total_rotation_deg = mm.align_combined(
     ref_points[0],  # aortic reference point
     ref_points[1],  # superior reference point
     ref_points[2],  # inferior reference point
-    results["rca_points"],  # CCTA point cloud for Hausdorff refinement
+    results["rca_points"],  # CCTA point cloud for the refinement
     angle_range_deg=30.0,
     write=True,
     watertight=False,
     output_dir="test",
     align_wall_anomalous=True,
 )
-
-# Resample the aorta to the same spacing align_combined derived from the frames,
-# instead of re-deriving it — keeps the two centerlines' point density consistent
-# for the scaling steps below.
-aorta_cl = aorta_cl.resample(spacing_mm)
-rca_cl = rca_cl.resample(spacing_mm)
-lca_cl = lca_cl.resample(spacing_mm)
 
 results = mm.label_anomalous_region(
     centerline=rca_cl,

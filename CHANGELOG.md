@@ -3,6 +3,34 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.5] - 2026-10-05
+
+### Added
+- `align_combined` warns when the refined ostium lands on the edge of the `index_range` window.
+
+### Changed
+- `align_combined`: `index_range` and the "Moving ostium" log count points of the centerline you
+  pass in, not of its frame-spaced resampling. With a dense centerline the default `2` now
+  searches a narrower window; raise it to keep the old reach. The log is positive for a distal move.
+- `align_combined`: the refinement minimises the mean nearest-point distance to the point cloud
+  instead of the Hausdorff distance, which a single unreachable point could dominate.
+
+### Fixed
+- `align_combined`: the ostium can land on any input centerline point, not only on whole frame
+  spacings.
+- `align_combined`: rotations are scored on the unplaced frames, so the scored pose is the one
+  that gets placed. Expect different refined angles.
+
+### Documentation
+- `angle_range_deg` is a ± range, not the total range.
+- `examples/fullworkflow.py` and the CCTA tutorial no longer resample centerlines after
+  `align_combined`.
+
+### Internal
+- `preprocess_centerline` split into `prepare_dense_centerline` and `resample_anchored_at`.
+- `refine_alignment_hausdorff` renamed `refine_alignment_nn_distance`; `mean_nn_distance_3d_grid`
+  replaces `hausdorff_sq_3d_grid`.
+
 ## [0.7.4] - 2026-10-02
 
 ### Fixed

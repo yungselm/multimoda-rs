@@ -7,9 +7,10 @@ use anyhow::anyhow;
 use nalgebra::{Point3, Rotation3, Unit, Vector3};
 
 use super::align_algorithms::{
-    apply_transformations, best_rotation_three_point, refine_alignment_hausdorff,
+    apply_transformations, best_rotation_three_point, refine_alignment_nn_distance,
     rotate_by_best_rotation, AlignTarget,
 };
+use super::preprocessing::{prepare_dense_centerline, resample_anchored_at};
 use crate::intravascular::to_object;
 
 /// Extends [`AlignTarget`] with the ability to write the processed case to disk.
@@ -168,7 +169,11 @@ pub fn align_manual_rs<T: Processable>(
     Ok((target, spacing_mm, total_rotation))
 }
 
-/// Combined alignment with three-point initialization and Hausdorff refinement
+/// Combined alignment with three-point initialization and point-cloud refinement.
+///
+/// `refine_index_range` counts points of the input `centerline` (branch 0): the refinement
+/// tries every input point within that many points of the initial reference as the ostium
+/// position, with the frames resampled to the frame spacing around it.
 pub fn align_combined_rs<T: Processable>(
     centerline: Centerline,
     target: T,
@@ -191,13 +196,13 @@ pub fn align_combined_rs<T: Processable>(
 
     println!("\nStep 1: Finding initial rotation via three-point method");
 
-    let (resampled_centerline, initial_cl_ref_idx, spacing_mm) =
-        super::preprocessing::preprocess_centerline(
-            centerline.clone(),
-            original.primary_geometry(),
-            &main_ref_pt,
-        )
-        .map_err(|e| anyhow!("Couldn't resample the centerline: {e}"))?;
+    // Indices into the dense (input-resolution) centerline; frames are placed on a copy
+    // resampled to the frame spacing and anchored on the chosen dense point.
+    let (dense_centerline, initial_cl_ref_idx, spacing_mm) =
+        prepare_dense_centerline(centerline, original.primary_geometry(), &main_ref_pt)
+            .map_err(|e| anyhow!("Couldn't resample the centerline: {e}"))?;
+    let (resampled_centerline, initial_grid_ref_idx) =
+        resample_anchored_at(&dense_centerline, spacing_mm, initial_cl_ref_idx);
 
     let ref_idx = original
         .primary_geometry()
@@ -216,21 +221,21 @@ pub fn align_combined_rs<T: Processable>(
         counterclockwise_ref_pt,
         clockwise_ref_pt,
         angle_step,
-        &resampled_centerline.points[initial_cl_ref_idx],
+        &resampled_centerline.points[initial_grid_ref_idx],
     );
 
-    let aligned = apply_transformations(
-        rotate_by_best_rotation(original, initial_rotation),
-        &resampled_centerline,
-        initial_cl_ref_idx,
-    );
+    // The refinement places frames itself, so hand it the rotated but unplaced frames:
+    // rotations are about z through each frame centroid, which is only the in-plane
+    // rotation the final placement applies while the frames are still unplaced.
+    let rotated = rotate_by_best_rotation(original, initial_rotation);
 
     let mutated_points = transfrom_tuples_to_contourpoints(points);
 
-    println!("Step 2: Refining with Hausdorff distance");
-    let (refined_rotation_delta, refined_cl_ref_idx) = refine_alignment_hausdorff(
-        &aligned,
-        &resampled_centerline,
+    println!("Step 2: Refining with mean point-cloud distance");
+    let (refined_rotation_delta, refined_cl_ref_idx) = refine_alignment_nn_distance(
+        &rotated,
+        &dense_centerline,
+        spacing_mm,
         initial_cl_ref_idx,
         0.0,
         &mutated_points,
@@ -245,13 +250,18 @@ pub fn align_combined_rs<T: Processable>(
         "Total rotation (initial + delta): {:.2}°",
         total_rotation.to_degrees()
     );
-    let diff = initial_cl_ref_idx as i32 - refined_cl_ref_idx as i32;
-    println!("Moving ostium by {diff} centerline points");
+    let diff = refined_cl_ref_idx as isize - initial_cl_ref_idx as isize;
+    println!(
+        "Moving ostium by {diff} centerline points (index {initial_cl_ref_idx} -> {refined_cl_ref_idx})"
+    );
 
+    // Same grid the winning candidate was scored on.
+    let (refined_centerline, refined_grid_ref_idx) =
+        resample_anchored_at(&dense_centerline, spacing_mm, refined_cl_ref_idx);
     let mut final_target = apply_transformations(
-        rotate_by_best_rotation(target.clone(), total_rotation),
-        &resampled_centerline,
-        refined_cl_ref_idx,
+        rotate_by_best_rotation(target, total_rotation),
+        &refined_centerline,
+        refined_grid_ref_idx,
     );
 
     if align_wall_anomalous {

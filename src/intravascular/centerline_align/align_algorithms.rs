@@ -1,5 +1,5 @@
 use crate::intravascular::processing::process_utils::{
-    hausdorff_sq_3d_grid, to_xyz, SpatialGrid, Xyz,
+    mean_nn_distance_3d_grid, to_xyz, SpatialGrid, Xyz,
 };
 use crate::types::native::contour::Contour;
 use crate::types::native::geometry::Geometry;
@@ -7,6 +7,8 @@ use crate::types::native::ContourPoint;
 use crate::types::native::GeometryPair;
 use crate::types::native::{Centerline, CenterlinePoint};
 use nalgebra::{Point3, Rotation3, Unit, Vector3};
+
+use super::preprocessing::resample_anchored_at;
 
 /// Allows alignment algorithms to operate on either a single [`Geometry`] or a [`GeometryPair`].
 pub trait AlignTarget: Sized + Clone {
@@ -344,10 +346,32 @@ pub fn best_rotation_three_point(
     best_angle
 }
 
-/// Refines alignment using Hausdorff distance within a limited search space
-pub fn refine_alignment_hausdorff<T: AlignTarget>(
+/// Refines alignment within a limited search space by minimizing the symmetric mean
+/// nearest-neighbour distance between the placed lumen contours and `mutated_points`
+/// ([`mean_nn_distance_3d_grid`]). The mean, unlike the Hausdorff distance, is not set by
+/// the single farthest point, which in a CCTA point cloud is often one the frames cannot
+/// reach whatever their rotation.
+///
+/// Candidate reference positions are the points of `dense_centerline` (the caller's
+/// centerline at input resolution) within `index_search_range` of `initial_cl_ref_idx`.
+/// For each candidate the frames are placed on a copy of the dense centerline resampled
+/// to `spacing` and anchored on that candidate ([`resample_anchored_at`]), so the ostium
+/// can land on any dense point while frames keep their spacing. Candidates where not every
+/// frame fits on the resampled grid are skipped.
+///
+/// `target` must not be placed on the centerline yet: each candidate angle is applied with
+/// [`rotate_by_best_rotation`] (about z through each frame centroid) before placement, which
+/// matches the final `rotate_by_best_rotation` + [`apply_transformations`] only for unplaced
+/// frames.
+///
+/// Returns the best rotation and the best reference index *in `dense_centerline`*;
+/// `resample_anchored_at(dense_centerline, spacing, idx)` reproduces the grid it was
+/// scored on. Warns when that index lies on the edge of the search window, as the optimum
+/// may lie further out.
+pub fn refine_alignment_nn_distance<T: AlignTarget>(
     target: &T,
-    centerline: &Centerline,
+    dense_centerline: &Centerline,
+    spacing: f64,
     initial_cl_ref_idx: usize,
     initial_rotation: f64,
     mutated_points: &[ContourPoint],
@@ -360,9 +384,9 @@ pub fn refine_alignment_hausdorff<T: AlignTarget>(
 
     let mut best_angle = initial_rotation;
     let mut best_cl_ref_idx = initial_cl_ref_idx;
-    let mut min_hausdorff_sq = f64::MAX;
+    let mut min_distance = f64::MAX;
 
-    println!("---------------------Refining alignment with Hausdorff---------------------");
+    println!("---------------------Refining alignment with point cloud---------------------");
     println!(
         "Initial rotation: {:.2}°, Initial CL index: {}",
         initial_rotation.to_degrees(),
@@ -390,24 +414,26 @@ pub fn refine_alignment_hausdorff<T: AlignTarget>(
 
     for delta_idx in delta_range {
         let signed = initial_cl_ref_idx as isize + delta_idx;
-        if signed < 0 {
+        if signed < 0 || signed as usize >= dense_centerline.points.len() {
             continue;
         }
         let current_cl_ref_idx = signed as usize;
+        let (cl_grid, grid_ref_idx) =
+            resample_anchored_at(dense_centerline, spacing, current_cl_ref_idx);
 
-        // Every frame must land on the centerline (reference frame on current_cl_ref_idx).
-        let Some(cl_start_idx) = current_cl_ref_idx.checked_sub(ref_frame) else {
+        // Every frame must land on the grid (reference frame on grid_ref_idx).
+        let Some(cl_start_idx) = grid_ref_idx.checked_sub(ref_frame) else {
             continue;
         };
         let cl_end_idx = cl_start_idx + len_frames;
-        if cl_end_idx > centerline.points.len() {
+        if cl_end_idx > cl_grid.points.len() {
             continue;
         }
 
         let filtered_points = filter_points_in_region(
             mutated_points,
-            &centerline.points[cl_start_idx],
-            &centerline.points[cl_end_idx - 1],
+            &cl_grid.points[cl_start_idx],
+            &cl_grid.points[cl_end_idx - 1],
         );
 
         if filtered_points.is_empty() {
@@ -426,8 +452,8 @@ pub fn refine_alignment_hausdorff<T: AlignTarget>(
 
             let transformed = apply_transformations(
                 rotate_by_best_rotation(target.clone(), angle),
-                centerline,
-                current_cl_ref_idx,
+                &cl_grid,
+                grid_ref_idx,
             );
 
             geometry_xyz.clear();
@@ -437,18 +463,15 @@ pub fn refine_alignment_hausdorff<T: AlignTarget>(
 
             let geometry_grid = SpatialGrid::build(&geometry_xyz);
 
-            let Some(hausdorff_sq) = hausdorff_sq_3d_grid(
+            let distance = mean_nn_distance_3d_grid(
                 &filtered_xyz,
                 &filtered_grid,
                 &geometry_xyz,
                 &geometry_grid,
-                min_hausdorff_sq,
-            ) else {
-                continue;
-            };
+            );
 
-            if hausdorff_sq < min_hausdorff_sq {
-                min_hausdorff_sq = hausdorff_sq;
+            if distance < min_distance {
+                min_distance = distance;
                 best_angle = angle;
                 best_cl_ref_idx = current_cl_ref_idx;
             }
@@ -456,11 +479,20 @@ pub fn refine_alignment_hausdorff<T: AlignTarget>(
     }
 
     println!(
-        "Refined rotation: {:.2}°, Refined CL index: {}, Hausdorff: {:.2}",
+        "Refined rotation: {:.2}°, Refined CL index: {}, mean distance: {:.3} mm",
         best_angle.to_degrees(),
         best_cl_ref_idx,
-        min_hausdorff_sq.sqrt()
+        min_distance
     );
+
+    if index_search_range > 0 && best_cl_ref_idx.abs_diff(initial_cl_ref_idx) == index_search_range
+    {
+        eprintln!(
+            "Warning: refined CL index {best_cl_ref_idx} is on the edge of the search window \
+             ({initial_cl_ref_idx} ± {index_search_range}); the best position may lie further \
+             out, consider increasing index_range"
+        );
+    }
 
     (best_angle, best_cl_ref_idx)
 }
@@ -1011,5 +1043,155 @@ mod align_algorithms_tests {
         // With targets matching current positions, best rotation should be near 0
         // Allow some tolerance due to discrete angle steps
         assert!(best_angle.abs() < angle_step + 1e-6);
+    }
+
+    /// Five elliptical frames 1 mm apart, reference point on frame 0.
+    fn create_elliptical_geometry() -> Geometry {
+        let frames = (0..5u32)
+            .map(|i| {
+                let points = (0..16u32)
+                    .map(|p| {
+                        let theta = p as f64 * std::f64::consts::TAU / 16.0;
+                        ContourPoint {
+                            frame_index: i,
+                            point_index: p,
+                            x: 2.0 * theta.cos(),
+                            y: theta.sin(),
+                            z: i as f64,
+                            aortic: false,
+                        }
+                    })
+                    .collect();
+                let mut lumen = create_test_contour(i, i, points);
+                lumen.compute_centroid();
+                Frame {
+                    id: i,
+                    centroid: lumen.centroid.unwrap(),
+                    lumen,
+                    extras: HashMap::new(),
+                    reference_point: (i == 0).then_some(ContourPoint {
+                        frame_index: i,
+                        point_index: 0,
+                        x: 2.0,
+                        y: 0.0,
+                        z: i as f64,
+                        aortic: false,
+                    }),
+                }
+            })
+            .collect();
+        Geometry {
+            frames,
+            label: "test".to_string(),
+        }
+    }
+
+    /// Straight centerline descending in z from `z_top` with `n` points `step` mm apart.
+    fn create_straight_centerline(z_top: f64, step: f64, n: u32) -> Centerline {
+        Centerline {
+            points: (0..n)
+                .map(|k| create_test_centerline_point(0.0, 0.0, z_top - step * k as f64, k))
+                .collect(),
+            branch_start_indices: vec![0],
+        }
+    }
+
+    fn lumen_points<T: AlignTarget>(target: &T) -> Vec<ContourPoint> {
+        target
+            .primary_geometry()
+            .frames
+            .iter()
+            .flat_map(|f| f.lumen.points.iter().cloned())
+            .collect()
+    }
+
+    #[test]
+    fn test_refine_alignment_nn_distance_searches_dense_centerline() {
+        // 0.1 mm dense centerline, 1 mm frame spacing. The truth places the ostium on
+        // dense point 103, which no 1 mm grid anchored on the start point (100) contains.
+        let dense = create_straight_centerline(30.0, 0.1, 301);
+        let geometry = create_elliptical_geometry();
+        let (truth_cl, truth_grid_idx) = resample_anchored_at(&dense, 1.0, 103);
+        let truth = apply_transformations(geometry.clone(), &truth_cl, truth_grid_idx);
+        let truth_points = lumen_points(&truth);
+
+        let (angle, idx) = refine_alignment_nn_distance(
+            &geometry,
+            &dense,
+            1.0,
+            100,
+            0.0,
+            &truth_points,
+            10f64.to_radians(),
+            5f64.to_radians(),
+            5,
+        );
+
+        assert_eq!(idx, 103);
+        assert!(angle.abs() < 1e-9, "angle = {}", angle.to_degrees());
+
+        // Re-anchoring at the returned dense index reproduces the scored placement.
+        let (final_cl, final_grid_idx) = resample_anchored_at(&dense, 1.0, idx);
+        let placed = apply_transformations(geometry, &final_cl, final_grid_idx);
+        for (a, b) in lumen_points(&placed).iter().zip(&truth_points) {
+            assert!((a.x - b.x).abs() < 1e-9 && (a.y - b.y).abs() < 1e-9);
+            assert!((a.z - b.z).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn test_refine_alignment_nn_distance_skips_candidates_off_the_grid() {
+        // Five frames need four grid points below the reference. The grid always keeps
+        // the centerline end (z = 0), so a candidate fits while more than 3 mm remain
+        // below it: z > 3.0, i.e. dense idx <= 269.
+        let dense = create_straight_centerline(30.0, 0.1, 301);
+        let geometry = create_elliptical_geometry();
+        let (truth_cl, truth_grid_idx) = resample_anchored_at(&dense, 1.0, 268);
+        let truth_points = lumen_points(&apply_transformations(
+            geometry.clone(),
+            &truth_cl,
+            truth_grid_idx,
+        ));
+        let refine = |start: usize, range: usize| {
+            refine_alignment_nn_distance(
+                &geometry,
+                &dense,
+                1.0,
+                start,
+                0.0,
+                &truth_points,
+                0.0,
+                5f64.to_radians(),
+                range,
+            )
+            .1
+        };
+
+        // Candidates 267..=277: 270 and beyond are skipped, the truth still wins.
+        assert_eq!(refine(272, 5), 268);
+        // Candidates 282..=288 all skipped: nothing scored, the start is returned.
+        assert_eq!(refine(285, 3), 285);
+    }
+
+    #[test]
+    fn test_refine_alignment_nn_distance_without_spacing_uses_dense_points() {
+        // spacing 0.0 (no usable frame spacing): frames sit on consecutive dense points,
+        // so dense and grid indices coincide.
+        let dense = create_straight_centerline(30.0, 1.0, 31);
+        let geometry = create_elliptical_geometry();
+        let truth_points = lumen_points(&apply_transformations(geometry.clone(), &dense, 12));
+
+        let (_, idx) = refine_alignment_nn_distance(
+            &geometry,
+            &dense,
+            0.0,
+            10,
+            0.0,
+            &truth_points,
+            0.0,
+            5f64.to_radians(),
+            3,
+        );
+        assert_eq!(idx, 12);
     }
 }

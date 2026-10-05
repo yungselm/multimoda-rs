@@ -1246,11 +1246,12 @@ def align_combined(
     case_name: str = "None",
     align_wall_anomalous: bool = False,
 ) -> tuple[PyGeometryPair | PyGeometry, float, float]:
-    """Align a geometry (or geometry pair) using three reference points and Hausdorff refinement.
+    """Align a geometry (or geometry pair) using three reference points and point-cloud refinement.
 
     Creates centerline-aligned meshes using three anatomical reference points
     for an initial orientation and a set of additional points for
-    Hausdorff distance-based fine-tuning of the rotation.
+    fine-tuning of the rotation and ostium position, minimising the mean
+    nearest-point distance between the point cloud and the lumen contours.
 
     Parameters
     ----------
@@ -1268,15 +1269,21 @@ def align_combined(
     clockwise_ref_pt : tuple of float
         ``(x, y, z)`` clockwise reference point (viewed proximal → distal).
     points : list of tuple of float
-        Point cloud used for Hausdorff distance calculation during rotation
-        refinement.
+        Point cloud (e.g. CCTA vessel-wall points) the refinement fits the lumen
+        contours to, by mean nearest-point distance.
     angle_step_deg : float, optional
         Step size in degrees for the rotation search.  Default is ``1.0``.
     angle_range_deg : float, optional
-        Total rotation search range in degrees.  Default is ``15.0``.
+        Rotation search range in degrees on either side of the three-point
+        estimate, i.e. the refinement tries ±``angle_range_deg``.  Default is ``15.0``.
     index_range : int, optional
-        Number of centerline indices considered around the reference.
-        Default is ``2``.
+        Number of *centerline* points searched on either side of the initial
+        reference point when refining the ostium position.  Counts points of
+        the centerline as passed in (not of its frame-spaced resampling), so
+        the window is ``index_range`` times the centerline's point spacing
+        (e.g. ±1 mm for ``2`` at 0.5 mm).  Each candidate is tried with the frames
+        resampled to the frame spacing around it, so the ostium can land on any
+        centerline point.  Default is ``2``.
     write : bool, optional
         Whether to write the aligned meshes to OBJ files.  Default is ``False``.
     watertight : bool, optional
@@ -1307,7 +1314,7 @@ def align_combined(
         the aorta) to the same spacing, instead of re-deriving it.
     total_rotation_deg : float
         Total rotation, in degrees, that was applied (initial three-point
-        rotation plus the Hausdorff refinement delta).
+        rotation plus the refinement delta).
 
     Examples
     --------
