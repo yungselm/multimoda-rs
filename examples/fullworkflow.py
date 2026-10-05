@@ -78,7 +78,7 @@ aligned, spacing_mm, total_rotation_deg = mm.align_combined(
     ref_points[0],  # aortic reference point
     ref_points[1],  # superior reference point
     ref_points[2],  # inferior reference point
-    results["rca_points"],  # CCTA point cloud for Hausdorff refinement
+    results["rca_points"],  # CCTA point cloud for the refinement
     angle_range_deg=30.0,
     write=True,
     watertight=False,

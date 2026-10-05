@@ -286,8 +286,9 @@ Load the intravascular segmentation with :func:`multimodars.from_file_singlepair
 
 Once the intravascular geometry is loaded, align it to the CCTA centerline and point cloud
 with :func:`multimodars.align_combined`.  This function first performs a coarse three-point
-alignment using the reference triplet computed in step 2, and then refines the rotation by
-minimising Hausdorff distances between the CCTA point cloud and the intravascular contours.
+alignment using the reference triplet computed in step 2, and then refines the rotation and
+ostium position by minimising the mean nearest-point distance between the CCTA point cloud and
+the intravascular contours.
 
 The reference triplet ``(main_ref_pt, counterclockwise_ref_pt, clockwise_ref_pt)`` at the
 RCA ostium is available directly from the discretized tree:
@@ -303,7 +304,7 @@ RCA ostium is available directly from the discretized tree:
         ref_points[0],                     # main reference point
         ref_points[1],                     # counter-clockwise reference point
         ref_points[2],                     # clockwise reference point
-        results['rca_points'],             # CCTA point cloud for Hausdorff refinement
+        results['rca_points'],             # CCTA point cloud for the refinement
         angle_range_deg=10.0,
         write=True,
         watertight=False,
@@ -318,7 +319,7 @@ frame spacing.
 
 **Parameter reference:**
 
-- ``angle_range_deg``: angular search window (±degrees) for the Hausdorff refinement step
+- ``angle_range_deg``: angular search window (±degrees) for the refinement step
   around the initial three-point estimate.  Reduce to speed up computation once the
   approximate orientation is known.
 - ``index_range``: number of centerline points (of the centerline you pass in) searched on

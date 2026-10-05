@@ -342,8 +342,8 @@ is misplaced.
         interpolation_steps=0,
     )
 
-*Preferred method*: If you want to additionally use a pointcloud to finetune the three point alignment, by utilizing
-Hausdorff distances between the pointcloud and the geometry, :func:`multimodars.align_combined` can be used (see also CCTA tutorial on how to prepare the data to receive ``results['rca_points']``):
+*Preferred method*: If you want to additionally use a pointcloud to finetune the three point alignment, by minimizing
+the mean distance between the pointcloud and the geometry, :func:`multimodars.align_combined` can be used (see also CCTA tutorial on how to prepare the data to receive ``results['rca_points']``):
 
 .. code-block:: python
 

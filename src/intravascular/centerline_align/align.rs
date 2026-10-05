@@ -7,7 +7,7 @@ use anyhow::anyhow;
 use nalgebra::{Point3, Rotation3, Unit, Vector3};
 
 use super::align_algorithms::{
-    apply_transformations, best_rotation_three_point, refine_alignment_hausdorff,
+    apply_transformations, best_rotation_three_point, refine_alignment_nn_distance,
     rotate_by_best_rotation, AlignTarget,
 };
 use super::preprocessing::{prepare_dense_centerline, resample_anchored_at};
@@ -169,7 +169,7 @@ pub fn align_manual_rs<T: Processable>(
     Ok((target, spacing_mm, total_rotation))
 }
 
-/// Combined alignment with three-point initialization and Hausdorff refinement.
+/// Combined alignment with three-point initialization and point-cloud refinement.
 ///
 /// `refine_index_range` counts points of the input `centerline` (branch 0): the refinement
 /// tries every input point within that many points of the initial reference as the ostium
@@ -224,17 +224,16 @@ pub fn align_combined_rs<T: Processable>(
         &resampled_centerline.points[initial_grid_ref_idx],
     );
 
-    let aligned = apply_transformations(
-        rotate_by_best_rotation(original, initial_rotation),
-        &resampled_centerline,
-        initial_grid_ref_idx,
-    );
+    // The refinement places frames itself, so hand it the rotated but unplaced frames:
+    // rotations are about z through each frame centroid, which is only the in-plane
+    // rotation the final placement applies while the frames are still unplaced.
+    let rotated = rotate_by_best_rotation(original, initial_rotation);
 
     let mutated_points = transfrom_tuples_to_contourpoints(points);
 
-    println!("Step 2: Refining with Hausdorff distance");
-    let (refined_rotation_delta, refined_cl_ref_idx) = refine_alignment_hausdorff(
-        &aligned,
+    println!("Step 2: Refining with mean point-cloud distance");
+    let (refined_rotation_delta, refined_cl_ref_idx) = refine_alignment_nn_distance(
+        &rotated,
         &dense_centerline,
         spacing_mm,
         initial_cl_ref_idx,

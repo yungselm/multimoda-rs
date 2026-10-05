@@ -82,7 +82,7 @@ where
 /// offset that swamps the shape term the rotation search is trying to minimise.
 ///
 /// For genuinely three-dimensional comparisons (e.g. a whole geometry against a
-/// point cloud) use [`hausdorff_sq_3d_grid`] instead.
+/// point cloud) use [`mean_nn_distance_3d_grid`] instead.
 pub fn hausdorff_distance(set1: &[ContourPoint], set2: &[ContourPoint]) -> f64 {
     let forward = directed_hausdorff(set1, set2);
     let backward = directed_hausdorff(set2, set1);
@@ -305,47 +305,30 @@ impl SpatialGrid {
     }
 }
 
-/// Squared 3D Hausdorff distance using prebuilt grids, abandoned early once it
-/// provably exceeds `bound_sq`.
+/// Symmetric mean nearest-neighbour distance between two 3D point sets, using prebuilt
+/// grids: the average of the mean distance from each point of `set1` to its nearest point
+/// in `set2` and the same from `set2` to `set1`.
 ///
-/// O(n + m) rather than the O(n·m) of a brute-force scan.
-/// Supply the grid built over each set; when one side is reused across many
-/// candidates (as in an alignment search) its grid should be built once and shared.
-pub fn hausdorff_sq_3d_grid(
+/// Unlike the Hausdorff distance (the largest of those distances) a few far points move it
+/// only by their share of the mean, so it still ranks candidates when an outlier sits at
+/// the same distance from all of them. `0.0` if either set is empty. Deterministic: the
+/// per-point distances are found in parallel but summed in order.
+pub fn mean_nn_distance_3d_grid(
     set1: &[Xyz],
     grid1: &SpatialGrid,
     set2: &[Xyz],
     grid2: &SpatialGrid,
-    bound_sq: f64,
-) -> Option<f64> {
+) -> f64 {
     if set1.is_empty() || set2.is_empty() {
-        return Some(0.0);
+        return 0.0;
     }
-    let forward = directed_hausdorff_sq_grid(set1, grid2, bound_sq)?;
-    let backward = directed_hausdorff_sq_grid(set2, grid1, bound_sq)?;
-    Some(forward.max(backward))
+    (directed_mean_nn_distance_grid(set1, grid2) + directed_mean_nn_distance_grid(set2, grid1))
+        / 2.0
 }
 
-fn directed_hausdorff_sq_grid(a: &[Xyz], b: &SpatialGrid, bound_sq: f64) -> Option<f64> {
-    let threads = rayon::current_num_threads().max(1);
-    let chunk_size = a.len().div_ceil(threads * 4).max(1);
-
-    a.par_chunks(chunk_size)
-        .map(|chunk| {
-            let mut local_max_sq = 0.0_f64;
-            for pa in chunk {
-                // Points already within the running maximum need no exact answer.
-                let min_sq = b.nearest_sq(pa, local_max_sq);
-                if min_sq > bound_sq {
-                    return None;
-                }
-                if min_sq > local_max_sq {
-                    local_max_sq = min_sq;
-                }
-            }
-            Some(local_max_sq)
-        })
-        .try_reduce(|| 0.0_f64, |x, y| Some(x.max(y)))
+fn directed_mean_nn_distance_grid(a: &[Xyz], b: &SpatialGrid) -> f64 {
+    let distances: Vec<f64> = a.par_iter().map(|p| b.nearest_sq(p, 0.0).sqrt()).collect();
+    distances.iter().sum::<f64>() / a.len() as f64
 }
 
 fn directed_hausdorff(contour_a: &[ContourPoint], contour_b: &[ContourPoint]) -> f64 {
@@ -848,56 +831,7 @@ mod process_utils_tests {
     }
 
     #[test]
-    fn test_hausdorff_3d_matches_brute_force() {
-        let a = pseudo_random_cloud(300, 12345);
-        let b = pseudo_random_cloud(250, 67890);
-
-        let (ga, gb) = (SpatialGrid::build(&a), SpatialGrid::build(&b));
-        let expected = brute_force_hausdorff_3d(&a, &b);
-        let actual = hausdorff_sq_3d_grid(&a, &ga, &b, &gb, f64::MAX)
-            .expect("unbounded must return a value");
-
-        assert_relative_eq!(actual, expected, epsilon = 1e-9);
-    }
-
-    #[test]
-    fn test_hausdorff_3d_is_symmetric() {
-        let a = pseudo_random_cloud(200, 11);
-        let b = pseudo_random_cloud(150, 22);
-
-        let (ga, gb) = (SpatialGrid::build(&a), SpatialGrid::build(&b));
-        let forward = hausdorff_sq_3d_grid(&a, &ga, &b, &gb, f64::MAX).unwrap();
-        let backward = hausdorff_sq_3d_grid(&b, &gb, &a, &ga, f64::MAX).unwrap();
-
-        assert_relative_eq!(forward, backward, epsilon = 1e-12);
-    }
-
-    #[test]
-    fn test_hausdorff_3d_bound_prunes_without_changing_the_winner() {
-        let a = pseudo_random_cloud(300, 999);
-        let b = pseudo_random_cloud(300, 1000);
-        let (ga, gb) = (SpatialGrid::build(&a), SpatialGrid::build(&b));
-        let truth = brute_force_hausdorff_3d(&a, &b);
-
-        // A bound at or above the true value must return the exact value.
-        assert_relative_eq!(
-            hausdorff_sq_3d_grid(&a, &ga, &b, &gb, truth).unwrap(),
-            truth,
-            epsilon = 1e-9
-        );
-        assert_relative_eq!(
-            hausdorff_sq_3d_grid(&a, &ga, &b, &gb, truth * 2.0).unwrap(),
-            truth,
-            epsilon = 1e-9
-        );
-
-        // A bound below it must prune.
-        assert!(hausdorff_sq_3d_grid(&a, &ga, &b, &gb, truth * 0.5).is_none());
-        assert!(hausdorff_sq_3d_grid(&a, &ga, &b, &gb, 0.0).is_none());
-    }
-
-    #[test]
-    fn test_hausdorff_3d_accounts_for_z() {
+    fn test_3d_distance_accounts_for_z() {
         // Two identical squares separated purely in z. The 2D kernel must see them
         // as coincident; the 3D kernel must report the separation.
         let flat: Vec<ContourPoint> = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
@@ -919,9 +853,7 @@ mod process_utils_tests {
 
         let (fxyz, rxyz) = (to_xyz(&flat), to_xyz(&raised));
         let (gf, gr) = (SpatialGrid::build(&fxyz), SpatialGrid::build(&rxyz));
-        let distance_3d = hausdorff_sq_3d_grid(&fxyz, &gf, &rxyz, &gr, f64::MAX)
-            .unwrap()
-            .sqrt();
+        let distance_3d = mean_nn_distance_3d_grid(&fxyz, &gf, &rxyz, &gr);
         assert_relative_eq!(distance_3d, 7.0, epsilon = 1e-12);
     }
 
@@ -991,62 +923,75 @@ mod process_utils_tests {
     }
 
     #[test]
-    fn test_hausdorff_3d_grid_matches_brute_force() {
-        let a = pseudo_random_cloud(400, 2024);
-        let b = pseudo_random_cloud(350, 2025);
-        let (ga, gb) = (SpatialGrid::build(&a), SpatialGrid::build(&b));
-
-        let expected = brute_force_hausdorff_3d(&a, &b);
-        let actual = hausdorff_sq_3d_grid(&a, &ga, &b, &gb, f64::MAX).unwrap();
-
-        assert_relative_eq!(actual, expected, epsilon = 1e-9);
-    }
-
-    #[test]
-    fn test_hausdorff_3d_grid_bound_prunes() {
-        let a = pseudo_random_cloud(300, 88);
-        let b = pseudo_random_cloud(300, 99);
-        let (ga, gb) = (SpatialGrid::build(&a), SpatialGrid::build(&b));
-        let truth = brute_force_hausdorff_3d(&a, &b);
-
-        assert_relative_eq!(
-            hausdorff_sq_3d_grid(&a, &ga, &b, &gb, truth).unwrap(),
-            truth,
-            epsilon = 1e-9
-        );
-        assert!(hausdorff_sq_3d_grid(&a, &ga, &b, &gb, truth * 0.5).is_none());
-    }
-
-    #[test]
-    fn test_hausdorff_3d_grid_disjoint_clouds() {
+    fn test_mean_nn_distance_3d_disjoint_clouds() {
         // Far-apart clouds: every query lands outside the other grid's bounds, which
         // exercises the clamped-cell and boundary-face logic.
         let a: Vec<Xyz> = (0..100).map(|i| [i as f64 * 0.1, 0.0, 0.0]).collect();
         let b: Vec<Xyz> = (0..100).map(|i| [i as f64 * 0.1, 0.0, 500.0]).collect();
         let (ga, gb) = (SpatialGrid::build(&a), SpatialGrid::build(&b));
 
-        let actual = hausdorff_sq_3d_grid(&a, &ga, &b, &gb, f64::MAX).unwrap();
-        assert_relative_eq!(actual, brute_force_hausdorff_3d(&a, &b), epsilon = 1e-9);
-        assert_relative_eq!(actual.sqrt(), 500.0, epsilon = 1e-9);
+        let actual = mean_nn_distance_3d_grid(&a, &ga, &b, &gb);
+        assert_relative_eq!(actual, brute_force_mean_nn_distance(&a, &b), epsilon = 1e-9);
+        assert_relative_eq!(actual, 500.0, epsilon = 1e-9);
+    }
+
+    fn brute_force_mean_nn_distance(a: &[Xyz], b: &[Xyz]) -> f64 {
+        let directed = |a: &[Xyz], b: &[Xyz]| {
+            a.iter()
+                .map(|p| {
+                    b.iter()
+                        .map(|q| {
+                            ((p[0] - q[0]).powi(2) + (p[1] - q[1]).powi(2) + (p[2] - q[2]).powi(2))
+                                .sqrt()
+                        })
+                        .fold(f64::INFINITY, f64::min)
+                })
+                .sum::<f64>()
+                / a.len() as f64
+        };
+        (directed(a, b) + directed(b, a)) / 2.0
     }
 
     #[test]
-    fn test_hausdorff_3d_empty_sets() {
+    fn test_mean_nn_distance_3d_matches_brute_force() {
+        let a = pseudo_random_cloud(300, 31);
+        let b = pseudo_random_cloud(250, 32);
+        let (ga, gb) = (SpatialGrid::build(&a), SpatialGrid::build(&b));
+
+        let actual = mean_nn_distance_3d_grid(&a, &ga, &b, &gb);
+        assert_relative_eq!(actual, brute_force_mean_nn_distance(&a, &b), epsilon = 1e-9);
+        assert_relative_eq!(
+            actual,
+            mean_nn_distance_3d_grid(&b, &gb, &a, &ga),
+            epsilon = 1e-9
+        );
+    }
+
+    #[test]
+    fn test_mean_nn_distance_3d_damps_outliers() {
+        // 100 points on a line, the other set 0.5 mm off it plus one point 50 mm away.
+        // The outlier sets the Hausdorff distance but adds only its share to the mean.
+        let a: Vec<Xyz> = (0..100).map(|i| [i as f64 * 0.1, 0.0, 0.0]).collect();
+        let mut b: Vec<Xyz> = a.iter().map(|p| [p[0], 0.5, 0.0]).collect();
+        b.push([0.0, 50.0, 0.0]);
+        let (ga, gb) = (SpatialGrid::build(&a), SpatialGrid::build(&b));
+
+        let hausdorff = brute_force_hausdorff_3d(&a, &b).sqrt();
+        let mean = mean_nn_distance_3d_grid(&a, &ga, &b, &gb);
+        assert_relative_eq!(hausdorff, 50.0, epsilon = 1e-9);
+        assert_relative_eq!(
+            mean,
+            (0.5 + (100.0 * 0.5 + 50.0) / 101.0) / 2.0,
+            epsilon = 1e-9
+        );
+    }
+
+    #[test]
+    fn test_mean_nn_distance_3d_empty_sets() {
         let points = pseudo_random_cloud(10, 7);
         let empty: Vec<Xyz> = Vec::new();
         let (gp, ge) = (SpatialGrid::build(&points), SpatialGrid::build(&empty));
-
-        assert_eq!(
-            hausdorff_sq_3d_grid(&empty, &ge, &points, &gp, f64::MAX),
-            Some(0.0)
-        );
-        assert_eq!(
-            hausdorff_sq_3d_grid(&points, &gp, &empty, &ge, f64::MAX),
-            Some(0.0)
-        );
-        assert_eq!(
-            hausdorff_sq_3d_grid(&empty, &ge, &empty, &ge, f64::MAX),
-            Some(0.0)
-        );
+        assert_eq!(mean_nn_distance_3d_grid(&empty, &ge, &points, &gp), 0.0);
+        assert_eq!(mean_nn_distance_3d_grid(&points, &gp, &empty, &ge), 0.0);
     }
 }
