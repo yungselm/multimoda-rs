@@ -272,7 +272,8 @@ The discretized tree exposes the following attributes:
 - ``tree.discretized_rca_main`` / ``tree.discretized_lca_main`` - main-vessel contours.
 - ``tree.rca_branches`` / ``tree.lca_branches`` - list of lists, one per side branch.
 - ``tree.rca_references`` / ``tree.lca_references`` - list of ``(main_ref, ccw_ref, cw_ref)``
-  triplets, one per bifurcation site.
+  triplets: the ostium at index 0, then one per side-branch bifurcation, ordered proximal to
+  distal along the main vessel (not by branch index).
 
 3. Load and align intravascular geometry
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -321,6 +322,32 @@ The steps below only look up the nearest centerline point, so the centerlines ca
 prepared; resample them with ``aorta_cl.resample(spacing_mm)`` only if you need them at the
 frame spacing.
 
+For a pullback in a side branch, align onto that branch with the triplet at its origin.
+Because the triplets are ordered along the main vessel rather than by branch index, pick the
+side-branch triplet nearest to the branch's first point.  ``examples/fullworkflow.py`` does this
+for the circumflex, which is branch 1 of the LCA in the example data:
+
+.. code-block:: python
+
+    import math
+
+    lcx_cl = lca_cl.get_branch(1)
+    lcx_start = lcx_cl.points[0].contour_point
+    lcx_ref_points = min(
+        tree.lca_references[1:],           # index 0 is the ostium
+        key=lambda r: math.dist(r[0], (lcx_start.x, lcx_start.y, lcx_start.z)),
+    )
+
+    aligned_lcx, _, _ = mm.align_combined(
+        lcx_cl,
+        rest,
+        lcx_ref_points[0],
+        lcx_ref_points[1],
+        lcx_ref_points[2],
+        results['lca_points'],
+        angle_range_deg=30.0,
+    )
+
 **Parameter reference:**
 
 - ``angle_range_deg``: angular search window (±degrees) for the refinement step
@@ -337,7 +364,7 @@ frame spacing.
 
 After alignment, :func:`multimodars.label_anomalous_region` subdivides the RCA points into
 three sub-regions - proximal, anomalous (intramural), and distal - according to where they
-sit along the main branch of the RCA centerline relative to the aligned intravascular frames:
+sit along the centerline branch the aligned intravascular frames lie on:
 
 .. code-block:: python
 
@@ -369,8 +396,12 @@ Branch 0 must run from the ostium distally, which :func:`multimodars.prepare_cen
 when given ``ref_centerline``.
 
 Vertices that are not mesh-connected to the main body of their sub-region are moved from
-``"rca_points"`` to ``"aorta_points"``.  ``"rca_removed_points"`` and ``"lca_removed_points"``
-are left unchanged.
+``"rca_points"`` to ``"aorta_points"``.  For a side-branch pullback the distal region has two
+bodies, joined only through the anomalous segment - the pullback branch past the frames and the
+vessel outside its subtree - and both are kept.  ``"rca_removed_points"`` and
+``"lca_removed_points"`` are left unchanged.
+
+For the side-branch alignment above, pass the whole ``lca_cl`` and ``results_key='lca_points'``.
 
 Set ``debug_plot=True`` to open an interactive scene that shows how the three sub-regions
 are assigned - useful when the boundary appears misplaced.
