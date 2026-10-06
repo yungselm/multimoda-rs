@@ -1,19 +1,20 @@
 from __future__ import annotations
 
-
+import warnings
 from pathlib import Path
 from typing import Any
+
 import trimesh
 
-from ...multimodars import (
-    find_centerline_bounded_points_simple,
-    find_aortic_points,
-    final_reclassification,
-    clean_outlier_points,
-    find_points_by_cl_region,
-    PyCenterline,
-)
 from ...io.read_geometrical import read_mesh
+from ...multimodars import (
+    PyCenterline,
+    clean_outlier_points,
+    final_reclassification,
+    find_aortic_points,
+    find_centerline_bounded_points_simple,
+    find_points_by_cl_region,
+)
 from ..debug_plots import plot_results_key
 from .helpers import _apply_occlusion_removal, _keep_largest_connected_component
 
@@ -260,12 +261,23 @@ def label_anomalous_region(
     the anomalous (intramural) segment begins and ends, then tags each mesh
     vertex accordingly.
 
+    The frames may lie on any branch of *centerline*; the branch most of them
+    are nearest to is the pullback branch. Vertices on branches that leave the
+    pullback branch are placed where their branch joins it, so a side branch
+    belongs to the sub-region it leaves from. Vertices outside the pullback
+    branch's subtree (its parent vessel and sibling branches) are distal.
+
     Parameters
     ----------
     centerline : PyCenterline
-        Centerline of the coronary vessel of interest.
+        Centerline of the whole coronary vessel of interest, with all its
+        branches, oriented from the ostium (e.g. from
+        :func:`~multimodars.ccta.centerline_prep.prepare_centerline` with
+        ``ref_centerline``). Not the single branch from ``get_branch`` that
+        the frames were aligned on: without the other branches, every vertex
+        is placed on that one branch.
     frames : list of PyFrame
-        Ordered list of intravascular imaging frames for the vessel.
+        Intravascular imaging frames, aligned onto a branch of *centerline*.
     results : dict
         Labelled results dictionary (e.g. from :func:`label_geometry`).
         Must contain the key specified by *results_key*.
@@ -284,7 +296,23 @@ def label_anomalous_region(
         * ``"proximal_points"`` - vertices proximal to the anomalous segment.
         * ``"distal_points"`` - vertices distal to the anomalous segment.
         * ``"anomalous_points"`` - vertices within the anomalous segment.
+
+        Island points dropped from these sub-regions are moved from
+        *results_key* to ``"aorta_points"``. ``"aorta_points"`` stays disjoint
+        from ``"rca_removed_points"`` and ``"lca_removed_points"``, as returned
+        by :func:`label_geometry`.
     """
+    side_keys = [k for k in results if k.startswith(f"{results_key}_side_")]
+    if len(centerline.branch_start_indices) <= 1 and side_keys:
+        warnings.warn(
+            f"label_anomalous_region got a single-branch centerline, but results has "
+            f"side branches for '{results_key}' ({', '.join(side_keys)}). Pass the "
+            f"whole vessel centerline, not get_branch(...): otherwise every vertex is "
+            f"placed on this one branch.",
+            UserWarning,
+            stacklevel=2,
+        )
+
     proximal_points_raw, distal_points_raw, anomalous_points_raw = (
         find_points_by_cl_region(
             centerline=centerline,
@@ -322,15 +350,20 @@ def label_anomalous_region(
     results["distal_points"] = distal_points
     results["anomalous_points"] = anomalous_points
 
-    all_coronary = (
+    # The occlusion-removed points are excluded too: label_geometry returns them
+    # as their own classes, disjoint from aorta_points, and callers that want the
+    # whole aortic wall add them explicitly (aorta_points + rca_removed_points).
+    non_aorta = (
         set(results.get("rca_points", []))
         | set(results.get("lca_points", []))
+        | set(results.get("rca_removed_points", []))
+        | set(results.get("lca_removed_points", []))
         | set(proximal_points)
         | set(distal_points)
         | set(anomalous_points)
     )
     results["aorta_points"] = [
-        tuple(v) for v in results["mesh"].vertices if tuple(v) not in all_coronary
+        tuple(v) for v in results["mesh"].vertices if tuple(v) not in non_aorta
     ]
 
     print("\nApplying anomalous labeling based on aligned intravascular frames...")

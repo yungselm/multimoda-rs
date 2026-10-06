@@ -3,6 +3,31 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.6] - 2026-10-06
+
+### Added
+- `label_anomalous_region` / `find_points_by_cl_region` work for pullbacks on any branch of the
+  centerline, not only branch 0. The pullback branch is the one most frames lie on; branches
+  leaving it are placed where they join it, and its parent vessel and sibling branches are
+  distal (kept). Pass the whole vessel centerline: `label_anomalous_region` warns when it gets a
+  single-branch centerline while `results` holds side branches for `results_key`, e.g. the
+  `get_branch(...)` used for the alignment.
+
+### Fixed
+- `find_points_by_cl_region` / `label_anomalous_region`: the anomalous region now covers the whole
+  segment spanned by the aligned frames. Points are placed by their position along the branch
+  the frames lie on; side-branch points by where their branch joins it. Before, frames matched the
+  centerline only within the mean vertical frame step (too small unless the vessel runs along z).
+  Side-branch points could also land in the segment through colliding per-branch `frame_index`
+  values, and proximal vs distal was an axis-aligned coordinate test. Together this broke the
+  region into pieces that were then dropped to aorta as islands.
+- `find_points_by_cl_region` raises `ValueError` for empty frames or centerline instead of panicking.
+- `label_anomalous_region` no longer adds `rca_removed_points` / `lca_removed_points` to
+  `aorta_points`; the five label classes stay disjoint, as `label_geometry` returns them. Results
+  that combine `aorta_points` with the removed points no longer count those vertices twice.
+  `find_aortic_wall_scaling` run after `label_anomalous_region` now uses the same
+  `aorta_points` as when run directly after `label_geometry`.
+
 ## [0.7.5] - 2026-10-05
 
 ### Added
