@@ -355,12 +355,18 @@ The ``results`` dictionary is extended with:
 - ``"anomalous_points"`` - RCA vertices inside the intramural segment.
 - ``"distal_points"`` - RCA vertices distal to the anomalous segment.
 
-Each frame is snapped to its nearest main-branch centerline point; the first and last of these
-points bound the anomalous segment.  Each vertex is placed at its nearest centerline point, or,
-if that point lies on a side branch, at the point where the side branch joins the main branch,
-so a side branch belongs to the region it leaves from.  The main branch must therefore run from
-the ostium distally, which :func:`multimodars.prepare_centerline` ensures when given
-``ref_centerline``.
+The frames may lie on any branch of the centerline: the branch most of them are nearest to is
+the pullback branch, and the first and last frame on it bound the anomalous segment.  Each
+vertex is placed at its nearest centerline point; a vertex on a branch that leaves the pullback
+branch is placed where that branch joins it, so a side branch belongs to the region it leaves
+from.  Vertices outside the pullback branch's subtree - its parent vessel and sibling branches -
+are distal, so they are kept.  For a side-branch pullback, the proximal region therefore runs
+from the side branch's origin to the first frame.
+
+Pass the whole vessel centerline (``rca_cl`` above), not the single branch from ``get_branch``
+used for the alignment: without the other branches, every vertex is placed on that one branch.
+Branch 0 must run from the ostium distally, which :func:`multimodars.prepare_centerline` ensures
+when given ``ref_centerline``.
 
 Vertices that are not mesh-connected to the main body of their sub-region are moved from
 ``"rca_points"`` to ``"aorta_points"``.  ``"rca_removed_points"`` and ``"lca_removed_points"``

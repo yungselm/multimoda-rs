@@ -29,6 +29,8 @@ Covers:
 from __future__ import annotations
 
 import importlib
+import warnings
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -610,7 +612,7 @@ class TestLabelAnomalousRegion:
         "lca_removed_points",
     )
 
-    def _run(self, grid_mesh, monkeypatch):
+    def _run(self, grid_mesh, monkeypatch, branch_starts=(0, 9), extra_keys=None):
         v = [tuple(p) for p in grid_mesh.vertices]
         results = {
             "mesh": grid_mesh,
@@ -619,14 +621,16 @@ class TestLabelAnomalousRegion:
             "lca_points": [],
             "rca_removed_points": [v[0]],
             "lca_removed_points": [v[6]],
+            **(extra_keys or {}),
         }
 
         def fake_split(centerline, frames, points):
             return [v[1], v[2], v[8]], [], [v[4], v[5]]
 
         monkeypatch.setattr(labeling_core, "find_points_by_cl_region", fake_split)
+        centerline = SimpleNamespace(branch_start_indices=list(branch_starts))
         out = labeling_core.label_anomalous_region(
-            centerline=None, frames=[], results=results, results_key="rca_points"
+            centerline=centerline, frames=[], results=results, results_key="rca_points"
         )
         return v, out
 
@@ -649,6 +653,22 @@ class TestLabelAnomalousRegion:
         labelled = [p for key in self._CLASS_KEYS for p in out[key]]
         assert len(labelled) == len(v)
         assert set(labelled) == set(v)
+
+    def test_warns_on_single_branch_centerline_of_branched_vessel(
+        self, grid_mesh, monkeypatch
+    ):
+        with pytest.warns(UserWarning, match="single-branch centerline"):
+            self._run(
+                grid_mesh,
+                monkeypatch,
+                branch_starts=(0,),
+                extra_keys={"rca_points_side_1": []},
+            )
+
+    def test_no_warning_for_single_branch_vessel(self, grid_mesh, monkeypatch):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            self._run(grid_mesh, monkeypatch, branch_starts=(0,))
 
 
 # ===========================================================================

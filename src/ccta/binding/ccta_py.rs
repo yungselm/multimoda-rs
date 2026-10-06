@@ -279,14 +279,16 @@ pub fn adjust_diameter_centerline_morphing_simple(
 
 /// Find points that lie within a specified frame region along the centerline.
 ///
-/// Positions are measured along the main branch (branch 0), which must run from
-/// the ostium distally. A point whose nearest centerline point is on a side
-/// branch is placed where that side branch joins the main branch.
+/// Positions are measured along the branch the frames lie on (the branch most
+/// frame centroids are nearest to). A point on a branch that leaves it is placed
+/// where that branch joins; points outside its subtree (the parent vessel and
+/// sibling branches) are distal.
 ///
 /// Parameters
 /// ----------
 /// centerline : PyCenterline
-///     Centerline of the vessel.
+///     Centerline of the whole vessel with all its branches, branch 0 running
+///     from the ostium distally.
 /// frames : list of PyFrame
 ///     Aligned frames defining the region of interest along the centerline.
 /// points : list of tuple of float
