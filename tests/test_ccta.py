@@ -7,6 +7,8 @@ Covers:
                 adjacency-based label-smoothing steps)
   - labeling.helpers: _keep_largest_connected_component (island-point filter
                 for find_points_by_cl_region's proximal/distal/anomalous output)
+  - labeling.core: label_anomalous_region (label bookkeeping, with the
+                find_points_by_cl_region split stubbed)
   - postprocessing: manual_hole_fill, postprocess_stitched_mesh
   - mesh_regions: remove_labeled_points_from_mesh, keep_labeled_points_from_mesh
   - stitching.boundary: open_boundary_edges, order_boundary_rings,
@@ -33,6 +35,7 @@ import pytest
 import trimesh
 
 from multimodars import PyContour, PyContourPoint, PyFrame, PyGeometry
+from multimodars.ccta.labeling import core as labeling_core
 from multimodars.ccta.labeling.helpers import _keep_largest_connected_component
 from multimodars.ccta.mesh_regions import (
     keep_labeled_points_from_mesh,
@@ -586,6 +589,66 @@ class TestKeepLargestConnectedComponent:
     def test_points_not_on_mesh_returned_unchanged(self, grid_mesh):
         points = [(99.0, 99.0, 99.0), (100.0, 100.0, 100.0)]
         assert _keep_largest_connected_component(grid_mesh, points) == points
+
+
+# ===========================================================================
+# labeling.core.label_anomalous_region - label bookkeeping only
+# (find_points_by_cl_region is stubbed with a fixed proximal/distal/anomalous
+# split, so no centerline or frames are needed.)  Starting labels on grid_mesh:
+#   aorta {3, 7}, rca {1, 2, 4, 5, 8}, rca_removed {0}, lca_removed {6}.
+# The stubbed proximal split [1, 2, 8] leaves vertex 8 as an island (its
+# neighbours {5, 7} are not in the split), so it is dropped to aorta.
+# ===========================================================================
+
+
+class TestLabelAnomalousRegion:
+    _CLASS_KEYS = (
+        "aorta_points",
+        "rca_points",
+        "lca_points",
+        "rca_removed_points",
+        "lca_removed_points",
+    )
+
+    def _run(self, grid_mesh, monkeypatch):
+        v = [tuple(p) for p in grid_mesh.vertices]
+        results = {
+            "mesh": grid_mesh,
+            "aorta_points": [v[3], v[7]],
+            "rca_points": [v[1], v[2], v[4], v[5], v[8]],
+            "lca_points": [],
+            "rca_removed_points": [v[0]],
+            "lca_removed_points": [v[6]],
+        }
+
+        def fake_split(centerline, frames, points):
+            return [v[1], v[2], v[8]], [], [v[4], v[5]]
+
+        monkeypatch.setattr(labeling_core, "find_points_by_cl_region", fake_split)
+        out = labeling_core.label_anomalous_region(
+            centerline=None, frames=[], results=results, results_key="rca_points"
+        )
+        return v, out
+
+    def test_removed_points_stay_out_of_aorta(self, grid_mesh, monkeypatch):
+        v, out = self._run(grid_mesh, monkeypatch)
+        assert v[0] not in out["aorta_points"]
+        assert v[6] not in out["aorta_points"]
+        assert out["rca_removed_points"] == [v[0]]
+        assert out["lca_removed_points"] == [v[6]]
+
+    def test_island_point_moves_from_rca_to_aorta(self, grid_mesh, monkeypatch):
+        v, out = self._run(grid_mesh, monkeypatch)
+        assert set(out["aorta_points"]) == {v[3], v[7], v[8]}
+        assert set(out["rca_points"]) == {v[1], v[2], v[4], v[5]}
+        assert set(out["proximal_points"]) == {v[1], v[2]}
+        assert set(out["anomalous_points"]) == {v[4], v[5]}
+
+    def test_five_classes_partition_mesh_vertices(self, grid_mesh, monkeypatch):
+        v, out = self._run(grid_mesh, monkeypatch)
+        labelled = [p for key in self._CLASS_KEYS for p in out[key]]
+        assert len(labelled) == len(v)
+        assert set(labelled) == set(v)
 
 
 # ===========================================================================

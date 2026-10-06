@@ -3,10 +3,10 @@ from __future__ import annotations
 import trimesh
 
 from ...multimodars import (
-    find_faces_near_points,
-    remove_occluded_points_ray_triangle,
-    keep_largest_connected_component,
     PyCenterline,
+    find_faces_near_points,
+    keep_largest_connected_component,
+    remove_occluded_points_ray_triangle,
 )
 
 
@@ -46,11 +46,10 @@ def _keep_largest_connected_component(
 ) -> list[tuple[float, float, float]]:
     """Keep only the largest mesh-connected component of *points*.
 
-    ``find_points_by_cl_region`` classifies points using coordinate-only
-    heuristics (nearest 3-D centerline point, axis-aligned proximal/distal
-    split) with no notion of mesh topology.  That can leave a handful of
-    points assigned to a region despite not being mesh-connected to its main
-    cluster ("islands") - e.g. a point geometrically close to the anomalous
+    ``find_points_by_cl_region`` classifies points by their nearest centerline
+    point, with no notion of mesh topology.  That can leave a handful of points
+    assigned to a region despite not being mesh-connected to its main cluster
+    ("islands") - e.g. a point geometrically close to the anomalous
     segment but on a different, unconnected part of the vessel surface.
 
     This restricts the mesh's face-adjacency graph to *points* and keeps

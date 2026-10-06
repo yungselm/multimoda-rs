@@ -279,12 +279,16 @@ pub fn adjust_diameter_centerline_morphing_simple(
 
 /// Find points that lie within a specified frame region along the centerline.
 ///
+/// Positions are measured along the main branch (branch 0), which must run from
+/// the ostium distally. A point whose nearest centerline point is on a side
+/// branch is placed where that side branch joins the main branch.
+///
 /// Parameters
 /// ----------
 /// centerline : PyCenterline
 ///     Centerline of the vessel.
 /// frames : list of PyFrame
-///     Frames defining the region of interest along the centerline.
+///     Aligned frames defining the region of interest along the centerline.
 /// points : list of tuple of float
 ///     Input ``(x, y, z)`` point coordinates.
 ///
@@ -296,6 +300,11 @@ pub fn adjust_diameter_centerline_morphing_simple(
 ///     Points located after the last frame in the region.
 /// points_between : list of tuple of float
 ///     Points located within the frame region.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If *frames* or *centerline* is empty.
 ///
 /// Examples
 /// --------
@@ -313,7 +322,8 @@ pub fn find_points_by_cl_region(
         .collect::<Result<_, _>>()?;
 
     let result_points =
-        scale_coronary::find_points_by_cl_region_rs(&rust_centerline, &rust_frames, &points);
+        scale_coronary::find_points_by_cl_region_rs(&rust_centerline, &rust_frames, &points)
+            .map_err(pyo3::exceptions::PyValueError::new_err)?;
 
     Ok(result_points)
 }
