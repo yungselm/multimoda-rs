@@ -132,6 +132,10 @@ The returned ``results`` dictionary contains:
   the RCA label: ``[(x, y, z), ...]``.
 - ``"lca_removed_points"`` - same for LCA.
 
+Every mesh vertex is in exactly one of these five lists.  In particular, the removed points are
+not part of ``"aorta_points"``; steps that act on the whole aortic wall combine them explicitly,
+e.g. ``results["aorta_points"] + results["rca_removed_points"]``.
+
 Centerlines can be supplied as CSV files (three columns, no header: ``x``, ``y``, ``z`` in mm),
 ASCII VTP files (VTK PolyData exported by 3D-Slicer or VMTK, recommended), an existing
 :class:`~multimodars.PyCenterline`, or a numpy array of points.
@@ -332,8 +336,8 @@ frame spacing.
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 After alignment, :func:`multimodars.label_anomalous_region` subdivides the RCA points into
-three sub-regions - proximal, anomalous (intramural), and distal - based on the spatial
-overlap between the aligned intravascular frames and the CCTA mesh:
+three sub-regions - proximal, anomalous (intramural), and distal - according to where they
+sit along the main branch of the RCA centerline relative to the aligned intravascular frames:
 
 .. code-block:: python
 
@@ -350,6 +354,17 @@ The ``results`` dictionary is extended with:
 - ``"proximal_points"`` - RCA vertices proximal to the anomalous segment.
 - ``"anomalous_points"`` - RCA vertices inside the intramural segment.
 - ``"distal_points"`` - RCA vertices distal to the anomalous segment.
+
+Each frame is snapped to its nearest main-branch centerline point; the first and last of these
+points bound the anomalous segment.  Each vertex is placed at its nearest centerline point, or,
+if that point lies on a side branch, at the point where the side branch joins the main branch,
+so a side branch belongs to the region it leaves from.  The main branch must therefore run from
+the ostium distally, which :func:`multimodars.prepare_centerline` ensures when given
+``ref_centerline``.
+
+Vertices that are not mesh-connected to the main body of their sub-region are moved from
+``"rca_points"`` to ``"aorta_points"``.  ``"rca_removed_points"`` and ``"lca_removed_points"``
+are left unchanged.
 
 Set ``debug_plot=True`` to open an interactive scene that shows how the three sub-regions
 are assigned - useful when the boundary appears misplaced.
