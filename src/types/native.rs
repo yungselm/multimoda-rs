@@ -39,6 +39,18 @@ pub trait Point3D {
     }
 }
 
+impl<P: Point3D + ?Sized> Point3D for &P {
+    fn x(&self) -> f64 {
+        (**self).x()
+    }
+    fn y(&self) -> f64 {
+        (**self).y()
+    }
+    fn z(&self) -> f64 {
+        (**self).z()
+    }
+}
+
 impl Point3D for nalgebra::Vector3<f64> {
     fn x(&self) -> f64 {
         self[0]

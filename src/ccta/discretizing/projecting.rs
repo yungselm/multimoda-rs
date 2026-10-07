@@ -1,5 +1,5 @@
 use crate::types::native::{
-    Centerline, CenterlinePoint, Contour, ContourPoint, ContourType, Point3D,
+    cumulative_arc_length, Centerline, CenterlinePoint, Contour, ContourPoint, ContourType,
 };
 use nalgebra::Vector3;
 use rstar::primitives::GeomWithData;
@@ -30,7 +30,7 @@ pub fn walk_centerline_slices(
         return vec![];
     }
 
-    let cum = branch_cum_arc(&branch_pts);
+    let cum = cumulative_arc_length(&branch_pts);
     let total = *cum.last().unwrap();
     let sample_positions = build_sample_positions(total, step_size);
 
@@ -66,85 +66,12 @@ pub fn walk_centerline_slices(
         .collect()
 }
 
-fn assign_to_anchors(
-    anchors: &[CenterlinePoint],
-    points: &[(f64, f64, f64)],
-    max_plane_dist: f64,
-) -> Vec<Vec<ContourPoint>> {
-    let tree = RTree::bulk_load(
-        anchors
-            .iter()
-            .enumerate()
-            .map(|(i, a)| {
-                GeomWithData::new([a.contour_point.x, a.contour_point.y, a.contour_point.z], i)
-            })
-            .collect(),
-    );
-
-    let mut buckets: Vec<Vec<ContourPoint>> = vec![vec![]; anchors.len()];
-    for &(px, py, pz) in points {
-        let Some(nearest) = tree.nearest_neighbor([px, py, pz]) else {
-            continue;
-        };
-        let lo = nearest.data.saturating_sub(1);
-        let hi = (nearest.data + 1).min(anchors.len() - 1);
-        let Some((anchor_idx, dist)) = (lo..=hi)
-            .map(|i| (i, plane_dist((px, py, pz), &anchors[i]).abs()))
-            .min_by(|(_, da), (_, db)| da.partial_cmp(db).unwrap_or(std::cmp::Ordering::Equal))
-        else {
-            continue;
-        };
-        if dist > max_plane_dist {
-            continue;
-        }
-        let (qx, qy, qz) = project_to_plane((px, py, pz), &anchors[anchor_idx]);
-        let point_index = buckets[anchor_idx].len() as u32;
-        buckets[anchor_idx].push(ContourPoint {
-            frame_index: anchor_idx as u32,
-            point_index,
-            x: qx,
-            y: qy,
-            z: qz,
-            aortic: false,
-        });
-    }
-    buckets
-}
-
-// Signed distance from `point` to the plane perpendicular to `anchor` at its position.
-fn plane_dist(point: (f64, f64, f64), anchor: &CenterlinePoint) -> f64 {
-    let p = Vector3::new(
-        point.0 - anchor.contour_point.x,
-        point.1 - anchor.contour_point.y,
-        point.2 - anchor.contour_point.z,
-    );
-    p.dot(&anchor.tangent)
-}
-
-// Projects a point onto the plane perpendicular to `anchor` at its position.
-// Formula: p_proj = p − ((p − center) · n̂) · n̂
-fn project_to_plane(point: (f64, f64, f64), anchor: &CenterlinePoint) -> (f64, f64, f64) {
-    let center = Vector3::new(
-        anchor.contour_point.x,
-        anchor.contour_point.y,
-        anchor.contour_point.z,
-    );
-    let p = Vector3::new(point.0, point.1, point.2);
-    let n = anchor.tangent;
-    let proj = p - n * (p - center).dot(&n);
-    (proj.x, proj.y, proj.z)
-}
-
-fn branch_cum_arc(pts: &[&CenterlinePoint]) -> Vec<f64> {
-    let mut cum = vec![0.0f64];
-    for i in 1..pts.len() {
-        let d = pts[i - 1].contour_point.distance_to(&pts[i].contour_point);
-        cum.push(cum.last().unwrap() + d);
-    }
-    cum
-}
-
-// so the branch end always gets a slice. The final gap may be shorter than `step`.
+/// Distances along the branch (from its start) at which slices are cut: every `step` up to the
+/// branch length `total`, plus `total` itself if it isn't a multiple of `step`, so the branch end
+/// is always sliced. E.g. `total = 10, step = 3` → `[0, 3, 6, 9, 10]`.
+///
+/// The small tolerances absorb floating-point noise (e.g. `3.0 / 0.1 = 29.999…`). Returns an
+/// empty vector for a non-positive `step` or invalid `total`.
 fn build_sample_positions(total: f64, step: f64) -> Vec<f64> {
     if step.is_nan() || step <= 0.0 || !total.is_finite() || total < 0.0 {
         return vec![];
@@ -216,6 +143,75 @@ fn interpolate_branch_at_s(
         branch_id: pts[seg].branch_id,
         radius: pts[seg].radius + t * (pts[seg + 1].radius - pts[seg].radius),
     }
+}
+
+fn assign_to_anchors(
+    anchors: &[CenterlinePoint],
+    points: &[(f64, f64, f64)],
+    max_plane_dist: f64,
+) -> Vec<Vec<ContourPoint>> {
+    let tree = RTree::bulk_load(
+        anchors
+            .iter()
+            .enumerate()
+            .map(|(i, a)| {
+                GeomWithData::new([a.contour_point.x, a.contour_point.y, a.contour_point.z], i)
+            })
+            .collect(),
+    );
+
+    let mut buckets: Vec<Vec<ContourPoint>> = vec![vec![]; anchors.len()];
+    for &(px, py, pz) in points {
+        let Some(nearest) = tree.nearest_neighbor([px, py, pz]) else {
+            continue;
+        };
+        let lo = nearest.data.saturating_sub(1);
+        let hi = (nearest.data + 1).min(anchors.len() - 1);
+        let Some((anchor_idx, dist)) = (lo..=hi)
+            .map(|i| (i, plane_dist((px, py, pz), &anchors[i]).abs()))
+            .min_by(|(_, da), (_, db)| da.partial_cmp(db).unwrap_or(std::cmp::Ordering::Equal))
+        else {
+            continue;
+        };
+        if dist > max_plane_dist {
+            continue;
+        }
+        let (qx, qy, qz) = project_to_plane((px, py, pz), &anchors[anchor_idx]);
+        let point_index = buckets[anchor_idx].len() as u32;
+        buckets[anchor_idx].push(ContourPoint {
+            frame_index: anchor_idx as u32,
+            point_index,
+            x: qx,
+            y: qy,
+            z: qz,
+            aortic: false,
+        });
+    }
+    buckets
+}
+
+// Signed distance from `point` to the plane perpendicular to `anchor` at its position.
+fn plane_dist(point: (f64, f64, f64), anchor: &CenterlinePoint) -> f64 {
+    let p = Vector3::new(
+        point.0 - anchor.contour_point.x,
+        point.1 - anchor.contour_point.y,
+        point.2 - anchor.contour_point.z,
+    );
+    p.dot(&anchor.tangent)
+}
+
+// Projects a point onto the plane perpendicular to `anchor` at its position.
+// Formula: p_proj = p − ((p − center) · n̂) · n̂
+fn project_to_plane(point: (f64, f64, f64), anchor: &CenterlinePoint) -> (f64, f64, f64) {
+    let center = Vector3::new(
+        anchor.contour_point.x,
+        anchor.contour_point.y,
+        anchor.contour_point.z,
+    );
+    let p = Vector3::new(point.0, point.1, point.2);
+    let n = anchor.tangent;
+    let proj = p - n * (p - center).dot(&n);
+    (proj.x, proj.y, proj.z)
 }
 
 #[cfg(test)]
@@ -434,7 +430,7 @@ mod tests {
         p0.radius = 1.0;
         p1.radius = 3.0;
         let pts = vec![&p0, &p1];
-        let cum = branch_cum_arc(&pts);
+        let cum = cumulative_arc_length(&pts);
         let mid = interpolate_branch_at_s(&pts, &cum, 1.0, 0);
         assert!((mid.radius - 2.0).abs() < 1e-12);
     }
@@ -506,7 +502,7 @@ mod tests {
             .collect();
         let slices = walk_centerline_slices(&cl, &cloud, 0, 1.0);
         let branch_pts: Vec<&CenterlinePoint> = cl.points.iter().collect();
-        let cum = branch_cum_arc(&branch_pts);
+        let cum = cumulative_arc_length(&branch_pts);
         let total = *cum.last().unwrap();
         let anchors: Vec<CenterlinePoint> = build_sample_positions(total, 1.0)
             .into_iter()
@@ -592,7 +588,7 @@ mod tests {
         let slices = walk_centerline_slices(&cl, &cloud, 0, step_size);
 
         let branch_pts: Vec<&CenterlinePoint> = cl.points.iter().collect();
-        let cum = branch_cum_arc(&branch_pts);
+        let cum = cumulative_arc_length(&branch_pts);
         let total = *cum.last().unwrap();
         // Uniform steps plus a final slice at the branch end (arc length is not a multiple of step).
         let expected = (total / step_size).floor() as usize + 2;
