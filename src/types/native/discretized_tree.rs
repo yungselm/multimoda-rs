@@ -32,42 +32,6 @@ pub struct DiscretizedVesselTree {
 }
 
 impl DiscretizedVesselTree {
-    pub fn new(
-        discretized_aorta: Vec<Contour>,
-        discretized_rca_main: Vec<Contour>,
-        discretized_lca_main: Vec<Contour>,
-        spacing: f64,
-        rca_branches: Vec<Vec<Contour>>,
-        lca_branches: Vec<Vec<Contour>>,
-        rca_references: Vec<ReferenceTriplet>,
-        lca_references: Vec<ReferenceTriplet>,
-        ao_lca: (f64, f64, f64),
-        ao_rca: (f64, f64, f64),
-        pts_cusp_rcc: Option<Vec<(f64, f64, f64)>>,
-        pts_cusp_lcc: Option<Vec<(f64, f64, f64)>>,
-        pts_cusp_acc: Option<Vec<(f64, f64, f64)>>,
-        index_stj_slice: Option<usize>,
-        index_aa: Option<usize>,
-    ) -> anyhow::Result<Self> {
-        Ok(DiscretizedVesselTree {
-            discretized_aorta,
-            discretized_rca_main,
-            discretized_lca_main,
-            spacing,
-            rca_branches,
-            lca_branches,
-            rca_references,
-            lca_references,
-            ao_lca,
-            ao_rca,
-            pts_cusp_rcc,
-            pts_cusp_lcc,
-            pts_cusp_acc,
-            index_stj_slice,
-            index_aa,
-        })
-    }
-
     /// Compute `ao_rca`, `ao_lca`, `rca_references`, and `lca_references`.
     ///
     /// **`ao_rca` / `ao_lca`** – centroid of the aorta slice whose centroid is closest to
