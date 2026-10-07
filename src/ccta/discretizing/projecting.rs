@@ -2,14 +2,19 @@ use crate::types::native::{
     Centerline, CenterlinePoint, Contour, ContourPoint, ContourType, Point3D,
 };
 use nalgebra::Vector3;
+use rstar::primitives::GeomWithData;
+use rstar::RTree;
 
-/// Walks branch `branch_id` at uniform arc-length steps of `step_size`, assigns each mesh point
-/// to its geometrically closest anchor via Voronoi partitioning, projects it onto that anchor's
-/// perpendicular plane, and returns one `Contour` per sampled position.
+/// Walks branch `branch_id` at uniform arc-length steps of `step_size` (plus a final slice at the
+/// branch end when the length is not a multiple of `step_size`), assigns each mesh point to one
+/// anchor, projects it onto that anchor's perpendicular plane, and returns one `Contour` per
+/// sampled position.
 ///
-/// Voronoi assignment prevents far-away vessel sections from contaminating a slice: a point that
-/// is physically on a distant part of the vessel will always be closer (in 3-D) to the anchors on
-/// that distant section, so it never ends up in the wrong cross-section.
+/// Assignment finds the 3-D nearest anchor via an R-tree, then picks whichever of it and its two
+/// arc-length neighbours has its plane closest to the point. Restricting candidates to the
+/// nearest anchor's neighbourhood prevents far-away vessel sections from contaminating a slice;
+/// choosing by plane distance keeps slices correct on the inside of bends. Points more than
+/// `step_size` from every candidate plane lie beyond the branch ends and are dropped.
 pub fn walk_centerline_slices(
     centerline: &Centerline,
     points: &[(f64, f64, f64)],
@@ -39,7 +44,7 @@ pub fn walk_centerline_slices(
         return vec![];
     }
 
-    let buckets = voronoi_partition(&anchors, points);
+    let buckets = assign_to_anchors(&anchors, points, step_size);
 
     anchors
         .into_iter()
@@ -61,45 +66,59 @@ pub fn walk_centerline_slices(
         .collect()
 }
 
-fn voronoi_partition(
+fn assign_to_anchors(
     anchors: &[CenterlinePoint],
     points: &[(f64, f64, f64)],
+    max_plane_dist: f64,
 ) -> Vec<Vec<ContourPoint>> {
+    let tree = RTree::bulk_load(
+        anchors
+            .iter()
+            .enumerate()
+            .map(|(i, a)| {
+                GeomWithData::new([a.contour_point.x, a.contour_point.y, a.contour_point.z], i)
+            })
+            .collect(),
+    );
+
     let mut buckets: Vec<Vec<ContourPoint>> = vec![vec![]; anchors.len()];
     for &(px, py, pz) in points {
-        let closest = anchors.iter().enumerate().min_by(|(_, a), (_, b)| {
-            let da = sq_dist3(
-                px,
-                py,
-                pz,
-                a.contour_point.x,
-                a.contour_point.y,
-                a.contour_point.z,
-            );
-            let db = sq_dist3(
-                px,
-                py,
-                pz,
-                b.contour_point.x,
-                b.contour_point.y,
-                b.contour_point.z,
-            );
-            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-        });
-        if let Some((anchor_idx, anchor)) = closest {
-            let (qx, qy, qz) = project_to_plane((px, py, pz), anchor);
-            let point_index = buckets[anchor_idx].len() as u32;
-            buckets[anchor_idx].push(ContourPoint {
-                frame_index: anchor_idx as u32,
-                point_index,
-                x: qx,
-                y: qy,
-                z: qz,
-                aortic: false,
-            });
+        let Some(nearest) = tree.nearest_neighbor([px, py, pz]) else {
+            continue;
+        };
+        let lo = nearest.data.saturating_sub(1);
+        let hi = (nearest.data + 1).min(anchors.len() - 1);
+        let Some((anchor_idx, dist)) = (lo..=hi)
+            .map(|i| (i, plane_dist((px, py, pz), &anchors[i]).abs()))
+            .min_by(|(_, da), (_, db)| da.partial_cmp(db).unwrap_or(std::cmp::Ordering::Equal))
+        else {
+            continue;
+        };
+        if dist > max_plane_dist {
+            continue;
         }
+        let (qx, qy, qz) = project_to_plane((px, py, pz), &anchors[anchor_idx]);
+        let point_index = buckets[anchor_idx].len() as u32;
+        buckets[anchor_idx].push(ContourPoint {
+            frame_index: anchor_idx as u32,
+            point_index,
+            x: qx,
+            y: qy,
+            z: qz,
+            aortic: false,
+        });
     }
     buckets
+}
+
+// Signed distance from `point` to the plane perpendicular to `anchor` at its position.
+fn plane_dist(point: (f64, f64, f64), anchor: &CenterlinePoint) -> f64 {
+    let p = Vector3::new(
+        point.0 - anchor.contour_point.x,
+        point.1 - anchor.contour_point.y,
+        point.2 - anchor.contour_point.z,
+    );
+    p.dot(&anchor.tangent)
 }
 
 // Projects a point onto the plane perpendicular to `anchor` at its position.
@@ -116,10 +135,6 @@ fn project_to_plane(point: (f64, f64, f64), anchor: &CenterlinePoint) -> (f64, f
     (proj.x, proj.y, proj.z)
 }
 
-fn sq_dist3(ax: f64, ay: f64, az: f64, bx: f64, by: f64, bz: f64) -> f64 {
-    (ax - bx).powi(2) + (ay - by).powi(2) + (az - bz).powi(2)
-}
-
 fn branch_cum_arc(pts: &[&CenterlinePoint]) -> Vec<f64> {
     let mut cum = vec![0.0f64];
     for i in 1..pts.len() {
@@ -129,18 +144,15 @@ fn branch_cum_arc(pts: &[&CenterlinePoint]) -> Vec<f64> {
     cum
 }
 
+// so the branch end always gets a slice. The final gap may be shorter than `step`.
 fn build_sample_positions(total: f64, step: f64) -> Vec<f64> {
-    let mut positions = Vec::new();
-    let mut s = 0.0f64;
-    while s <= total + 1e-9 {
-        positions.push(s);
-        s += step;
+    if step.is_nan() || step <= 0.0 || !total.is_finite() || total < 0.0 {
+        return vec![];
     }
-    if let Some(&last) = positions.last() {
-        if last > total + 1e-6 {
-            positions.pop();
-            positions.push(total);
-        }
+    let n = (total / step + 1e-9).floor() as usize;
+    let mut positions: Vec<f64> = (0..=n).map(|i| i as f64 * step).collect();
+    if total - positions[n] > 1e-6 {
+        positions.push(total);
     }
     positions
 }
@@ -202,7 +214,7 @@ fn interpolate_branch_at_s(
         },
         tangent,
         branch_id: pts[seg].branch_id,
-        radius: pts[seg].radius,
+        radius: pts[seg].radius + t * (pts[seg + 1].radius - pts[seg].radius),
     }
 }
 
@@ -341,6 +353,92 @@ mod tests {
         }
     }
 
+    // ---- build_sample_positions ----
+
+    #[test]
+    fn test_sample_positions_include_branch_end() {
+        assert_eq!(
+            build_sample_positions(10.0, 3.0),
+            vec![0.0, 3.0, 6.0, 9.0, 10.0]
+        );
+    }
+
+    #[test]
+    fn test_sample_positions_exact_multiple_no_duplicate_end() {
+        assert_eq!(
+            build_sample_positions(8.0, 2.0),
+            vec![0.0, 2.0, 4.0, 6.0, 8.0]
+        );
+        // 0.1 does not accumulate drift: 30 steps land exactly on 3.0 without an extra slice.
+        assert_eq!(build_sample_positions(3.0, 0.1).len(), 31);
+    }
+
+    #[test]
+    fn test_sample_positions_degenerate_inputs() {
+        assert_eq!(build_sample_positions(0.0, 1.0), vec![0.0]);
+        assert!(build_sample_positions(5.0, 0.0).is_empty());
+        assert!(build_sample_positions(5.0, -1.0).is_empty());
+        assert!(build_sample_positions(f64::NAN, 1.0).is_empty());
+    }
+
+    // ---- assign_to_anchors ----
+
+    #[test]
+    fn test_assignment_prefers_plane_over_euclidean_on_bend() {
+        // Quarter bend: A0 at origin heading +x, A1 at (1,1,0) heading +y. The point (0,1.5,0)
+        // is closer to A1 in 3-D but lies exactly in A0's plane.
+        let a0 = cl_pt(0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0);
+        let a1 = cl_pt(1, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0);
+        let buckets = assign_to_anchors(&[a0, a1], &[(0.0, 1.5, 0.0)], 10.0);
+        assert_eq!(buckets[0].len(), 1);
+        assert!(buckets[1].is_empty());
+    }
+
+    #[test]
+    fn test_points_beyond_branch_ends_are_dropped() {
+        let cl = z_centerline(5);
+        let mut cloud = cylinder_ring(-5.0, 3.0, 8, 0.0, 1);
+        cloud.extend(cylinder_ring(9.0, 3.0, 8, 0.0, 2));
+        let kept_near_end = cylinder_ring(4.5, 3.0, 8, 0.0, 3);
+        cloud.extend(kept_near_end.iter().copied());
+        let slices = walk_centerline_slices(&cl, &cloud, 0, 1.0);
+        let total: usize = slices.iter().map(|s| s.points.len()).sum();
+        assert_eq!(
+            total,
+            kept_near_end.len(),
+            "only the ring 0.5 past the end is kept"
+        );
+        assert_eq!(slices.last().unwrap().points.len(), kept_near_end.len());
+    }
+
+    #[test]
+    fn test_walk_includes_tail_slice() {
+        // Length 4.5 at step 1.0: slices at 0,1,2,3,4 and the end at 4.5.
+        let cl = Centerline {
+            points: vec![
+                cl_pt(0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+                cl_pt(1, 0.0, 0.0, 4.5, 0.0, 0.0, 1.0),
+            ],
+            branch_start_indices: vec![0],
+        };
+        let slices = walk_centerline_slices(&cl, &[], 0, 1.0);
+        assert_eq!(slices.len(), 6);
+        let last = slices.last().unwrap().centroid.unwrap();
+        assert!((last.2 - 4.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_anchor_radius_is_interpolated() {
+        let mut p0 = cl_pt(0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
+        let mut p1 = cl_pt(1, 0.0, 0.0, 2.0, 0.0, 0.0, 1.0);
+        p0.radius = 1.0;
+        p1.radius = 3.0;
+        let pts = vec![&p0, &p1];
+        let cum = branch_cum_arc(&pts);
+        let mid = interpolate_branch_at_s(&pts, &cum, 1.0, 0);
+        assert!((mid.radius - 2.0).abs() < 1e-12);
+    }
+
     // ---- walk_centerline_slices ----
 
     #[test]
@@ -401,7 +499,7 @@ mod tests {
 
     #[test]
     fn test_projected_points_lie_on_their_anchor_plane() {
-        // After Voronoi assignment every point in slice i must lie on anchor i's plane.
+        // After assignment every point in slice i must lie on anchor i's plane.
         let cl = z_centerline(4);
         let cloud: Vec<(f64, f64, f64)> = (0..4usize)
             .flat_map(|i| cylinder_ring(i as f64, 3.0, 8, 0.3, i as u64 * 5))
@@ -424,7 +522,7 @@ mod tests {
     }
 
     #[test]
-    fn test_voronoi_no_cross_contamination() {
+    fn test_no_cross_contamination() {
         // Two rings at z=0 and z=20 on a straight centerline — they must end up in separate
         // slices with no cross-contamination.
         let cl = Centerline {
@@ -492,18 +590,18 @@ mod tests {
             .collect();
 
         let slices = walk_centerline_slices(&cl, &cloud, 0, step_size);
-        let arc_len = FRAC_PI_2 * r;
-        let expected = (arc_len / step_size).floor() as usize + 1;
+
+        let branch_pts: Vec<&CenterlinePoint> = cl.points.iter().collect();
+        let cum = branch_cum_arc(&branch_pts);
+        let total = *cum.last().unwrap();
+        // Uniform steps plus a final slice at the branch end (arc length is not a multiple of step).
+        let expected = (total / step_size).floor() as usize + 2;
         assert_eq!(
             slices.len(),
             expected,
             "expected {expected} slices, got {}",
             slices.len()
         );
-
-        let branch_pts: Vec<&CenterlinePoint> = cl.points.iter().collect();
-        let cum = branch_cum_arc(&branch_pts);
-        let total = *cum.last().unwrap();
         let anchors: Vec<CenterlinePoint> = build_sample_positions(total, step_size)
             .into_iter()
             .enumerate()
