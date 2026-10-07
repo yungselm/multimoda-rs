@@ -695,47 +695,38 @@ pub fn fix_mesh_winding(faces: Vec<[usize; 3]>) -> Vec<[usize; 3]> {
         .collect()
 }
 
-/// Discretize a vessel into uniform cross-sectional contours by cutting its surface mesh.
+/// Discretize a vessel into evenly sampled cross-sections by cutting its surface mesh.
 ///
-/// Walks ``branch_id`` of ``centerline`` at uniform arc-length intervals of
-/// ``step_size``, intersects the mesh with the plane perpendicular to the
-/// centerline at each position, drops empty slices and incomplete (half-circle)
-/// slices at both ends, and resamples each outline to exactly ``n_points``
-/// points evenly spaced along its length.
-///
-/// The outline is the exact cut through the mesh triangles, so lumens of any
-/// shape (eccentric, notched, crescent-shaped) are preserved. Where a plane cuts
-/// several separate loops, the one around the centerline is used; gaps in the
-/// cut region (e.g. a side-branch ostium excluded by ``region_points``) are
-/// bridged with straight edges.
-///
-/// ``centerline`` is used as-is — smooth/resample/orient it beforehand (e.g. via
-/// ``PyCenterline.smooth``); this no longer smooths internally.
+/// Cuts the mesh with planes perpendicular to branch ``branch_id`` every
+/// ``step_size``, drops empty and incomplete end slices and resamples each
+/// outline to ``n_points`` evenly spaced points. The cut keeps lumens of any
+/// shape (eccentric, notched, crescent-shaped). Gaps in the cut region, such as
+/// a side-branch ostium excluded by ``region_points``, are bridged with
+/// straight edges. ``centerline`` must already be smoothed and resampled.
 ///
 /// Parameters
 /// ----------
 /// centerline : PyCenterline
-///     Centerline of the vessel to discretize, already prepared (smoothed,
-///     resampled, and oriented as needed).
+///     Prepared centerline of the vessel.
 /// vertices : list of tuple of float
-///     ``(x, y, z)`` mesh vertices (e.g. ``[tuple(v) for v in mesh.vertices.tolist()]``).
+///     Mesh vertices, e.g. ``[tuple(v) for v in mesh.vertices.tolist()]``.
 /// faces : list of list of int
-///     Triangles as vertex-index triples (e.g. ``mesh.faces.tolist()``).
+///     Triangles as vertex-index triples, e.g. ``mesh.faces.tolist()``.
 /// branch_id : int
-///     Branch of the centerline to walk (0 = main vessel, 1+ = side branches).
+///     Branch to walk (0 = main vessel).
 /// step_size : float
-///     Arc-length step between successive cross-sections in mm.
+///     Arc length between cross-sections in mm.
 /// n_points : int
-///     Number of evenly-spaced points on each output contour.
+///     Points per output contour.
 /// region_points : list of tuple of float, optional
-///     Vertices labelling the vessel region to cut (e.g. ``results["rca_points_main"]``).
-///     A face is cut when at least two of its vertices are in this set. ``None``
+///     Vertices labelling the region to cut (e.g. ``results["rca_points_main"]``).
+///     A face is cut when at least two of its vertices are labelled. ``None``
 ///     cuts the whole mesh.
 ///
 /// Returns
 /// -------
 /// contours : list of PyContour
-///     One uniformly-sampled closed contour per valid cross-section.
+///     One closed contour per valid cross-section.
 ///
 /// Raises
 /// ------
@@ -744,10 +735,8 @@ pub fn fix_mesh_winding(faces: Vec<[usize; 3]>) -> Vec<[usize; 3]> {
 ///
 /// Examples
 /// --------
-/// >>> import multimodars as mm
 /// >>> vertices = [tuple(v) for v in mesh.vertices.tolist()]
 /// >>> contours = mm.discretize_vessel(centerline, vertices, mesh.faces.tolist(), 0, 0.5, 200)
-/// >>> print(f"Got {len(contours)} cross-sections")
 #[pyfunction]
 #[pyo3(signature = (
     centerline, vertices, faces,
@@ -851,67 +840,44 @@ pub fn smooth_mesh_labels(
 
 /// Discretize the full coronary vessel tree and compute orientation references.
 ///
-/// Runs :func:`discretize_vessel` for every branch (aorta, RCA main, LCA main,
-/// and each side branch), then computes orientation reference triplets at the
-/// ostium and every side-branch bifurcation. ``ao_cl``, ``rca_cl``, and
-/// ``lca_cl`` are used as-is — smooth/resample/orient them beforehand (e.g.
-/// via ``PyCenterline.smooth``); this no longer smooths internally.
+/// Runs :func:`discretize_vessel` for the aorta, both main vessels and every side
+/// branch, each on its own labelled faces, then computes the reference triplets.
+/// The centerlines must already be smoothed and resampled.
 ///
 /// Parameters
 /// ----------
-/// ao_cl : PyCenterline
-///     Aortic centerline (branch 0 only), already prepared.
-/// rca_cl : PyCenterline
-///     RCA centerline with all branches calculated, already prepared.
-/// lca_cl : PyCenterline
-///     LCA centerline with all branches calculated, already prepared.
+/// ao_cl, rca_cl, lca_cl : PyCenterline
+///     Prepared centerlines, coronaries with their branches calculated.
 /// mesh_vertices : list of tuple of float
-///     ``(x, y, z)`` vertices of the labelled mesh (``results["mesh"]``).
+///     Vertices of the labelled mesh (``results["mesh"]``).
 /// mesh_faces : list of list of int
-///     Triangles of the labelled mesh as vertex-index triples.
-/// points_ao : list of tuple of float
-///     Vertices labelling the aorta region; only its faces are cut.
-/// points_rca_main : list of tuple of float
-///     Vertices labelling the RCA main vessel.
-/// points_lca_main : list of tuple of float
-///     Vertices labelling the LCA main vessel.
-/// side_branches_rca : list of list of tuple of float
-///     One point list per RCA side branch, ordered by branch_id
-///     (``side_branches_rca[0]`` → branch_id 1, etc.).
-///     Pass ``results["rca_points_side_1"]``, ``["rca_points_side_2"]``, … in order.
-/// side_branches_lca : list of list of tuple of float
-///     Same structure for LCA.
-/// branch_id_rca : int
-///     Branch ID of the RCA main vessel (almost always ``0``).
-/// branch_id_lca : int
-///     Branch ID of the LCA main vessel (almost always ``0``).
+///     Its triangles as vertex-index triples.
+/// points_ao, points_rca_main, points_lca_main : list of tuple of float
+///     Vertices labelling the aorta and the two main vessels.
+/// side_branches_rca, side_branches_lca : list of list of tuple of float
+///     One label list per side branch, ``side_branches_rca[i]`` is branch_id
+///     ``i + 1`` (``results["rca_points_side_1"]``, ``..._2``, … in order).
+/// branch_id_rca, branch_id_lca : int
+///     Branch ID of each main vessel (almost always ``0``).
 /// step_size : float
-///     Arc-length step between cross-sections in mm.
+///     Arc length between cross-sections in mm.
 /// n_points : int
-///     Number of evenly-spaced points per output contour.
+///     Points per output contour.
 ///
 /// Returns
 /// -------
 /// PyDiscretizedVesselTree
-///     Fully populated vessel tree including orientation references.
+///     Vessel tree including the reference triplets.
 ///
 /// Examples
 /// --------
-/// >>> import multimodars as mm
-/// >>> results = mm.label_branches(rca_cl, results)
-/// >>> results = mm.label_branches(lca_cl, results, results_key="lca_points")
-/// >>> side_rca = [results["rca_points_side_1"], results["rca_points_side_2"]]
-/// >>> side_lca = [results["lca_points_side_1"]]
 /// >>> mesh = results["mesh"]
+/// >>> side_rca = [results["rca_points_side_1"], results["rca_points_side_2"]]
 /// >>> tree = mm.discretize_vessel_tree(
 /// ...     ao_cl, rca_cl, lca_cl,
 /// ...     [tuple(v) for v in mesh.vertices.tolist()], mesh.faces.tolist(),
-/// ...     results["aorta_points"],
-/// ...     results["rca_points_main"],
-/// ...     results["lca_points_main"],
-/// ...     side_rca, side_lca,
-/// ...     branch_id_rca=0, branch_id_lca=0,
-/// ...     step_size=1.0, n_points=100,
+/// ...     results["aorta_points"], results["rca_points_main"], results["lca_points_main"],
+/// ...     side_rca, [results["lca_points_side_1"]],
 /// ... )
 #[pyfunction]
 #[pyo3(signature = (

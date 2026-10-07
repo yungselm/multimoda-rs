@@ -15,7 +15,7 @@ pub struct SurfaceMesh {
 }
 
 impl SurfaceMesh {
-    /// Fails when a face references a vertex index that does not exist.
+    /// Fails when a face references a missing vertex.
     pub fn new(vertices: &[Coords3], faces: Vec<[usize; 3]>) -> Result<Self, String> {
         if let Some(face) = faces
             .iter()
@@ -35,12 +35,8 @@ impl SurfaceMesh {
         })
     }
 
-    /// Faces belonging to the region labelled by `region_points`: those with at least two of their
-    /// three vertices among the labelled points. Points are matched to vertices by exact
-    /// coordinates, as label sets are copies of the mesh's own vertices.
-    ///
-    /// The two-of-three rule assigns each triangle on the border between two adjacent regions to
-    /// exactly one of them, so neighbouring regions neither overlap nor leave a gap.
+    /// Faces with at least two vertices among `region_points` (matched by exact coordinates), so
+    /// each border triangle belongs to exactly one of two adjacent regions.
     pub fn region_faces(&self, region_points: &[Coords3]) -> Vec<[usize; 3]> {
         let labelled: HashSet<[u64; 3]> = region_points
             .iter()
@@ -59,7 +55,7 @@ impl SurfaceMesh {
     }
 }
 
-/// Bit pattern of a coordinate triple; `+ 0.0` folds `-0.0` into `0.0` so both match.
+/// Bit pattern of a coordinate triple. `+ 0.0` folds `-0.0` into `0.0`.
 pub(crate) fn coord_key(x: f64, y: f64, z: f64) -> [u64; 3] {
     [
         (x + 0.0).to_bits(),
@@ -68,14 +64,9 @@ pub(crate) fn coord_key(x: f64, y: f64, z: f64) -> [u64; 3] {
     ]
 }
 
-/// Walk `branch_id` of `centerline` at uniform `step_size` intervals, cut the mesh with the
-/// plane perpendicular to the centerline at each position, filter incomplete slices, and
-/// resample each surviving outline to exactly `n_points` evenly spaced points.
-///
-/// Only the faces of the region labelled by `region_points` are cut; `None` cuts the whole mesh.
-///
-/// `centerline` is used as-is — callers must smooth/resample/orient it beforehand
-/// (e.g. via `Centerline::smooth`); this no longer re-smooths internally.
+/// Cuts the mesh every `step_size` along branch `branch_id`, drops incomplete end slices and
+/// resamples each outline to `n_points` evenly spaced points. Only faces of the `region_points`
+/// region are cut (`None` cuts all). `centerline` must already be smoothed and resampled.
 pub fn discretize_vessel_rs(
     centerline: &Centerline,
     mesh: &SurfaceMesh,

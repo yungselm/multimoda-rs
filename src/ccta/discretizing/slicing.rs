@@ -3,23 +3,18 @@ use crate::types::native::{CenterlinePoint, Contour, ContourPoint, ContourType};
 use nalgebra::{Vector2, Vector3};
 use std::collections::HashMap;
 
-/// How many anchors on either side of a triangle's nearest anchors may still cut it. Triangles
-/// are small compared with the anchor spacing, so ±2 covers the planes that pass through them,
-/// including on bends where neighbouring planes fan out.
+/// Anchors either side of a triangle's nearest ones whose planes may still cut it. Two also
+/// covers planes fanning out on bends.
 const PLANE_REACH: usize = 2;
 
-/// Cuts the mesh with the plane perpendicular to each anchor and returns one raw `Contour` per
-/// anchor: the closed outline of the vessel in that plane, ordered counter-clockwise around the
-/// anchor tangent. Anchors where the plane does not cut the mesh get an empty contour.
+/// Cuts the mesh with each anchor's plane and returns one raw `Contour` per anchor: the closed
+/// outline, counter-clockwise about the tangent, empty where the plane misses the mesh.
 ///
-/// Each triangle is only tested against the planes of anchors near its vertices, so a plane
-/// never picks up a distant part of the vessel that it happens to intersect when extended.
-///
-/// The cut segments are joined into chains through the mesh edges they cross. Per anchor:
-/// - a closed loop around the anchor is the outline (the largest one, if several);
-/// - otherwise the open chains are joined in angular order around the anchor, bridging gaps
-///   where the region has no triangles (e.g. a side-branch ostium cut out of the main vessel);
-/// - otherwise the closed loop nearest the anchor is used (centerline outside the lumen).
+/// A triangle is only tested against planes of anchors near its vertices, so an extended plane
+/// never reaches a distant part of the vessel. The outline is, in order of preference:
+/// - the largest closed loop around the anchor
+/// - the open chains joined around the anchor, bridging gaps such as a cut-out ostium
+/// - the closed loop nearest the anchor (centerline outside the lumen)
 pub fn slice_mesh(
     anchors: &[CenterlinePoint],
     vertices: &[Vector3<f64>],
@@ -69,8 +64,8 @@ pub fn slice_mesh(
         .collect()
 }
 
-/// Where the plane crosses one mesh edge. `edge` holds the vertex indices in ascending order, so
-/// both triangles sharing the edge compute the identical position and the crossing links them.
+/// Where the plane crosses a mesh edge. `edge` is sorted, so both triangles sharing it compute
+/// the same position and the crossing links them.
 #[derive(Clone, Copy)]
 struct Crossing {
     edge: (usize, usize),
@@ -79,9 +74,8 @@ struct Crossing {
 
 type Segment = [Crossing; 2];
 
-/// Intersects one triangle with the anchor's plane. A vertex counts as above the plane when its
-/// signed distance is > 0, so a vertex lying exactly on the plane is handled consistently by all
-/// triangles that share it, and a triangle is crossed on exactly two edges or none.
+/// Intersects a triangle with the anchor's plane. "Above" means distance > 0, so a vertex on the
+/// plane is treated alike by all its triangles and each triangle is crossed on 0 or 2 edges.
 fn cut_triangle(
     face: &[usize; 3],
     vertices: &[Vector3<f64>],
@@ -118,8 +112,7 @@ struct Chain {
     closed: bool,
 }
 
-/// Joins segments that share a crossed edge into polylines. On a manifold mesh every edge is
-/// shared by at most two triangles, so each chain is a simple path or a closed loop.
+/// Joins segments sharing a crossed edge into paths and closed loops (manifold mesh).
 fn chain_segments(segments: &[Segment]) -> Vec<Chain> {
     let mut by_edge: HashMap<(usize, usize), Vec<usize>> = HashMap::new();
     let mut pos: HashMap<(usize, usize), Vector3<f64>> = HashMap::new();
@@ -155,8 +148,7 @@ fn chain_segments(segments: &[Segment]) -> Vec<Chain> {
     };
 
     let mut chains = Vec::new();
-    // Open chains first, starting from an end (an edge crossed by only one segment), so each
-    // comes out whole; whatever is left afterwards forms closed loops.
+    // Walk open chains from their ends first so each comes out whole. The rest are loops.
     let mut ends: Vec<(usize, usize)> = by_edge
         .iter()
         .filter(|(_, segs)| segs.len() == 1)
@@ -177,7 +169,7 @@ fn chain_segments(segments: &[Segment]) -> Vec<Chain> {
     chains
 }
 
-/// In-plane coordinate frame of one anchor: origin, and two unit axes spanning the plane.
+/// Origin and in-plane axes of one anchor's cutting plane.
 struct PlaneFrame {
     origin: Vector3<f64>,
     u: Vector3<f64>,
@@ -191,8 +183,7 @@ impl PlaneFrame {
     }
 }
 
-/// Builds the in-plane axes for all anchors, carrying `u` from one anchor to the next (projected
-/// onto the new plane) so the axes do not spin between neighbouring slices.
+/// Carries `u` from anchor to anchor so the axes do not spin between slices.
 fn plane_frames(anchors: &[CenterlinePoint]) -> Vec<PlaneFrame> {
     let mut prev_u: Option<Vector3<f64>> = None;
     anchors
@@ -224,8 +215,8 @@ fn any_perpendicular(t: &Vector3<f64>) -> Vector3<f64> {
     t.cross(&axis).try_normalize(1e-12).unwrap_or(Vector3::x())
 }
 
-/// Picks or assembles the outline for one anchor (see [`slice_mesh`]) and returns it as a closed
-/// polygon (first point not repeated), counter-clockwise in the anchor's frame.
+/// Outline for one anchor (see [`slice_mesh`]) as a counter-clockwise polygon, first point not
+/// repeated.
 fn select_outline(chains: Vec<Chain>, frame: &PlaneFrame) -> Vec<Vector3<f64>> {
     let (loops, open): (Vec<Chain>, Vec<Chain>) = chains
         .into_iter()
@@ -261,8 +252,8 @@ fn select_outline(chains: Vec<Chain>, frame: &PlaneFrame) -> Vec<Vector3<f64>> {
     normalize_polygon(outline, frame)
 }
 
-/// Orients every open chain counter-clockwise around the anchor, sorts them by the angle they
-/// start at and concatenates them; the closing polygon edges bridge the gaps between chains.
+/// Orients open chains counter-clockwise, sorts them by start angle and concatenates them. The
+/// closing edges bridge the gaps.
 fn join_open_chains(chains: Vec<Chain>, frame: &PlaneFrame) -> Vec<Vector3<f64>> {
     let mut oriented: Vec<(f64, Vec<Vector3<f64>>)> = chains
         .into_iter()
@@ -283,9 +274,8 @@ fn join_open_chains(chains: Vec<Chain>, frame: &PlaneFrame) -> Vec<Vector3<f64>>
     oriented.into_iter().flat_map(|(_, pts)| pts).collect()
 }
 
-/// Drops repeated points (a vertex lying exactly on the plane is reached through several edges),
-/// makes the polygon counter-clockwise and starts it at the point nearest the frame's `u` axis,
-/// so neighbouring slices start on the same side of the vessel.
+/// Drops repeated points (a vertex on the plane is reached via several edges), orients the
+/// polygon counter-clockwise and starts it nearest the `u` axis so slices line up.
 fn normalize_polygon(mut pts: Vec<Vector3<f64>>, frame: &PlaneFrame) -> Vec<Vector3<f64>> {
     pts.dedup_by(|a, b| (*a - *b).norm() < 1e-12);
     while pts.len() > 1 && (pts[0] - pts[pts.len() - 1]).norm() < 1e-12 {
@@ -355,7 +345,7 @@ fn wrap_angle(a: f64) -> f64 {
     (a + PI).rem_euclid(TAU) - PI
 }
 
-/// Shoelace formula; positive for a counter-clockwise polygon.
+/// Shoelace formula, positive when counter-clockwise.
 fn signed_area(pts: &[Vector2<f64>]) -> f64 {
     let n = pts.len();
     (0..n)
@@ -406,8 +396,7 @@ mod tests {
             .collect()
     }
 
-    /// Tube along +z whose cross-section is the closed polyline `profile` (shifted by `offset`
-    /// in xy), with rings every `dz` from `z0` to `z1`.
+    /// Tube along +z with cross-section `profile` shifted by `offset`, rings every `dz`.
     fn tube(
         profile: &[(f64, f64)],
         offset: (f64, f64),
@@ -556,7 +545,7 @@ mod tests {
 
     #[test]
     fn test_neighbouring_vessel_is_ignored() {
-        // A second tube 10 mm away is cut by the same planes; only the loop around the
+        // A second tube 10 mm away is cut by the same planes. Only the loop around the
         // centerline may be used.
         let (mut vertices, mut faces) = tube(&circle(2.0, 24), (0.0, 0.0), -1.0, 4.0, 0.5);
         let (v2, f2) = tube(&circle(2.0, 24), (10.0, 0.0), -1.0, 4.0, 0.5);

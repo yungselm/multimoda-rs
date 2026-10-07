@@ -1,28 +1,20 @@
 use crate::types::native::{cumulative_arc_length, Contour, ContourPoint};
 use nalgebra::Vector3;
 
-/// An end slice counts as complete only if its outline is at least this fraction of the
-/// branch's median outline length; shorter ones cut the rounded cap where the segmented
-/// vessel ends rather than the lumen.
+/// End slices shorter than this fraction of the median outline cut the vessel's end cap.
 const MIN_END_LENGTH_RATIO: f64 = 0.5;
 
-/// Filters and resamples raw slice outlines from `slicing::slice_mesh`:
-/// - Removes empty slices (the plane did not cut the mesh).
-/// - Trims incomplete entry/exit slices from both ends: a slice is complete when it covers all
-///   four angular quadrants and is not much shorter than the branch's typical outline (see
-///   [`MIN_END_LENGTH_RATIO`]). The test only locates the first and last complete slice; every
-///   interior slice is kept so gaps are never introduced mid-vessel (a stenosis stays).
-/// - Resamples each remaining closed outline to exactly `n_points` points evenly spaced
-///   along its length.
+/// Drops empty slices, trims incomplete end slices and resamples each outline to `n_points`
+/// points evenly spaced along its length. A slice is complete when it covers all four quadrants
+/// and is not too short (see [`MIN_END_LENGTH_RATIO`]). Interior slices are always kept, so a
+/// stenosis stays.
 pub fn create_uniform_contours(contours: Vec<Contour>, n_points: usize) -> Vec<Contour> {
     let non_empty: Vec<Contour> = contours
         .into_iter()
         .filter(|c| !c.points.is_empty())
         .collect();
 
-    // Trim incomplete entry/exit slices from both ends only.
-    // Interior slices are kept as-is: a slightly imperfect interior ring is far
-    // better than a hole in the vessel wall.
+    // Only the ends are trimmed. A hole mid-vessel is worse than an imperfect ring.
     let lengths: Vec<f64> = non_empty.iter().map(outline_length).collect();
     let min_length = MIN_END_LENGTH_RATIO * median(&lengths);
     let complete: Vec<bool> = non_empty
@@ -44,7 +36,6 @@ pub fn create_uniform_contours(contours: Vec<Contour>, n_points: usize) -> Vec<C
         .collect()
 }
 
-/// Length of the closed outline through the contour's points.
 fn outline_length(contour: &Contour) -> f64 {
     let n = contour.points.len();
     (0..n)
@@ -64,7 +55,7 @@ fn median(values: &[f64]) -> f64 {
     sorted[sorted.len() / 2]
 }
 
-/// Returns true when the contour's points cover all four 90-degree sectors around the centroid.
+/// All four 90° sectors around the centroid hold a point.
 fn has_full_angular_coverage(contour: &Contour) -> bool {
     if contour.points.len() < 4 {
         return false;
@@ -94,9 +85,7 @@ fn has_full_angular_coverage(contour: &Contour) -> bool {
     quadrants.iter().all(|&q| q)
 }
 
-/// Resamples a closed outline (points in order, first point not repeated) to `n_points`
-/// positions evenly spaced along its length, interpolating linearly between outline points.
-/// The outline comes from an exact mesh cut, so no smoothing is applied.
+/// Resamples a closed outline to `n_points` evenly spaced points by linear interpolation.
 fn resample_outline(contour: Contour, n_points: usize) -> Option<Contour> {
     if n_points < 2 || contour.points.len() < 3 {
         return None;
@@ -117,7 +106,6 @@ fn resample_outline(contour: Contour, n_points: usize) -> Option<Contour> {
     Some(build_output_contour(contour, resampled))
 }
 
-/// Resample `curve` at `n_points` uniformly-spaced arc-length positions.
 fn uniform_resample(
     curve: &[Vector3<f64>],
     arc_lengths: &[f64],
@@ -144,7 +132,6 @@ fn uniform_resample(
         .collect()
 }
 
-/// Build the output `Contour` from the source metadata and resampled point positions.
 fn build_output_contour(source: Contour, points: Vec<Vector3<f64>>) -> Contour {
     let new_pts = points
         .into_iter()
@@ -169,7 +156,7 @@ fn build_output_contour(source: Contour, points: Vec<Vector3<f64>>) -> Contour {
     }
 }
 
-/// Derive two orthonormal basis vectors spanning the plane of `points` through `centroid`.
+/// Two orthonormal axes spanning the plane of `points` through `centroid`.
 fn local_basis(
     points: &[ContourPoint],
     centroid: (f64, f64, f64),
@@ -367,7 +354,7 @@ mod tests {
 
     #[test]
     fn test_resampled_points_lie_on_input_plane() {
-        // Circle lies in the plane z = 4.0; all output points should have z ≈ 4.0.
+        // Circle lies in the plane z = 4.0, so all output points should have z ≈ 4.0.
         let contours = vec![make_contour(
             0,
             circle_ring((0.0, 0.0, 4.0), 3.0, 20),
@@ -396,8 +383,8 @@ mod tests {
     #[test]
     fn test_multiple_contours_pipeline() {
         // 3 full circles + 1 empty + 1 interior half-circle → 4 in output.
-        // The empty slice is dropped; the half-circle is interior (between two full circles)
-        // so it is kept to avoid creating a hole in the vessel wall.
+        // The empty slice is dropped. The half-circle lies between two full circles, so it is
+        // kept to avoid a hole in the vessel wall.
         let contours = vec![
             make_contour(0, circle_ring((0.0, 0.0, 0.0), 3.0, 16), (0.0, 0.0, 0.0)),
             make_contour(1, vec![], (0.0, 0.0, 1.0)),

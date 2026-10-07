@@ -11,7 +11,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   (e.g. calcified, crescent-shaped) keep their shape. New signature:
   `discretize_vessel(centerline, vertices, faces, branch_id=0, step_size=0.5, n_points=200, region_points=None)`.
 - **Breaking:** the low-level `discretize_vessel_tree` binding takes `mesh_vertices, mesh_faces`
-  after the centerlines; `mm.discretize_vessel_tree(..., results_dict, ...)` is unchanged.
+  after the centerlines. `mm.discretize_vessel_tree(..., results_dict, ...)` is unchanged.
 
 ### Added
 - `rca_branch_references` / `lca_branch_references` on the discretized tree: per side branch, a
@@ -19,11 +19,11 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   branches.
 
 ### Removed
-- **Breaking:** `b_spline`, `bspline_smoothing`, `bspline_degree` from `discretize_vessel_tree`;
-  mesh-cut contours need no smoothing.
+- **Breaking:** `b_spline`, `bspline_smoothing`, `bspline_degree` from `discretize_vessel_tree`.
+  Mesh-cut contours need no smoothing.
 
 ### Fixed
-- The end of each branch is now sliced; the last partial step was dropped.
+- The end of each branch is now sliced. The last partial step was dropped before.
 - `step_size <= 0` returns no contours instead of looping forever.
 - Ostium `main_ref` faces the aorta instead of following the contour's minor axis, which rotated
   the triplet on round ostia.

@@ -43,9 +43,8 @@ def discretize_vessel_tree(
     :func:`prepare_and_discretize` if you also need branch labelling to run
     automatically.
 
-    ``ao_cl``, ``rca_cl``, and ``lca_cl`` are used as-is - smooth/resample/orient
-    them beforehand (e.g. via :func:`load_centerline`/:func:`prepare_centerline`); this does
-    not smooth internally.
+    ``ao_cl``, ``rca_cl`` and ``lca_cl`` must already be smoothed, resampled and oriented
+    (e.g. via :func:`load_centerline` and :func:`prepare_centerline`).
 
     Parameters
     ----------

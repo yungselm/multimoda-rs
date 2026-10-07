@@ -3,9 +3,8 @@ use nalgebra::Vector3;
 use rstar::primitives::GeomWithData;
 use rstar::RTree;
 
-/// Samples branch `branch_id` of `centerline` every `step_size` of arc length (plus the branch
-/// end, see [`build_sample_positions`]). Each anchor carries the interpolated position and unit
-/// tangent; the tangent is the normal of that anchor's cutting plane.
+/// Anchors every `step_size` along branch `branch_id`, plus the branch end. Each tangent is the
+/// normal of that anchor's cutting plane.
 pub fn branch_anchors(
     centerline: &Centerline,
     branch_id: u32,
@@ -29,10 +28,7 @@ pub fn branch_anchors(
         .collect()
 }
 
-/// R-tree over anchor positions.
-///
-/// Used to limit each triangle to the cutting planes of nearby anchors, so a plane never picks
-/// up a distant part of the vessel that it happens to intersect when extended.
+/// R-tree over anchor positions, so each triangle is only cut by nearby planes.
 pub struct AnchorIndex {
     tree: RTree<GeomWithData<[f64; 3], usize>>,
 }
@@ -58,12 +54,9 @@ impl AnchorIndex {
     }
 }
 
-/// Distances along the branch (from its start) at which slices are cut: every `step` up to the
-/// branch length `total`, plus `total` itself if it isn't a multiple of `step`, so the branch end
-/// is always sliced. E.g. `total = 10, step = 3` → `[0, 3, 6, 9, 10]`.
-///
-/// The small tolerances absorb floating-point noise (e.g. `3.0 / 0.1 = 29.999…`). Returns an
-/// empty vector for a non-positive `step` or invalid `total`.
+/// Arc-length positions of the slices: every `step`, plus `total` so the branch end is always
+/// cut (`total = 10, step = 3` → `[0, 3, 6, 9, 10]`). The tolerances absorb float noise such as
+/// `3.0 / 0.1 = 29.999…`. Empty for a non-positive `step` or invalid `total`.
 fn build_sample_positions(total: f64, step: f64) -> Vec<f64> {
     if step.is_nan() || step <= 0.0 || !total.is_finite() || total < 0.0 {
         return vec![];

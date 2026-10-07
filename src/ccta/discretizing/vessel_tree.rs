@@ -7,21 +7,10 @@ use std::collections::HashMap;
 type Coords3 = (f64, f64, f64);
 
 impl DiscretizedVesselTree {
-    /// Discretize the full vessel tree by cutting `mesh` along each centerline.
-    ///
-    /// Each vessel is cut using only the faces of its own region, given by its pre-labelled
-    /// point set (see [`SurfaceMesh::region_faces`]). `ao_cl`, `rca_cl`, and `lca_cl` are used as-is. Processes:
-    /// - aorta (branch 0)
-    /// - RCA main vessel (`branch_id_rca`, usually 0)
-    /// - LCA main vessel (`branch_id_lca`, usually 0)
-    /// - every RCA side branch: `side_branches_rca[i]` → branch_id `i + 1`
-    /// - every LCA side branch: `side_branches_lca[i]` → branch_id `i + 1`
-    ///
-    /// A vertex labelled for several side branches is kept only for the branch whose centerline
-    /// is nearest (see [`exclusive_side_labels`]).
-    ///
-    /// `side_branches_rca` / `side_branches_lca` come from `label_branches` results:
-    /// `results["rca_points_side_1"]`, `results["rca_points_side_2"]`, …, in order.
+    /// Cuts `mesh` along every centerline branch, using only each vessel's own labelled faces
+    /// (see `SurfaceMesh::region_faces`). `side_branches_rca[i]` is branch_id `i + 1`, i.e.
+    /// `results["rca_points_side_{i + 1}"]`, likewise for the LCA. Shared side-branch labels are
+    /// resolved first (see `exclusive_side_labels`).
     pub fn from_results_dict(
         ao_cl: &Centerline,
         rca_cl: &Centerline,
@@ -110,10 +99,9 @@ impl DiscretizedVesselTree {
     }
 }
 
-/// Makes side-branch label sets disjoint. `label_branches` may label a vertex near a bifurcation
-/// for several side branches; a branch growing out of another then also claims its parent's wall,
-/// and its first slices cut the parent's tube. Each shared vertex is kept only for the branch
-/// whose centerline is nearest. `sides[i]` belongs to branch_id `i + 1`.
+/// Keeps each vertex shared by several side branches only for the one with the nearest
+/// centerline. Otherwise a branch growing out of another claims its parent's wall and its first
+/// slices cut the parent's tube. `sides[i]` is branch_id `i + 1`.
 fn exclusive_side_labels(centerline: &Centerline, sides: Vec<Vec<Coords3>>) -> Vec<Vec<Coords3>> {
     let mut claims: HashMap<[u64; 3], Vec<usize>> = HashMap::new();
     for (i, pts) in sides.iter().enumerate() {

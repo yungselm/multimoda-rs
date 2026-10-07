@@ -1563,47 +1563,37 @@ def discretize_vessel(
     n_points: int = 200,
     region_points: list[tuple[float, float, float]] | None = None,
 ) -> list[PyContour]:
-    """Discretize a vessel into uniform cross-sections by cutting its surface mesh.
+    """Discretize a vessel into evenly sampled cross-sections by cutting its surface mesh.
 
-    Walks the specified centerline branch at uniform arc-length intervals of ``step_size``,
-    intersects the mesh with the plane perpendicular to the centerline at each position, drops
-    empty slices and incomplete slices at both ends (not covering all four angular quadrants),
-    and resamples each outline to exactly ``n_points`` points evenly spaced along its length.
-
-    The outline is the exact cut through the mesh triangles, so lumens of any shape
-    (eccentric, notched, crescent-shaped) are preserved. Where a plane cuts several separate
-    loops, the one around the centerline is used; gaps in the cut region (e.g. a side-branch
-    ostium excluded by ``region_points``) are bridged with straight edges.
-
-    ``centerline`` is used as-is - smooth/resample/orient it beforehand (e.g. via
-    ``PyCenterline.smooth``, or :func:`multimodars.ccta.centerline_prep.prepare_centerline`);
-    this does not smooth internally.
+    Cuts the mesh with planes perpendicular to branch ``branch_id`` every ``step_size``, drops
+    empty and incomplete end slices and resamples each outline to ``n_points`` evenly spaced
+    points. The cut keeps lumens of any shape (eccentric, notched, crescent-shaped). Gaps in the
+    cut region, such as a side-branch ostium excluded by ``region_points``, are bridged with
+    straight edges. ``centerline`` must already be smoothed and resampled (e.g. via
+    :func:`multimodars.ccta.centerline_prep.prepare_centerline`).
 
     Parameters
     ----------
     centerline : PyCenterline
-        Centerline object containing one or more branches, already prepared.
+        Prepared centerline of the vessel.
     vertices : list of tuple of (float, float, float)
-        Mesh vertices ``(x, y, z)``, e.g. ``[tuple(v) for v in mesh.vertices.tolist()]``.
+        Mesh vertices, e.g. ``[tuple(v) for v in mesh.vertices.tolist()]``.
     faces : list of list of int
         Triangles as vertex-index triples, e.g. ``mesh.faces.tolist()``.
     branch_id : int, optional
-        Index of the centerline branch to walk. Default is ``0``.
+        Branch to walk (0 = main vessel). Default is ``0``.
     step_size : float, optional
-        Arc-length distance between consecutive cross-sections in the same units as
-        ``centerline`` and ``vertices``. Default is ``0.5``.
+        Arc length between cross-sections in mm. Default is ``0.5``.
     n_points : int, optional
-        Number of evenly-spaced points per output contour. Default is ``200``.
+        Points per output contour. Default is ``200``.
     region_points : list of tuple of (float, float, float), optional
-        Vertices labelling the vessel region to cut (e.g. ``results["rca_points_main"]``).
-        A face is cut when at least two of its vertices are in this set. ``None`` (default)
-        cuts the whole mesh.
+        Vertices labelling the region to cut (e.g. ``results["rca_points_main"]``). A face is
+        cut when at least two of its vertices are labelled. ``None`` (default) cuts the whole mesh.
 
     Returns
     -------
     contours : list of PyContour
-        One contour per surviving cross-section, each containing exactly ``n_points`` points
-        evenly spaced along the cut outline.
+        One closed contour per valid cross-section.
 
     Raises
     ------
@@ -1615,10 +1605,8 @@ def discretize_vessel(
     >>> import multimodars as mm
     >>>
     >>> vertices = [tuple(v) for v in mesh.vertices.tolist()]
-    >>> contours = mm.discretize_vessel(
-    ...     centerline, vertices, mesh.faces.tolist(), branch_id=0, step_size=0.5
-    ... )
-    >>> print(len(contours))"""
+    >>> contours = mm.discretize_vessel(centerline, vertices, mesh.faces.tolist(), step_size=0.5)
+    """
     return _discretize_vessel(
         centerline,
         vertices,
