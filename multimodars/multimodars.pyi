@@ -1032,6 +1032,12 @@ class PyDiscretizedVesselTree:
         Index 0 is always the ostium reference.
     lca_references : list of (main_ref, counter_clock_ref, clock_ref)
         Same structure for the LCA.
+    rca_branch_references : list of list of (main_ref, counter_clock_ref, clock_ref)
+        Per RCA side branch, aligned with ``rca_branches``: the triplet at the
+        branch's own ostium on its parent (index 0), then one per branch
+        leaving it, sorted proximal → distal.
+    lca_branch_references : list of list of (main_ref, counter_clock_ref, clock_ref)
+        Same structure for the LCA.
     ao_rca : tuple[float, float, float]
         Centroid ``(x, y, z)`` of the aorta slice closest to the RCA ostium.
     ao_lca : tuple[float, float, float]
@@ -1045,6 +1051,8 @@ class PyDiscretizedVesselTree:
     lca_branches: list[list[PyContour]]
     rca_references: list[_RefTriplet]
     lca_references: list[_RefTriplet]
+    rca_branch_references: list[list[_RefTriplet]]
+    lca_branch_references: list[list[_RefTriplet]]
     ao_rca: tuple[float, float, float]
     ao_lca: tuple[float, float, float]
 

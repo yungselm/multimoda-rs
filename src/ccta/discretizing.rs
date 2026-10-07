@@ -60,7 +60,7 @@ impl SurfaceMesh {
 }
 
 /// Bit pattern of a coordinate triple; `+ 0.0` folds `-0.0` into `0.0` so both match.
-fn coord_key(x: f64, y: f64, z: f64) -> [u64; 3] {
+pub(crate) fn coord_key(x: f64, y: f64, z: f64) -> [u64; 3] {
     [
         (x + 0.0).to_bits(),
         (y + 0.0).to_bits(),

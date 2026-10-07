@@ -13,6 +13,11 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - **Breaking:** the low-level `discretize_vessel_tree` binding takes `mesh_vertices, mesh_faces`
   after the centerlines; `mm.discretize_vessel_tree(..., results_dict, ...)` is unchanged.
 
+### Added
+- `rca_branch_references` / `lca_branch_references` on the discretized tree: per side branch, a
+  triplet at its own ostium and one per branch leaving it, so pullbacks can be aligned to side
+  branches.
+
 ### Removed
 - **Breaking:** `b_spline`, `bspline_smoothing`, `bspline_degree` from `discretize_vessel_tree`;
   mesh-cut contours need no smoothing.
@@ -20,6 +25,11 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 - The end of each branch is now sliced; the last partial step was dropped.
 - `step_size <= 0` returns no contours instead of looping forever.
+- Ostium `main_ref` faces the aorta instead of following the contour's minor axis, which rotated
+  the triplet on round ostia.
+- Bifurcation references of branches leaving a side branch were placed on the main vessel.
+- Side branches growing out of another side branch no longer duplicate its first slices
+  (vertices labelled for both go to the nearest branch).
 
 ## [0.7.6] - 2026-10-06
 

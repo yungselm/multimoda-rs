@@ -302,6 +302,8 @@ def plot_vessel_tree(
         _add_contours(branch, _LCA_BRANCH_COLORS[i % len(_LCA_BRANCH_COLORS)])
     _add_refs(tree.rca_references)
     _add_refs(tree.lca_references)
+    for refs in tree.rca_branch_references + tree.lca_branch_references:
+        _add_refs(refs)
 
     trimesh.Scene(scene_geoms).show()
 

@@ -264,8 +264,11 @@ The discretized tree exposes the following attributes:
 - ``tree.discretized_rca_main`` / ``tree.discretized_lca_main`` - main-vessel contours.
 - ``tree.rca_branches`` / ``tree.lca_branches`` - list of lists, one per side branch.
 - ``tree.rca_references`` / ``tree.lca_references`` - list of ``(main_ref, ccw_ref, cw_ref)``
-  triplets: the ostium at index 0, then one per side-branch bifurcation, ordered proximal to
-  distal along the main vessel (not by branch index).
+  triplets: the ostium at index 0 (``main_ref`` facing the aorta), then one per branch leaving
+  the main vessel, ordered proximal to distal along the main vessel (not by branch index).
+- ``tree.rca_branch_references`` / ``tree.lca_branch_references`` - the same per side branch
+  (aligned with ``rca_branches`` / ``lca_branches``): the branch's own ostium at index 0
+  (``main_ref`` facing its parent), then one per branch leaving it.
 
 3. Load and align intravascular geometry
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

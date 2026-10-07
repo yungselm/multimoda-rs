@@ -1,5 +1,5 @@
 use crate::types::binding::PyContour;
-use crate::types::native::DiscretizedVesselTree;
+use crate::types::native::{DiscretizedVesselTree, ReferenceTriplet};
 use pyo3::prelude::*;
 
 type Point3D = (f64, f64, f64);
@@ -27,6 +27,12 @@ type RefTriplet = (Point3D, Point3D, Point3D);
 ///     ``(x, y, z)`` coordinate tuples.
 /// lca_references : list of tuple
 ///     Same structure for the LCA.
+/// rca_branch_references : list of list of tuple
+///     Per RCA side branch, aligned with ``rca_branches``: triplets at the
+///     branch's own ostium on its parent, then at every bifurcation of a
+///     branch leaving it, sorted proximal → distal.
+/// lca_branch_references : list of list of tuple
+///     Same structure for the LCA.
 /// ao_rca : tuple of float
 ///     Centroid ``(x, y, z)`` of the aorta slice closest to the RCA ostium.
 /// ao_lca : tuple of float
@@ -48,6 +54,10 @@ pub struct PyDiscretizedVesselTree {
     pub rca_references: Vec<RefTriplet>,
     #[pyo3(get)]
     pub lca_references: Vec<RefTriplet>,
+    #[pyo3(get)]
+    pub rca_branch_references: Vec<Vec<RefTriplet>>,
+    #[pyo3(get)]
+    pub lca_branch_references: Vec<Vec<RefTriplet>>,
     #[pyo3(get, set)]
     pub ao_rca: Point3D,
     #[pyo3(get, set)]
@@ -72,8 +82,8 @@ impl PyDiscretizedVesselTree {
     /// Recompute orientation reference triplets and aortic ostium centroids
     /// from the current contour data.
     ///
-    /// Call this after replacing contours (e.g. with B-spline fits) so that
-    /// ``rca_references``, ``lca_references``, ``ao_rca``, and ``ao_lca``
+    /// Call this after replacing or editing contours so that the reference
+    /// triplets (main vessel and per branch), ``ao_rca``, and ``ao_lca``
     /// reflect the updated geometry.
     pub fn calculate_ref_pts(&mut self) -> PyResult<()> {
         let convert = |contours: &[PyContour]| -> PyResult<Vec<crate::types::native::Contour>> {
@@ -97,6 +107,8 @@ impl PyDiscretizedVesselTree {
             spacing: 1.0,
             rca_references: vec![],
             lca_references: vec![],
+            rca_branch_references: vec![],
+            lca_branch_references: vec![],
             ao_rca: (0.0, 0.0, 0.0),
             ao_lca: (0.0, 0.0, 0.0),
             pts_cusp_rcc: None,
@@ -107,16 +119,10 @@ impl PyDiscretizedVesselTree {
         };
 
         let updated = tree.calculate_ref_pts();
-        self.rca_references = updated
-            .rca_references
-            .into_iter()
-            .map(|r| (r.main_ref, r.clock_ref, r.counter_clock_ref))
-            .collect();
-        self.lca_references = updated
-            .lca_references
-            .into_iter()
-            .map(|r| (r.main_ref, r.clock_ref, r.counter_clock_ref))
-            .collect();
+        self.rca_references = to_py_triplets(updated.rca_references);
+        self.lca_references = to_py_triplets(updated.lca_references);
+        self.rca_branch_references = to_py_branch_triplets(updated.rca_branch_references);
+        self.lca_branch_references = to_py_branch_triplets(updated.lca_branch_references);
         self.ao_rca = updated.ao_rca;
         self.ao_lca = updated.ao_lca;
 
@@ -140,18 +146,22 @@ impl From<DiscretizedVesselTree> for PyDiscretizedVesselTree {
                 .iter()
                 .map(|b| b.iter().map(PyContour::from).collect())
                 .collect(),
-            rca_references: t
-                .rca_references
-                .into_iter()
-                .map(|r| (r.main_ref, r.clock_ref, r.counter_clock_ref))
-                .collect(),
-            lca_references: t
-                .lca_references
-                .into_iter()
-                .map(|r| (r.main_ref, r.clock_ref, r.counter_clock_ref))
-                .collect(),
+            rca_references: to_py_triplets(t.rca_references),
+            lca_references: to_py_triplets(t.lca_references),
+            rca_branch_references: to_py_branch_triplets(t.rca_branch_references),
+            lca_branch_references: to_py_branch_triplets(t.lca_branch_references),
             ao_rca: t.ao_rca,
             ao_lca: t.ao_lca,
         }
     }
+}
+
+fn to_py_triplets(refs: Vec<ReferenceTriplet>) -> Vec<RefTriplet> {
+    refs.into_iter()
+        .map(|r| (r.main_ref, r.clock_ref, r.counter_clock_ref))
+        .collect()
+}
+
+fn to_py_branch_triplets(refs: Vec<Vec<ReferenceTriplet>>) -> Vec<Vec<RefTriplet>> {
+    refs.into_iter().map(to_py_triplets).collect()
 }
