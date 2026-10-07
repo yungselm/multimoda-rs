@@ -425,7 +425,8 @@ def label_branches(
         * ``"{results_key}_side_{k}"`` - vertices near side branch *k*, one
           key per side branch discovered in *centerline*.  A point may appear
           in more than one side-branch set when it sits near a bifurcation;
-          the Voronoi inside :func:`discretize_vessel` resolves the assignment.
+          :func:`discretize_vessel` cuts each branch's faces separately, so
+          shared vertices are fine.
     """
     branch_ids = [branch_id] if isinstance(branch_id, int) else list(branch_id)
     main_id_set = set(branch_ids)

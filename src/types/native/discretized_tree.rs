@@ -14,12 +14,16 @@ pub struct DiscretizedVesselTree {
     pub discretized_rca_main: Vec<Contour>,
     pub discretized_lca_main: Vec<Contour>,
     pub spacing: f64,
-    /// One entry per RCA side branch; index `i` → branch_id `i + 1`.
+    /// Index `i` is RCA side branch `i + 1`.
     pub rca_branches: Vec<Vec<Contour>>,
-    /// One entry per LCA side branch; index `i` → branch_id `i + 1`.
+    /// Index `i` is LCA side branch `i + 1`.
     pub lca_branches: Vec<Vec<Contour>>,
+    /// Ostium triplet, then one per branch leaving the main vessel.
     pub rca_references: Vec<ReferenceTriplet>,
     pub lca_references: Vec<ReferenceTriplet>,
+    /// Per side branch (as in `rca_branches`): its ostium, then one per branch leaving it.
+    pub rca_branch_references: Vec<Vec<ReferenceTriplet>>,
+    pub lca_branch_references: Vec<Vec<ReferenceTriplet>>,
     /// Centroid of the aorta slice closest to the RCA ostium.
     pub ao_rca: (f64, f64, f64),
     /// Centroid of the aorta slice closest to the LCA ostium.
@@ -32,267 +36,254 @@ pub struct DiscretizedVesselTree {
 }
 
 impl DiscretizedVesselTree {
-    pub fn new(
-        discretized_aorta: Vec<Contour>,
-        discretized_rca_main: Vec<Contour>,
-        discretized_lca_main: Vec<Contour>,
-        spacing: f64,
-        rca_branches: Vec<Vec<Contour>>,
-        lca_branches: Vec<Vec<Contour>>,
-        rca_references: Vec<ReferenceTriplet>,
-        lca_references: Vec<ReferenceTriplet>,
-        ao_lca: (f64, f64, f64),
-        ao_rca: (f64, f64, f64),
-        pts_cusp_rcc: Option<Vec<(f64, f64, f64)>>,
-        pts_cusp_lcc: Option<Vec<(f64, f64, f64)>>,
-        pts_cusp_acc: Option<Vec<(f64, f64, f64)>>,
-        index_stj_slice: Option<usize>,
-        index_aa: Option<usize>,
-    ) -> anyhow::Result<Self> {
-        Ok(DiscretizedVesselTree {
-            discretized_aorta,
-            discretized_rca_main,
-            discretized_lca_main,
-            spacing,
-            rca_branches,
-            lca_branches,
-            rca_references,
-            lca_references,
-            ao_lca,
-            ao_rca,
-            pts_cusp_rcc,
-            pts_cusp_lcc,
-            pts_cusp_acc,
-            index_stj_slice,
-            index_aa,
-        })
-    }
-
-    /// Compute `ao_rca`, `ao_lca`, `rca_references`, and `lca_references`.
+    /// Computes `ao_rca`/`ao_lca` (aorta slice centroid nearest each main vessel's start) and the
+    /// reference triplets of every branch, sorted proximal → distal:
+    /// - ostium, on the first contour: `main_ref` faces the vessel the branch leaves (aorta or
+    ///   parent branch), the side refs lie a quarter ring either side
+    /// - one per branch leaving this one, on the nearest contour: `main_ref` is the child's
+    ///   start, the side refs lie a quarter ring either side of the point closest to it
     ///
-    /// **`ao_rca` / `ao_lca`** – centroid of the aorta slice whose centroid is closest to
-    /// the first contour of the respective main-vessel discretization.
-    ///
-    /// **Reference triplets** are built at two kinds of landmarks, then sorted
-    /// proximal → distal by their position on the main-vessel contour list:
-    ///
-    /// 1. *Ostium* (always the most proximal):
-    ///    - `main_ref`         = the point on the minor-axis pair (`find_closest_opposite_3d`)
-    ///      of the first coronary contour that is closer to the aorta centroid
-    ///    - `counter_clock_ref`/ `clock_ref` = the two major-axis points
-    ///      (`find_farthest_points`), assigned left/right when viewing proximal→distal
-    ///
-    /// 2. *Side-branch bifurcations* (one per non-empty side branch):
-    ///    - Find the main-vessel contour whose centroid is closest to the side
-    ///      branch's first-contour centroid
-    ///    - `main_ref`         = side branch first-contour centroid
-    ///    - `counter_clock_ref`/ `clock_ref` = the two points ±¼ of the contour
-    ///      ring away from the closest point on the main-vessel contour,
-    ///      assigned left/right by the same cross-product rule
-    ///
-    /// Left/right is determined by an "up" hint = direction from aorta centroid to
-    /// first main-vessel centroid, projected perpendicular to the local vessel normal.
+    /// A side branch's parent is the earlier branch with a contour nearest its start.
     pub fn calculate_ref_pts(mut self) -> Self {
-        if !self.discretized_aorta.is_empty() {
-            if !self.discretized_rca_main.is_empty() {
-                let c0 = contour_centroid(&self.discretized_rca_main[0]);
-                if let Some(closest) = self.discretized_aorta.iter().min_by(|a, b| {
-                    (contour_centroid(a) - c0)
-                        .norm()
-                        .partial_cmp(&(contour_centroid(b) - c0).norm())
-                        .unwrap()
-                }) {
-                    let ao_centroid = contour_centroid(closest);
-                    self.ao_rca = (ao_centroid.x, ao_centroid.y, ao_centroid.z);
-                    self.rca_references = vessel_references(
-                        ao_centroid,
-                        &self.discretized_rca_main,
-                        &self.rca_branches,
-                    );
-                }
-            }
-            if !self.discretized_lca_main.is_empty() {
-                let c0 = contour_centroid(&self.discretized_lca_main[0]);
-                if let Some(closest) = self.discretized_aorta.iter().min_by(|a, b| {
-                    (contour_centroid(a) - c0)
-                        .norm()
-                        .partial_cmp(&(contour_centroid(b) - c0).norm())
-                        .unwrap()
-                }) {
-                    let ao_centroid = contour_centroid(closest);
-                    self.ao_lca = (ao_centroid.x, ao_centroid.y, ao_centroid.z);
-                    self.lca_references = vessel_references(
-                        ao_centroid,
-                        &self.discretized_lca_main,
-                        &self.lca_branches,
-                    );
-                }
-            }
+        if let Some(refs) = coronary_references(
+            &self.discretized_aorta,
+            &self.discretized_rca_main,
+            &self.rca_branches,
+        ) {
+            self.ao_rca = refs.ao_centroid;
+            self.rca_references = refs.main;
+            self.rca_branch_references = refs.branches;
+        }
+        if let Some(refs) = coronary_references(
+            &self.discretized_aorta,
+            &self.discretized_lca_main,
+            &self.lca_branches,
+        ) {
+            self.ao_lca = refs.ao_centroid;
+            self.lca_references = refs.main;
+            self.lca_branch_references = refs.branches;
         }
         self
     }
 }
 
-fn vessel_references(
-    ao_centroid: Vector3<f64>,
+struct CoronaryReferences {
+    ao_centroid: (f64, f64, f64),
+    main: Vec<ReferenceTriplet>,
+    branches: Vec<Vec<ReferenceTriplet>>,
+}
+
+struct BranchSlices<'a> {
+    contours: &'a [Contour],
+    centroids: Vec<Vector3<f64>>,
+}
+
+fn coronary_references(
+    aorta: &[Contour],
     main: &[Contour],
     side_branches: &[Vec<Contour>],
-) -> Vec<ReferenceTriplet> {
-    let main_centroids: Vec<Vector3<f64>> = main.iter().map(contour_centroid).collect();
+) -> Option<CoronaryReferences> {
+    let first_main = contour_centroid(main.first()?);
+    let ao_centroid = aorta
+        .iter()
+        .map(contour_centroid)
+        .min_by(|a, b| (a - first_main).norm().total_cmp(&(b - first_main).norm()))?;
 
-    let up_hint = (main_centroids[0] - ao_centroid)
-        .try_normalize(1e-12)
-        .unwrap_or(Vector3::z());
+    // Index 0 is the main vessel, index `j` side branch `j` (branch_id `j`).
+    let branches: Vec<BranchSlices> = std::iter::once(main)
+        .chain(side_branches.iter().map(Vec::as_slice))
+        .map(|contours| BranchSlices {
+            contours,
+            centroids: contours.iter().map(contour_centroid).collect(),
+        })
+        .collect();
+    let parents: Vec<Option<(usize, usize)>> = (0..branches.len())
+        .map(|b| find_parent(b, &branches))
+        .collect();
 
-    let mut tagged: Vec<(usize, ReferenceTriplet)> = Vec::new();
+    let references_of = |b: usize| -> Vec<ReferenceTriplet> {
+        let branch = &branches[b];
+        let Some(&first) = branch.centroids.first() else {
+            return vec![];
+        };
+        let origin = match parents[b] {
+            Some((p, slice)) => branches[p].centroids[slice],
+            None => ao_centroid,
+        };
+        let up_hint = (first - origin)
+            .try_normalize(1e-12)
+            .unwrap_or(Vector3::z());
 
-    if let Some(entry) = ostium_reference(ao_centroid, main, &main_centroids, up_hint) {
-        tagged.push(entry);
-    }
-    for branch_contours in side_branches {
-        if let Some(entry) =
-            sidebranch_reference(ao_centroid, main, &main_centroids, branch_contours, up_hint)
-        {
-            tagged.push(entry);
+        // Facing preference: the vessel left behind, back up the parent (a branch leaving at
+        // ~90° has the parent's centre straight behind it), then down.
+        let mut facing = vec![origin - first];
+        if let Some((p, slice)) = parents[b] {
+            facing.push(-branch_direction(&branches[p], slice, ao_centroid));
         }
-    }
+        facing.push(-Vector3::z());
 
-    tagged.sort_by_key(|(k, _)| *k);
-    tagged.into_iter().map(|(_, r)| r).collect()
+        let mut tagged: Vec<(usize, ReferenceTriplet)> = Vec::new();
+        if let Some(r) = ostium_reference(origin, branch, &facing, up_hint) {
+            tagged.push((0, r));
+        }
+        for (child, parent) in parents.iter().enumerate() {
+            if let Some((p, slice)) = *parent {
+                if p == b {
+                    if let Some(r) =
+                        bifurcation_reference(origin, branch, slice, &branches[child], up_hint)
+                    {
+                        tagged.push((slice, r));
+                    }
+                }
+            }
+        }
+        tagged.sort_by_key(|(k, _)| *k);
+        tagged.into_iter().map(|(_, r)| r).collect()
+    };
+
+    Some(CoronaryReferences {
+        ao_centroid: (ao_centroid.x, ao_centroid.y, ao_centroid.z),
+        main: references_of(0),
+        branches: (1..branches.len()).map(references_of).collect(),
+    })
 }
 
-fn ostium_reference(
-    ao_centroid: Vector3<f64>,
-    main: &[Contour],
-    main_centroids: &[Vector3<f64>],
-    up_hint: Vector3<f64>,
-) -> Option<(usize, ReferenceTriplet)> {
-    let first = main.first()?;
-    if first.points.len() <= 2 {
+/// Parent of side branch `b` (main or lower id) and the parent slice nearest `b`'s start.
+fn find_parent(b: usize, branches: &[BranchSlices]) -> Option<(usize, usize)> {
+    if b == 0 {
         return None;
     }
-
-    let normal = if main.len() > 1 {
-        (main_centroids[1] - main_centroids[0])
-            .try_normalize(1e-12)
-            .unwrap_or(Vector3::z())
-    } else {
-        (main_centroids[0] - ao_centroid)
-            .try_normalize(1e-12)
-            .unwrap_or(Vector3::z())
-    };
-
-    let ((pa, pb), _) = first.find_closest_opposite_3d();
-    let pta = Vector3::new(pa.x, pa.y, pa.z);
-    let ptb = Vector3::new(pb.x, pb.y, pb.z);
-    let main_ref_v = if (pta - ao_centroid).norm() <= (ptb - ao_centroid).norm() {
-        pta
-    } else {
-        ptb
-    };
-
-    let ((p1, p2), _) = first.find_farthest_points();
-    let (cc, cl) = assign_cc_clock(
-        Vector3::new(p1.x, p1.y, p1.z),
-        Vector3::new(p2.x, p2.y, p2.z),
-        main_centroids[0],
-        normal,
-        up_hint,
-    );
-
-    Some((
-        0,
-        ReferenceTriplet {
-            main_ref: (main_ref_v.x, main_ref_v.y, main_ref_v.z),
-            counter_clock_ref: (cc.x, cc.y, cc.z),
-            clock_ref: (cl.x, cl.y, cl.z),
-        },
-    ))
+    let start = *branches[b].centroids.first()?;
+    branches[..b]
+        .iter()
+        .enumerate()
+        .flat_map(|(p, branch)| {
+            branch
+                .centroids
+                .iter()
+                .enumerate()
+                .map(move |(slice, c)| (p, slice, (c - start).norm()))
+        })
+        .min_by(|a, b| a.2.total_cmp(&b.2))
+        .map(|(p, slice, _)| (p, slice))
 }
 
-fn sidebranch_reference(
-    ao_centroid: Vector3<f64>,
-    main: &[Contour],
-    main_centroids: &[Vector3<f64>],
-    branch_contours: &[Contour],
-    up_hint: Vector3<f64>,
-) -> Option<(usize, ReferenceTriplet)> {
-    if branch_contours.is_empty() {
-        return None;
-    }
-    let side_c0 = contour_centroid(&branch_contours[0]);
-
-    let (bifurc_idx, _) = main_centroids.iter().enumerate().min_by(|(_, a), (_, b)| {
-        (*a - side_c0)
-            .norm()
-            .partial_cmp(&(*b - side_c0).norm())
-            .unwrap()
-    })?;
-
-    let bifurc_centroid = main_centroids[bifurc_idx];
-
-    let normal = if bifurc_idx + 1 < main.len() {
-        (main_centroids[bifurc_idx + 1] - bifurc_centroid)
-            .try_normalize(1e-12)
-            .unwrap_or(Vector3::z())
-    } else if bifurc_idx > 0 {
-        (bifurc_centroid - main_centroids[bifurc_idx - 1])
-            .try_normalize(1e-12)
-            .unwrap_or(Vector3::z())
+/// Unit direction of the branch at `slice` (from `origin` for a single contour).
+fn branch_direction(branch: &BranchSlices, slice: usize, origin: Vector3<f64>) -> Vector3<f64> {
+    let c = &branch.centroids;
+    let dir = if slice + 1 < c.len() {
+        c[slice + 1] - c[slice]
+    } else if slice > 0 {
+        c[slice] - c[slice - 1]
     } else {
-        (bifurc_centroid - ao_centroid)
-            .try_normalize(1e-12)
-            .unwrap_or(Vector3::z())
+        c[slice] - origin
     };
+    dir.try_normalize(1e-12).unwrap_or(Vector3::z())
+}
 
-    let bifurc_contour = &main[bifurc_idx];
-    let n_pts = bifurc_contour.points.len();
-    if n_pts < 4 {
-        return None;
-    }
-
-    let closest_idx = bifurc_contour
+fn closest_point_index(contour: &Contour, target: Vector3<f64>) -> Option<usize> {
+    contour
         .points
         .iter()
         .enumerate()
         .min_by(|(_, a), (_, b)| {
-            (Vector3::new(a.x, a.y, a.z) - side_c0)
+            (Vector3::new(a.x, a.y, a.z) - target)
                 .norm()
-                .partial_cmp(&(Vector3::new(b.x, b.y, b.z) - side_c0).norm())
-                .unwrap()
+                .total_cmp(&(Vector3::new(b.x, b.y, b.z) - target).norm())
+        })
+        .map(|(i, _)| i)
+}
+
+/// Points a quarter ring either side of `idx`, as (counter_clock, clock).
+fn quarter_points(
+    contour: &Contour,
+    idx: usize,
+    centroid: Vector3<f64>,
+    normal: Vector3<f64>,
+    up_hint: Vector3<f64>,
+) -> (Vector3<f64>, Vector3<f64>) {
+    let n = contour.points.len();
+    let quarter = n / 4;
+    let pp = &contour.points[(idx + quarter) % n];
+    let pm = &contour.points[(idx + n - quarter) % n];
+    assign_cc_clock(
+        Vector3::new(pp.x, pp.y, pp.z),
+        Vector3::new(pm.x, pm.y, pm.z),
+        centroid,
+        normal,
+        up_hint,
+    )
+}
+
+/// A facing direction must be this far off the axis (sin ≈ 11.5°) to project reliably.
+const MIN_OFF_AXIS: f64 = 0.2;
+
+/// Ostium triplet. `main_ref` faces the first usable direction in `facing`, which unlike the
+/// contour shape stays stable on round ostia.
+fn ostium_reference(
+    origin: Vector3<f64>,
+    branch: &BranchSlices,
+    facing: &[Vector3<f64>],
+    up_hint: Vector3<f64>,
+) -> Option<ReferenceTriplet> {
+    let first = branch.contours.first()?;
+    if first.points.len() < 4 {
+        return None;
+    }
+    let centroid = branch.centroids[0];
+    let normal = branch_direction(branch, 0, origin);
+    let facing = facing.iter().find_map(|d| {
+        let in_plane = d - normal * d.dot(&normal);
+        (in_plane.norm() >= MIN_OFF_AXIS * d.norm()).then_some(in_plane)
+    })?;
+    let idx = first
+        .points
+        .iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| {
+            let cos = |p: &crate::types::native::ContourPoint| {
+                (Vector3::new(p.x, p.y, p.z) - centroid)
+                    .try_normalize(1e-12)
+                    .map_or(-1.0, |d| d.dot(&facing))
+            };
+            cos(a).total_cmp(&cos(b))
         })
         .map(|(i, _)| i)?;
 
-    let quarter = n_pts / 4;
-    let idx_plus = (closest_idx + quarter) % n_pts;
-    let idx_minus = (closest_idx + n_pts - quarter) % n_pts;
-    let pp = &bifurc_contour.points[idx_plus];
-    let pm = &bifurc_contour.points[idx_minus];
-
-    let (cc, cl) = assign_cc_clock(
-        Vector3::new(pp.x, pp.y, pp.z),
-        Vector3::new(pm.x, pm.y, pm.z),
-        bifurc_centroid,
-        normal,
-        up_hint,
-    );
-
-    Some((
-        bifurc_idx,
-        ReferenceTriplet {
-            main_ref: (side_c0.x, side_c0.y, side_c0.z),
-            counter_clock_ref: (cc.x, cc.y, cc.z),
-            clock_ref: (cl.x, cl.y, cl.z),
-        },
-    ))
+    let main_ref = &first.points[idx];
+    let (cc, cl) = quarter_points(first, idx, centroid, normal, up_hint);
+    Some(ReferenceTriplet {
+        main_ref: (main_ref.x, main_ref.y, main_ref.z),
+        counter_clock_ref: (cc.x, cc.y, cc.z),
+        clock_ref: (cl.x, cl.y, cl.z),
+    })
 }
 
-/// Assign the two points to (counter_clock, clock) when viewing proximal→distal.
-///
-/// "Left = counter_clock" convention (user-specified):
-/// - Compute an "up" direction perpendicular to `normal` from `up_hint`
-/// - `right = up_perp × normal` (right-hand rule: up × forward = right)
-/// - `p` is counter_clock (left) if its component along `right` is negative
+/// Triplet on `branch`'s contour `slice`, where `child` leaves it.
+fn bifurcation_reference(
+    origin: Vector3<f64>,
+    branch: &BranchSlices,
+    slice: usize,
+    child: &BranchSlices,
+    up_hint: Vector3<f64>,
+) -> Option<ReferenceTriplet> {
+    let child_start = *child.centroids.first()?;
+    let contour = &branch.contours[slice];
+    if contour.points.len() < 4 {
+        return None;
+    }
+    let normal = branch_direction(branch, slice, origin);
+    let idx = closest_point_index(contour, child_start)?;
+    let (cc, cl) = quarter_points(contour, idx, branch.centroids[slice], normal, up_hint);
+    Some(ReferenceTriplet {
+        main_ref: (child_start.x, child_start.y, child_start.z),
+        counter_clock_ref: (cc.x, cc.y, cc.z),
+        clock_ref: (cl.x, cl.y, cl.z),
+    })
+}
+
+/// Orders two points as (counter_clock, clock) viewed proximal → distal: counter_clock is left
+/// of the vessel, i.e. negative along `up × normal` with "up" taken from `up_hint`.
 fn assign_cc_clock(
     p1: Vector3<f64>,
     p2: Vector3<f64>,
@@ -323,4 +314,128 @@ fn contour_centroid(c: &Contour) -> Vector3<f64> {
         .iter()
         .fold(Vector3::zeros(), |acc, p| acc + Vector3::new(p.x, p.y, p.z));
     sum / n
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::native::{ContourPoint, ContourType};
+    use std::f64::consts::TAU;
+
+    /// Round contour of radius `r` around `center`, in the plane perpendicular to `dir`.
+    fn ring(id: u32, center: Vector3<f64>, dir: Vector3<f64>, r: f64) -> Contour {
+        let dir = dir.normalize();
+        let u = dir.cross(&Vector3::new(0.3, 0.5, 0.8)).normalize();
+        let v = dir.cross(&u);
+        Contour {
+            id,
+            original_frame: id,
+            centroid: Some((center.x, center.y, center.z)),
+            points: (0..40)
+                .map(|i| {
+                    let a = TAU * i as f64 / 40.0;
+                    let p = center + (u * a.cos() + v * a.sin()) * r;
+                    ContourPoint {
+                        frame_index: id,
+                        point_index: i,
+                        x: p.x,
+                        y: p.y,
+                        z: p.z,
+                        aortic: false,
+                    }
+                })
+                .collect(),
+            aortic_thickness: None,
+            pulmonary_thickness: None,
+            kind: ContourType::Lumen,
+        }
+    }
+
+    /// Straight vessel of `n` round slices from `start` along `dir`, 1 mm apart.
+    fn vessel(start: Vector3<f64>, dir: Vector3<f64>, n: usize, r: f64) -> Vec<Contour> {
+        let d = dir.normalize();
+        (0..n)
+            .map(|i| ring(i as u32, start + d * i as f64, d, r))
+            .collect()
+    }
+
+    fn v(t: (f64, f64, f64)) -> Vector3<f64> {
+        Vector3::new(t.0, t.1, t.2)
+    }
+
+    /// Aorta along z at y = −8, main vessel along +x from (15, 0, 0), side branch 1 off main
+    /// slice 10 along +y, side branch 2 off side branch 1 slice 8 along +z. Both leave at 90°.
+    fn tree() -> DiscretizedVesselTree {
+        let aorta = vessel(Vector3::new(0.0, -8.0, -10.0), Vector3::z(), 21, 12.0);
+        let main = vessel(Vector3::new(15.0, 0.0, 0.0), Vector3::x(), 30, 2.0);
+        let side1 = vessel(Vector3::new(25.0, 4.0, 0.0), Vector3::y(), 20, 1.5);
+        let side2 = vessel(Vector3::new(25.0, 12.0, 3.0), Vector3::z(), 10, 1.0);
+        DiscretizedVesselTree {
+            discretized_aorta: aorta,
+            discretized_rca_main: vec![],
+            discretized_lca_main: main,
+            spacing: 1.0,
+            rca_branches: vec![],
+            lca_branches: vec![side1, side2],
+            rca_references: vec![],
+            lca_references: vec![],
+            rca_branch_references: vec![],
+            lca_branch_references: vec![],
+            ao_rca: (0.0, 0.0, 0.0),
+            ao_lca: (0.0, 0.0, 0.0),
+            pts_cusp_rcc: None,
+            pts_cusp_lcc: None,
+            pts_cusp_acc: None,
+            index_stj_slice: None,
+            index_aa: None,
+        }
+        .calculate_ref_pts()
+    }
+
+    #[test]
+    fn test_ostium_main_ref_faces_aorta_on_round_contour() {
+        let t = tree();
+        let ostium = &t.lca_references[0];
+        // First main contour: centre (15, 0, 0), radius 2, in the yz plane. The aorta centre
+        // (0, −8, 0) projects onto −y, so main_ref ≈ (15, −2, 0). Ring points are 9° apart, so
+        // the nearest one is within 2·sin(4.5°) ≈ 0.16 mm.
+        let m = v(ostium.main_ref);
+        assert!(
+            (m - Vector3::new(15.0, -2.0, 0.0)).norm() < 0.16,
+            "main_ref {m}"
+        );
+        // Side points a quarter turn away, on opposite sides (±z).
+        let (cc, cl) = (v(ostium.counter_clock_ref), v(ostium.clock_ref));
+        assert!(cc.y.abs() < 0.16 && cl.y.abs() < 0.16);
+        assert!((cc - cl).norm() > 3.9);
+    }
+
+    #[test]
+    fn test_references_are_placed_on_the_parent_branch() {
+        let t = tree();
+        // Main vessel: ostium + side branch 1 only (side branch 2 leaves side branch 1).
+        assert_eq!(t.lca_references.len(), 2);
+        assert!((v(t.lca_references[1].main_ref) - Vector3::new(25.0, 4.0, 0.0)).norm() < 1e-9);
+        // Side branch 1 has its ostium and side branch 2's bifurcation, side branch 2 its ostium.
+        assert_eq!(t.lca_branch_references.len(), 2);
+        assert_eq!(t.lca_branch_references[0].len(), 2);
+        assert!(
+            (v(t.lca_branch_references[0][1].main_ref) - Vector3::new(25.0, 12.0, 3.0)).norm()
+                < 1e-9
+        );
+        assert_eq!(t.lca_branch_references[1].len(), 1);
+        // Side branch 1 leaves at 90°: the main vessel's centre is straight behind it, so its
+        // main_ref faces back up the main vessel (−x): ≈ (23.5, 4, 0).
+        let m = v(t.lca_branch_references[0][0].main_ref);
+        assert!(
+            (m - Vector3::new(23.5, 4.0, 0.0)).norm() < 0.12,
+            "main_ref {m}"
+        );
+        // Side branch 2 likewise faces back up side branch 1 (−y): ≈ (25, 11, 3).
+        let m = v(t.lca_branch_references[1][0].main_ref);
+        assert!(
+            (m - Vector3::new(25.0, 11.0, 3.0)).norm() < 0.08,
+            "main_ref {m}"
+        );
+    }
 }

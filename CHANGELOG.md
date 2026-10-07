@@ -3,6 +3,37 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.7] - 2026-10-07
+
+### Changed
+- **Breaking:** `discretize_vessel` cuts the surface mesh with planes perpendicular to the
+  centerline instead of projecting nearby vertices and fitting a spline, so irregular lumens
+  (e.g. calcified, crescent-shaped) keep their shape. New signature:
+  `discretize_vessel(centerline, vertices, faces, branch_id=0, step_size=0.5, n_points=200, region_points=None)`.
+- **Breaking:** the low-level `discretize_vessel_tree` binding takes `mesh_vertices, mesh_faces`
+  after the centerlines. `mm.discretize_vessel_tree(..., results_dict, ...)` is unchanged.
+
+### Added
+- `rca_branch_references` / `lca_branch_references` on the discretized tree: per side branch, a
+  triplet at its own ostium and one per branch leaving it, so pullbacks can be aligned to side
+  branches.
+
+### Removed
+- **Breaking:** `b_spline`, `bspline_smoothing`, `bspline_degree` from `discretize_vessel_tree`.
+  Mesh-cut contours need no smoothing.
+
+### Fixed
+- The end of each branch is now sliced. The last partial step was dropped before.
+- Invalid input to `discretize_vessel` (non-positive `step_size`, `n_points` < 3, unknown
+  `branch_id`, `region_points` not on the mesh) raises `ValueError` instead of returning no
+  contours. In `discretize_vessel_tree` this applies to the aorta and main vessels, a failing
+  side branch is skipped with a warning.
+- Ostium `main_ref` faces the aorta instead of following the contour's minor axis, which rotated
+  the triplet on round ostia.
+- Bifurcation references of branches leaving a side branch were placed on the main vessel.
+- Side branches growing out of another side branch no longer duplicate its first slices
+  (vertices labelled for both go to the nearest branch).
+
 ## [0.7.6] - 2026-10-06
 
 ### Added

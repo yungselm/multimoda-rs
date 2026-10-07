@@ -1,104 +1,13 @@
 from __future__ import annotations
 
-import numpy as np
-from scipy.interpolate import splprep, splev
-
 from ..multimodars import (
-    PyContour,
-    PyContourPoint,
     PyCenterline,
     PyDiscretizedVesselTree,
+)
+from ..multimodars import (
     discretize_vessel_tree as _discretize_vessel_tree,
 )
 from .labeling import label_branches as _label_branches
-
-
-def _fit_bspline_contour(
-    contour: PyContour,
-    smoothing: float = 0.0,
-    degree: int = 3,
-) -> PyContour:
-    """Return a copy of *contour* whose points lie on a closed B-spline fit.
-
-    Parameters
-    ----------
-    contour:
-        Source contour.
-    smoothing:
-        Smoothing condition ``s`` for ``scipy.interpolate.splprep``.
-        Range: ``[0, ∞)``.
-
-        * ``s = 0``       - exact interpolation; spline passes through every point.
-        * ``s ≈ n``       - gentle smoothing (~1 mm² average residual per point).
-        * ``s ≈ 5 * n``   - strong smoothing.
-
-          where ``n`` is the number of contour points (e.g. ``n = 100`` →
-          start around ``s = 100.0`` and tune from there).
-    degree:
-        B-spline degree (1-5).  3 (cubic) is the typical choice.
-    """
-    pts = contour.points
-    n = len(pts)
-    if n < degree + 1:
-        return contour
-
-    arr = np.array([(p.x, p.y, p.z) for p in pts], dtype=np.float64)
-    xs = arr[:, 0]
-    ys = arr[:, 1]
-    zs = arr[:, 2]
-
-    try:
-        tck, _ = splprep([xs, ys, zs], s=smoothing, k=degree, per=True)
-    except Exception:
-        return contour
-
-    u_new = np.linspace(0.0, 1.0, n, endpoint=False)
-    xs_new, ys_new, zs_new = splev(u_new, tck)
-
-    centroid = (
-        float(np.mean(xs_new)),
-        float(np.mean(ys_new)),
-        float(np.mean(zs_new)),
-    )
-    new_points = [
-        PyContourPoint(
-            pts[i].frame_index,
-            pts[i].point_index,
-            float(xs_new[i]),
-            float(ys_new[i]),
-            float(zs_new[i]),
-            pts[i].aortic,
-        )
-        for i in range(n)
-    ]
-
-    return PyContour(
-        contour.id,
-        contour.original_frame,
-        new_points,
-        centroid,
-        contour.aortic_thickness,
-        contour.pulmonary_thickness,
-        contour.kind,
-    )
-
-
-def _replace_contours_with_bsplines(
-    tree: PyDiscretizedVesselTree,
-    smoothing: float = 0.0,
-    degree: int = 3,
-) -> PyDiscretizedVesselTree:
-    """Replace every contour in *tree* with a closed B-spline fit (in-place)."""
-
-    def fit(c: PyContour) -> PyContour:
-        return _fit_bspline_contour(c, smoothing, degree)
-
-    tree.discretized_aorta = [fit(c) for c in tree.discretized_aorta]
-    tree.discretized_rca_main = [fit(c) for c in tree.discretized_rca_main]
-    tree.discretized_lca_main = [fit(c) for c in tree.discretized_lca_main]
-    tree.rca_branches = [[fit(c) for c in branch] for branch in tree.rca_branches]
-    tree.lca_branches = [[fit(c) for c in branch] for branch in tree.lca_branches]
-    return tree
 
 
 def _extract_side_branches(results_dict: dict, prefix: str) -> list[list[tuple]]:
@@ -123,22 +32,18 @@ def discretize_vessel_tree(
     branch_id_lca: int = 0,
     step_size: float = 1.0,
     n_points: int = 100,
-    b_spline: bool = False,
-    bspline_smoothing: float = 100.0,
-    bspline_degree: int = 3,
     control_plot: bool = False,
 ) -> PyDiscretizedVesselTree:
-    """Discretize a coronary vessel tree, optionally smoothing contours with B-splines.
+    """Discretize a coronary vessel tree into cross-sectional contours.
 
-    Expects *results_dict* to already contain labelled branch point keys
-    (``aorta_points``, ``rca_points_main``, ``rca_points_side_1``, …,
-    ``lca_points_main``, ``lca_points_side_1``, …).  Use
-    :func:`prepare_and_discretize` if you also need branch labelling to run
-    automatically.
+    Expects *results_dict* to already contain the labelled ``mesh`` and labelled
+    branch point keys (``aorta_points``, ``rca_points_main``, ``rca_points_side_1``, …,
+    ``lca_points_main``, ``lca_points_side_1``, …). Each vessel is cut with planes
+    perpendicular to its centerline, using only the mesh faces of its own region.  Use
+    :func:`label_branches_pair` first to add the branch labels.
 
-    ``ao_cl``, ``rca_cl``, and ``lca_cl`` are used as-is - smooth/resample/orient
-    them beforehand (e.g. via :func:`load_centerline`/:func:`prepare_centerline`); this does
-    not smooth internally.
+    ``ao_cl``, ``rca_cl`` and ``lca_cl`` must already be smoothed, resampled and oriented
+    (e.g. via :func:`load_centerline` and :func:`prepare_centerline`).
 
     Parameters
     ----------
@@ -147,7 +52,7 @@ def discretize_vessel_tree(
         labelled), already prepared.
     results_dict:
         Dictionary produced by :func:`~multimodars.label_branches_pair` containing
-        keys ``aorta_points``, ``rca_points_main``, ``lca_points_main``, and
+        keys ``mesh``, ``aorta_points``, ``rca_points_main``, ``lca_points_main``, and
         any ``rca_points_side_N`` / ``lca_points_side_N`` entries.
     branch_id_rca, branch_id_lca:
         Main-vessel branch IDs (almost always ``0``).
@@ -155,41 +60,35 @@ def discretize_vessel_tree(
         Arc-length distance between consecutive cross-sections in mm.
     n_points:
         Number of evenly-spaced points per output contour.
-    b_spline:
-        When ``True``, all contours are replaced with closed B-spline fits
-        before reference points are computed.
     control_plot:
         When ``True``, open an interactive Plotly 3-D visualisation of the
         finished tree (calls
         :func:`~multimodars.ccta.debug_plots.plot_vessel_tree`).
-    bspline_smoothing:
-        Smoothing condition ``s`` for ``scipy.interpolate.splprep``.
-        Range: ``[0, ∞)``.
-
-        * ``s = 0``            - exact interpolation.
-        * ``s ≈ n_points``     - gentle smoothing (~1 mm² average residual per point).
-        * ``s ≈ 5 * n_points`` - strong smoothing.
-
-          Tune empirically; the right value depends on how irregular the raw
-          contours are.
-    bspline_degree:
-        B-spline polynomial degree (1-5).  Default is cubic (3).
 
     Returns
     -------
     PyDiscretizedVesselTree
         Fully populated vessel tree including orientation reference triplets.
+
+    Raises
+    ------
+    ValueError
+        If the aorta or a main vessel cannot be discretized (see :func:`discretize_vessel`).
+        A failing side branch is skipped with a warning and left empty.
     """
     points_ao = results_dict["aorta_points"] + results_dict["rca_removed_points"]
     points_rca_main = results_dict["rca_points_main"]
     points_lca_main = results_dict["lca_points_main"]
     side_rca = _extract_side_branches(results_dict, "rca_points")
     side_lca = _extract_side_branches(results_dict, "lca_points")
+    mesh = results_dict["mesh"]
 
     tree = _discretize_vessel_tree(
         ao_cl,
         rca_cl,
         lca_cl,
+        [tuple(v) for v in mesh.vertices.tolist()],
+        mesh.faces.tolist(),
         points_ao,
         points_rca_main,
         points_lca_main,
@@ -199,11 +98,7 @@ def discretize_vessel_tree(
         branch_id_lca=branch_id_lca,
         step_size=step_size,
         n_points=n_points,
-        calculate_ref_pts=not b_spline,
     )
-    if b_spline:
-        tree = _replace_contours_with_bsplines(tree, bspline_smoothing, bspline_degree)
-        tree.calculate_ref_pts()
 
     if control_plot:
         from .debug_plots import plot_vessel_tree

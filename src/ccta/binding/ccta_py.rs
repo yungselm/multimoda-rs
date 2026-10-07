@@ -695,60 +695,76 @@ pub fn fix_mesh_winding(faces: Vec<[usize; 3]>) -> Vec<[usize; 3]> {
         .collect()
 }
 
-/// Discretize a coronary vessel into uniform cross-sectional contours.
+/// Discretize a vessel into evenly sampled cross-sections by cutting its surface mesh.
 ///
-/// Walks ``branch_id`` of ``centerline`` at uniform arc-length intervals of
-/// ``step_size``, projects the supplied mesh ``points`` onto the perpendicular
-/// plane at each position, filters out empty and incomplete (half-circle) slices,
-/// and resamples each surviving slice to exactly ``n_points`` evenly-spaced
-/// points via a closed Catmull-Rom spline.
-///
-/// ``centerline`` is used as-is — smooth/resample/orient it beforehand (e.g. via
-/// ``PyCenterline.smooth``); this no longer smooths internally.
+/// Cuts the mesh with planes perpendicular to branch ``branch_id`` every
+/// ``step_size``, drops empty and incomplete end slices and resamples each
+/// outline to ``n_points`` evenly spaced points. The cut keeps lumens of any
+/// shape (eccentric, notched, crescent-shaped). Gaps in the cut region, such as
+/// a side-branch ostium excluded by ``region_points``, are bridged with
+/// straight edges. ``centerline`` must already be smoothed and resampled.
 ///
 /// Parameters
 /// ----------
 /// centerline : PyCenterline
-///     Centerline of the vessel to discretize, already prepared (smoothed,
-///     resampled, and oriented as needed).
-/// points : list of tuple of float
-///     ``(x, y, z)`` surface point cloud of the vessel (e.g. mesh vertices).
+///     Prepared centerline of the vessel.
+/// vertices : list of tuple of float
+///     Mesh vertices, e.g. ``[tuple(v) for v in mesh.vertices.tolist()]``.
+/// faces : list of list of int
+///     Triangles as vertex-index triples, e.g. ``mesh.faces.tolist()``.
 /// branch_id : int
-///     Branch of the centerline to walk (0 = main vessel, 1+ = side branches).
+///     Branch to walk (0 = main vessel).
 /// step_size : float
-///     Arc-length step between successive cross-sections in mm.  The slab
-///     half-thickness used for point selection is ``step_size / 2``.
+///     Arc length between cross-sections in mm.
 /// n_points : int
-///     Number of evenly-spaced points on each output contour.
+///     Points per output contour.
+/// region_points : list of tuple of float, optional
+///     Vertices labelling the region to cut (e.g. ``results["rca_points_main"]``).
+///     A face is cut when at least two of its vertices are labelled. ``None``
+///     cuts the whole mesh.
 ///
 /// Returns
 /// -------
 /// contours : list of PyContour
-///     One uniformly-sampled closed contour per valid cross-section.
+///     One closed contour per valid cross-section.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If a face references a vertex index outside ``vertices``, ``step_size``
+///     is not positive, ``n_points`` < 3, ``branch_id`` does not exist, or
+///     ``region_points`` select no faces.
 ///
 /// Examples
 /// --------
-/// >>> import multimodars as mm
-/// >>> centerline = mm.load_centerline("vessel.json")
-/// >>> vertices = mesh.vertices.tolist()
-/// >>> contours = mm.discretize_vessel(centerline, vertices, 0, 0.5, 200)
-/// >>> print(f"Got {len(contours)} cross-sections")
+/// >>> vertices = [tuple(v) for v in mesh.vertices.tolist()]
+/// >>> contours = mm.discretize_vessel(centerline, vertices, mesh.faces.tolist(), 0, 0.5, 200)
 #[pyfunction]
+#[pyo3(signature = (
+    centerline, vertices, faces,
+    branch_id = 0, step_size = 0.5, n_points = 200,
+    region_points = None,
+))]
 pub fn discretize_vessel(
     centerline: PyCenterline,
-    points: Vec<Point3D>,
+    vertices: Vec<Point3D>,
+    faces: Vec<[usize; 3]>,
     branch_id: u32,
     step_size: f64,
     n_points: usize,
+    region_points: Option<Vec<Point3D>>,
 ) -> PyResult<Vec<PyContour>> {
-    let rust_centerline = centerline.to_rust_centerline();
+    let mesh = discretizing::SurfaceMesh::new(&vertices, faces)
+        .map_err(pyo3::exceptions::PyValueError::new_err)?;
     let contours = discretizing::discretize_vessel_rs(
-        &rust_centerline,
-        &points,
+        &centerline.to_rust_centerline(),
+        &mesh,
+        region_points.as_deref(),
         branch_id,
         step_size,
         n_points,
-    );
+    )
+    .map_err(pyo3::exceptions::PyValueError::new_err)?;
     Ok(contours.iter().map(PyContour::from).collect())
 }
 
@@ -827,75 +843,67 @@ pub fn smooth_mesh_labels(
 
 /// Discretize the full coronary vessel tree and compute orientation references.
 ///
-/// Runs :func:`discretize_vessel` for every branch (aorta, RCA main, LCA main,
-/// and each side branch), then computes orientation reference triplets at the
-/// ostium and every side-branch bifurcation. ``ao_cl``, ``rca_cl``, and
-/// ``lca_cl`` are used as-is — smooth/resample/orient them beforehand (e.g.
-/// via ``PyCenterline.smooth``); this no longer smooths internally.
+/// Runs :func:`discretize_vessel` for the aorta, both main vessels and every side
+/// branch, each on its own labelled faces, then computes the reference triplets.
+/// The centerlines must already be smoothed and resampled.
 ///
 /// Parameters
 /// ----------
-/// ao_cl : PyCenterline
-///     Aortic centerline (branch 0 only), already prepared.
-/// rca_cl : PyCenterline
-///     RCA centerline with all branches calculated, already prepared.
-/// lca_cl : PyCenterline
-///     LCA centerline with all branches calculated, already prepared.
-/// points_ao : list of tuple of float
-///     Surface mesh points ``(x, y, z)`` of the aorta.
-/// points_rca_main : list of tuple of float
-///     Surface mesh points for the RCA main vessel.
-/// points_lca_main : list of tuple of float
-///     Surface mesh points for the LCA main vessel.
-/// side_branches_rca : list of list of tuple of float
-///     One point list per RCA side branch, ordered by branch_id
-///     (``side_branches_rca[0]`` → branch_id 1, etc.).
-///     Pass ``results["rca_points_side_1"]``, ``["rca_points_side_2"]``, … in order.
-/// side_branches_lca : list of list of tuple of float
-///     Same structure for LCA.
-/// branch_id_rca : int
-///     Branch ID of the RCA main vessel (almost always ``0``).
-/// branch_id_lca : int
-///     Branch ID of the LCA main vessel (almost always ``0``).
+/// ao_cl, rca_cl, lca_cl : PyCenterline
+///     Prepared centerlines, coronaries with their branches calculated.
+/// mesh_vertices : list of tuple of float
+///     Vertices of the labelled mesh (``results["mesh"]``).
+/// mesh_faces : list of list of int
+///     Its triangles as vertex-index triples.
+/// points_ao, points_rca_main, points_lca_main : list of tuple of float
+///     Vertices labelling the aorta and the two main vessels.
+/// side_branches_rca, side_branches_lca : list of list of tuple of float
+///     One label list per side branch, ``side_branches_rca[i]`` is branch_id
+///     ``i + 1`` (``results["rca_points_side_1"]``, ``..._2``, … in order).
+/// branch_id_rca, branch_id_lca : int
+///     Branch ID of each main vessel (almost always ``0``).
 /// step_size : float
-///     Arc-length step between cross-sections in mm.
+///     Arc length between cross-sections in mm.
 /// n_points : int
-///     Number of evenly-spaced points per output contour.
+///     Points per output contour.
 ///
 /// Returns
 /// -------
 /// PyDiscretizedVesselTree
-///     Fully populated vessel tree including orientation references.
+///     Vessel tree including the reference triplets.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If the aorta or a main vessel cannot be discretized (see
+///     :func:`discretize_vessel`). A failing side branch is skipped with a
+///     warning and left empty.
 ///
 /// Examples
 /// --------
-/// >>> import multimodars as mm
-/// >>> results = mm.label_branches(rca_cl, results)
-/// >>> results = mm.label_branches(lca_cl, results, results_key="lca_points")
+/// >>> mesh = results["mesh"]
 /// >>> side_rca = [results["rca_points_side_1"], results["rca_points_side_2"]]
-/// >>> side_lca = [results["lca_points_side_1"]]
 /// >>> tree = mm.discretize_vessel_tree(
 /// ...     ao_cl, rca_cl, lca_cl,
-/// ...     results["aorta_points"],
-/// ...     results["rca_points_main"],
-/// ...     results["lca_points_main"],
-/// ...     side_rca, side_lca,
-/// ...     branch_id_rca=0, branch_id_lca=0,
-/// ...     step_size=1.0, n_points=100,
+/// ...     [tuple(v) for v in mesh.vertices.tolist()], mesh.faces.tolist(),
+/// ...     results["aorta_points"], results["rca_points_main"], results["lca_points_main"],
+/// ...     side_rca, [results["lca_points_side_1"]],
 /// ... )
 #[pyfunction]
 #[pyo3(signature = (
     ao_cl, rca_cl, lca_cl,
+    mesh_vertices, mesh_faces,
     points_ao, points_rca_main, points_lca_main,
     side_branches_rca, side_branches_lca,
     branch_id_rca = 0, branch_id_lca = 0,
     step_size = 1.0, n_points = 100,
-    calculate_ref_pts=true,
 ))]
 pub fn discretize_vessel_tree(
     ao_cl: PyCenterline,
     rca_cl: PyCenterline,
     lca_cl: PyCenterline,
+    mesh_vertices: Vec<Point3D>,
+    mesh_faces: Vec<[usize; 3]>,
     points_ao: Vec<Point3D>,
     points_rca_main: Vec<Point3D>,
     points_lca_main: Vec<Point3D>,
@@ -905,12 +913,14 @@ pub fn discretize_vessel_tree(
     branch_id_lca: u32,
     step_size: f64,
     n_points: usize,
-    calculate_ref_pts: bool,
 ) -> PyResult<PyDiscretizedVesselTree> {
-    let mut tree = DiscretizedVesselTree::from_results_dict(
+    let mesh = discretizing::SurfaceMesh::new(&mesh_vertices, mesh_faces)
+        .map_err(pyo3::exceptions::PyValueError::new_err)?;
+    let tree = DiscretizedVesselTree::from_results_dict(
         &ao_cl.to_rust_centerline(),
         &rca_cl.to_rust_centerline(),
         &lca_cl.to_rust_centerline(),
+        &mesh,
         &points_ao,
         &points_rca_main,
         &points_lca_main,
@@ -921,13 +931,8 @@ pub fn discretize_vessel_tree(
         step_size,
         n_points,
     )
-    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-
-    tree = if calculate_ref_pts {
-        tree.calculate_ref_pts()
-    } else {
-        tree
-    };
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?
+    .calculate_ref_pts();
 
     Ok(PyDiscretizedVesselTree::from(tree))
 }

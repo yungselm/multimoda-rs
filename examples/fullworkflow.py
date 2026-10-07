@@ -56,8 +56,6 @@ tree = mm.discretize_vessel_tree(
     results,
     step_size=1.0,
     n_points=100,
-    b_spline=True,  # set True + tune bspline_smoothing to smooth noisy contours
-    bspline_smoothing=5.0,
     control_plot=True,
 )
 

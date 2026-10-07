@@ -995,10 +995,12 @@ def smooth_mesh_labels(
 ) -> list[int]: ...
 def discretize_vessel(
     centerline: PyCenterline,
-    points: list[tuple[float, float, float]],
+    vertices: list[tuple[float, float, float]],
+    faces: list[list[int]],
     branch_id: int = ...,
     step_size: float = ...,
     n_points: int = ...,
+    region_points: list[tuple[float, float, float]] | None = ...,
 ) -> list[PyContour]: ...
 
 # (main_ref, counter_clock_ref, clock_ref) — each is an (x, y, z) tuple.
@@ -1030,6 +1032,12 @@ class PyDiscretizedVesselTree:
         Index 0 is always the ostium reference.
     lca_references : list of (main_ref, counter_clock_ref, clock_ref)
         Same structure for the LCA.
+    rca_branch_references : list of list of (main_ref, counter_clock_ref, clock_ref)
+        Per RCA side branch, aligned with ``rca_branches``: the triplet at the
+        branch's own ostium on its parent (index 0), then one per branch
+        leaving it, sorted proximal → distal.
+    lca_branch_references : list of list of (main_ref, counter_clock_ref, clock_ref)
+        Same structure for the LCA.
     ao_rca : tuple[float, float, float]
         Centroid ``(x, y, z)`` of the aorta slice closest to the RCA ostium.
     ao_lca : tuple[float, float, float]
@@ -1043,6 +1051,8 @@ class PyDiscretizedVesselTree:
     lca_branches: list[list[PyContour]]
     rca_references: list[_RefTriplet]
     lca_references: list[_RefTriplet]
+    rca_branch_references: list[list[_RefTriplet]]
+    lca_branch_references: list[list[_RefTriplet]]
     ao_rca: tuple[float, float, float]
     ao_lca: tuple[float, float, float]
 
@@ -1053,6 +1063,8 @@ def discretize_vessel_tree(
     ao_cl: PyCenterline,
     rca_cl: PyCenterline,
     lca_cl: PyCenterline,
+    mesh_vertices: list[tuple[float, float, float]],
+    mesh_faces: list[list[int]],
     points_ao: list[tuple[float, float, float]],
     points_rca_main: list[tuple[float, float, float]],
     points_lca_main: list[tuple[float, float, float]],
@@ -1062,5 +1074,4 @@ def discretize_vessel_tree(
     branch_id_lca: int = ...,
     step_size: float = ...,
     n_points: int = ...,
-    calculate_ref_pts: bool = ...,
 ) -> PyDiscretizedVesselTree: ...

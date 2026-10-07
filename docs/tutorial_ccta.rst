@@ -223,12 +223,13 @@ re-label. After splitting and merging it is assured that the longest centerline 
 Discretizing the vessel tree
 """""""""""""""""""""""""""""
 
-:func:`multimodars.discretize_vessel_tree` slices each vessel along its centerline at fixed
-arc-length intervals and samples ``n_points`` evenly-spaced points from each cross-sectional
-contour.  It also computes an orientation reference triplet (main, counter-clockwise, and
-clockwise reference points) at the ostium and at every side-branch bifurcation.  These
-triplets are stored in ``tree.rca_references`` and ``tree.lca_references`` and are later
-used to initialize the three-point alignment in step 3:
+:func:`multimodars.discretize_vessel_tree` cuts the labelled mesh with planes perpendicular to
+each centerline at fixed arc-length intervals and samples ``n_points`` evenly-spaced points from
+each cross-section, so irregular lumens keep their shape.  It also computes orientation
+reference triplets (main, counter-clockwise, and clockwise reference points) at every ostium
+and bifurcation, for the main vessels in ``tree.rca_references`` / ``tree.lca_references`` and
+per side branch in ``tree.rca_branch_references`` / ``tree.lca_branch_references``.  They are
+later used to initialize the three-point alignment in step 3:
 
 .. code-block:: python
 
@@ -237,8 +238,6 @@ used to initialize the three-point alignment in step 3:
         results,
         step_size=1.0,      # arc-length spacing between cross-sections in mm
         n_points=100,       # points per output contour ring
-        b_spline=True,      # replace each contour with a closed B-spline fit
-        bspline_smoothing=5.0,
         control_plot=False, # True opens a trimesh scene of the full tree
     )
 
@@ -259,12 +258,6 @@ used to initialize the three-point alignment in step 3:
   values give finer sampling but increase memory use.
 - ``n_points``: number of evenly-spaced points per output contour ring.  100 is a good
   default; reduce to 50 for a lightweight preview.
-- ``b_spline``: when ``True``, each discretized contour is replaced with a closed periodic
-  B-spline fit before the reference points are computed.  Useful when raw contours are noisy.
-- ``bspline_smoothing``: smoothing condition ``s`` for ``splprep``.  ``0`` = exact
-  interpolation; ``≈ n_points`` = gentle smoothing; ``≈ 5 x n_points`` = strong smoothing.
-  Tune empirically based on how irregular the raw contours appear.
-- ``bspline_degree``: B-spline polynomial degree (default 3, cubic).
 
 The discretized tree exposes the following attributes:
 
@@ -272,8 +265,11 @@ The discretized tree exposes the following attributes:
 - ``tree.discretized_rca_main`` / ``tree.discretized_lca_main`` - main-vessel contours.
 - ``tree.rca_branches`` / ``tree.lca_branches`` - list of lists, one per side branch.
 - ``tree.rca_references`` / ``tree.lca_references`` - list of ``(main_ref, ccw_ref, cw_ref)``
-  triplets: the ostium at index 0, then one per side-branch bifurcation, ordered proximal to
-  distal along the main vessel (not by branch index).
+  triplets: the ostium at index 0 (``main_ref`` facing the aorta), then one per branch leaving
+  the main vessel, ordered proximal to distal along the main vessel (not by branch index).
+- ``tree.rca_branch_references`` / ``tree.lca_branch_references`` - the same per side branch
+  (aligned with ``rca_branches`` / ``lca_branches``): the branch's own ostium at index 0
+  (``main_ref`` facing its parent), then one per branch leaving it.
 
 3. Load and align intravascular geometry
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
