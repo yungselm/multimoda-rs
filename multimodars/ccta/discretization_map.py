@@ -69,6 +69,12 @@ def discretize_vessel_tree(
     -------
     PyDiscretizedVesselTree
         Fully populated vessel tree including orientation reference triplets.
+
+    Raises
+    ------
+    ValueError
+        If the aorta or a main vessel cannot be discretized (see :func:`discretize_vessel`).
+        A failing side branch is skipped with a warning and left empty.
     """
     points_ao = results_dict["aorta_points"] + results_dict["rca_removed_points"]
     points_rca_main = results_dict["rca_points_main"]

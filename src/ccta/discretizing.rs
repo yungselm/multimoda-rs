@@ -5,6 +5,7 @@ pub mod vessel_tree;
 
 use crate::types::native::{Centerline, Contour};
 use nalgebra::Vector3;
+use std::borrow::Cow;
 use std::collections::HashSet;
 
 type Coords3 = (f64, f64, f64);
@@ -67,6 +68,9 @@ pub(crate) fn coord_key(x: f64, y: f64, z: f64) -> [u64; 3] {
 /// Cuts the mesh every `step_size` along branch `branch_id`, drops incomplete end slices and
 /// resamples each outline to `n_points` evenly spaced points. Only faces of the `region_points`
 /// region are cut (`None` cuts all). `centerline` must already be smoothed and resampled.
+///
+/// Fails on input that would otherwise silently give no contours. An empty result means the
+/// input was valid but no slice was complete.
 pub fn discretize_vessel_rs(
     centerline: &Centerline,
     mesh: &SurfaceMesh,
@@ -74,19 +78,41 @@ pub fn discretize_vessel_rs(
     branch_id: u32,
     step_size: f64,
     n_points: usize,
-) -> Vec<Contour> {
-    let anchors = anchors::branch_anchors(centerline, branch_id, step_size);
-    let raw = match region_points {
-        Some(points) => slicing::slice_mesh(&anchors, &mesh.vertices, &mesh.region_faces(points)),
-        None => slicing::slice_mesh(&anchors, &mesh.vertices, &mesh.faces),
+) -> Result<Vec<Contour>, String> {
+    if !(step_size.is_finite() && step_size > 0.0) {
+        return Err(format!(
+            "step_size must be a positive number, got {step_size}"
+        ));
+    }
+    if n_points < 3 {
+        return Err(format!("n_points must be at least 3, got {n_points}"));
+    }
+    if !centerline.points.iter().any(|p| p.branch_id == branch_id) {
+        return Err(format!("centerline has no branch {branch_id}"));
+    }
+    let faces = match region_points {
+        Some(points) => {
+            let faces = mesh.region_faces(points);
+            if faces.is_empty() {
+                return Err(format!(
+                    "region_points ({} points) select no mesh faces, are the labels from this mesh?",
+                    points.len()
+                ));
+            }
+            Cow::Owned(faces)
+        }
+        None => Cow::Borrowed(&mesh.faces),
     };
-    resampling::create_uniform_contours(raw, n_points)
+
+    let anchors = anchors::branch_anchors(centerline, branch_id, step_size);
+    let raw = slicing::slice_mesh(&anchors, &mesh.vertices, &faces);
+    Ok(resampling::create_uniform_contours(raw, n_points))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::native::{CenterlinePoint, ContourPoint};
+    use crate::types::native::{CenterlinePoint, ContourPoint, DiscretizedVesselTree};
     use std::f64::consts::TAU;
 
     fn z_centerline(n: usize) -> Centerline {
@@ -158,7 +184,7 @@ mod tests {
     fn test_discretize_tube_end_to_end() {
         let (vertices, faces) = tube_mesh(30);
         let mesh = SurfaceMesh::new(&vertices, faces).unwrap();
-        let contours = discretize_vessel_rs(&z_centerline(7), &mesh, None, 0, 1.0, 50);
+        let contours = discretize_vessel_rs(&z_centerline(7), &mesh, None, 0, 1.0, 50).unwrap();
         assert_eq!(contours.len(), 7);
         for c in &contours {
             assert_eq!(c.points.len(), 50);
@@ -176,12 +202,63 @@ mod tests {
         let (vertices, faces) = tube_mesh(30);
         let region: Vec<Coords3> = vertices.iter().copied().filter(|v| v.2 <= 3.0).collect();
         let mesh = SurfaceMesh::new(&vertices, faces).unwrap();
-        let contours = discretize_vessel_rs(&z_centerline(7), &mesh, Some(&region), 0, 1.0, 50);
+        let contours =
+            discretize_vessel_rs(&z_centerline(7), &mesh, Some(&region), 0, 1.0, 50).unwrap();
         let max_z = contours
             .iter()
             .map(|c| c.centroid.unwrap().2)
             .fold(f64::MIN, f64::max);
         assert!(max_z <= 3.0, "slice at z={max_z} lies outside the region");
         assert!(contours.len() >= 3);
+    }
+
+    #[test]
+    fn test_invalid_input_is_rejected() {
+        let (vertices, faces) = tube_mesh(30);
+        let mesh = SurfaceMesh::new(&vertices, faces).unwrap();
+        let cl = z_centerline(7);
+        let run = |region: Option<&[Coords3]>, branch_id, step, n| {
+            discretize_vessel_rs(&cl, &mesh, region, branch_id, step, n)
+        };
+        assert!(run(None, 0, 0.0, 50).is_err());
+        assert!(run(None, 0, f64::NAN, 50).is_err());
+        assert!(run(None, 0, 1.0, 2).is_err());
+        assert!(run(None, 5, 1.0, 50).is_err());
+        assert!(run(Some(&[(99.0, 99.0, 99.0)]), 0, 1.0, 50).is_err());
+        assert!(run(Some(&[]), 0, 1.0, 50).is_err());
+        assert!(run(None, 0, 1.0, 50).is_ok());
+    }
+
+    #[test]
+    fn test_tree_skips_failing_side_branch_but_not_main() {
+        let (vertices, faces) = tube_mesh(30);
+        let mesh = SurfaceMesh::new(&vertices, faces).unwrap();
+        let cl = z_centerline(7);
+        let bad = vec![(99.0, 99.0, 99.0)];
+        let build = |main: &[Coords3], side: Vec<Coords3>| {
+            DiscretizedVesselTree::from_results_dict(
+                &cl,
+                &cl,
+                &cl,
+                &mesh,
+                &vertices,
+                main,
+                &vertices,
+                vec![side],
+                vec![],
+                0,
+                0,
+                1.0,
+                50,
+            )
+        };
+
+        let tree = build(&vertices, bad.clone()).unwrap();
+        assert!(!tree.discretized_rca_main.is_empty());
+        assert_eq!(tree.rca_branches.len(), 1);
+        assert!(tree.rca_branches[0].is_empty());
+
+        let err = build(&bad, vec![]).unwrap_err().to_string();
+        assert!(err.starts_with("RCA main:"), "{err}");
     }
 }

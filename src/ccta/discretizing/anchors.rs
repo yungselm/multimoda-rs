@@ -21,7 +21,8 @@ pub fn branch_anchors(
 
     let cum = cumulative_arc_length(&branch_pts);
     let total = *cum.last().unwrap();
-    build_sample_positions(total, step_size)
+    let positions = build_sample_positions(total, step_size);
+    positions
         .iter()
         .enumerate()
         .map(|(slice_idx, &arc_pos)| interpolate_branch_at_s(&branch_pts, &cum, arc_pos, slice_idx))

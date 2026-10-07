@@ -731,7 +731,9 @@ pub fn fix_mesh_winding(faces: Vec<[usize; 3]>) -> Vec<[usize; 3]> {
 /// Raises
 /// ------
 /// ValueError
-///     If a face references a vertex index outside ``vertices``.
+///     If a face references a vertex index outside ``vertices``, ``step_size``
+///     is not positive, ``n_points`` < 3, ``branch_id`` does not exist, or
+///     ``region_points`` select no faces.
 ///
 /// Examples
 /// --------
@@ -761,7 +763,8 @@ pub fn discretize_vessel(
         branch_id,
         step_size,
         n_points,
-    );
+    )
+    .map_err(pyo3::exceptions::PyValueError::new_err)?;
     Ok(contours.iter().map(PyContour::from).collect())
 }
 
@@ -869,6 +872,13 @@ pub fn smooth_mesh_labels(
 /// PyDiscretizedVesselTree
 ///     Vessel tree including the reference triplets.
 ///
+/// Raises
+/// ------
+/// ValueError
+///     If the aorta or a main vessel cannot be discretized (see
+///     :func:`discretize_vessel`). A failing side branch is skipped with a
+///     warning and left empty.
+///
 /// Examples
 /// --------
 /// >>> mesh = results["mesh"]
@@ -921,7 +931,7 @@ pub fn discretize_vessel_tree(
         step_size,
         n_points,
     )
-    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?
     .calculate_ref_pts();
 
     Ok(PyDiscretizedVesselTree::from(tree))

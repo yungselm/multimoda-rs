@@ -1598,7 +1598,8 @@ def discretize_vessel(
     Raises
     ------
     ValueError
-        If a face references a vertex index outside ``vertices``.
+        If a face references a vertex index outside ``vertices``, ``step_size`` is not positive,
+        ``n_points`` < 3, ``branch_id`` does not exist, or ``region_points`` select no faces.
 
     Examples
     --------

@@ -1,6 +1,6 @@
 use super::{coord_key, SurfaceMesh};
 use crate::types::native::{Centerline, Contour, DiscretizedVesselTree, Point3D};
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use rayon::prelude::*;
 use std::collections::HashMap;
 
@@ -10,7 +10,8 @@ impl DiscretizedVesselTree {
     /// Cuts `mesh` along every centerline branch, using only each vessel's own labelled faces
     /// (see `SurfaceMesh::region_faces`). `side_branches_rca[i]` is branch_id `i + 1`, i.e.
     /// `results["rca_points_side_{i + 1}"]`, likewise for the LCA. Shared side-branch labels are
-    /// resolved first (see `exclusive_side_labels`).
+    /// resolved first (see `exclusive_side_labels`). Fails if the aorta or a main vessel fails,
+    /// a failing side branch is skipped with a warning.
     pub fn from_results_dict(
         ao_cl: &Centerline,
         rca_cl: &Centerline,
@@ -28,54 +29,18 @@ impl DiscretizedVesselTree {
     ) -> Result<DiscretizedVesselTree> {
         let side_branches_rca = exclusive_side_labels(rca_cl, side_branches_rca);
         let side_branches_lca = exclusive_side_labels(lca_cl, side_branches_lca);
-        let discretized_aorta =
-            super::discretize_vessel_rs(ao_cl, mesh, Some(points_ao), 0, step_size, n_points);
-        let discretized_rca_main = super::discretize_vessel_rs(
-            rca_cl,
-            mesh,
-            Some(points_rca_main),
-            branch_id_rca,
-            step_size,
-            n_points,
-        );
-        let discretized_lca_main = super::discretize_vessel_rs(
-            lca_cl,
-            mesh,
-            Some(points_lca_main),
-            branch_id_lca,
-            step_size,
-            n_points,
-        );
+        let main = |name: &str, cl: &Centerline, points: &[Coords3], branch_id: u32| {
+            super::discretize_vessel_rs(cl, mesh, Some(points), branch_id, step_size, n_points)
+                .map_err(|e| anyhow!("{name}: {e}"))
+        };
+        let discretized_aorta = main("aorta", ao_cl, points_ao, 0)?;
+        let discretized_rca_main = main("RCA main", rca_cl, points_rca_main, branch_id_rca)?;
+        let discretized_lca_main = main("LCA main", lca_cl, points_lca_main, branch_id_lca)?;
 
-        let rca_branches: Vec<Vec<Contour>> = side_branches_rca
-            .par_iter()
-            .enumerate()
-            .map(|(i, pts)| {
-                super::discretize_vessel_rs(
-                    rca_cl,
-                    mesh,
-                    Some(pts),
-                    (i + 1) as u32,
-                    step_size,
-                    n_points,
-                )
-            })
-            .collect();
-
-        let lca_branches: Vec<Vec<Contour>> = side_branches_lca
-            .par_iter()
-            .enumerate()
-            .map(|(i, pts)| {
-                super::discretize_vessel_rs(
-                    lca_cl,
-                    mesh,
-                    Some(pts),
-                    (i + 1) as u32,
-                    step_size,
-                    n_points,
-                )
-            })
-            .collect();
+        let rca_branches =
+            side_branches("RCA", rca_cl, mesh, &side_branches_rca, step_size, n_points);
+        let lca_branches =
+            side_branches("LCA", lca_cl, mesh, &side_branches_lca, step_size, n_points);
 
         Ok(DiscretizedVesselTree {
             discretized_aorta,
@@ -97,6 +62,30 @@ impl DiscretizedVesselTree {
             index_aa: None,
         })
     }
+}
+
+/// Discretizes every side branch. A failing branch is skipped with a warning and left empty,
+/// so indices stay aligned with branch ids.
+fn side_branches(
+    vessel: &str,
+    centerline: &Centerline,
+    mesh: &SurfaceMesh,
+    sides: &[Vec<Coords3>],
+    step_size: f64,
+    n_points: usize,
+) -> Vec<Vec<Contour>> {
+    sides
+        .par_iter()
+        .enumerate()
+        .map(|(i, pts)| {
+            let branch_id = (i + 1) as u32;
+            super::discretize_vessel_rs(centerline, mesh, Some(pts), branch_id, step_size, n_points)
+                .unwrap_or_else(|e| {
+                    eprintln!("Warning: skipping {vessel} side branch {branch_id}: {e}");
+                    vec![]
+                })
+        })
+        .collect()
 }
 
 /// Keeps each vertex shared by several side branches only for the one with the nearest

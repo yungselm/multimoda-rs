@@ -24,7 +24,10 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 - The end of each branch is now sliced. The last partial step was dropped before.
-- `step_size <= 0` returns no contours instead of looping forever.
+- Invalid input to `discretize_vessel` (non-positive `step_size`, `n_points` < 3, unknown
+  `branch_id`, `region_points` not on the mesh) raises `ValueError` instead of returning no
+  contours. In `discretize_vessel_tree` this applies to the aorta and main vessels, a failing
+  side branch is skipped with a warning.
 - Ostium `main_ref` faces the aorta instead of following the contour's minor axis, which rotated
   the triplet on round ostia.
 - Bifurcation references of branches leaving a side branch were placed on the main vessel.
