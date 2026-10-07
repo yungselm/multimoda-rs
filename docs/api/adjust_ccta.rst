@@ -7,6 +7,13 @@ Labeling
 .. autofunction:: multimodars.ccta.labeling.label_geometry
 .. autofunction:: multimodars.ccta.labeling.label_anomalous_region
 
+Discretization
+--------------
+
+.. autofunction:: multimodars.ccta.discretization_map.label_branches_pair
+.. autofunction:: multimodars.ccta.discretization_map.discretize_vessel_tree
+.. autofunction:: multimodars.discretize_vessel
+
 Scaling and morphing
 --------------------
 
@@ -42,3 +49,4 @@ Debug plots
 
 .. autofunction:: multimodars.ccta.debug_plots.plot_boundary_edges
 .. autofunction:: multimodars.ccta.debug_plots.compare_centerline_scaling
+.. autofunction:: multimodars.ccta.debug_plots.plot_vessel_tree

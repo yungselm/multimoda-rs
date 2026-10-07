@@ -223,12 +223,13 @@ re-label. After splitting and merging it is assured that the longest centerline 
 Discretizing the vessel tree
 """""""""""""""""""""""""""""
 
-:func:`multimodars.discretize_vessel_tree` slices each vessel along its centerline at fixed
-arc-length intervals and samples ``n_points`` evenly-spaced points from each cross-sectional
-contour.  It also computes an orientation reference triplet (main, counter-clockwise, and
-clockwise reference points) at the ostium and at every side-branch bifurcation.  These
-triplets are stored in ``tree.rca_references`` and ``tree.lca_references`` and are later
-used to initialize the three-point alignment in step 3:
+:func:`multimodars.discretize_vessel_tree` cuts the labelled mesh with planes perpendicular to
+each centerline at fixed arc-length intervals and samples ``n_points`` evenly-spaced points from
+each cross-section, so irregular lumens keep their shape.  It also computes orientation
+reference triplets (main, counter-clockwise, and clockwise reference points) at every ostium
+and bifurcation, for the main vessels in ``tree.rca_references`` / ``tree.lca_references`` and
+per side branch in ``tree.rca_branch_references`` / ``tree.lca_branch_references``.  They are
+later used to initialize the three-point alignment in step 3:
 
 .. code-block:: python
 

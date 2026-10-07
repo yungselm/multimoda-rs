@@ -40,8 +40,7 @@ def discretize_vessel_tree(
     branch point keys (``aorta_points``, ``rca_points_main``, ``rca_points_side_1``, …,
     ``lca_points_main``, ``lca_points_side_1``, …). Each vessel is cut with planes
     perpendicular to its centerline, using only the mesh faces of its own region.  Use
-    :func:`prepare_and_discretize` if you also need branch labelling to run
-    automatically.
+    :func:`label_branches_pair` first to add the branch labels.
 
     ``ao_cl``, ``rca_cl`` and ``lca_cl`` must already be smoothed, resampled and oriented
     (e.g. via :func:`load_centerline` and :func:`prepare_centerline`).

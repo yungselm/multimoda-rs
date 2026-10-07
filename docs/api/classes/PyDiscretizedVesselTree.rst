@@ -8,4 +8,4 @@ PyDiscretizedVesselTree
    :undoc-members:
    :show-inheritance:
    :inherited-members:
-   :exclude-members: discretized_aorta, discretized_rca_main, discretized_lca_main, rca_branches, lca_branches, rca_references, lca_references, ao_rca, ao_lca
+   :exclude-members: discretized_aorta, discretized_rca_main, discretized_lca_main, rca_branches, lca_branches, rca_references, lca_references, rca_branch_references, lca_branch_references, ao_rca, ao_lca
