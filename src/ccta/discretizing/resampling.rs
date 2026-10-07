@@ -1,37 +1,67 @@
 use crate::types::native::{cumulative_arc_length, Contour, ContourPoint};
 use nalgebra::Vector3;
 
-/// Filters and resamples raw projected slices from `walk_centerline_slices`:
-/// - Removes empty slices (CL was outside the vessel).
-/// - Trims partial entry/exit slices from both ends (the angular-coverage test is applied
-///   only to locate the first and last fully-covered slice; every interior slice is kept
-///   so gaps are never introduced mid-vessel).
-/// - Fits a closed Catmull-Rom spline through the remaining points and resamples each to
-///   exactly `n_points` evenly-spaced points along the spline.
+/// An end slice counts as complete only if its outline is at least this fraction of the
+/// branch's median outline length; shorter ones cut the rounded cap where the segmented
+/// vessel ends rather than the lumen.
+const MIN_END_LENGTH_RATIO: f64 = 0.5;
+
+/// Filters and resamples raw slice outlines from `slicing::slice_mesh`:
+/// - Removes empty slices (the plane did not cut the mesh).
+/// - Trims incomplete entry/exit slices from both ends: a slice is complete when it covers all
+///   four angular quadrants and is not much shorter than the branch's typical outline (see
+///   [`MIN_END_LENGTH_RATIO`]). The test only locates the first and last complete slice; every
+///   interior slice is kept so gaps are never introduced mid-vessel (a stenosis stays).
+/// - Resamples each remaining closed outline to exactly `n_points` points evenly spaced
+///   along its length.
 pub fn create_uniform_contours(contours: Vec<Contour>, n_points: usize) -> Vec<Contour> {
     let non_empty: Vec<Contour> = contours
         .into_iter()
         .filter(|c| !c.points.is_empty())
         .collect();
 
-    // Trim partial entry/exit slices from both ends only.
-    // Interior slices with partial coverage are kept as-is: a slightly imperfect
-    // interior ring is far better than a hole in the vessel wall.
-    let start = non_empty
+    // Trim incomplete entry/exit slices from both ends only.
+    // Interior slices are kept as-is: a slightly imperfect interior ring is far
+    // better than a hole in the vessel wall.
+    let lengths: Vec<f64> = non_empty.iter().map(outline_length).collect();
+    let min_length = MIN_END_LENGTH_RATIO * median(&lengths);
+    let complete: Vec<bool> = non_empty
         .iter()
-        .position(has_full_angular_coverage)
-        .unwrap_or(0);
-    let end = non_empty
+        .zip(&lengths)
+        .map(|(c, &len)| has_full_angular_coverage(c) && len >= min_length)
+        .collect();
+    let start = complete.iter().position(|&ok| ok).unwrap_or(0);
+    let end = complete
         .iter()
-        .rposition(has_full_angular_coverage)
+        .rposition(|&ok| ok)
         .map(|i| i + 1)
         .unwrap_or(non_empty.len());
 
     non_empty[start..end]
         .iter()
         .cloned()
-        .filter_map(|c| resample_spline(c, n_points))
+        .filter_map(|c| resample_outline(c, n_points))
         .collect()
+}
+
+/// Length of the closed outline through the contour's points.
+fn outline_length(contour: &Contour) -> f64 {
+    let n = contour.points.len();
+    (0..n)
+        .map(|i| {
+            let (a, b) = (&contour.points[i], &contour.points[(i + 1) % n]);
+            ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
+        })
+        .sum()
+}
+
+fn median(values: &[f64]) -> f64 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_by(f64::total_cmp);
+    sorted[sorted.len() / 2]
 }
 
 /// Returns true when the contour's points cover all four 90-degree sectors around the centroid.
@@ -64,63 +94,27 @@ fn has_full_angular_coverage(contour: &Contour) -> bool {
     quadrants.iter().all(|&q| q)
 }
 
-/// Angle-sort control points, fit a closed Catmull-Rom spline, resample to `n_points`.
-fn resample_spline(contour: Contour, n_points: usize) -> Option<Contour> {
+/// Resamples a closed outline (points in order, first point not repeated) to `n_points`
+/// positions evenly spaced along its length, interpolating linearly between outline points.
+/// The outline comes from an exact mesh cut, so no smoothing is applied.
+fn resample_outline(contour: Contour, n_points: usize) -> Option<Contour> {
     if n_points < 2 || contour.points.len() < 3 {
         return None;
     }
-    let centroid = contour.centroid?;
-    let basis = local_basis(&contour.points, centroid)?;
+    let mut ring: Vec<Vector3<f64>> = contour
+        .points
+        .iter()
+        .map(|p| Vector3::new(p.x, p.y, p.z))
+        .collect();
+    ring.push(ring[0]);
 
-    let ctrl = sort_by_angle(&contour.points, centroid, basis);
-    let curve = sample_closed_spline(&ctrl);
-    let arc_lengths = cumulative_arc_length(&curve);
-
+    let arc_lengths = cumulative_arc_length(&ring);
     let total_length = *arc_lengths.last().unwrap();
     if total_length < 1e-10 {
         return None;
     }
-
-    let resampled = uniform_resample(&curve, &arc_lengths, total_length, n_points);
+    let resampled = uniform_resample(&ring, &arc_lengths, total_length, n_points);
     Some(build_output_contour(contour, resampled))
-}
-
-/// Sort contour points by angle in the local 2D plane spanned by `basis`.
-fn sort_by_angle(
-    points: &[ContourPoint],
-    centroid: (f64, f64, f64),
-    (axis_u, axis_v): (Vector3<f64>, Vector3<f64>),
-) -> Vec<Vector3<f64>> {
-    let centroid_v = Vector3::new(centroid.0, centroid.1, centroid.2);
-    let mut angle_pts: Vec<(f64, Vector3<f64>)> = points
-        .iter()
-        .map(|p| {
-            let offset = Vector3::new(p.x, p.y, p.z) - centroid_v;
-            let angle = offset.dot(&axis_v).atan2(offset.dot(&axis_u));
-            (angle, Vector3::new(p.x, p.y, p.z))
-        })
-        .collect();
-    angle_pts.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-    angle_pts.into_iter().map(|(_, point)| point).collect()
-}
-
-/// Dense-sample a closed Catmull-Rom spline through `ctrl` (wraps around at the ends).
-fn sample_closed_spline(ctrl: &[Vector3<f64>]) -> Vec<Vector3<f64>> {
-    const SAMPLES_PER_SEG: usize = 32;
-    let ctrl_count = ctrl.len();
-    let mut curve = Vec::with_capacity(ctrl_count * SAMPLES_PER_SEG + 1);
-    for seg_idx in 0..ctrl_count {
-        let prev = ctrl[(seg_idx + ctrl_count - 1) % ctrl_count];
-        let curr = ctrl[seg_idx];
-        let next = ctrl[(seg_idx + 1) % ctrl_count];
-        let after = ctrl[(seg_idx + 2) % ctrl_count];
-        for sample_idx in 0..SAMPLES_PER_SEG {
-            let param = sample_idx as f64 / SAMPLES_PER_SEG as f64;
-            curve.push(catmull_rom(prev, curr, next, after, param));
-        }
-    }
-    curve.push(curve[0]); // close the loop
-    curve
 }
 
 /// Resample `curve` at `n_points` uniformly-spaced arc-length positions.
@@ -200,21 +194,6 @@ fn local_basis(
         }
     }
     None
-}
-
-fn catmull_rom(
-    prev: Vector3<f64>,
-    curr: Vector3<f64>,
-    next: Vector3<f64>,
-    after: Vector3<f64>,
-    param: f64,
-) -> Vector3<f64> {
-    let param_sq = param * param;
-    let param_cu = param_sq * param;
-    0.5 * ((2.0 * curr)
-        + (-prev + next) * param
-        + (2.0 * prev - 5.0 * curr + 4.0 * next - after) * param_sq
-        + (-prev + 3.0 * curr - 3.0 * next + after) * param_cu)
 }
 
 #[cfg(test)]
@@ -431,5 +410,21 @@ mod tests {
         for c in &result {
             assert_eq!(c.points.len(), 100);
         }
+    }
+
+    #[test]
+    fn test_collapsed_end_slices_trimmed() {
+        // A tiny last ring (plane cutting the vessel's end cap) is trimmed, but a narrow
+        // interior ring (stenosis) between full-size rings is kept.
+        let contours = vec![
+            make_contour(0, circle_ring((0.0, 0.0, 0.0), 3.0, 16), (0.0, 0.0, 0.0)),
+            make_contour(1, circle_ring((0.0, 0.0, 1.0), 1.0, 16), (0.0, 0.0, 1.0)),
+            make_contour(2, circle_ring((0.0, 0.0, 2.0), 3.0, 16), (0.0, 0.0, 2.0)),
+            make_contour(3, circle_ring((0.0, 0.0, 3.0), 3.0, 16), (0.0, 0.0, 3.0)),
+            make_contour(4, circle_ring((0.0, 0.0, 4.0), 0.2, 16), (0.0, 0.0, 4.0)),
+        ];
+        let result = create_uniform_contours(contours, 50);
+        let ids: Vec<u32> = result.iter().map(|c| c.id).collect();
+        assert_eq!(ids, vec![0, 1, 2, 3]);
     }
 }

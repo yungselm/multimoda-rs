@@ -1556,18 +1556,24 @@ def build_adjacency_map(
 
 def discretize_vessel(
     centerline: PyCenterline,
-    points: list[tuple[float, float, float]],
+    vertices: list[tuple[float, float, float]],
+    faces: list[list[int]],
     branch_id: int = 0,
     step_size: float = 0.5,
     n_points: int = 200,
+    region_points: list[tuple[float, float, float]] | None = None,
 ) -> list[PyContour]:
-    """Discretize a vessel surface mesh along a centerline branch into uniform cross-sections.
+    """Discretize a vessel into uniform cross-sections by cutting its surface mesh.
 
     Walks the specified centerline branch at uniform arc-length intervals of ``step_size``,
-    projects the supplied mesh points onto each perpendicular cross-sectional plane, discards
-    incomplete slices (empty or not covering all four angular quadrants), and resamples the
-    remaining contours to exactly ``n_points`` evenly-spaced points via a closed Catmull-Rom
-    spline.
+    intersects the mesh with the plane perpendicular to the centerline at each position, drops
+    empty slices and incomplete slices at both ends (not covering all four angular quadrants),
+    and resamples each outline to exactly ``n_points`` points evenly spaced along its length.
+
+    The outline is the exact cut through the mesh triangles, so lumens of any shape
+    (eccentric, notched, crescent-shaped) are preserved. Where a plane cuts several separate
+    loops, the one around the centerline is used; gaps in the cut region (e.g. a side-branch
+    ostium excluded by ``region_points``) are bridged with straight edges.
 
     ``centerline`` is used as-is - smooth/resample/orient it beforehand (e.g. via
     ``PyCenterline.smooth``, or :func:`multimodars.ccta.centerline_prep.prepare_centerline`);
@@ -1577,33 +1583,48 @@ def discretize_vessel(
     ----------
     centerline : PyCenterline
         Centerline object containing one or more branches, already prepared.
-    points : list of tuple of (float, float, float)
-        3-D surface mesh points ``(x, y, z)`` to project onto each cross-section.
+    vertices : list of tuple of (float, float, float)
+        Mesh vertices ``(x, y, z)``, e.g. ``[tuple(v) for v in mesh.vertices.tolist()]``.
+    faces : list of list of int
+        Triangles as vertex-index triples, e.g. ``mesh.faces.tolist()``.
     branch_id : int, optional
         Index of the centerline branch to walk. Default is ``0``.
     step_size : float, optional
         Arc-length distance between consecutive cross-sections in the same units as
-        ``centerline`` and ``points``. Default is ``0.5``.
+        ``centerline`` and ``vertices``. Default is ``0.5``.
     n_points : int, optional
         Number of evenly-spaced points per output contour. Default is ``200``.
+    region_points : list of tuple of (float, float, float), optional
+        Vertices labelling the vessel region to cut (e.g. ``results["rca_points_main"]``).
+        A face is cut when at least two of its vertices are in this set. ``None`` (default)
+        cuts the whole mesh.
 
     Returns
     -------
     contours : list of PyContour
-        One contour per surviving cross-section, each containing exactly ``n_points``
-        uniformly distributed points lying on a Catmull-Rom spline fit to the projected
-        surface points.
+        One contour per surviving cross-section, each containing exactly ``n_points`` points
+        evenly spaced along the cut outline.
+
+    Raises
+    ------
+    ValueError
+        If a face references a vertex index outside ``vertices``.
 
     Examples
     --------
     >>> import multimodars as mm
     >>>
-    >>> contours = mm.discretize_vessel(centerline, mesh_points, branch_id=0, step_size=0.5)
+    >>> vertices = [tuple(v) for v in mesh.vertices.tolist()]
+    >>> contours = mm.discretize_vessel(
+    ...     centerline, vertices, mesh.faces.tolist(), branch_id=0, step_size=0.5
+    ... )
     >>> print(len(contours))"""
     return _discretize_vessel(
         centerline,
-        points,
+        vertices,
+        faces,
         branch_id,
         step_size,
         n_points,
+        region_points,
     )

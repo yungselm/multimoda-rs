@@ -995,10 +995,12 @@ def smooth_mesh_labels(
 ) -> list[int]: ...
 def discretize_vessel(
     centerline: PyCenterline,
-    points: list[tuple[float, float, float]],
+    vertices: list[tuple[float, float, float]],
+    faces: list[list[int]],
     branch_id: int = ...,
     step_size: float = ...,
     n_points: int = ...,
+    region_points: list[tuple[float, float, float]] | None = ...,
 ) -> list[PyContour]: ...
 
 # (main_ref, counter_clock_ref, clock_ref) — each is an (x, y, z) tuple.
@@ -1053,6 +1055,8 @@ def discretize_vessel_tree(
     ao_cl: PyCenterline,
     rca_cl: PyCenterline,
     lca_cl: PyCenterline,
+    mesh_vertices: list[tuple[float, float, float]],
+    mesh_faces: list[list[int]],
     points_ao: list[tuple[float, float, float]],
     points_rca_main: list[tuple[float, float, float]],
     points_lca_main: list[tuple[float, float, float]],
@@ -1062,5 +1066,4 @@ def discretize_vessel_tree(
     branch_id_lca: int = ...,
     step_size: float = ...,
     n_points: int = ...,
-    calculate_ref_pts: bool = ...,
 ) -> PyDiscretizedVesselTree: ...

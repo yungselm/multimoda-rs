@@ -1,11 +1,13 @@
+use super::SurfaceMesh;
 use crate::types::native::{Centerline, Contour, DiscretizedVesselTree};
 use anyhow::Result;
 use rayon::prelude::*;
 
 impl DiscretizedVesselTree {
-    /// Discretize the full vessel tree from pre-labelled point sets.
+    /// Discretize the full vessel tree by cutting `mesh` along each centerline.
     ///
-    /// `ao_cl`, `rca_cl`, and `lca_cl` are used as-is. Processes:
+    /// Each vessel is cut using only the faces of its own region, given by its pre-labelled
+    /// point set (see [`SurfaceMesh::region_faces`]). `ao_cl`, `rca_cl`, and `lca_cl` are used as-is. Processes:
     /// - aorta (branch 0)
     /// - RCA main vessel (`branch_id_rca`, usually 0)
     /// - LCA main vessel (`branch_id_lca`, usually 0)
@@ -18,6 +20,7 @@ impl DiscretizedVesselTree {
         ao_cl: &Centerline,
         rca_cl: &Centerline,
         lca_cl: &Centerline,
+        mesh: &SurfaceMesh,
         points_ao: &[(f64, f64, f64)],
         points_rca_main: &[(f64, f64, f64)],
         points_lca_main: &[(f64, f64, f64)],
@@ -29,17 +32,19 @@ impl DiscretizedVesselTree {
         n_points: usize,
     ) -> Result<DiscretizedVesselTree> {
         let discretized_aorta =
-            super::discretize_vessel_rs(ao_cl, points_ao, 0, step_size, n_points);
+            super::discretize_vessel_rs(ao_cl, mesh, Some(points_ao), 0, step_size, n_points);
         let discretized_rca_main = super::discretize_vessel_rs(
             rca_cl,
-            points_rca_main,
+            mesh,
+            Some(points_rca_main),
             branch_id_rca,
             step_size,
             n_points,
         );
         let discretized_lca_main = super::discretize_vessel_rs(
             lca_cl,
-            points_lca_main,
+            mesh,
+            Some(points_lca_main),
             branch_id_lca,
             step_size,
             n_points,
@@ -49,7 +54,14 @@ impl DiscretizedVesselTree {
             .par_iter()
             .enumerate()
             .map(|(i, pts)| {
-                super::discretize_vessel_rs(rca_cl, pts, (i + 1) as u32, step_size, n_points)
+                super::discretize_vessel_rs(
+                    rca_cl,
+                    mesh,
+                    Some(pts),
+                    (i + 1) as u32,
+                    step_size,
+                    n_points,
+                )
             })
             .collect();
 
@@ -57,7 +69,14 @@ impl DiscretizedVesselTree {
             .par_iter()
             .enumerate()
             .map(|(i, pts)| {
-                super::discretize_vessel_rs(lca_cl, pts, (i + 1) as u32, step_size, n_points)
+                super::discretize_vessel_rs(
+                    lca_cl,
+                    mesh,
+                    Some(pts),
+                    (i + 1) as u32,
+                    step_size,
+                    n_points,
+                )
             })
             .collect();
 

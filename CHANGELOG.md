@@ -3,6 +3,24 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.7] - 2026-10-07
+
+### Changed
+- **Breaking:** `discretize_vessel` cuts the surface mesh with planes perpendicular to the
+  centerline instead of projecting nearby vertices and fitting a spline, so irregular lumens
+  (e.g. calcified, crescent-shaped) keep their shape. New signature:
+  `discretize_vessel(centerline, vertices, faces, branch_id=0, step_size=0.5, n_points=200, region_points=None)`.
+- **Breaking:** the low-level `discretize_vessel_tree` binding takes `mesh_vertices, mesh_faces`
+  after the centerlines; `mm.discretize_vessel_tree(..., results_dict, ...)` is unchanged.
+
+### Removed
+- **Breaking:** `b_spline`, `bspline_smoothing`, `bspline_degree` from `discretize_vessel_tree`;
+  mesh-cut contours need no smoothing.
+
+### Fixed
+- The end of each branch is now sliced; the last partial step was dropped.
+- `step_size <= 0` returns no contours instead of looping forever.
+
 ## [0.7.6] - 2026-10-06
 
 ### Added
