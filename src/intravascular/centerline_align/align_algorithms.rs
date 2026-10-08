@@ -478,6 +478,15 @@ pub fn refine_alignment_nn_distance<T: AlignTarget>(
         }
     }
 
+    if min_distance == f64::MAX {
+        eprintln!(
+            "Warning: no candidate in the search window ({initial_cl_ref_idx} ± \
+             {index_search_range}) fits all {len_frames} frames (reference frame {ref_frame}) \
+             on the centerline; keeping initial rotation and CL index, check the reference point"
+        );
+        return (best_angle, best_cl_ref_idx);
+    }
+
     println!(
         "Refined rotation: {:.2}°, Refined CL index: {}, mean distance: {:.3} mm",
         best_angle.to_degrees(),
