@@ -319,20 +319,19 @@ prepared; resample them with ``aorta_cl.resample(spacing_mm)`` only if you need 
 frame spacing.
 
 For a pullback in a side branch, align onto that branch with the triplet at its origin.
-Because the triplets are ordered along the main vessel rather than by branch index, pick the
-side-branch triplet nearest to the branch's first point.  ``examples/fullworkflow.py`` does this
-for the circumflex, which is branch 1 of the LCA in the example data:
+``tree.lca_branch_references[i]`` holds the triplets of LCA branch ``i + 1``, index 0 being the
+one at its origin.  For the circumflex, branch 1 of the LCA in the example data:
 
 .. code-block:: python
 
-    import math
+    lcx_cl = lca_cl.get_branch(1, with_parents=True)
+    lcx_ref_points = tree.lca_branch_references[0][0]
 
-    lcx_cl = lca_cl.get_branch(1)
-    lcx_start = lcx_cl.points[0].contour_point
-    lcx_ref_points = min(
-        tree.lca_references[1:],           # index 0 is the ostium
-        key=lambda r: math.dist(r[0], (lcx_start.x, lcx_start.y, lcx_start.z)),
-    )
+``with_parents=True`` extends the branch proximally through its parent vessel to the ostium, so
+frames that run proximally past the side branch's origin are placed on the parent instead of
+being left unaligned.  Without it, the centerline is the side branch alone.
+
+.. code-block:: python
 
     aligned_lcx, _, _ = mm.align_combined(
         lcx_cl,
@@ -544,6 +543,10 @@ which is where the two meshes will be joined, so tell
         ["anomalous_points", "proximal_points"],
         target_boundaries=2,
     )
+
+For a side-branch pullback, ``"proximal_points"`` also holds the main vessel and every branch
+that leaves the pullback path before the anomalous segment (see step 4), so removing it removes
+those too.
 
 The function deletes the requested vertices, remaps the remaining faces, and stores the
 exposed boundary both per ring and flattened:
