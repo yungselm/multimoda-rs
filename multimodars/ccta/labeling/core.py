@@ -261,11 +261,13 @@ def label_anomalous_region(
     the anomalous (intramural) segment begins and ends, then tags each mesh
     vertex accordingly.
 
-    The frames may lie on any branch of *centerline*; the branch most of them
-    are nearest to is the pullback branch. Vertices on branches that leave the
-    pullback branch are placed where their branch joins it, so a side branch
-    belongs to the sub-region it leaves from. Vertices outside the pullback
-    branch's subtree (its parent vessel and sibling branches) are distal.
+    The frames may lie on any branch of *centerline*, and may continue into its
+    parent vessel (``get_branch(..., with_parents=True)``). Positions are measured
+    along the pullback path, from the ostium through the parent branches to the
+    tip of the branch the frames lie on. Only vertices on that path can be
+    anomalous. Every other vertex (side branches, and a parent vessel beyond the
+    junction it is left at) is proximal if it leaves the path before the middle
+    of the anomalous segment, distal otherwise.
 
     Parameters
     ----------

@@ -198,6 +198,10 @@ impl PyCenterline {
     /// ----------
     /// branch_id : int
     ///     Branch to extract.
+    /// with_parents : bool, default False
+    ///     Also include the parent branches from the start of branch 0 up to
+    ///     the junction, so frames aligned on a side branch can run
+    ///     proximally past its ostium into the parent vessel.
     ///
     /// Returns
     /// -------
@@ -208,7 +212,15 @@ impl PyCenterline {
     /// ------
     /// ValueError
     ///     If ``branch_id`` does not exist in this centerline.
-    pub fn get_branch(&self, branch_id: u32) -> PyResult<PyCenterline> {
+    #[pyo3(signature = (branch_id, with_parents = false))]
+    pub fn get_branch(&self, branch_id: u32, with_parents: bool) -> PyResult<PyCenterline> {
+        if with_parents {
+            let path = self
+                .to_rust_centerline()
+                .branch_path(branch_id)
+                .map_err(pyo3::exceptions::PyValueError::new_err)?;
+            return Ok(PyCenterline::from(&path));
+        }
         let points: Vec<PyCenterlinePoint> = self
             .points
             .iter()

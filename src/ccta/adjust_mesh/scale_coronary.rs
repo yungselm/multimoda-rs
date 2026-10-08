@@ -2,7 +2,7 @@ use crate::types::native::{Centerline, CenterlinePoint, Frame};
 use nalgebra::Point3;
 use rayon::prelude::*;
 use rstar::primitives::GeomWithData;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
 type Coords3 = (f64, f64, f64);
@@ -264,17 +264,20 @@ fn find_closest_centerline_point_optimized(
     closest_point
 }
 
-/// Split `points` into (proximal, distal, between) by where they sit along the branch of
-/// `centerline` the `frames` lie on (the pullback branch), relative to the segment the
-/// frames cover.
+/// Split `points` into (proximal, distal, between) by where they sit along the pullback
+/// path of `centerline`, relative to the segment the `frames` cover.
 ///
-/// The pullback branch is the branch most frame centroids are nearest to; each frame is
-/// snapped to it, and the lowest and highest positions bound the segment. Each point is
-/// placed at its nearest centerline point and walked up the branch tree to the pullback
-/// branch: a point on a branch that leaves the pullback branch takes the position where
-/// that branch joins it. Positions below the segment are proximal, above it distal, and
-/// inside it "between". Points outside the pullback branch's subtree (its parent vessel
-/// and sibling branches) are distal.
+/// The pullback path runs from the ostium (the first point of branch 0) through the parent
+/// branches to the tip of the branch the frames lie on: of all such paths, the one the
+/// most frame centroids are nearest to, so frames aligned on a side branch together with
+/// its parent vessel (`get_branch(.., with_parents=True)`) are handled too. Each frame is
+/// snapped to the path, and the lowest and highest path positions bound the segment.
+///
+/// Each point is placed at its nearest centerline point and walked up the branch tree
+/// until it reaches the path. Points on the path are proximal below the segment, "between"
+/// inside it, and distal above it. Every other point (branches leaving the path, and the
+/// part of a parent vessel beyond the junction it is left at) is never "between": it is
+/// proximal if it leaves the path before the middle of the segment, distal otherwise.
 ///
 /// Positions count from the end of a branch that attaches to its parent; branch 0 counts
 /// from its first point, which must be the ostium. A side branch's parent is the earlier
@@ -340,20 +343,32 @@ pub fn find_points_by_cl_region_rs(
         .iter()
         .map(|f| [f.centroid.0, f.centroid.1, f.centroid.2])
         .collect();
-    let mut votes = vec![0usize; links.len()];
-    for &c in &frame_coords {
-        if let Some(n) = all_tree.nearest_neighbor(c) {
-            votes[branch_of(n.data)] += 1;
-        }
-    }
-    // Ties go to the lower branch index.
-    let pullback = (0..links.len())
-        .max_by_key(|&b| (votes[b], std::cmp::Reverse(b)))
+    let frame_nn: Vec<usize> = frame_coords
+        .iter()
+        .filter_map(|&c| all_tree.nearest_neighbor(c))
+        .map(|n| n.data)
+        .collect();
+    // Ties go to the lower branch index, i.e. the shorter path.
+    let path = (0..links.len())
+        .map(|b| PullbackPath::new(&links, b))
+        .max_by_key(|path| {
+            let on_path = frame_nn
+                .iter()
+                .filter(|&&g| path.contains(&links, branch_of(g), g))
+                .count();
+            (on_path, std::cmp::Reverse(path.tip))
+        })
         .expect("centerline has at least one branch");
+
+    let path_tree = tagged_tree(
+        (0..n_cl)
+            .filter(|&g| !attach_points.contains(&g) && path.contains(&links, branch_of(g), g))
+            .collect(),
+    );
     let (seg_start, seg_end) = frame_coords
         .iter()
-        .filter_map(|&c| branch_trees[pullback].nearest_neighbor(c))
-        .map(|n| links[pullback].position(n.data))
+        .filter_map(|&c| path_tree.nearest_neighbor(c))
+        .map(|n| path.position(&links, branch_of(n.data), n.data).0)
         .fold((usize::MAX, 0), |(lo, hi), p| (lo.min(p), hi.max(p)));
 
     let mut proximal_points: Vec<Coords3> = Vec::new();
@@ -364,26 +379,18 @@ pub fn find_points_by_cl_region_rs(
         let g = all_tree
             .nearest_neighbor([point.0, point.1, point.2])
             .map_or(0, |n| n.data);
-        let mut branch = branch_of(g);
-        let mut pos = links[branch].position(g);
-        // Parents always have a lower branch index, so this terminates.
-        let pos_on_pullback = loop {
-            if branch == pullback {
-                break Some(pos);
-            }
-            match links[branch].parent {
-                Some((parent, parent_pos)) => {
-                    branch = parent;
-                    pos = parent_pos;
-                }
-                None => break None,
-            }
-        };
+        let (pos, on_path) = path.position(&links, branch_of(g), g);
 
-        match pos_on_pullback {
-            Some(p) if p < seg_start => proximal_points.push(*point),
-            Some(p) if p <= seg_end => points_between.push(*point),
-            _ => distal_points.push(*point),
+        if on_path {
+            match pos {
+                p if p < seg_start => proximal_points.push(*point),
+                p if p <= seg_end => points_between.push(*point),
+                _ => distal_points.push(*point),
+            }
+        } else if 2 * pos <= seg_start + seg_end {
+            proximal_points.push(*point);
+        } else {
+            distal_points.push(*point);
         }
     }
 
@@ -395,6 +402,63 @@ pub fn find_points_by_cl_region_rs(
 }
 
 type CenterlineTree = rstar::RTree<GeomWithData<[f64; 3], usize>>;
+
+/// The centerline path from the ostium to the tip of branch `tip`: each ancestor of `tip`
+/// up to the position where the next branch on the path leaves it, then all of `tip`.
+struct PullbackPath {
+    tip: usize,
+    /// Per branch on the path: the path position of its position 0, and its last position
+    /// on the path (`usize::MAX` for `tip`).
+    on_path: HashMap<usize, (usize, usize)>,
+}
+
+impl PullbackPath {
+    fn new(links: &[BranchLink], tip: usize) -> Self {
+        let mut chain = vec![(tip, usize::MAX)];
+        let mut b = tip;
+        while let Some((parent, parent_pos)) = links[b].parent {
+            chain.push((parent, parent_pos));
+            b = parent;
+        }
+        // A child's position 0 is the junction, at its parent's cut-off position.
+        let mut on_path = HashMap::with_capacity(chain.len());
+        let mut offset: usize = 0;
+        for &(b, last) in chain.iter().rev() {
+            on_path.insert(b, (offset, last));
+            offset = offset.saturating_add(last);
+        }
+        PullbackPath { tip, on_path }
+    }
+
+    /// Whether centerline index `g` on `branch` lies on the path.
+    fn contains(&self, links: &[BranchLink], branch: usize, g: usize) -> bool {
+        self.on_path
+            .get(&branch)
+            .is_some_and(|&(_, last)| links[branch].position(g) <= last)
+    }
+
+    /// Path position of centerline index `g` on `branch`, and whether `g` is on the path
+    /// itself. A point off the path takes the position where its branch (or the part of
+    /// a parent vessel beyond the junction) leaves the path.
+    fn position(&self, links: &[BranchLink], branch: usize, g: usize) -> (usize, bool) {
+        let mut branch = branch;
+        let mut pos = links[branch].position(g);
+        let mut on_path = true;
+        // Parents always have a lower branch index and branch 0 is on every path, so this
+        // terminates.
+        loop {
+            if let Some(&(offset, last)) = self.on_path.get(&branch) {
+                return (offset + pos.min(last), on_path && pos <= last);
+            }
+            let (parent, parent_pos) = links[branch]
+                .parent
+                .expect("branch 0 is on every pullback path");
+            branch = parent;
+            pos = parent_pos;
+            on_path = false;
+        }
+    }
+}
 
 /// One branch of a centerline tree: its slice of `centerline.points`, which end attaches
 /// to its parent, and where on the parent it attaches.
@@ -763,15 +827,21 @@ mod tests {
     }
 
     #[test]
-    fn test_find_points_by_cl_region_side_branch_inside_segment_is_between() {
-        let centerline = branched_centerline(5.0);
-        let side_points: Vec<Coords3> = (2..10)
-            .flat_map(|y| ring((5.0, y as f64, 0.0), false, 0.5))
-            .collect();
-        let (proximal, distal, between) =
-            find_points_by_cl_region_rs(&centerline, &horizontal_frames(), &side_points).unwrap();
-        assert!(proximal.is_empty() && distal.is_empty());
-        assert_eq!(between.len(), side_points.len());
+    fn test_find_points_by_cl_region_side_branch_inside_segment_follows_nearer_end() {
+        // Frames cover main-branch positions 3..=8. Only the pullback path is "between": a
+        // side branch leaving inside the segment goes with the nearer segment end.
+        for (junction_x, expect_proximal) in [(5.0, true), (7.0, false)] {
+            let centerline = branched_centerline(junction_x);
+            let side_points: Vec<Coords3> = (2..10)
+                .flat_map(|y| ring((junction_x, y as f64, 0.0), false, 0.5))
+                .collect();
+            let (proximal, distal, between) =
+                find_points_by_cl_region_rs(&centerline, &horizontal_frames(), &side_points)
+                    .unwrap();
+            assert!(between.is_empty());
+            let expected = if expect_proximal { &proximal } else { &distal };
+            assert_eq!(expected.len(), side_points.len());
+        }
     }
 
     #[test]
@@ -801,8 +871,9 @@ mod tests {
         let (proximal, distal, between) =
             find_points_by_cl_region_rs(&centerline, &side_branch_frames(), &points).unwrap();
 
-        // The parent vessel is kept, including its wall at the junction (x = 4..=6).
-        assert!(all_in(&main_rings, &distal));
+        // The parent vessel leaves the path before the segment, so all of it - also beyond
+        // the junction - is proximal.
+        assert!(all_in(&main_rings, &proximal));
         assert!(all_in(&side_rings[2..=2], &proximal));
         assert!(all_in(&side_rings[5..=9], &between));
         assert!(all_in(&side_rings[12..=16], &distal));
@@ -824,7 +895,7 @@ mod tests {
         let (proximal, distal, between) =
             find_points_by_cl_region_rs(&centerline, &side_branch_frames(), &points).unwrap();
 
-        assert!(all_in(&main_rings, &distal));
+        assert!(all_in(&main_rings, &proximal));
         assert!(all_in(&side_rings[2..=2], &proximal));
         assert!(all_in(&side_rings[5..=9], &between));
         assert!(all_in(&side_rings[12..=16], &distal));
@@ -845,5 +916,35 @@ mod tests {
         let (proximal, _, _) =
             find_points_by_cl_region_rs(&centerline, &side_branch_frames(), &points).unwrap();
         assert!(all_in(&nested_rings, &proximal));
+    }
+
+    #[test]
+    fn test_find_points_by_cl_region_frames_continue_into_parent() {
+        // Frames aligned with `get_branch(1, with_parents=True)`: main branch x = 2..=5, then
+        // the side branch at x = 5 up to y = 9 (side positions 0..=8).
+        let centerline = tree_centerline(&[main_branch(), side_branch_at(5.0, 16)]);
+        let frames = frames_at(
+            (2..=4)
+                .map(|x| (x as f64, 0.3, 0.0))
+                .chain((1..=9).map(|y| (5.3, y as f64, 0.0))),
+        );
+        let (main_rings, side_rings) = rings_for_side_pullback(16);
+        let points: Vec<Coords3> = main_rings
+            .iter()
+            .chain(&side_rings)
+            .flatten()
+            .copied()
+            .collect();
+
+        let (proximal, distal, between) =
+            find_points_by_cl_region_rs(&centerline, &frames, &points).unwrap();
+
+        assert!(all_in(&main_rings[0..=0], &proximal));
+        assert!(all_in(&main_rings[3..=3], &between));
+        assert!(all_in(&side_rings[3..=7], &between));
+        assert!(all_in(&side_rings[12..=16], &distal));
+        // The main branch beyond the junction leaves the path in the first half of the
+        // segment: proximal, not "between".
+        assert!(all_in(&main_rings[8..=20], &proximal));
     }
 }

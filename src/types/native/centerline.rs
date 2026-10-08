@@ -683,6 +683,91 @@ impl Centerline {
         self.rebuild_from_branches(branches);
     }
 
+    /// Branch `branch_id` extended proximally through its parent branches to the start of
+    /// branch 0, as a single-branch centerline ordered root → branch tip.
+    ///
+    /// Lets frames that run proximally past a side branch's ostium continue into the parent
+    /// vessel instead of falling off the start of the branch. A side branch's parent is the
+    /// lower-numbered branch holding the point nearest to it (the same ordering
+    /// [`Centerline::remove_branch_overlap`] relies on), cut at that point with its distal
+    /// remainder dropped. The side-branch end nearer the lower-numbered branches is taken as
+    /// its junction, so side branches may be stored in either direction, but branch 0 must
+    /// start at its proximal end (see [`Centerline::orient_by_max_z`] /
+    /// [`Centerline::orient_to_reference`]).
+    ///
+    /// Points keep their `frame_index`, are reassigned `branch_id = 0` and sequential
+    /// `point_index`, and tangents are recomputed across the junctions.
+    pub fn branch_path(&self, branch_id: u32) -> Result<Centerline, String> {
+        let branches = self.branches_as_vecs();
+        let id = branch_id as usize;
+        if id >= branches.len() || branches[id].is_empty() {
+            return Err(format!("centerline has no branch {branch_id}"));
+        }
+
+        // Collected tip-first, reversed at the end. `seg` is the part of branch `cur` still
+        // to add, junction first; `start` is the point where `cur` meets its parent.
+        let mut path: Vec<CenterlinePoint> = Vec::new();
+        let mut seg = Self::junction_first(&branches, id);
+        let mut start = seg[0].contour_point;
+        let mut cur = id;
+        while cur > 0 {
+            let (parent, _) = Self::nearest_point(&branches[..cur], &start);
+            path.extend(seg.drain(..).rev());
+
+            let mut parent_pts = Self::junction_first(&branches, parent);
+            let (_, j) = Self::nearest_point(std::slice::from_ref(&parent_pts), &start);
+            // A junction point shared exactly by both branches would give a zero-length step.
+            let keep = if parent_pts[j].contour_point.distance_to(&start) < 1e-9 {
+                j
+            } else {
+                j + 1
+            };
+            parent_pts.truncate(keep);
+            if let Some(first) = parent_pts.first() {
+                start = first.contour_point;
+            }
+            seg = parent_pts;
+            cur = parent;
+        }
+        path.extend(seg.into_iter().rev());
+        path.reverse();
+
+        for (i, p) in path.iter_mut().enumerate() {
+            p.branch_id = 0;
+            p.contour_point.point_index = i as u32;
+        }
+        let mut cl = Centerline {
+            points: path,
+            branch_start_indices: vec![0],
+        };
+        cl.recompute_tangents();
+        Ok(cl)
+    }
+
+    /// Copy of branch `b`, reversed if its last point is nearer the lower-numbered branches
+    /// than its first, so it starts at its junction. Branch 0 is returned as stored.
+    fn junction_first(branches: &[Vec<CenterlinePoint>], b: usize) -> Vec<CenterlinePoint> {
+        let mut pts = branches[b].clone();
+        if b > 0 && Self::should_reverse_relative_to(&pts, &branches[..b].concat()) {
+            pts.reverse();
+        }
+        pts
+    }
+
+    /// `(branch, local index)` of the point in `branches` nearest to `target`.
+    fn nearest_point(branches: &[Vec<CenterlinePoint>], target: &ContourPoint) -> (usize, usize) {
+        let mut best = (0, 0, f64::INFINITY);
+        for (b, pts) in branches.iter().enumerate() {
+            for (i, p) in pts.iter().enumerate() {
+                let d = p.contour_point.distance_to(target);
+                if d < best.2 {
+                    best = (b, i, d);
+                }
+            }
+        }
+        (best.0, best.1)
+    }
+
     /// Trim `mm` of arc length off the start of branch 0.
     ///
     /// Useful when the main branch starts at the aortic inlet and the proximal
@@ -1605,5 +1690,82 @@ mod centerline_tests {
 
         let branches = cl.branches_as_vecs();
         assert_eq!(branches[1][0].contour_point.x, 0.0);
+    }
+
+    fn coords(cl: &Centerline) -> Vec<(f64, f64, f64)> {
+        cl.points
+            .iter()
+            .map(|p| (p.contour_point.x, p.contour_point.y, p.contour_point.z))
+            .collect()
+    }
+
+    fn main_along_z() -> Vec<(f64, f64, f64)> {
+        (0..=10).map(|z| (0.0, 0.0, z as f64)).collect()
+    }
+
+    #[test]
+    fn test_branch_path_extends_side_branch_into_parent() {
+        let main = main_along_z();
+        let side: Vec<_> = (1..=5).map(|x| (x as f64, 0.0, 5.0)).collect();
+        let path = make_multi_branch(&[&main, &side]).branch_path(1).unwrap();
+
+        let mut expected: Vec<_> = main[..=5].to_vec();
+        expected.extend(&side);
+        assert_eq!(coords(&path), expected);
+        assert_eq!(path.branch_start_indices, vec![0]);
+        assert!(path.points.iter().enumerate().all(|(i, p)| p.branch_id == 0
+            && p.contour_point.point_index == i as u32
+            && p.tangent.iter().all(|c| c.is_finite())));
+    }
+
+    #[test]
+    fn test_branch_path_reversed_side_branch() {
+        let main = main_along_z();
+        let side: Vec<_> = (1..=5).rev().map(|x| (x as f64, 0.0, 5.0)).collect();
+        let path = make_multi_branch(&[&main, &side]).branch_path(1).unwrap();
+
+        let mut expected: Vec<_> = main[..=5].to_vec();
+        expected.extend(side.iter().rev());
+        assert_eq!(coords(&path), expected);
+    }
+
+    #[test]
+    fn test_branch_path_walks_through_side_branch_to_root() {
+        let main = main_along_z();
+        let side: Vec<_> = (1..=5).map(|x| (x as f64, 0.0, 5.0)).collect();
+        let sub: Vec<_> = (1..=3).map(|y| (3.0, y as f64, 5.0)).collect();
+        let path = make_multi_branch(&[&main, &side, &sub])
+            .branch_path(2)
+            .unwrap();
+
+        let mut expected: Vec<_> = main[..=5].to_vec();
+        expected.extend(&side[..3]);
+        expected.extend(&sub);
+        assert_eq!(coords(&path), expected);
+    }
+
+    #[test]
+    fn test_branch_path_shared_junction_point_not_duplicated() {
+        let main = main_along_z();
+        let side: Vec<_> = (0..=4).map(|x| (x as f64, 0.0, 5.0)).collect();
+        let path = make_multi_branch(&[&main, &side]).branch_path(1).unwrap();
+
+        let mut expected: Vec<_> = main[..5].to_vec();
+        expected.extend(&side);
+        assert_eq!(coords(&path), expected);
+        assert!(path
+            .points
+            .iter()
+            .all(|p| p.tangent.iter().all(|c| c.is_finite())));
+    }
+
+    #[test]
+    fn test_branch_path_main_branch_and_missing_branch() {
+        let main = main_along_z();
+        let side: Vec<_> = (1..=5).map(|x| (x as f64, 0.0, 5.0)).collect();
+        let cl = make_multi_branch(&[&main, &side]);
+
+        assert_eq!(coords(&cl.branch_path(0).unwrap()), main);
+        assert!(cl.branch_path(2).is_err());
     }
 }
