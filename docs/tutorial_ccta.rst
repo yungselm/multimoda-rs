@@ -378,13 +378,14 @@ The ``results`` dictionary is extended with:
 - ``"anomalous_points"`` - RCA vertices inside the intramural segment.
 - ``"distal_points"`` - RCA vertices distal to the anomalous segment.
 
-The frames may lie on any branch of the centerline: the branch most of them are nearest to is
-the pullback branch, and the first and last frame on it bound the anomalous segment.  Each
-vertex is placed at its nearest centerline point; a vertex on a branch that leaves the pullback
-branch is placed where that branch joins it, so a side branch belongs to the region it leaves
-from.  Vertices outside the pullback branch's subtree - its parent vessel and sibling branches -
-are distal, so they are kept.  For a side-branch pullback, the proximal region therefore runs
-from the side branch's origin to the first frame.
+The frames may lie on any branch of the centerline, and may continue into its parent vessel
+(``get_branch(..., with_parents=True)``).  Positions are measured along the pullback path, from
+the ostium through the parent branches to the tip of the branch the frames lie on; the first and
+last frame on it bound the anomalous segment.  Each vertex is placed at its nearest centerline
+point.  Only vertices on the path can be anomalous.  Every other vertex - side branches, and a
+parent vessel beyond the junction it is left at - is proximal if it leaves the path before the
+middle of the anomalous segment, distal otherwise.  For a side-branch pullback, the main vessel
+is therefore proximal.
 
 Pass the whole vessel centerline (``rca_cl`` above), not the single branch from ``get_branch``
 used for the alignment: without the other branches, every vertex is placed on that one branch.
@@ -392,9 +393,7 @@ Branch 0 must run from the ostium distally, which :func:`multimodars.prepare_cen
 when given ``ref_centerline``.
 
 Vertices that are not mesh-connected to the main body of their sub-region are moved from
-``"rca_points"`` to ``"aorta_points"``.  For a side-branch pullback the distal region has two
-bodies, joined only through the anomalous segment - the pullback branch past the frames and the
-vessel outside its subtree - and both are kept.  ``"rca_removed_points"`` and
+``"rca_points"`` to ``"aorta_points"``.  ``"rca_removed_points"`` and
 ``"lca_removed_points"`` are left unchanged.
 
 For the side-branch alignment above, pass the whole ``lca_cl`` and ``results_key='lca_points'``.

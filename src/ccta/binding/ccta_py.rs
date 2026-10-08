@@ -279,10 +279,11 @@ pub fn adjust_diameter_centerline_morphing_simple(
 
 /// Find points that lie within a specified frame region along the centerline.
 ///
-/// Positions are measured along the branch the frames lie on (the branch most
-/// frame centroids are nearest to). A point on a branch that leaves it is placed
-/// where that branch joins; points outside its subtree (the parent vessel and
-/// sibling branches) are distal.
+/// Positions are measured along the pullback path: from the ostium through the
+/// parent branches to the tip of the branch the frames lie on. Only points on that
+/// path can be "between". A point off the path (a branch leaving it, or a parent
+/// vessel beyond the junction) takes the position where it leaves the path and is
+/// proximal if that is before the middle of the frame segment, distal otherwise.
 ///
 /// Parameters
 /// ----------

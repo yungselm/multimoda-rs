@@ -10,7 +10,17 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   is extended proximally through its parent branches to the start of branch 0, so pullbacks
   aligned on a side branch can run past its ostium into the parent vessel.
 
+### Changed
+- `label_anomalous_region` / `find_points_by_cl_region` measure along the pullback path, from
+  the ostium through the parent branches to the tip of the branch the frames lie on. Only that
+  path is split into proximal / anomalous / distal; every other branch is proximal or distal as
+  a whole, by whether it leaves the path before or after the middle of the anomalous segment.
+  For a side-branch pullback the main vessel is now proximal (was distal), so removing
+  `proximal_points` removes it too.
+
 ### Fixed
+- Side-branch pullback: the pullback branch past the frames was moved to `aorta_points` as an
+  island, because the distal region also held the parent vessel.
 - Alignment refinement warns and keeps the initial rotation and centerline index when no
   candidate in the search window fits all frames on the centerline.
 
