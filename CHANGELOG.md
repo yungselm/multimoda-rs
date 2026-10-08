@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.8] - 2026-10-08
+
+### Added
+- `PyCenterline.get_branch(branch_id, with_parents=False)`: with `with_parents=True` the branch
+  is extended proximally through its parent branches to the start of branch 0, so pullbacks
+  aligned on a side branch can run past its ostium into the parent vessel.
+
+### Fixed
+- Alignment refinement warns and keeps the initial rotation and centerline index when no
+  candidate in the search window fits all frames on the centerline.
+
 ## [0.7.7] - 2026-10-07
 
 ### Changed
