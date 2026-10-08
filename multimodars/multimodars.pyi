@@ -366,7 +366,7 @@ class PyCenterline:
         """
         ...
 
-    def get_branch(self, branch_id: int) -> PyCenterline:
+    def get_branch(self, branch_id: int, with_parents: bool = False) -> PyCenterline:
         """Return a new centerline containing only the points of one branch.
 
         All retained points are reassigned to branch_id=0 and
@@ -376,6 +376,10 @@ class PyCenterline:
         ----------
         branch_id : int
             Branch to extract.
+        with_parents : bool, default False
+            Also include the parent branches from the start of branch 0 up to
+            the junction, so frames aligned on a side branch can run
+            proximally past its ostium into the parent vessel.
 
         Raises
         ------
