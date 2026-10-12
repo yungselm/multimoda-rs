@@ -13,7 +13,7 @@ pub struct Centerline {
 }
 
 impl Centerline {
-    /// Range of branch `branch_id` in `points`; `None` if the id was never assigned. A
+    /// Range of branch `branch_id` in `points`, or `None` if the id was never assigned. A
     /// removed branch gives an empty range.
     pub fn branch_range(&self, branch_id: u32) -> Option<std::ops::Range<usize>> {
         let idx = branch_id as usize;
@@ -739,7 +739,7 @@ impl Centerline {
     /// all lie within one mean inter-point spacing of branch 0 of at least one
     /// main-branch point. The last point of the trimmed prefix is kept as the
     /// bifurcation junction. Branches whose entire extent lies within that buffer
-    /// are emptied; their slot stays, so the other branches keep their id.
+    /// are emptied. Their slot stays, so the other branches keep their id.
     pub fn remove_branch_overlap(&mut self) {
         if self.branch_start_indices.is_empty() {
             return;
@@ -1842,7 +1842,7 @@ mod centerline_tests {
         assert!(cl.branch_path(2).is_err());
     }
 
-    /// Main along z; side 1 leaves it at z = 5, side 2 grows out of side 1 at x = 3, side 3
+    /// Main along z. Side 1 leaves it at z = 5, side 2 grows out of side 1 at x = 3, side 3
     /// leaves the main vessel at z = 8.
     fn tree() -> Centerline {
         let main = main_along_z();

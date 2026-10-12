@@ -8,11 +8,11 @@ import multimodars as mm
 
 # Pullback to use:
 # - False: the example IVUS pullback from the RCA ostium, aligned with the
-#   ostium triplet (tree.rca[0].ostium); an anomalous (intramural) course.
+#   ostium triplet (tree.rca[0].ostium). An anomalous (intramural) course.
 # - True: a synthetic pullback cut from the CCTA around the most proximal RCA
 #   bifurcation, its reference frame in the middle, aligned with that
 #   bifurcation's triplet (the "second" triplet along the RCA). A side branch
-#   then leaves the anomalous segment - for debugging that case.
+#   then leaves the anomalous segment, for debugging that case.
 SYNTHETIC_PULLBACK = True
 
 cwd = Path.cwd()
@@ -116,7 +116,7 @@ aligned, spacing_mm, total_rotation_deg = mm.align_combined(
     align_wall_anomalous=True,
 )
 
-# Only the pullback branch is split into proximal / anomalous / distal; every
+# Only the pullback branch is split into proximal / anomalous / distal. Every
 # other RCA branch goes to results["off_path_points"] and is neither scaled nor
 # cut below.
 results = mm.label_anomalous_region(
@@ -180,7 +180,7 @@ scaled_proximal = mm.scale_region_centerline_morphing(
 results = mm.sync_results_to_mesh(results, results["mesh"], scaled_proximal)
 
 # From the ostium the intravascular vessel replaces the proximal segment too and
-# is stitched to the aorta; mid-vessel it only replaces the anomalous segment.
+# is stitched to the aorta. Mid-vessel it only replaces the anomalous segment.
 updated_results = mm.remove_labeled_points_from_mesh(
     results,
     (

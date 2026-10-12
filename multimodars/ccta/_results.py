@@ -43,10 +43,10 @@ def vessel_of_centerline(results: dict, centerline: PyCenterline) -> str:
 
 
 def vessel_branches(results: dict, vessel: str) -> dict[int, PointList]:
-    """Per-branch labels of *vessel*; raises if :func:`label_branches` has not run."""
+    """Per-branch labels of *vessel*. Raises if :func:`label_branches` has not run."""
     key = branches_key(vessel)
     if key not in results:
-        raise ValueError(f"results has no '{key}'; run label_branches_pair first")
+        raise ValueError(f"results has no '{key}', run label_branches_pair first")
     return results[key]
 
 

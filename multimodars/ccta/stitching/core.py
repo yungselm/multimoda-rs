@@ -104,8 +104,8 @@ def stitch_ccta_to_intravascular(
         Intermediate rings each fillet arc is built from (default 2).
     tree : PyDiscretizedVesselTree, optional
         Discretized tree of the mesh before the removal.  With it, side
-        branches that leave the removed segment - loose pieces of *mesh*,
-        labelled ``"off_path_points"`` - are cut at their first contour outside
+        branches that leave the removed segment (loose pieces of *mesh*,
+        labelled ``"off_path_points"``) are cut at their first contour outside
         the intravascular lumen and joined to a hole in the intravascular wall
         (see :func:`~multimodars.ccta.stitching.reconnect_side_branches`).
         Without it they stay loose.

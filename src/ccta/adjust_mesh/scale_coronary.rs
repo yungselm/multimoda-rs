@@ -281,7 +281,7 @@ pub struct PullbackRegions {
 /// The pullback path is [`Centerline::branch_path`]: from the ostium through the parent
 /// branches (each up to the junction the path leaves it at) to the tip of `branch_id`.
 /// `branch_points` holds the vertices labelled for each branch id. Only vertices of branches
-/// on the path are placed on it, at the nearest point of their own branch; a vertex whose
+/// on the path are placed on it, at the nearest point of their own branch. A vertex whose
 /// nearest point is past the junction, and every vertex of another branch, is off the path.
 /// Each frame is snapped to the path, and the lowest and highest path positions bound the
 /// segment: vertices on the path are proximal below it, anomalous inside it, distal above.
@@ -702,7 +702,7 @@ mod tests {
     #[test]
     fn test_find_points_by_cl_region_pullback_on_side_branch() {
         // Side branch at x = 5 with 16 points (y = 1..=16). The path is main x = 0..=5, then
-        // the side branch; the frames cover y = 4..=10.
+        // the side branch. The frames cover y = 4..=10.
         let centerline = tree_centerline(&[main_branch(), side_branch_at(5.0, 16)]);
         let (main_rings, side_rings) = rings_for_side_pullback(16);
         let points = labels(&[&main_rings, &side_rings]);
@@ -738,7 +738,7 @@ mod tests {
 
     #[test]
     fn test_find_points_by_cl_region_nested_branch_is_off_path() {
-        // Branch 2 leaves the pullback branch 1 at y = 3; it is not on the path.
+        // Branch 2 leaves the pullback branch 1 at y = 3, so it is not on the path.
         let nested: Vec<(f64, f64)> = (0..9).map(|i| (6.0 + i as f64, 3.0)).collect();
         let centerline = tree_centerline(&[main_branch(), side_branch_at(5.0, 16), nested]);
         let nested_rings: Vec<Vec<Coords3>> = (8..=13)

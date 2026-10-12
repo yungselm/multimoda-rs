@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.8.0] - 2026-10-12
 
 Branch ids are now the single source of truth: the branch labels from `label_branches` decide
 which branch a vertex belongs to, and every later step refers to branches by these ids.
@@ -26,8 +26,8 @@ which branch a vertex belongs to, and every later step refers to branches by the
   inside the footprint is removed, and the two rims are joined by a straight strip.
 - `examples/synthetic_ivus.py` (`write_synthetic_pullback`): a synthetic pullback cut from the
   CCTA, its reference frame mid-pullback at a bifurcation. `SYNTHETIC_PULLBACK = True` in
-  `examples/fullworkflow.py` aligns it with that bifurcation's triplet - a pullback with a side
-  branch leaving the anomalous segment, for debugging.
+  `examples/fullworkflow.py` aligns it with that bifurcation's triplet. That gives a pullback
+  with a side branch leaving the anomalous segment, for debugging.
 - `remove_labeled_points_from_mesh` (and so `stitch`) warns when off-path vertices border the
   removed region, and keeps their rims out of the `target_boundaries` rings.
 
@@ -35,15 +35,15 @@ which branch a vertex belongs to, and every later step refers to branches by the
 - **Breaking:** `label_branches(centerline, results, vessel=None, bounding_sphere_radius_mm=3.0)`
   writes `results["rca_branches"]` / `results["lca_branches"]`: a dict from every branch id of the
   centerline to its vertices, partitioning `rca_points` / `lca_points`. A vertex several branches
-  claim goes to the one nearest the main vessel in the tree, then to the nearest; unclaimed
+  claim goes to the one nearest the main vessel in the tree, then to the nearest. Unclaimed
   vertices go to the nearest branch. Replaces `rca_points_main`, `rca_points_side` and
-  `rca_points_side_{k}`; `results_key` and the merged-main `branch_id=[0, 1]` are gone. The
+  `rca_points_side_{k}`. `results_key` and the merged-main `branch_id=[0, 1]` are gone. The
   vessel is detected from the centerline when not given.
 - **Breaking:** `label_anomalous_region(centerline, frames, results, branch_id=0)` splits only
   the pullback path of `branch_id` (the branch and its parents up to each junction) into
   proximal / anomalous / distal, using the branch labels. Every other vertex of the vessel goes to
   `"off_path_points"` instead of proximal or distal, so stitching and scaling leave other
-  branches alone. `results_key` is gone; the pullback branch is given, not guessed from the
+  branches alone. `results_key` is gone, and the pullback branch is given, not guessed from the
   frames. `find_points_by_cl_region(centerline, branch_id, frames, branch_points)` returns
   `(proximal, distal, anomalous, off_path)`.
 - **Breaking:** `PyDiscretizedVesselTree` holds `rca` / `lca`: dicts from branch id (0 = main

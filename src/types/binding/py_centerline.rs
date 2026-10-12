@@ -303,7 +303,7 @@ impl PyCenterline {
     /// the vessel origin, so side branches share a common prefix with branch 0.
     /// This trims that prefix from each side branch, keeping only the bifurcation
     /// junction and the diverged portion. Branches that overlap with branch 0
-    /// entirely are emptied; their id is kept, so the other branches keep theirs.
+    /// entirely are emptied. Their id is kept, so the other branches keep theirs.
     /// The trim threshold is one mean inter-point spacing of branch 0.
     ///
     /// Returns

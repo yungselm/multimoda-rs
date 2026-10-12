@@ -3,7 +3,7 @@
 For debugging the alignment / anomalous labelling / stitching around a side
 branch: the pullback is the CCTA vessel itself, so after alignment its frames
 should land back on the CCTA contours they were made from.  The reference point
-sits on a frame in the middle of the pullback - where a side branch leaves -
+sits on a frame in the middle of the pullback, where a side branch leaves,
 instead of at the ostium, so it pairs with that bifurcation's reference triplet
 (``tree.rca[0].bifurcations[child]``) rather than the ostium triplet.
 
@@ -79,7 +79,7 @@ def write_synthetic_pullback(
         The reference point is the lumen point of that contour nearest to this,
         e.g. the bifurcation's ``main_ref`` (the side branch's start).
     out_dir : str or Path
-        Directory to write into; created if needed.
+        Directory to write into, created if needed.
     n_proximal, n_distal : int
         Contours taken proximal and distal of *ref_slice*.
     image_center : tuple of float
@@ -87,7 +87,7 @@ def write_synthetic_pullback(
     systolic_scale : float
         Radial scale of the systolic phase relative to the diastolic one.
     n_points : int
-        Points per contour, as dense as real IVUS contours; coarse contours
+        Points per contour, as dense as real IVUS contours. Coarse contours
         make the loader's frame-to-frame rotation unreliable.
 
     Returns

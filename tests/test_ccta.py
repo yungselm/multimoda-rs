@@ -2599,7 +2599,7 @@ class TestRemoveBranch:
 
     def test_vessel_found_from_centerline(self, example_centerlines, example_labelled):
         _, rca, _ = example_centerlines
-        # Both vessels have a branch 2; the RCA one must go.
+        # Both vessels have a branch 2, and the RCA one must go.
         results, cl = mm.remove_branch(example_labelled, rca, 2)
         assert sorted(results["rca_branches"]) == [0, 1, 3]
         assert results["lca_branches"] == example_labelled["lca_branches"]
@@ -2667,7 +2667,7 @@ class TestDiscretizedVesselTree:
         branch.contours = branch.contours[5:]
         assert len(tree.lca[1].contours) == len(branch.contours)
         tree.calculate_ref_pts()
-        # The junction moved with the contours; the branch object is updated in place.
+        # The junction moved with the contours, and the branch object is updated in place.
         assert branch.ostium == tree.lca[1].ostium
 
 
@@ -2695,7 +2695,7 @@ class TestSyntheticPullback:
         junction = example_tree.rca[side].parent[1]
         triplet = main.bifurcations[side]
 
-        # Mark one side of every contour - a quarter turn from the branch - with
+        # Mark one side of every contour, a quarter turn from the branch, with
         # a bump, so a mirrored image would put it on the wrong side.  The
         # alignment is refined against the bumped contours too, else the
         # refinement pulls the bump towards the unbumped CCTA.
@@ -2764,7 +2764,7 @@ class TestSyntheticPullback:
 
 
 def _tube(radius, start, axis, length, n_around=24, step=0.5, closed_end=False):
-    """Open tube of rings along *axis* from *start*; optionally capped at the end."""
+    """Open tube of rings along *axis* from *start*, optionally capped at the end."""
     axis = np.asarray(axis, float) / np.linalg.norm(axis)
     u = np.cross(axis, [0.0, 0.0, 1.0] if abs(axis[2]) < 0.9 else [1.0, 0.0, 0.0])
     u /= np.linalg.norm(u)
@@ -2789,9 +2789,9 @@ def _tube(radius, start, axis, length, n_around=24, step=0.5, closed_end=False):
 
 
 class TestReconnectSideBranches:
-    """Intravascular tube of radius 2 along z (frames 1 mm apart); a loose CCTA
-    side branch of radius 0.8 along +x, starting inside the tube wall at z = 5;
-    a closed sphere far away as the main CCTA body."""
+    """Intravascular tube of radius 2 along z (frames 1 mm apart), a loose CCTA
+    side branch of radius 0.8 along +x, starting inside the tube wall at z = 5,
+    and a closed sphere far away as the main CCTA body."""
 
     R_IV, R_BRANCH = 2.0, 0.8
 
@@ -2845,7 +2845,7 @@ class TestReconnectSideBranches:
         assert len(patches) == 1
         merged = trimesh.util.concatenate([new_ccta, new_iv, *patches])
         merged.merge_vertices()
-        # Only the tube's two ends stay open; the branch end is capped.
+        # Only the tube's two ends stay open. The branch end is capped.
         assert len(merged.outline().entities) == 2
         assert len(merged.split(only_watertight=False)) == 2  # + the far body
 
@@ -2853,8 +2853,8 @@ class TestReconnectSideBranches:
         ccta, iv_mesh, frames, results, tree = self._setup()
         new_ccta, _, _ = reconnect_side_branches(ccta, iv_mesh, frames, results, tree)
         branch = new_ccta.vertices[np.abs(new_ccta.vertices[:, 1]) < 5.0]
-        # Contour x = 1.5 lies inside the wall (radius 2 + clearance); x = 2.5 is
-        # the first one outside.
+        # Contour x = 1.5 lies inside the wall (radius 2 + clearance), and x = 2.5
+        # is the first one outside.
         assert branch[:, 0].min() > 2.5 - 0.3
 
     def test_hole_matches_the_projected_contour(self):

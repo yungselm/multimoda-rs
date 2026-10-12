@@ -282,7 +282,7 @@ pub fn adjust_diameter_centerline_morphing_simple(
 /// The pullback path runs from the ostium through the parent branches, each up
 /// to the junction the path leaves it at, to the tip of ``branch_id``. Only
 /// vertices labelled for a branch on that path are placed on it, at the nearest
-/// point of their own branch; the frames snapped to the path bound the segment.
+/// point of their own branch, and the frames snapped to the path bound the segment.
 /// Every other vertex (other branches, parent vessels beyond the junction) is
 /// off the path.
 ///
@@ -872,7 +872,7 @@ pub fn smooth_mesh_labels(
 /// rca_branches, lca_branches : dict of int to list of tuple of float
 ///     Vertices per branch id (``results["rca_branches"]``,
 ///     ``results["lca_branches"]``). Every id must be a branch of its
-///     centerline; 0 is the main vessel.
+///     centerline, and 0 is the main vessel.
 /// step_size : float
 ///     Arc length between cross-sections in mm.
 /// n_points : int

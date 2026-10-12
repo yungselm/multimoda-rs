@@ -79,7 +79,7 @@ def fill_ring_on_vessel_wall(
     towards its centroid in concentric layers, and every layer vertex is pushed
     radially away from the parent centerline *axis* to the wall radius,
     interpolated from the ring's own distance to the axis.  Only this ring is
-    closed; the mesh's other open boundaries are left alone.
+    closed, and the mesh's other open boundaries are left alone.
 
     Parameters
     ----------
@@ -149,8 +149,8 @@ def fill_ring_on_vessel_wall(
     tris += [[last[i], last[(i + 1) % n], center] for i in range(n)]
     faces = np.array(tris, dtype=np.int64)
 
-    # The patch walks the ring edge ring[0] -> ring[1]; a consistently oriented
-    # mesh must walk it the other way in the face already on that edge.
+    # The patch walks the ring edge ring[0] -> ring[1], so a consistently
+    # oriented mesh must walk it the other way in the face already on that edge.
     r0, r1 = ring[0], ring[1]
     on_edge = mesh.faces[
         (mesh.faces == r0).any(axis=1) & (mesh.faces == r1).any(axis=1)

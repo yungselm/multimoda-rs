@@ -9,9 +9,9 @@ type Coords3 = (f64, f64, f64);
 impl DiscretizedVesselTree {
     /// Cuts `mesh` along every labelled branch, using only each branch's own labelled faces
     /// (see `SurfaceMesh::region_faces`). `rca_branches` / `lca_branches` map branch ids to their
-    /// vertices (`results["rca_branches"]`); every id must be a branch of its centerline. Each
+    /// vertices (`results["rca_branches"]`). Every id must be a branch of its centerline. Each
     /// branch's parent comes from [`Centerline::branch_parents`]. Fails if the aorta or a main
-    /// vessel (branch 0) fails; a failing side branch is left out with a warning.
+    /// vessel (branch 0) fails. A failing side branch is left out with a warning.
     pub fn from_results_dict(
         ao_cl: &Centerline,
         rca_cl: &Centerline,
@@ -45,7 +45,7 @@ impl DiscretizedVesselTree {
     }
 }
 
-/// Discretizes every branch in `points` (by branch id). Branch 0 must succeed; a failing or
+/// Discretizes every branch in `points` (by branch id). Branch 0 must succeed. A failing or
 /// unlabelled side branch is left out, with a warning if it failed. Parents are set from the
 /// centerline (junction contour 0 until `calculate_ref_pts`), skipping ancestors that are not
 /// in the result.

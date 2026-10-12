@@ -87,7 +87,7 @@ def _warn_off_path_attached(
     if n:
         warnings.warn(
             f"{n} off-path vertices border the removed region: branches leaving it "
-            "stay in the mesh, cut off from the vessel; pass the discretized tree "
+            "stay in the mesh, cut off from the vessel. Pass the discretized tree "
             "to the stitch to reconnect them",
             UserWarning,
             stacklevel=3,
@@ -373,8 +373,8 @@ def _detached_fragments(mesh: trimesh.Trimesh, remove_idx: set[int]) -> set[int]
 
     Vertices of the branch that its labels missed (e.g. a wide distal end)
     would be left floating once the branch is cut off.  Of the connected pieces
-    touching the removed region, the largest is the parent vessel; the rest are
-    returned.
+    touching the removed region, the largest is the parent vessel, and the rest
+    are returned.
     """
     n = len(mesh.vertices)
     keep = np.ones(n, dtype=bool)
@@ -428,9 +428,9 @@ def remove_branch(
     Returns
     -------
     (dict, PyCenterline)
-        Updated *results* - mesh without the branch, every vertex list updated
+        Updated *results* (mesh without the branch, every vertex list updated
         to it, patch vertices added to the labels most of the ostium rim
-        carries - and the centerline without the removed branches.
+        carries) and the centerline without the removed branches.
 
     Raises
     ------
@@ -486,7 +486,7 @@ def remove_branch(
                 continue
             if 2 * len(ring_set.intersection(map(tuple, pts))) > len(ring_set):
                 set_point_list(updated, where, pts + added_pts)
-        # The rim is closed now; keeping it would describe a hole that is gone.
+        # The rim is closed now, and keeping it would describe a hole that is gone.
         _store_boundary_rings(updated, patched.vertices, [])
         print(f"Closed the ostium with {len(added_pts)} patch vertices")
 

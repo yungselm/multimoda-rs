@@ -302,7 +302,7 @@ class PyCenterline:
     points : list of PyCenterlinePoint
         Ordered list of centerline points.
     branch_start_indices : list of int
-        Index into ``points`` where each branch begins; entry ``k`` belongs to
+        Index into ``points`` where each branch begins.  Entry ``k`` belongs to
         branch id ``k``. ``branch_start_indices[0]`` is always 0 (main vessel).
         A removed branch keeps its entry as an empty range, so use
         ``branch_ids()`` to list the branches that have points.
@@ -1058,7 +1058,7 @@ def discretize_vessel(
     region_points: list[tuple[float, float, float]] | None = ...,
 ) -> list[PyContour]: ...
 
-# (main_ref, clock_ref, counter_clock_ref) — each is an (x, y, z) tuple.
+# (main_ref, clock_ref, counter_clock_ref), each an (x, y, z) tuple.
 _RefTriplet = tuple[
     tuple[float, float, float],
     tuple[float, float, float],
@@ -1076,11 +1076,11 @@ class PyDiscretizedBranch:
         Parent branch id (from the centerline) and the index of the parent
         contour nearest this branch's start. ``None`` for the main vessel.
     ostium : (main_ref, clock_ref, counter_clock_ref) or None
-        Triplet on the first contour; ``main_ref`` faces the vessel the branch
+        Triplet on the first contour.  Its ``main_ref`` faces the vessel the branch
         leaves (aorta or parent branch).
     bifurcations : dict of int to (main_ref, clock_ref, counter_clock_ref)
         Triplet on this branch where each child branch leaves it, by child
-        branch id; ``main_ref`` is the child's start.
+        branch id.  Its ``main_ref`` is the child's start.
     """
 
     contours: list[PyContour]
@@ -1101,7 +1101,7 @@ class PyDiscretizedVesselTree:
         Cross-sectional contours along the aorta.
     rca, lca : dict of int to PyDiscretizedBranch
         Branches by branch id, 0 being the main vessel. Ids are the
-        centerline's branch ids; a removed or failed branch is missing, the
+        centerline's branch ids.  A removed or failed branch is missing, the
         others keep their id. ``tree.rca[0].ostium`` is the RCA ostium triplet,
         ``tree.lca[0].bifurcations[1]`` the triplet where LCA branch 1 leaves
         the main vessel. The branch objects are shared, so editing

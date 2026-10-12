@@ -26,9 +26,9 @@ pub struct DiscretizedBranch {
 pub struct DiscretizedVesselTree {
     pub discretized_aorta: Vec<Contour>,
     pub spacing: f64,
-    /// RCA branches by branch id; 0 is the main vessel.
+    /// RCA branches by branch id, 0 being the main vessel.
     pub rca: BTreeMap<u32, DiscretizedBranch>,
-    /// LCA branches by branch id; 0 is the main vessel.
+    /// LCA branches by branch id, 0 being the main vessel.
     pub lca: BTreeMap<u32, DiscretizedBranch>,
     /// Centroid of the aorta slice closest to the RCA ostium.
     pub ao_rca: (f64, f64, f64),
@@ -50,7 +50,7 @@ impl DiscretizedVesselTree {
     ///   the child's start, the side refs lie a quarter ring either side of the point closest
     ///   to it
     ///
-    /// Parent ids are kept as they are (they come from the centerline); a parent missing from
+    /// Parent ids are kept as they are (they come from the centerline). A parent missing from
     /// the map is treated like the aorta.
     pub fn calculate_ref_pts(mut self) -> Self {
         if let Some(ao) = coronary_references(&self.discretized_aorta, &mut self.rca) {
@@ -418,7 +418,7 @@ mod tests {
             vec![1]
         );
         assert!((v(main.bifurcations[&1].main_ref) - Vector3::new(25.0, 4.0, 0.0)).norm() < 1e-9);
-        // Side branch 1 has side branch 3's bifurcation; side branch 3 has none.
+        // Side branch 1 has side branch 3's bifurcation, side branch 3 has none.
         let side1 = &t.lca[&1];
         assert_eq!(side1.parent, Some((0, 10)));
         assert_eq!(

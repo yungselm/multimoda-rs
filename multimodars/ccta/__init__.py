@@ -294,7 +294,7 @@ def stitch(
     Only the pullback branch is cut: the regions come from
     :func:`~multimodars.label_anomalous_region`, which leaves every branch off
     the pullback path in ``"off_path_points"``.  A branch leaving the removed
-    segment is cut off from the vessel; pass *tree* to join it to the
+    segment is cut off from the vessel. Pass *tree* to join it to the
     intravascular wall, otherwise it stays loose and a warning says so.
 
     The result is only hole-filled, not remeshed or smoothed.  For that, run

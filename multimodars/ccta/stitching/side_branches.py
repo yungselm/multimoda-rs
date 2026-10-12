@@ -8,7 +8,7 @@ to the intravascular wall that replaces the segment:
 
 1. The branch's first contour in the discretized tree that lies fully outside
    the intravascular lumen is its starting frame.
-2. The CCTA piece is cut at that contour's plane; everything between the plane
+2. The CCTA piece is cut at that contour's plane, and everything between the plane
    and the parent vessel is removed.
 3. The contour is projected along the branch axis onto the intravascular wall
    facing it, and the wall inside that footprint is removed.  The hole's rim
@@ -54,7 +54,7 @@ def reconnect_side_branches(
     ccta_mesh : trimesh.Trimesh
         CCTA mesh with the segment removed.  A connected piece other than the
         largest, most of whose vertices are ``"off_path_points"``, is a side
-        branch cut off by the removal; other pieces (e.g. the distal vessel,
+        branch cut off by the removal.  Other pieces (e.g. the distal vessel,
         which the stitch joins) are left alone.
     iv_mesh : trimesh.Trimesh
         Intravascular lumen surface, one ring of vertices per frame (as built
@@ -65,7 +65,7 @@ def reconnect_side_branches(
         Labelled results with the per-branch labels (``"rca_branches"`` /
         ``"lca_branches"``), naming the branch of each piece.
     tree : PyDiscretizedVesselTree
-        Discretized tree of the mesh before the removal; its branch contours
+        Discretized tree of the mesh before the removal.  Its branch contours
         give the starting frames.
     clearance_mm : float, optional
         How far outside the intravascular lumen the starting contour must lie
@@ -96,7 +96,7 @@ def reconnect_side_branches(
         if found is None:
             warnings.warn(
                 f"a loose CCTA piece of {len(piece)} vertices belongs to no labelled "
-                "side branch; left as it is",
+                "side branch, left as it is",
                 UserWarning,
                 stacklevel=2,
             )
@@ -117,7 +117,7 @@ def reconnect_side_branches(
         )
         if start is None:
             warnings.warn(
-                f"{name}: no contour lies outside the intravascular lumen; not reconnected",
+                f"{name}: no contour lies outside the intravascular lumen, not reconnected",
                 UserWarning,
                 stacklevel=2,
             )
@@ -135,7 +135,7 @@ def reconnect_side_branches(
         )
         if branch_rim is None:
             warnings.warn(
-                f"{name}: the cut branch has no clean rim; not reconnected",
+                f"{name}: the cut branch has no clean rim, not reconnected",
                 UserWarning,
                 stacklevel=2,
             )
@@ -144,7 +144,7 @@ def reconnect_side_branches(
             iv_vertices, iv_faces, n_per_frame, lumen, center, axis, ring
         )
         if isinstance(cut, str):
-            warnings.warn(f"{name}: {cut}; not reconnected", UserWarning, stacklevel=2)
+            warnings.warn(f"{name}: {cut}, not reconnected", UserWarning, stacklevel=2)
             continue
         iv_faces, hole_rim = cut
 
@@ -253,7 +253,7 @@ def _branch_of_piece(
 ) -> tuple[str, int] | None:
     """``(vessel, branch id)`` of the side branch a loose piece starts with.
 
-    The piece holds the cut-off branch and the branches growing out of it; its
+    The piece holds the cut-off branch and the branches growing out of it.  Its
     branch is the one whose parent is not in the piece, with the most vertices.
     """
     piece = set(map(tuple, coords))

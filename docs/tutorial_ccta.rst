@@ -171,7 +171,7 @@ Before discretizing the vessel geometry, the surface-mesh points must be labeled
 ``prepare_centerline`` above, so :func:`multimodars.label_branches_pair` only needs to
 call :func:`multimodars.label_branches` for each.  The ``results`` dictionary gains
 ``rca_branches`` and ``lca_branches``: each maps every branch id of its centerline (0 being the
-main vessel) to that branch's vertices.  Every RCA/LCA vertex belongs to exactly one branch; at a
+main vessel) to that branch's vertices.  Every RCA/LCA vertex belongs to exactly one branch.  At a
 junction the parent keeps its wall.  It does not modify ``rca_cl``/``lca_cl`` in any way:
 
 .. code-block:: python
@@ -186,7 +186,7 @@ junction the parent keeps its wall.  It does not modify ``rca_cl``/``lca_cl`` in
 
 The branch ids are the centerline's, and every later step (discretization, anomalous labelling,
 :func:`multimodars.remove_branch`) refers to branches by these ids.  Removing a branch drops its
-id; the other branches keep theirs.
+id, and the other branches keep theirs.
 
 **Parameter reference:**
 
@@ -273,17 +273,17 @@ The discretized tree exposes the following attributes:
 - ``tree.discretized_aorta`` - list of :class:`~multimodars.PyContour` for the aorta.
 - ``tree.rca`` / ``tree.lca`` - dict from branch id (0 = main vessel) to
   :class:`~multimodars.PyDiscretizedBranch`.  A branch that was removed or could not be
-  discretized is missing; the others keep their id.
+  discretized is missing, and the others keep their id.
 
 Each branch has:
 
 - ``branch.contours`` - list of :class:`~multimodars.PyContour`, proximal to distal.
 - ``branch.parent`` - ``(parent branch id, parent contour index at the junction)``, ``None`` for
   the main vessel.  The parent comes from the centerline (``rca_cl.branch_parents()``).
-- ``branch.ostium`` - ``(main_ref, clock_ref, counter_clock_ref)`` triplet on the first contour;
-  ``main_ref`` faces the vessel the branch leaves (the aorta for the main vessel).
+- ``branch.ostium`` - ``(main_ref, clock_ref, counter_clock_ref)`` triplet on the first contour.
+  Its ``main_ref`` faces the vessel the branch leaves (the aorta for the main vessel).
 - ``branch.bifurcations`` - dict from child branch id to the triplet where that child leaves
-  this branch; ``main_ref`` is the child's start.
+  this branch.  Its ``main_ref`` is the child's start.
 
 So ``tree.rca[0].ostium`` is the RCA ostium and ``tree.lca[0].bifurcations[1]`` the point where
 LCA branch 1 leaves the main vessel.  The branch objects are shared with the tree: after editing
@@ -376,8 +376,8 @@ being left unaligned.  Without it, the centerline is the side branch alone.
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 After alignment, :func:`multimodars.label_anomalous_region` splits the branch the frames are
-aligned to into three sub-regions - proximal, anomalous (intramural), and distal - and leaves
-every other branch alone:
+aligned to into three sub-regions: proximal, anomalous (intramural) and distal.  Every other
+branch is left alone:
 
 .. code-block:: python
 
@@ -397,17 +397,17 @@ The ``results`` dictionary is extended with:
 - ``"off_path_points"`` - every other vertex of the vessel.
 
 The pullback path is branch ``branch_id`` with its parent branches, each up to the junction the
-path leaves it at - the path ``get_branch(branch_id, with_parents=True)`` follows, so the frames
-may continue into the parent vessel.  Only vertices labelled (step 2) for a branch on that path
-are split, each at the nearest centerline point of its own branch; the first and last frame on
-the path bound the anomalous segment.  Every other branch, and a parent vessel beyond the
+path leaves it at.  It is the path ``get_branch(branch_id, with_parents=True)`` follows, so the
+frames may continue into the parent vessel.  Only vertices labelled (step 2) for a branch on that path
+are split, each at the nearest centerline point of its own branch, and the first and last frame
+on the path bound the anomalous segment.  Every other branch, and a parent vessel beyond the
 junction, goes to ``"off_path_points"`` and keeps its branch label.  The vessel (RCA or LCA) is
 the one ``centerline`` belongs to.
 
 Off-path branches are neither scaled nor cut by the following steps.  Scale them explicitly with
 :func:`multimodars.scale_region_centerline_morphing` on ``results["off_path_points"]`` (or one
 branch, ``results["rca_branches"][k]``) if needed.  A branch that leaves the removed segment stays
-in the mesh when the segment is cut out for stitching; :func:`multimodars.stitch` and
+in the mesh when the segment is cut out for stitching, and :func:`multimodars.stitch` and
 :func:`multimodars.remove_labeled_points_from_mesh` warn about it.
 
 Pass the whole vessel centerline (``rca_cl`` above), the one the branches were labelled with,
@@ -688,8 +688,8 @@ each such branch to the intravascular wall
 
 1. The branch's first contour in the tree that lies fully outside the intravascular lumen is its
    starting frame.
-2. The CCTA branch is cut at that contour's plane; everything between it and the parent vessel
-   is removed.  The rest of the branch - including branches growing out of it - is kept.
+2. The CCTA branch is cut at that contour's plane, and everything between it and the parent
+   vessel is removed.  The rest of the branch, including branches growing out of it, is kept.
 3. The contour is projected along the branch axis onto the intravascular wall facing it, the
    wall inside that footprint is removed, and the hole's rim is snapped onto the footprint.
 4. The branch rim and the hole rim are joined by a straight triangle strip.

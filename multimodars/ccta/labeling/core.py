@@ -264,11 +264,11 @@ def label_anomalous_region(
     Only the pullback path is split: branch *branch_id* and its parent branches,
     each up to the junction the path leaves it at (the path
     ``centerline.get_branch(branch_id, with_parents=True)`` follows).  Every
-    other vertex of the vessel - its other branches, and parent vessels beyond
-    the junction - goes to ``"off_path_points"`` and keeps its branch label.
+    other vertex of the vessel (its other branches, and parent vessels beyond
+    the junction) goes to ``"off_path_points"`` and keeps its branch label.
 
-    The vessel (RCA or LCA) is the one *centerline* belongs to; its vertices per
-    branch come from :func:`label_branches`.
+    The vessel (RCA or LCA) is the one *centerline* belongs to, and its vertices
+    per branch come from :func:`label_branches`.
 
     Parameters
     ----------
@@ -318,7 +318,7 @@ def label_anomalous_region(
     unknown = sorted(set(branches) - set(centerline.branch_ids()))
     if unknown:
         raise ValueError(
-            f"{vessel.upper()} branches {unknown} are not in the centerline; pass the "
+            f"{vessel.upper()} branches {unknown} are not in the centerline. Pass the "
             "centerline the branches were labelled with, not get_branch(...)"
         )
 
@@ -336,7 +336,7 @@ def label_anomalous_region(
 
     # Island points dropped above are still nominally part of the vessel's
     # labels, which would otherwise keep them out of the aorta_points complement
-    # below - stranding them in no region at all, so no scaling step ever touches
+    # below, stranding them in no region at all, so no scaling step ever touches
     # them.  Reassign them fully to aorta by removing them from the vessel's
     # labels too, mirroring how final_reclassification's Logic A reassigns
     # isolated vertices to aorta rather than leaving them ambiguous.
@@ -416,10 +416,10 @@ def label_branches(
     """Split a coronary's vertices into one label per centerline branch.
 
     Every vertex of ``results["{vessel}_points"]`` is assigned to exactly one
-    branch of *centerline*: a rolling sphere along each branch collects its
-    candidates; a vertex several branches collect goes to the one closest to the
+    branch of *centerline*.  A rolling sphere along each branch collects its
+    candidates.  A vertex several branches collect goes to the one closest to the
     main vessel in the branch tree (a parent before its children, so the parent
-    keeps its wall at a junction), then to the nearest of those; a vertex no
+    keeps its wall at a junction), then to the nearest of those.  A vertex no
     sphere reaches goes to the nearest branch.
 
     Parameters

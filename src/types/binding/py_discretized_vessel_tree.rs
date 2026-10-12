@@ -19,11 +19,11 @@ type PyBranches = BTreeMap<u32, Py<PyDiscretizedBranch>>;
 ///     contour nearest this branch's start. ``None`` for the main vessel.
 /// ostium : tuple or None
 ///     Triplet ``(main_ref, clock_ref, counter_clock_ref)`` of ``(x, y, z)``
-///     tuples on the first contour; ``main_ref`` faces the vessel the branch
-///     leaves.
+///     tuples on the first contour. Its ``main_ref`` faces the vessel the
+///     branch leaves.
 /// bifurcations : dict of int to tuple
 ///     Triplet on this branch where each child branch leaves it, by child
-///     branch id; ``main_ref`` is the child's start.
+///     branch id. Its ``main_ref`` is the child's start.
 #[pyclass(skip_from_py_object)]
 #[derive(Debug, Clone)]
 pub struct PyDiscretizedBranch {
@@ -80,7 +80,7 @@ impl PyDiscretizedBranch {
 ///     Cross-sections along the aorta.
 /// rca, lca : dict of int to PyDiscretizedBranch
 ///     Branches by branch id, 0 being the main vessel. Ids are the centerline's
-///     branch ids; a removed or failed branch is missing, the others keep their
+///     branch ids. A removed or failed branch is missing, the others keep their
 ///     id. ``tree.rca[0].ostium`` is the RCA ostium triplet,
 ///     ``tree.lca[0].bifurcations[1]`` the triplet where LCA branch 1 leaves the
 ///     main vessel.
