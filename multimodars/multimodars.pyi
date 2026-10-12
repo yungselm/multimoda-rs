@@ -972,6 +972,7 @@ def find_points_by_cl_region(
     off the path (other branches, parent vessels beyond the junction).
     """
     ...
+
 def clean_outlier_points(
     points_to_cleanup: list[tuple[float, float, float]],
     reference_points: list[tuple[float, float, float]],
