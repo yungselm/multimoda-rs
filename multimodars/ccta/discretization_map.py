@@ -7,20 +7,8 @@ from ..multimodars import (
 from ..multimodars import (
     discretize_vessel_tree as _discretize_vessel_tree,
 )
-from ._branch_keys import side_branch_ids
+from ._results import vessel_branches
 from .labeling import label_branches as _label_branches
-
-
-def _extract_side_branches(results_dict: dict, prefix: str) -> list[list[tuple]]:
-    """Return ``[points_side_1, points_side_2, ...]`` from *results_dict*.
-
-    Entry ``i`` is branch id ``i + 1``. A missing id (e.g. a removed branch)
-    gives an empty list, so the ids after it do not shift.
-    """
-    ids = side_branch_ids(results_dict, prefix)
-    if not ids:
-        return []
-    return [results_dict.get(f"{prefix}_side_{k}", []) for k in range(1, ids[-1] + 1)]
 
 
 def discretize_vessel_tree(
@@ -28,22 +16,21 @@ def discretize_vessel_tree(
     rca_cl: PyCenterline,
     lca_cl: PyCenterline,
     results_dict: dict,
-    branch_id_rca: int = 0,
-    branch_id_lca: int = 0,
     step_size: float = 1.0,
     n_points: int = 100,
     control_plot: bool = False,
 ) -> PyDiscretizedVesselTree:
     """Discretize a coronary vessel tree into cross-sectional contours.
 
-    Expects *results_dict* to already contain the labelled ``mesh`` and labelled
-    branch point keys (``aorta_points``, ``rca_points_main``, ``rca_points_side_1``, …,
-    ``lca_points_main``, ``lca_points_side_1``, …). Each vessel is cut with planes
-    perpendicular to its centerline, using only the mesh faces of its own region.  Use
-    :func:`label_branches_pair` first to add the branch labels.
+    Expects *results_dict* to already contain the labelled ``mesh``,
+    ``aorta_points`` and the per-branch labels ``rca_branches`` /
+    ``lca_branches`` (use :func:`label_branches_pair` first). Each branch is cut
+    with planes perpendicular to its centerline branch, using only the mesh
+    faces of its own label, and keeps its branch id in the tree.
 
     ``ao_cl``, ``rca_cl`` and ``lca_cl`` must already be smoothed, resampled and oriented
-    (e.g. via :func:`load_centerline` and :func:`prepare_centerline`).
+    (e.g. via :func:`load_centerline` and :func:`prepare_centerline`), and be the
+    centerlines the branches were labelled with.
 
     Parameters
     ----------
@@ -51,11 +38,7 @@ def discretize_vessel_tree(
         Aortic, RCA, and LCA centerlines (branches already computed and
         labelled), already prepared.
     results_dict:
-        Dictionary produced by :func:`~multimodars.label_branches_pair` containing
-        keys ``mesh``, ``aorta_points``, ``rca_points_main``, ``lca_points_main``, and
-        any ``rca_points_side_N`` / ``lca_points_side_N`` entries.
-    branch_id_rca, branch_id_lca:
-        Main-vessel branch IDs (almost always ``0``).
+        Dictionary produced by :func:`~multimodars.label_branches_pair`.
     step_size:
         Arc-length distance between consecutive cross-sections in mm.
     n_points:
@@ -68,19 +51,17 @@ def discretize_vessel_tree(
     Returns
     -------
     PyDiscretizedVesselTree
-        Fully populated vessel tree including orientation reference triplets.
+        Tree with ``tree.rca`` / ``tree.lca`` mapping branch ids to their
+        contours, parent and reference triplets.
 
     Raises
     ------
     ValueError
-        If the aorta or a main vessel cannot be discretized (see :func:`discretize_vessel`).
-        A failing side branch is skipped with a warning and left empty.
+        If the aorta or a main vessel cannot be discretized (see
+        :func:`discretize_vessel`), or a labelled branch is not in its
+        centerline. A failing side branch is left out with a warning.
     """
     points_ao = results_dict["aorta_points"] + results_dict["rca_removed_points"]
-    points_rca_main = results_dict["rca_points_main"]
-    points_lca_main = results_dict["lca_points_main"]
-    side_rca = _extract_side_branches(results_dict, "rca_points")
-    side_lca = _extract_side_branches(results_dict, "lca_points")
     mesh = results_dict["mesh"]
 
     tree = _discretize_vessel_tree(
@@ -90,12 +71,8 @@ def discretize_vessel_tree(
         [tuple(v) for v in mesh.vertices.tolist()],
         mesh.faces.tolist(),
         points_ao,
-        points_rca_main,
-        points_lca_main,
-        side_rca,
-        side_lca,
-        branch_id_rca=branch_id_rca,
-        branch_id_lca=branch_id_lca,
+        vessel_branches(results_dict, "rca"),
+        vessel_branches(results_dict, "lca"),
         step_size=step_size,
         n_points=n_points,
     )
@@ -144,11 +121,12 @@ def label_branches_pair(
     Returns
     -------
     results_dict : dict
-        Updated dictionary with ``rca_points_main``, ``rca_points_side_N``,
-        ``lca_points_main``, and ``lca_points_side_N`` keys added.
+        Updated dictionary with ``rca_branches`` and ``lca_branches``: each maps
+        every branch id of its centerline to its vertices (see
+        :func:`~multimodars.label_branches`).
     """
-    results_dict = _label_branches(rca_cl, results_dict)
-    results_dict = _label_branches(lca_cl, results_dict, results_key="lca_points")
+    results_dict = _label_branches(rca_cl, results_dict, vessel="rca")
+    results_dict = _label_branches(lca_cl, results_dict, vessel="lca")
 
     if control_plot:
         from .debug_plots import plot_centerline_branches

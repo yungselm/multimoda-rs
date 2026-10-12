@@ -47,6 +47,9 @@ results = mm.label_geometry(
 )
 
 # Branches (and their ordering) already come from prepare_centerline above.
+# Every RCA/LCA vertex now belongs to exactly one branch id:
+# results["rca_branches"] = {0: [...], 1: [...], ...}, and everything downstream
+# (discretization, anomalous labelling, remove_branch) works on these ids.
 results = mm.label_branches_pair(rca_cl, lca_cl, results)
 
 tree = mm.discretize_vessel_tree(
@@ -67,9 +70,13 @@ rest, (dia_logs, sys_logs) = mm.from_file_singlepair(
     output_path="output/rest",
 )
 
-ref_points = tree.rca_references[0]
+# The pullback lies on RCA branch 0 (the main vessel). For a side-branch
+# pullback use its id here, tree.rca[branch].ostium and
+# rca_cl.get_branch(branch, with_parents=True).
+pullback_branch = 0
+ref_points = tree.rca[pullback_branch].ostium  # (main, clock, counter_clock)
 
-rca_cl_main = rca_cl.get_branch(0)  # alignment needs single-branch CL
+rca_cl_main = rca_cl.get_branch(pullback_branch)  # alignment needs single-branch CL
 aligned, spacing_mm, total_rotation_deg = mm.align_combined(
     rca_cl_main,
     rest,
@@ -84,11 +91,14 @@ aligned, spacing_mm, total_rotation_deg = mm.align_combined(
     align_wall_anomalous=True,
 )
 
+# Only the pullback branch is split into proximal / anomalous / distal; every
+# other RCA branch goes to results["off_path_points"] and is neither scaled nor
+# cut below.
 results = mm.label_anomalous_region(
     centerline=rca_cl,
     frames=aligned.geom_a.frames,
     results=results,
-    results_key="rca_points",
+    branch_id=pullback_branch,
     debug_plot=False,
 )
 

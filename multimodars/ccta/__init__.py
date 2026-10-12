@@ -33,6 +33,7 @@ def label(
     bounding_sphere_radius_mm_lca: float = 3.0,
     tolerance_float: float = 1e-6,
     control_plot: bool = True,
+    branch_id: int = 0,
 ) -> dict:
     """Label CCTA mesh vertices as aorta, RCA, or LCA using centerline-based region detection.
 
@@ -47,11 +48,12 @@ def label(
     intersected by the ray the points from the first face must correspond to the
     overlapping/intramural section.
 
-    Additionally partition a coronary region into proximal, anomalous, and distal sub-regions.
-
-    Uses the intravascular imaging frames to determine where along the centerline
-    the anomalous (intramural) segment begins and ends, then tags each mesh
-    vertex accordingly.
+    The coronary vertices are then split per centerline branch
+    (:func:`~multimodars.label_branches`), and for the vessel with the acute
+    takeoff the pullback branch *branch_id* is split into proximal, anomalous and
+    distal sub-regions (:func:`~multimodars.label_anomalous_region`): the
+    intravascular imaging frames determine where along that branch the anomalous
+    (intramural) segment begins and ends.
 
     Parameters
     ----------
@@ -103,6 +105,9 @@ def label(
     control_plot : bool, optional
         When ``True`` opens an interactive 3-D scene showing the labelled mesh
         after processing.  Default is ``True``.
+    branch_id : int, optional
+        Branch of the acute-takeoff vessel the frames are aligned to. Default
+        ``0``, the main vessel.
 
     Returns
     -------
@@ -115,6 +120,10 @@ def label(
         * ``"lca_points"`` - list of ``(x, y, z)`` tuples for LCA vertices.
         * ``"rca_removed_points"`` - RCA vertices removed by occlusion detection.
         * ``"lca_removed_points"`` - LCA vertices removed by occlusion detection.
+        * ``"rca_branches"`` / ``"lca_branches"`` - vertices per branch id.
+        * ``"proximal_points"``, ``"anomalous_points"``, ``"distal_points"``,
+          ``"off_path_points"`` - with an acute takeoff, see
+          :func:`~multimodars.label_anomalous_region`.
 
     Raises
     ------
@@ -149,19 +158,15 @@ def label(
         control_plot=control_plot,
     )
 
-    if acute_takeoff_rca or acute_takeoff_lca:
-        if acute_takeoff_rca:
-            key = "rca_points"
-            cl = rca_cl
-        else:
-            key = "lca_points"
-            cl = lca_cl
+    results = labeling.label_branches(rca_cl, results, vessel="rca")
+    results = labeling.label_branches(lca_cl, results, vessel="lca")
 
+    if acute_takeoff_rca or acute_takeoff_lca:
         results = labeling.label_anomalous_region(
-            centerline=cl,
+            centerline=rca_cl if acute_takeoff_rca else lca_cl,
             frames=aligned_frames,
             results=results,
-            results_key=key,
+            branch_id=branch_id,
         )
 
     return results
@@ -189,6 +194,12 @@ def scale(
     4. After each aortic/proximal scaling step,
        :func:`scaling.sync_results_to_mesh` remaps all coordinate lists
        in *results* to the updated vertex positions.
+
+    Only the pullback branch is scaled: branches off the pullback path
+    (``"off_path_points"``) keep their size.  To scale them too, call
+    :func:`scaling.scale_region_centerline_morphing` on
+    ``results["off_path_points"]`` (or one branch of ``results["rca_branches"]``)
+    and :func:`scaling.sync_results_to_mesh` afterwards.
 
     Parameters
     ----------
@@ -273,6 +284,11 @@ def stitch(
     *Anomalous vessel*: The recommended approach for anomalies is to remove anomalous points
     and proximal points and stitch the intravascular vessel directly to aorta with highest_z
     approach (default).
+
+    Only the pullback branch is cut: the regions come from
+    :func:`~multimodars.label_anomalous_region`, which leaves every branch off
+    the pullback path in ``"off_path_points"``.  A branch leaving the removed
+    segment therefore stays in the mesh, and a warning says so.
 
     The result is only hole-filled, not remeshed or smoothed.  For that, run
     :func:`postprocessing.postprocess_stitched_mesh` on the returned mesh as a

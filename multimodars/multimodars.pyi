@@ -956,13 +956,22 @@ def adjust_diameter_centerline_morphing_simple(
 ) -> list[tuple[float, float, float]]: ...
 def find_points_by_cl_region(
     centerline: PyCenterline,
+    branch_id: int,
     frames: list[PyFrame],
-    points: list[tuple[float, float, float]],
+    branch_points: dict[int, list[tuple[float, float, float]]],
 ) -> tuple[
     list[tuple[float, float, float]],
     list[tuple[float, float, float]],
     list[tuple[float, float, float]],
-]: ...
+    list[tuple[float, float, float]],
+]:
+    """Split a vessel's labelled vertices along the pullback path of *branch_id*.
+
+    Returns ``(proximal, distal, anomalous, off_path)``: the path vertices
+    before, after and inside the segment the frames cover, and every vertex
+    off the path (other branches, parent vessels beyond the junction).
+    """
+    ...
 def clean_outlier_points(
     points_to_cleanup: list[tuple[float, float, float]],
     reference_points: list[tuple[float, float, float]],
@@ -1049,12 +1058,39 @@ def discretize_vessel(
     region_points: list[tuple[float, float, float]] | None = ...,
 ) -> list[PyContour]: ...
 
-# (main_ref, counter_clock_ref, clock_ref) — each is an (x, y, z) tuple.
+# (main_ref, clock_ref, counter_clock_ref) — each is an (x, y, z) tuple.
 _RefTriplet = tuple[
     tuple[float, float, float],
     tuple[float, float, float],
     tuple[float, float, float],
 ]
+
+class PyDiscretizedBranch:
+    """One discretized branch of a coronary.
+
+    Attributes
+    ----------
+    contours : list of PyContour
+        Cross-sections along the branch, proximal → distal.
+    parent : tuple of (int, int) or None
+        Parent branch id (from the centerline) and the index of the parent
+        contour nearest this branch's start. ``None`` for the main vessel.
+    ostium : (main_ref, clock_ref, counter_clock_ref) or None
+        Triplet on the first contour; ``main_ref`` faces the vessel the branch
+        leaves (aorta or parent branch).
+    bifurcations : dict of int to (main_ref, clock_ref, counter_clock_ref)
+        Triplet on this branch where each child branch leaves it, by child
+        branch id; ``main_ref`` is the child's start.
+    """
+
+    contours: list[PyContour]
+    @property
+    def parent(self) -> tuple[int, int] | None: ...
+    @property
+    def ostium(self) -> _RefTriplet | None: ...
+    @property
+    def bifurcations(self) -> dict[int, _RefTriplet]: ...
+    def __repr__(self) -> str: ...
 
 class PyDiscretizedVesselTree:
     """Fully discretized coronary vessel tree.
@@ -1063,45 +1099,28 @@ class PyDiscretizedVesselTree:
     ----------
     discretized_aorta : list of PyContour
         Cross-sectional contours along the aorta.
-    discretized_rca_main : list of PyContour
-        Cross-sectional contours along the RCA main vessel.
-    discretized_lca_main : list of PyContour
-        Cross-sectional contours along the LCA main vessel.
-    rca_branches : list of list of PyContour
-        Per-side-branch contours for the RCA.  ``rca_branches[i]`` →
-        branch_id ``i + 1``.
-    lca_branches : list of list of PyContour
-        Per-side-branch contours for the LCA.
-    rca_references : list of (main_ref, counter_clock_ref, clock_ref)
-        Orientation triplets along the RCA, sorted proximal → distal.
-        Each element is ``((x,y,z), (x,y,z), (x,y,z))``.
-        Index 0 is always the ostium reference.
-    lca_references : list of (main_ref, counter_clock_ref, clock_ref)
-        Same structure for the LCA.
-    rca_branch_references : list of list of (main_ref, counter_clock_ref, clock_ref)
-        Per RCA side branch, aligned with ``rca_branches``: the triplet at the
-        branch's own ostium on its parent (index 0), then one per branch
-        leaving it, sorted proximal → distal.
-    lca_branch_references : list of list of (main_ref, counter_clock_ref, clock_ref)
-        Same structure for the LCA.
+    rca, lca : dict of int to PyDiscretizedBranch
+        Branches by branch id, 0 being the main vessel. Ids are the
+        centerline's branch ids; a removed or failed branch is missing, the
+        others keep their id. ``tree.rca[0].ostium`` is the RCA ostium triplet,
+        ``tree.lca[0].bifurcations[1]`` the triplet where LCA branch 1 leaves
+        the main vessel. The branch objects are shared, so editing
+        ``tree.rca[k].contours`` edits the tree.
     ao_rca : tuple[float, float, float]
         Centroid ``(x, y, z)`` of the aorta slice closest to the RCA ostium.
     ao_lca : tuple[float, float, float]
         Centroid ``(x, y, z)`` of the aorta slice closest to the LCA ostium.
+    spacing : float
+        Arc length between cross-sections in mm.
     """
 
     discretized_aorta: list[PyContour]
-    discretized_rca_main: list[PyContour]
-    discretized_lca_main: list[PyContour]
-    rca_branches: list[list[PyContour]]
-    lca_branches: list[list[PyContour]]
-    rca_references: list[_RefTriplet]
-    lca_references: list[_RefTriplet]
-    rca_branch_references: list[list[_RefTriplet]]
-    lca_branch_references: list[list[_RefTriplet]]
+    rca: dict[int, PyDiscretizedBranch]
+    lca: dict[int, PyDiscretizedBranch]
     ao_rca: tuple[float, float, float]
     ao_lca: tuple[float, float, float]
-
+    @property
+    def spacing(self) -> float: ...
     def __repr__(self) -> str: ...
     def calculate_ref_pts(self) -> None: ...
 
@@ -1112,12 +1131,8 @@ def discretize_vessel_tree(
     mesh_vertices: list[tuple[float, float, float]],
     mesh_faces: list[list[int]],
     points_ao: list[tuple[float, float, float]],
-    points_rca_main: list[tuple[float, float, float]],
-    points_lca_main: list[tuple[float, float, float]],
-    side_branches_rca: list[list[tuple[float, float, float]]],
-    side_branches_lca: list[list[tuple[float, float, float]]],
-    branch_id_rca: int = ...,
-    branch_id_lca: int = ...,
+    rca_branches: dict[int, list[tuple[float, float, float]]],
+    lca_branches: dict[int, list[tuple[float, float, float]]],
     step_size: float = ...,
     n_points: int = ...,
 ) -> PyDiscretizedVesselTree: ...

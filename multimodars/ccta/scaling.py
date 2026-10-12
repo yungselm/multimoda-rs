@@ -4,13 +4,16 @@ import numpy as np
 import trimesh
 
 from ..multimodars import (
-    PyFrame,
     PyCenterline,
+    PyFrame,
     adjust_diameter_centerline_morphing_simple,
-    find_proximal_distal_scaling,
     find_aortic_scaling,
+    find_proximal_distal_scaling,
+)
+from ..multimodars import (
     find_aortic_wall_scaling as _find_aortic_wall_scaling,
 )
+from ._results import map_point_lists
 from .scaling_helpers import _extract_wall_from_frames
 
 
@@ -267,25 +270,10 @@ def sync_results_to_mesh(
     """
     old_coord_to_idx = {tuple(v): i for i, v in enumerate(old_mesh.vertices)}
 
-    updated = dict(results)
+    def remap(pts: list) -> list:
+        indices = [old_coord_to_idx.get(tuple(p)) for p in pts]
+        return [tuple(new_mesh.vertices[i]) for i in indices if i is not None]
+
+    updated = map_point_lists(results, remap)
     updated["mesh"] = new_mesh
-
-    for key in (
-        "aorta_points",
-        "rca_points",
-        "lca_points",
-        "rca_removed_points",
-        "lca_removed_points",
-        "proximal_points",
-        "distal_points",
-        "anomalous_points",
-        "boundary_points",
-        # Per-ring boundary lists, so they stay in step with "boundary_points".
-        *sorted(k for k in updated if k.startswith("boundary_points_")),
-    ):
-        if key not in updated or not updated[key]:
-            continue
-        indices = [old_coord_to_idx.get(tuple(p)) for p in updated[key]]
-        updated[key] = [tuple(new_mesh.vertices[i]) for i in indices if i is not None]
-
     return updated

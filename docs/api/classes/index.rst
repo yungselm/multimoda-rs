@@ -15,4 +15,5 @@ Classes
    PyInputData
    PyCenterlinePoint
    PyCenterline
+   PyDiscretizedBranch
    PyDiscretizedVesselTree

@@ -8,13 +8,14 @@ Covers:
   - labeling.helpers: _keep_largest_connected_component (island-point filter
                 for find_points_by_cl_region's proximal/distal/anomalous output)
   - labeling.core: label_anomalous_region (label bookkeeping, with the
-                find_points_by_cl_region split stubbed)
+                find_points_by_cl_region split stubbed, and on the example
+                data per branch), label_branches (partition into branches)
   - postprocessing: manual_hole_fill, postprocess_stitched_mesh,
                fill_ring_on_vessel_wall
   - mesh_regions: remove_labeled_points_from_mesh, keep_labeled_points_from_mesh,
                remove_branch (with the branch-id bookkeeping it relies on:
-               PyCenterline.branch_ids / remove_branches, label_branches,
-               discretization_map._extract_side_branches)
+               PyCenterline.branch_ids / remove_branches)
+  - discretization_map: discretize_vessel_tree (branches keyed by id)
   - stitching.boundary: open_boundary_edges, order_boundary_rings,
                clean_open_boundary, order_points_list, _rotate_to_nearest_iv,
                _fix_ring_direction_by_distance, _prepare_prox_dist_boundary_pts,
@@ -33,7 +34,6 @@ Covers:
 from __future__ import annotations
 
 import importlib
-import warnings
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -43,7 +43,6 @@ import trimesh
 
 import multimodars as mm
 from multimodars import PyContour, PyContourPoint, PyFrame, PyGeometry
-from multimodars.ccta.discretization_map import _extract_side_branches
 from multimodars.ccta.labeling import core as labeling_core
 from multimodars.ccta.labeling.helpers import _keep_largest_connected_component
 from multimodars.ccta.mesh_regions import (
@@ -603,11 +602,12 @@ class TestKeepLargestConnectedComponent:
 
 # ===========================================================================
 # labeling.core.label_anomalous_region - label bookkeeping only
-# (find_points_by_cl_region is stubbed with a fixed proximal/distal/anomalous
-# split, so no centerline or frames are needed.)  Starting labels on grid_mesh:
-#   aorta {3, 7}, rca {1, 2, 4, 5, 8}, rca_removed {0}, lca_removed {6}.
-# The stubbed proximal split [1, 2, 8] leaves vertex 8 as an island (its
-# neighbours {5, 7} are not in the split), so it is dropped to aorta.
+# (find_points_by_cl_region is stubbed with a fixed proximal/distal/anomalous/
+# off-path split, so no centerline or frames are needed.)  Starting labels on
+# grid_mesh: aorta {3, 7}, rca {1, 2, 4, 5, 8} as branch 0 {1, 2, 4, 8} and
+# branch 1 {5}, rca_removed {0}, lca_removed {6}.  The stubbed proximal split
+# [1, 2, 8] leaves vertex 8 as an island (its neighbours {5, 7} are not in the
+# split), so it is dropped to aorta.  Branch 1 is off the pullback path.
 # ===========================================================================
 
 
@@ -620,7 +620,7 @@ class TestLabelAnomalousRegion:
         "lca_removed_points",
     )
 
-    def _run(self, grid_mesh, monkeypatch, branch_starts=(0, 9), extra_keys=None):
+    def _run(self, grid_mesh, monkeypatch, branch_id=0, centerline_ids=(0, 1)):
         v = [tuple(p) for p in grid_mesh.vertices]
         results = {
             "mesh": grid_mesh,
@@ -629,54 +629,69 @@ class TestLabelAnomalousRegion:
             "lca_points": [],
             "rca_removed_points": [v[0]],
             "lca_removed_points": [v[6]],
-            **(extra_keys or {}),
+            "rca_branches": {0: [v[1], v[2], v[4], v[8]], 1: [v[5]]},
         }
+        calls = []
 
-        def fake_split(centerline, frames, points):
-            return [v[1], v[2], v[8]], [], [v[4], v[5]]
+        def fake_split(centerline, branch, frames, branch_points):
+            calls.append((branch, branch_points))
+            return [v[1], v[2], v[8]], [], [v[4]], [v[5]]
 
         monkeypatch.setattr(labeling_core, "find_points_by_cl_region", fake_split)
-        centerline = SimpleNamespace(branch_start_indices=list(branch_starts))
-        out = labeling_core.label_anomalous_region(
-            centerline=centerline, frames=[], results=results, results_key="rca_points"
+        centerline = SimpleNamespace(
+            branch_ids=lambda: list(centerline_ids),
+            points_as_tuples=lambda: results["rca_points"],
         )
-        return v, out
+        out = labeling_core.label_anomalous_region(
+            centerline=centerline, frames=[], results=results, branch_id=branch_id
+        )
+        return v, out, calls
+
+    def test_splits_the_labelled_branches(self, grid_mesh, monkeypatch):
+        v, out, calls = self._run(grid_mesh, monkeypatch)
+        assert calls == [(0, {0: [v[1], v[2], v[4], v[8]], 1: [v[5]]})]
+        assert out["off_path_points"] == [v[5]]
 
     def test_removed_points_stay_out_of_aorta(self, grid_mesh, monkeypatch):
-        v, out = self._run(grid_mesh, monkeypatch)
+        v, out, _ = self._run(grid_mesh, monkeypatch)
         assert v[0] not in out["aorta_points"]
         assert v[6] not in out["aorta_points"]
         assert out["rca_removed_points"] == [v[0]]
         assert out["lca_removed_points"] == [v[6]]
 
     def test_island_point_moves_from_rca_to_aorta(self, grid_mesh, monkeypatch):
-        v, out = self._run(grid_mesh, monkeypatch)
+        v, out, _ = self._run(grid_mesh, monkeypatch)
         assert set(out["aorta_points"]) == {v[3], v[7], v[8]}
         assert set(out["rca_points"]) == {v[1], v[2], v[4], v[5]}
+        assert out["rca_branches"] == {0: [v[1], v[2], v[4]], 1: [v[5]]}
         assert set(out["proximal_points"]) == {v[1], v[2]}
-        assert set(out["anomalous_points"]) == {v[4], v[5]}
+        assert set(out["anomalous_points"]) == {v[4]}
 
     def test_five_classes_partition_mesh_vertices(self, grid_mesh, monkeypatch):
-        v, out = self._run(grid_mesh, monkeypatch)
+        v, out, _ = self._run(grid_mesh, monkeypatch)
         labelled = [p for key in self._CLASS_KEYS for p in out[key]]
         assert len(labelled) == len(v)
         assert set(labelled) == set(v)
 
-    def test_warns_on_single_branch_centerline_of_branched_vessel(
+    def test_rejects_unlabelled_branch(self, grid_mesh, monkeypatch):
+        with pytest.raises(ValueError, match="branch 2 is not labelled"):
+            self._run(grid_mesh, monkeypatch, branch_id=2)
+
+    def test_rejects_centerline_without_the_labelled_branches(
         self, grid_mesh, monkeypatch
     ):
-        with pytest.warns(UserWarning, match="single-branch centerline"):
-            self._run(
-                grid_mesh,
-                monkeypatch,
-                branch_starts=(0,),
-                extra_keys={"rca_points_side_1": []},
-            )
+        with pytest.raises(ValueError, match="not in the centerline"):
+            self._run(grid_mesh, monkeypatch, centerline_ids=(0,))
 
-    def test_no_warning_for_single_branch_vessel(self, grid_mesh, monkeypatch):
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            self._run(grid_mesh, monkeypatch, branch_starts=(0,))
+    def test_requires_branch_labels(self, grid_mesh, monkeypatch):
+        monkeypatch.setattr(labeling_core, "find_points_by_cl_region", None)
+        v = [tuple(p) for p in grid_mesh.vertices]
+        results = {"mesh": grid_mesh, "rca_points": v[:3], "lca_points": []}
+        centerline = SimpleNamespace(
+            branch_ids=lambda: [0], points_as_tuples=lambda: v[:3]
+        )
+        with pytest.raises(ValueError, match="label_branches_pair"):
+            labeling_core.label_anomalous_region(centerline, [], results)
 
 
 # ===========================================================================
@@ -2364,19 +2379,6 @@ class TestFillRingOnVesselWall:
         assert np.all(np.einsum("ij,ij->i", patched.face_normals[new], outward) > 0)
 
 
-class TestExtractSideBranches:
-    def test_missing_id_keeps_later_ids_in_place(self):
-        results = {
-            "rca_points_side_1": [(1.0, 0.0, 0.0)],
-            "rca_points_side_3": [(3.0, 0.0, 0.0)],
-        }
-        sides = _extract_side_branches(results, "rca_points")
-        assert sides == [[(1.0, 0.0, 0.0)], [], [(3.0, 0.0, 0.0)]]
-
-    def test_no_side_keys(self):
-        assert _extract_side_branches({"rca_points": []}, "rca_points") == []
-
-
 @pytest.fixture(scope="module")
 def example_centerlines():
     if not (_EXAMPLE_DATA / "lca_cl.vtp").exists():
@@ -2426,15 +2428,6 @@ class TestCenterlineBranchIds:
         with pytest.raises(ValueError):
             lca.remove_branches([0])
 
-    def test_label_branches_skips_removed(self, example_centerlines):
-        _, _, lca = example_centerlines
-        cl = lca.remove_branches([1])
-        pts = [tuple(p) for p in cl.points_as_tuples()]
-        results = labeling_core.label_branches(cl, {"lca_points": pts}, "lca_points")
-        assert "lca_points_side_1" not in results
-        assert "lca_points_side_2" not in results
-        assert "lca_points_side_3" in results
-
 
 @pytest.fixture(scope="module")
 def example_labelled(example_centerlines):
@@ -2455,15 +2448,123 @@ def example_labelled(example_centerlines):
     return mm.label_branches_pair(rca, lca, results)
 
 
+class TestLabelBranches:
+    @pytest.mark.parametrize("vessel", ["rca", "lca"])
+    def test_branches_partition_the_vessel(
+        self, example_centerlines, example_labelled, vessel
+    ):
+        _, rca, lca = example_centerlines
+        cl = rca if vessel == "rca" else lca
+        branches = example_labelled[f"{vessel}_branches"]
+        assert sorted(branches) == cl.branch_ids()
+        labelled = [p for pts in branches.values() for p in pts]
+        assert len(labelled) == len(set(labelled))
+        assert set(labelled) == set(example_labelled[f"{vessel}_points"])
+
+    def test_vessel_is_detected_from_the_centerline(
+        self, example_centerlines, example_labelled
+    ):
+        _, _, lca = example_centerlines
+        results = labeling_core.label_branches(lca, dict(example_labelled))
+        assert results["lca_branches"] == example_labelled["lca_branches"]
+
+    def test_removed_branch_gets_no_label(self, example_centerlines, example_labelled):
+        _, _, lca = example_centerlines
+        cl = lca.remove_branches([1])
+        results = labeling_core.label_branches(cl, dict(example_labelled), "lca")
+        assert sorted(results["lca_branches"]) == [0, 3, 4]
+
+
+def _frames_along(centerline, branch_id: int, start: int, stop: int) -> list[PyFrame]:
+    """Frames centred on points start..stop of a branch's pullback path."""
+    path = centerline.get_branch(branch_id, with_parents=True).points_as_tuples()
+    frames = []
+    for i, c in enumerate(path[start:stop]):
+        ring = [(c[0] + np.cos(a), c[1] + np.sin(a), c[2]) for a in np.arange(8)]
+        lumen = PyContour(
+            id=i,
+            original_frame=i,
+            points=_aortic_iv_pts(ring, frame_index=i),
+            centroid=c,
+            aortic_thickness=None,
+            pulmonary_thickness=None,
+            kind="Lumen",
+        )
+        frames.append(
+            PyFrame(id=i, centroid=c, lumen=lumen, extras={}, reference_point=None)
+        )
+    return frames
+
+
+class TestLabelAnomalousRegionOnBranches:
+    def test_main_branch_pullback_leaves_side_branches_off_path(
+        self, example_centerlines, example_labelled
+    ):
+        _, rca, _ = example_centerlines
+        results = mm.label_anomalous_region(
+            rca, _frames_along(rca, 0, 10, 40), dict(example_labelled), branch_id=0
+        )
+        branches = results["rca_branches"]
+        sides = {p for k, pts in branches.items() if k != 0 for p in pts}
+        regions = (
+            set(results["proximal_points"])
+            | set(results["anomalous_points"])
+            | set(results["distal_points"])
+        )
+        assert set(results["off_path_points"]) == sides
+        assert regions <= set(branches[0])
+        assert results["anomalous_points"]
+
+    def test_side_branch_pullback(self, example_centerlines, example_labelled):
+        _, _, lca = example_centerlines
+        # LCA branch 1 (with branch 2 growing out of it): frames on branch 1 only.
+        n_parent = len(lca.get_branch(1, with_parents=True).points) - len(
+            lca.get_branch(1).points
+        )
+        frames = _frames_along(lca, 1, n_parent + 20, n_parent + 50)
+        results = mm.label_anomalous_region(
+            lca, frames, dict(example_labelled), branch_id=1
+        )
+        branches = results["lca_branches"]
+        off = set(results["off_path_points"])
+        # Other branches, and branch 1's child, are off the path.
+        for k in (2, 3, 4):
+            assert set(branches[k]) <= off
+        # The main vessel up to the junction is proximal, beyond it off the path.
+        main = set(branches[0])
+        assert main & set(results["proximal_points"])
+        assert main & off
+        assert not main & set(results["anomalous_points"])
+        assert set(results["anomalous_points"]) <= set(branches[1])
+
+    def test_removing_the_segment_warns_about_branches_leaving_it(
+        self, example_centerlines, example_labelled
+    ):
+        _, _, lca = example_centerlines
+        # The frames cover branch 1 where branch 2 leaves it.
+        junction = lca.branch_parents()[2]
+        assert junction == 1
+        n_parent = len(lca.get_branch(1, with_parents=True).points) - len(
+            lca.get_branch(1).points
+        )
+        frames = _frames_along(lca, 1, n_parent, n_parent + 200)
+        results = mm.label_anomalous_region(
+            lca, frames, dict(example_labelled), branch_id=1
+        )
+        with pytest.warns(UserWarning, match="off-path vertices border"):
+            mm.remove_labeled_points_from_mesh(
+                results, ["anomalous_points"], target_boundaries=2
+            )
+
+
 class TestRemoveBranch:
     def test_removes_branch_and_children(self, example_centerlines, example_labelled):
         _, _, lca = example_centerlines
         results, cl = mm.remove_branch(example_labelled, lca, 1)
 
         assert cl.branch_ids() == [0, 3, 4]
-        assert results["lca_points_side_1"] == []
-        assert results["lca_points_side_2"] == []
-        assert len(results["lca_points_side_3"]) > 0
+        assert sorted(results["lca_branches"]) == [0, 3, 4]
+        assert len(results["lca_branches"][3]) > 0
         assert len(results["mesh"].vertices) < len(example_labelled["mesh"].vertices)
 
     def test_mesh_stays_closed_and_consistent(
@@ -2487,22 +2588,20 @@ class TestRemoveBranch:
         for key, value in results.items():
             if isinstance(value, list) and value and len(value[0]) == 3:
                 assert all(tuple(p) in verts for p in value), key
-        labelled = set().union(
-            *(
-                map(tuple, results[k])
-                for k in ("aorta_points", "rca_points", "lca_points")
-            )
-        )
-        assert labelled | set(map(tuple, results["rca_removed_points"])) == verts
+        for vessel in ("rca", "lca"):
+            branches = results[f"{vessel}_branches"]
+            labelled = [p for pts in branches.values() for p in pts]
+            assert set(labelled) == set(results[f"{vessel}_points"]), vessel
+            assert len(labelled) == len(set(labelled)), vessel
+        classes = ("aorta_points", "rca_points", "lca_points", "rca_removed_points")
+        assert set().union(*(map(tuple, results[k]) for k in classes)) == verts
 
-    def test_vessel_found_without_results_key(
-        self, example_centerlines, example_labelled
-    ):
+    def test_vessel_found_from_centerline(self, example_centerlines, example_labelled):
         _, rca, _ = example_centerlines
-        # Both vessels have a side branch 2; the RCA one must go.
+        # Both vessels have a branch 2; the RCA one must go.
         results, cl = mm.remove_branch(example_labelled, rca, 2)
-        assert results["rca_points_side_2"] == []
-        assert results["lca_points_side_2"] == example_labelled["lca_points_side_2"]
+        assert sorted(results["rca_branches"]) == [0, 1, 3]
+        assert results["lca_branches"] == example_labelled["lca_branches"]
         assert cl.branch_ids() == [0, 1, 3]
 
     def test_open_hole_when_not_filled(self, example_centerlines, example_labelled):
@@ -2517,9 +2616,9 @@ class TestRemoveBranch:
         tree = mm.discretize_vessel_tree(
             ao, rca, lca_cut, results, step_size=1.0, n_points=50, control_plot=False
         )
-        assert len(tree.lca_branches) == 4
-        assert tree.lca_branches[0] == [] and tree.lca_branches[1] == []
-        assert len(tree.lca_branches[2]) > 0
+        assert sorted(tree.lca) == [0, 3, 4]
+        assert sorted(tree.lca[0].bifurcations) == [3, 4]
+        assert tree.lca[3].parent[0] == 0
 
     def test_rejects_main_and_unknown(self, example_centerlines, example_labelled):
         _, rca, _ = example_centerlines
@@ -2527,3 +2626,45 @@ class TestRemoveBranch:
             mm.remove_branch(example_labelled, rca, 0)
         with pytest.raises(ValueError):
             mm.remove_branch(example_labelled, rca, 99)
+
+
+def _example_tree(example_centerlines, example_labelled):
+    ao, rca, lca = example_centerlines
+    return mm.discretize_vessel_tree(
+        ao, rca, lca, example_labelled, step_size=1.0, n_points=50
+    )
+
+
+@pytest.fixture(scope="module")
+def example_tree(example_centerlines, example_labelled):
+    return _example_tree(example_centerlines, example_labelled)
+
+
+class TestDiscretizedVesselTree:
+    def test_branches_keyed_by_centerline_id(self, example_tree, example_centerlines):
+        tree = example_tree
+        _, rca, lca = example_centerlines
+        assert sorted(tree.rca) == rca.branch_ids()
+        assert sorted(tree.lca) == lca.branch_ids()
+        for branches, cl in ((tree.rca, rca), (tree.lca, lca)):
+            parents = cl.branch_parents()
+            for k, branch in branches.items():
+                assert (branch.parent[0] if branch.parent else None) == parents[k]
+
+    def test_bifurcations_keyed_by_child(self, example_tree):
+        for branches in (example_tree.rca, example_tree.lca):
+            for k, branch in branches.items():
+                assert branch.ostium is not None
+                for child in branch.bifurcations:
+                    assert branches[child].parent[0] == k
+
+    def test_branch_edits_are_shared_with_the_tree(
+        self, example_centerlines, example_labelled
+    ):
+        tree = _example_tree(example_centerlines, example_labelled)
+        branch = tree.lca[1]
+        branch.contours = branch.contours[5:]
+        assert len(tree.lca[1].contours) == len(branch.contours)
+        tree.calculate_ref_pts()
+        # The junction moved with the contours; the branch object is updated in place.
+        assert branch.ostium == tree.lca[1].ostium

@@ -169,9 +169,10 @@ branches to find).
 Before discretizing the vessel geometry, the surface-mesh points must be labeled by branch.
 ``rca_cl``/``lca_cl`` already have their branches computed and ordered by
 ``prepare_centerline`` above, so :func:`multimodars.label_branches_pair` only needs to
-call :func:`multimodars.label_branches` for each, so the ``results`` dictionary gains keys
-``rca_points_main``, ``rca_points_side_1``, …, ``lca_points_main``, ``lca_points_side_1``, …. It
-does not modify ``rca_cl``/``lca_cl`` in any way:
+call :func:`multimodars.label_branches` for each.  The ``results`` dictionary gains
+``rca_branches`` and ``lca_branches``: each maps every branch id of its centerline (0 being the
+main vessel) to that branch's vertices.  Every RCA/LCA vertex belongs to exactly one branch; at a
+junction the parent keeps its wall.  It does not modify ``rca_cl``/``lca_cl`` in any way:
 
 .. code-block:: python
 
@@ -179,6 +180,13 @@ does not modify ``rca_cl``/``lca_cl`` in any way:
         rca_cl, lca_cl, results,
         control_plot=False,   # True opens a trimesh scene of the branch assignment
     )
+
+    results["rca_branches"].keys()   # e.g. dict_keys([0, 1, 2, 3])
+    results["rca_branches"][2]       # vertices of RCA branch 2
+
+The branch ids are the centerline's, and every later step (discretization, anomalous labelling,
+:func:`multimodars.remove_branch`) refers to branches by these ids.  Removing a branch drops its
+id; the other branches keep theirs.
 
 **Parameter reference:**
 
@@ -212,24 +220,25 @@ re-label. After splitting and merging it is assured that the longest centerline 
     lca_cl = lca_cl.split_branch(0, positions[4])
     lca_cl = lca_cl.merge_branches(0, 4)
     lca_cl = lca_cl.orient_by_max_z()
-    results = mm.label_branches(lca_cl, results, results_key="lca_points")
+    results = mm.label_branches(lca_cl, results, vessel="lca")
 
 .. note::
 
     :func:`~multimodars.label_branches_pair` cannot automate the ``split_branch`` /
     ``merge_branches`` step because the right corrections are case-specific.  Inspect the
     ``control_plot`` output first, then call those methods manually before proceeding.
+    Both renumber the branches, so re-run :func:`~multimodars.label_branches` afterwards.
 
 Discretizing the vessel tree
 """""""""""""""""""""""""""""
 
 :func:`multimodars.discretize_vessel_tree` cuts the labelled mesh with planes perpendicular to
 each centerline at fixed arc-length intervals and samples ``n_points`` evenly-spaced points from
-each cross-section, so irregular lumens keep their shape.  It also computes orientation
-reference triplets (main, counter-clockwise, and clockwise reference points) at every ostium
-and bifurcation, for the main vessels in ``tree.rca_references`` / ``tree.lca_references`` and
-per side branch in ``tree.rca_branch_references`` / ``tree.lca_branch_references``.  They are
-later used to initialize the three-point alignment in step 3:
+each cross-section, so irregular lumens keep their shape.  Every labelled branch keeps its
+branch id: ``tree.rca`` and ``tree.lca`` map branch ids to
+:class:`~multimodars.PyDiscretizedBranch` objects.  It also computes orientation reference
+triplets (main, clockwise, and counter-clockwise reference points) at every ostium and
+bifurcation.  They are later used to initialize the three-point alignment in step 3:
 
 .. code-block:: python
 
@@ -262,14 +271,23 @@ later used to initialize the three-point alignment in step 3:
 The discretized tree exposes the following attributes:
 
 - ``tree.discretized_aorta`` - list of :class:`~multimodars.PyContour` for the aorta.
-- ``tree.discretized_rca_main`` / ``tree.discretized_lca_main`` - main-vessel contours.
-- ``tree.rca_branches`` / ``tree.lca_branches`` - list of lists, one per side branch.
-- ``tree.rca_references`` / ``tree.lca_references`` - list of ``(main_ref, ccw_ref, cw_ref)``
-  triplets: the ostium at index 0 (``main_ref`` facing the aorta), then one per branch leaving
-  the main vessel, ordered proximal to distal along the main vessel (not by branch index).
-- ``tree.rca_branch_references`` / ``tree.lca_branch_references`` - the same per side branch
-  (aligned with ``rca_branches`` / ``lca_branches``): the branch's own ostium at index 0
-  (``main_ref`` facing its parent), then one per branch leaving it.
+- ``tree.rca`` / ``tree.lca`` - dict from branch id (0 = main vessel) to
+  :class:`~multimodars.PyDiscretizedBranch`.  A branch that was removed or could not be
+  discretized is missing; the others keep their id.
+
+Each branch has:
+
+- ``branch.contours`` - list of :class:`~multimodars.PyContour`, proximal to distal.
+- ``branch.parent`` - ``(parent branch id, parent contour index at the junction)``, ``None`` for
+  the main vessel.  The parent comes from the centerline (``rca_cl.branch_parents()``).
+- ``branch.ostium`` - ``(main_ref, clock_ref, counter_clock_ref)`` triplet on the first contour;
+  ``main_ref`` faces the vessel the branch leaves (the aorta for the main vessel).
+- ``branch.bifurcations`` - dict from child branch id to the triplet where that child leaves
+  this branch; ``main_ref`` is the child's start.
+
+So ``tree.rca[0].ostium`` is the RCA ostium and ``tree.lca[0].bifurcations[1]`` the point where
+LCA branch 1 leaves the main vessel.  The branch objects are shared with the tree: after editing
+``tree.lca[1].contours``, call ``tree.calculate_ref_pts()`` to update the triplets.
 
 3. Load and align intravascular geometry
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -291,20 +309,20 @@ alignment using the reference triplet computed in step 2, and then refines the r
 ostium position by minimising the mean nearest-point distance between the CCTA point cloud and
 the intravascular contours.
 
-The reference triplet ``(main_ref_pt, counterclockwise_ref_pt, clockwise_ref_pt)`` at the
-RCA ostium is available directly from the discretized tree:
+The reference triplet ``(main_ref, clock_ref, counter_clock_ref)`` at the RCA ostium is
+available directly from the discretized tree:
 
 .. code-block:: python
 
-    ref_points = tree.rca_references[0]   # triplet at the ostium (index 0)
+    ref_points = tree.rca[0].ostium       # triplet at the RCA ostium
     rca_cl_main = rca_cl.get_branch(0)    # alignment needs a single-branch centerline
 
     aligned, spacing_mm, total_rotation_deg = mm.align_combined(
         rca_cl_main,
         rest,
         ref_points[0],                     # main reference point
-        ref_points[1],                     # counter-clockwise reference point
-        ref_points[2],                     # clockwise reference point
+        ref_points[1],                     # clockwise reference point
+        ref_points[2],                     # counter-clockwise reference point
         results['rca_points'],             # CCTA point cloud for the refinement
         angle_range_deg=10.0,
         write=True,
@@ -318,14 +336,14 @@ The steps below only look up the nearest centerline point, so the centerlines ca
 prepared; resample them with ``aorta_cl.resample(spacing_mm)`` only if you need them at the
 frame spacing.
 
-For a pullback in a side branch, align onto that branch with the triplet at its origin.
-``tree.lca_branch_references[i]`` holds the triplets of LCA branch ``i + 1``, index 0 being the
-one at its origin.  For the circumflex, branch 1 of the LCA in the example data:
+For a pullback in a side branch, align onto that branch with the triplet at its origin,
+``tree.lca[k].ostium`` for LCA branch ``k``.  For the circumflex, branch 1 of the LCA in the
+example data:
 
 .. code-block:: python
 
     lcx_cl = lca_cl.get_branch(1, with_parents=True)
-    lcx_ref_points = tree.lca_branch_references[0][0]
+    lcx_ref_points = tree.lca[1].ostium
 
 ``with_parents=True`` extends the branch proximally through its parent vessel to the ostium, so
 frames that run proximally past the side branch's origin are placed on the parent instead of
@@ -357,9 +375,9 @@ being left unaligned.  Without it, the centerline is the side branch alone.
 4. Label the anomalous region
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-After alignment, :func:`multimodars.label_anomalous_region` subdivides the RCA points into
-three sub-regions - proximal, anomalous (intramural), and distal - according to where they
-sit along the centerline branch the aligned intravascular frames lie on:
+After alignment, :func:`multimodars.label_anomalous_region` splits the branch the frames are
+aligned to into three sub-regions - proximal, anomalous (intramural), and distal - and leaves
+every other branch alone:
 
 .. code-block:: python
 
@@ -367,35 +385,41 @@ sit along the centerline branch the aligned intravascular frames lie on:
         centerline=rca_cl,
         frames=aligned.geom_a.frames,
         results=results,
-        results_key='rca_points',
+        branch_id=0,          # the branch the frames are aligned to
         debug_plot=False,
     )
 
 The ``results`` dictionary is extended with:
 
-- ``"proximal_points"`` - RCA vertices proximal to the anomalous segment.
-- ``"anomalous_points"`` - RCA vertices inside the intramural segment.
-- ``"distal_points"`` - RCA vertices distal to the anomalous segment.
+- ``"proximal_points"`` - pullback-path vertices proximal to the anomalous segment.
+- ``"anomalous_points"`` - pullback-path vertices inside the intramural segment.
+- ``"distal_points"`` - pullback-path vertices distal to the anomalous segment.
+- ``"off_path_points"`` - every other vertex of the vessel.
 
-The frames may lie on any branch of the centerline, and may continue into its parent vessel
-(``get_branch(..., with_parents=True)``).  Positions are measured along the pullback path, from
-the ostium through the parent branches to the tip of the branch the frames lie on; the first and
-last frame on it bound the anomalous segment.  Each vertex is placed at its nearest centerline
-point.  Only vertices on the path can be anomalous.  Every other vertex - side branches, and a
-parent vessel beyond the junction it is left at - is proximal if it leaves the path before the
-middle of the anomalous segment, distal otherwise.  For a side-branch pullback, the main vessel
-is therefore proximal.
+The pullback path is branch ``branch_id`` with its parent branches, each up to the junction the
+path leaves it at - the path ``get_branch(branch_id, with_parents=True)`` follows, so the frames
+may continue into the parent vessel.  Only vertices labelled (step 2) for a branch on that path
+are split, each at the nearest centerline point of its own branch; the first and last frame on
+the path bound the anomalous segment.  Every other branch, and a parent vessel beyond the
+junction, goes to ``"off_path_points"`` and keeps its branch label.  The vessel (RCA or LCA) is
+the one ``centerline`` belongs to.
 
-Pass the whole vessel centerline (``rca_cl`` above), not the single branch from ``get_branch``
-used for the alignment: without the other branches, every vertex is placed on that one branch.
-Branch 0 must run from the ostium distally, which :func:`multimodars.prepare_centerline` ensures
-when given ``ref_centerline``.
+Off-path branches are neither scaled nor cut by the following steps.  Scale them explicitly with
+:func:`multimodars.scale_region_centerline_morphing` on ``results["off_path_points"]`` (or one
+branch, ``results["rca_branches"][k]``) if needed.  A branch that leaves the removed segment stays
+in the mesh when the segment is cut out for stitching; :func:`multimodars.stitch` and
+:func:`multimodars.remove_labeled_points_from_mesh` warn about it.
+
+Pass the whole vessel centerline (``rca_cl`` above), the one the branches were labelled with,
+not the single branch from ``get_branch`` used for the alignment.  Branch 0 must run from the
+ostium distally, which :func:`multimodars.prepare_centerline` ensures when given
+``ref_centerline``.
 
 Vertices that are not mesh-connected to the main body of their sub-region are moved from
-``"rca_points"`` to ``"aorta_points"``.  ``"rca_removed_points"`` and
+``"rca_points"`` (and their branch) to ``"aorta_points"``.  ``"rca_removed_points"`` and
 ``"lca_removed_points"`` are left unchanged.
 
-For the side-branch alignment above, pass the whole ``lca_cl`` and ``results_key='lca_points'``.
+For the side-branch alignment above, pass the whole ``lca_cl`` and ``branch_id=1``.
 
 Set ``debug_plot=True`` to open an interactive scene that shows how the three sub-regions
 are assigned - useful when the boundary appears misplaced.

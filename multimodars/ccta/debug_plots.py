@@ -8,7 +8,6 @@ import trimesh
 from trimesh.points import PointCloud
 from trimesh.visual import ColorVisuals
 
-from ._branch_keys import side_branch_ids
 from .stitching.boundary import open_boundary_edges, order_boundary_rings
 
 if TYPE_CHECKING:
@@ -46,6 +45,7 @@ def plot_results_key(
     cl_rca: PyCenterline | None = None,
     cl_lca: PyCenterline | None = None,
     cl_aorta: PyCenterline | None = None,
+    off_path_points: bool = False,
 ):
     """Open an interactive 3-D scene visualising selected regions from a results dict.
 
@@ -60,6 +60,7 @@ def plot_results_key(
     * **Cyan** - proximal points.
     * **Magenta** - distal points.
     * **Orange** - anomalous (intramural) points.
+    * **Purple** - off-path points (branches off the pullback path).
 
     Parameters
     ----------
@@ -82,6 +83,11 @@ def plot_results_key(
         Show distal points (magenta).
     anomalous_points : bool
         Show anomalous points (orange).
+    cl_rca, cl_lca, cl_aorta : PyCenterline, optional
+        Centerlines to overlay.
+    off_path_points : bool
+        Show off-path points (purple), see
+        :func:`~multimodars.label_anomalous_region`.
     """
     print("\n=== RESULTS KEY PLOT ===")
 
@@ -102,6 +108,12 @@ def plot_results_key(
             anomalous_points,
             [255, 165, 0, 255],
             "Orange  = Anomalous",
+        ),
+        (
+            "off_path_points",
+            off_path_points,
+            [128, 0, 128, 255],
+            "Purple  = Off path",
         ),
     ]
 
@@ -275,7 +287,7 @@ def plot_vessel_tree(
         mx, my, mz = [], [], []
         ccx, ccy, ccz = [], [], []
         clx, cly, clz = [], [], []
-        for main_ref, cc_ref, clock_ref in refs:
+        for main_ref, clock_ref, cc_ref in refs:
             mx.append(main_ref[0])
             my.append(main_ref[1])
             mz.append(main_ref[2])
@@ -295,16 +307,17 @@ def plot_vessel_tree(
                 scene_geoms.append(_make_point_cloud(arr, color))
 
     _add_contours(tree.discretized_aorta, [192, 192, 192, 100])
-    _add_contours(tree.discretized_rca_main, [70, 130, 180, 255])
-    for i, branch in enumerate(tree.rca_branches):
-        _add_contours(branch, _RCA_BRANCH_COLORS[i % len(_RCA_BRANCH_COLORS)])
-    _add_contours(tree.discretized_lca_main, [255, 127, 80, 255])
-    for i, branch in enumerate(tree.lca_branches):
-        _add_contours(branch, _LCA_BRANCH_COLORS[i % len(_LCA_BRANCH_COLORS)])
-    _add_refs(tree.rca_references)
-    _add_refs(tree.lca_references)
-    for refs in tree.rca_branch_references + tree.lca_branch_references:
-        _add_refs(refs)
+    for branches, main_color, side_colors in (
+        (tree.rca, [70, 130, 180, 255], _RCA_BRANCH_COLORS),
+        (tree.lca, [255, 127, 80, 255], _LCA_BRANCH_COLORS),
+    ):
+        for bid, branch in branches.items():
+            color = main_color if bid == 0 else side_colors[bid % len(side_colors)]
+            _add_contours(branch.contours, color)
+            refs = list(branch.bifurcations.values())
+            if branch.ostium is not None:
+                refs.append(branch.ostium)
+            _add_refs(refs)
 
     trimesh.Scene(scene_geoms).show()
 
@@ -328,9 +341,9 @@ def plot_centerline_branches(
         Centerlines after ``calculate_branches`` and ``orient_by_max_z``
         (output of :func:`~multimodars.ccta.discretization_map.label_branches`).
     results_dict:
-        Optional.  When provided, labelled surface points
-        (``rca_points_main``, ``rca_points_side_N``, ``lca_points_main``,
-        ``lca_points_side_N``) are overlaid semi-transparently.
+        Optional.  When provided, the labelled surface points of every branch
+        (``rca_branches`` / ``lca_branches``) are overlaid semi-transparently,
+        in their branch's colour.
     """
     _RCA_COLORS = [
         [31, 119, 180, 255],
@@ -356,8 +369,7 @@ def plot_centerline_branches(
             arr = np.array([(p.x, p.y, p.z) for p in pts], dtype=np.float64)
             scene_geoms.append(_make_point_cloud(arr, colors[bid % len(colors)]))
 
-    def _add_surface_points(key: str, color: list[int]) -> None:
-        pts = results_dict.get(key, [])  # type: ignore[union-attr]
+    def _add_surface_points(pts: list, color: list[int]) -> None:
         if not pts:
             return
         arr = np.array(pts, dtype=np.float64)
@@ -367,13 +379,9 @@ def plot_centerline_branches(
     _add_cl_branches(lca_cl, _LCA_COLORS)
 
     if results_dict is not None:
-        for prefix, colors in (
-            ("rca_points", _RCA_COLORS),
-            ("lca_points", _LCA_COLORS),
-        ):
-            _add_surface_points(f"{prefix}_main", colors[0])
-            for i in side_branch_ids(results_dict, prefix):
-                _add_surface_points(f"{prefix}_side_{i}", colors[i % len(colors)])
+        for vessel, colors in (("rca", _RCA_COLORS), ("lca", _LCA_COLORS)):
+            for bid, pts in results_dict.get(f"{vessel}_branches", {}).items():
+                _add_surface_points(pts, colors[bid % len(colors)])
 
     trimesh.Scene(scene_geoms).show()
 

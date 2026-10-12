@@ -12,7 +12,7 @@ pub use centerline::Centerline;
 pub use centerline_point::CenterlinePoint;
 pub use contour::{downsample_contour_points, Contour, ContourType};
 pub use contour_point::ContourPoint;
-pub use discretized_tree::{DiscretizedVesselTree, ReferenceTriplet};
+pub use discretized_tree::{DiscretizedBranch, DiscretizedVesselTree, ReferenceTriplet};
 pub use frame::Frame;
 pub use geometry::Geometry;
 pub use geometry_pair::GeometryPair;

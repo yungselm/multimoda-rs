@@ -113,6 +113,7 @@ pub fn discretize_vessel_rs(
 mod tests {
     use super::*;
     use crate::types::native::{CenterlinePoint, ContourPoint, DiscretizedVesselTree};
+    use std::collections::BTreeMap;
     use std::f64::consts::TAU;
 
     fn z_centerline(n: usize) -> Centerline {
@@ -229,36 +230,55 @@ mod tests {
         assert!(run(None, 0, 1.0, 50).is_ok());
     }
 
+    /// `z_centerline(7)` plus a branch 1 running along the same axis from z = 3.
+    fn branched_z_centerline() -> Centerline {
+        let mut cl = z_centerline(7);
+        let side: Vec<CenterlinePoint> = cl.points[3..]
+            .iter()
+            .map(|p| CenterlinePoint {
+                branch_id: 1,
+                ..p.clone()
+            })
+            .collect();
+        cl.branch_start_indices.push(cl.points.len());
+        cl.points.extend(side);
+        cl
+    }
+
     #[test]
     fn test_tree_skips_failing_side_branch_but_not_main() {
         let (vertices, faces) = tube_mesh(30);
         let mesh = SurfaceMesh::new(&vertices, faces).unwrap();
-        let cl = z_centerline(7);
+        let cl = branched_z_centerline();
         let bad = vec![(99.0, 99.0, 99.0)];
-        let build = |main: &[Coords3], side: Vec<Coords3>| {
+        let build = |rca: BTreeMap<u32, Vec<Coords3>>| {
+            let lca = BTreeMap::from([(0, vertices.clone())]);
             DiscretizedVesselTree::from_results_dict(
-                &cl,
-                &cl,
-                &cl,
-                &mesh,
-                &vertices,
-                main,
-                &vertices,
-                vec![side],
-                vec![],
-                0,
-                0,
-                1.0,
-                50,
+                &cl, &cl, &cl, &mesh, &vertices, &rca, &lca, 1.0, 50,
             )
         };
 
-        let tree = build(&vertices, bad.clone()).unwrap();
-        assert!(!tree.discretized_rca_main.is_empty());
-        assert_eq!(tree.rca_branches.len(), 1);
-        assert!(tree.rca_branches[0].is_empty());
+        let tree = build(BTreeMap::from([(0, vertices.clone()), (1, bad.clone())])).unwrap();
+        assert_eq!(tree.rca.keys().copied().collect::<Vec<_>>(), vec![0]);
+        assert!(!tree.rca[&0].contours.is_empty());
 
-        let err = build(&bad, vec![]).unwrap_err().to_string();
+        let tree = build(BTreeMap::from([
+            (0, vertices.clone()),
+            (1, vertices.clone()),
+        ]))
+        .unwrap();
+        assert_eq!(tree.rca[&1].parent.map(|(p, _)| p), Some(0));
+
+        let err = build(BTreeMap::from([(0, bad.clone())]))
+            .unwrap_err()
+            .to_string();
         assert!(err.starts_with("RCA main:"), "{err}");
+        let err = build(BTreeMap::from([
+            (0, vertices.clone()),
+            (4, vertices.clone()),
+        ]))
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("branch 4 is not in the centerline"), "{err}");
     }
 }
