@@ -2668,3 +2668,90 @@ class TestDiscretizedVesselTree:
         tree.calculate_ref_pts()
         # The junction moved with the contours; the branch object is updated in place.
         assert branch.ostium == tree.lca[1].ostium
+
+
+def _load_example_module(name: str):
+    spec = importlib.util.spec_from_file_location(
+        name, _EXAMPLE_DATA.parent / f"{name}.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class TestSyntheticPullback:
+    """examples/synthetic_ivus.py: a pullback cut from the CCTA around the most
+    proximal RCA bifurcation, its reference frame in the middle, aligned with
+    that bifurcation's triplet, lands back on the CCTA contours unmirrored."""
+
+    def test_aligns_back_onto_the_ccta(
+        self, tmp_path, example_centerlines, example_labelled, example_tree
+    ):
+        synthetic = _load_example_module("synthetic_ivus")
+        _, rca, _ = example_centerlines
+        main = example_tree.rca[0]
+        side = min(main.bifurcations, key=lambda k: example_tree.rca[k].parent[1])
+        junction = example_tree.rca[side].parent[1]
+        triplet = main.bifurcations[side]
+
+        # Mark one side of every contour - a quarter turn from the branch - with
+        # a bump, so a mirrored image would put it on the wrong side.  The
+        # alignment is refined against the bumped contours too, else the
+        # refinement pulls the bump towards the unbumped CCTA.
+        centroids = [
+            np.asarray(c.points_as_tuples()).mean(axis=0) for c in main.contours
+        ]
+        axis = centroids[junction + 1] - centroids[junction - 1]
+        axis /= np.linalg.norm(axis)
+        to_branch = np.asarray(triplet[0]) - centroids[junction]
+        to_branch -= axis * (to_branch @ axis)
+        bump_dir = np.cross(axis, to_branch / np.linalg.norm(to_branch))
+        bumped = []
+        for c, m in zip(main.contours, centroids):
+            ring = np.asarray(c.points_as_tuples())
+            d = ring - m
+            unit = d / np.linalg.norm(d, axis=1, keepdims=True)
+            push = np.clip(unit @ bump_dir - 0.7, 0.0, None) / 0.3 * 1.5
+            pts = [tuple(p) for p in ring + push[:, None] * unit]
+            bumped.append(SimpleNamespace(points_as_tuples=lambda pts=pts: pts))
+
+        out = synthetic.write_synthetic_pullback(
+            bumped, junction, triplet[0], tmp_path / "ivus"
+        )
+        pair, _ = mm.from_file_singlepair(
+            input_path=str(out),
+            labels=["a", "b"],
+            output_path=str(tmp_path / "out"),
+            write_obj=False,
+        )
+        frames = pair.geom_a.frames
+        ref_idx = [i for i, f in enumerate(frames) if f.reference_point is not None]
+        assert ref_idx == [len(frames) // 2]
+
+        truth = np.vstack([np.asarray(c.points_as_tuples()) for c in bumped])
+        aligned, _, _ = mm.align_combined(
+            rca.get_branch(0),
+            pair,
+            triplet[0],
+            triplet[1],
+            triplet[2],
+            [tuple(p) for p in truth],
+            angle_range_deg=30.0,
+            write=False,
+            watertight=False,
+            output_dir=str(tmp_path / "align"),
+        )
+        ref_frame = aligned.geom_a.frames[ref_idx[0]]
+        ring = np.array([(p.x, p.y, p.z) for p in ref_frame.lumen.points])
+        d = ring - ring.mean(axis=0)
+        r = np.linalg.norm(d, axis=1)
+        # Direction of the bump: points weighted by how far they stick out.
+        bump = ((r - np.median(r)).clip(0.0)[:, None] * d / r[:, None]).sum(axis=0)
+        assert bump @ bump_dir / np.linalg.norm(bump) > 0.9
+
+        pts = np.array(
+            [(p.x, p.y, p.z) for f in aligned.geom_a.frames for p in f.lumen.points]
+        )
+        from scipy.spatial import cKDTree
+
+        assert cKDTree(truth).query(pts)[0].mean() < 0.7

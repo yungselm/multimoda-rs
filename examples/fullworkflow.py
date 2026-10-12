@@ -2,8 +2,18 @@ import os
 from pathlib import Path
 
 import trimesh
+from synthetic_ivus import write_synthetic_pullback
 
 import multimodars as mm
+
+# Pullback to use:
+# - False: the example IVUS pullback from the RCA ostium, aligned with the
+#   ostium triplet (tree.rca[0].ostium); an anomalous (intramural) course.
+# - True: a synthetic pullback cut from the CCTA around the most proximal RCA
+#   bifurcation, its reference frame in the middle, aligned with that
+#   bifurcation's triplet (the "second" triplet along the RCA). A side branch
+#   then leaves the anomalous segment - for debugging that case.
+SYNTHETIC_PULLBACK = True
 
 cwd = Path.cwd()
 for candidate in [cwd, cwd.parent, cwd.parent.parent]:
@@ -64,23 +74,38 @@ tree = mm.discretize_vessel_tree(
 
 print(tree)
 
-rest, (dia_logs, sys_logs) = mm.from_file_singlepair(
-    input_path="ivus_rest",
-    labels=["aligned_dia", "aligned_sys"],
-    output_path="output/rest",
-)
-
 # The pullback lies on RCA branch 0 (the main vessel). For a side-branch
 # pullback use its id here, tree.rca[branch].ostium and
 # rca_cl.get_branch(branch, with_parents=True).
 pullback_branch = 0
-ref_points = tree.rca[pullback_branch].ostium  # (main, clock, counter_clock)
+
+if SYNTHETIC_PULLBACK:
+    main = tree.rca[pullback_branch]
+    # Most proximal bifurcation along the main vessel (by junction contour).
+    side = min(main.bifurcations, key=lambda k: tree.rca[k].parent[1])
+    ref_points = main.bifurcations[side]  # (main, clock, counter_clock)
+    ivus_dir = write_synthetic_pullback(
+        main.contours,
+        ref_slice=tree.rca[side].parent[1],
+        ref_target=ref_points[0],
+        out_dir="output/ivus_synthetic",
+    )
+    print(f"Synthetic pullback around RCA branch {side} written to {ivus_dir}")
+else:
+    ivus_dir = "ivus_rest"
+    ref_points = tree.rca[pullback_branch].ostium  # (main, clock, counter_clock)
+
+rest, (dia_logs, sys_logs) = mm.from_file_singlepair(
+    input_path=str(ivus_dir),
+    labels=["aligned_dia", "aligned_sys"],
+    output_path="output/rest",
+)
 
 rca_cl_main = rca_cl.get_branch(pullback_branch)  # alignment needs single-branch CL
 aligned, spacing_mm, total_rotation_deg = mm.align_combined(
     rca_cl_main,
     rest,
-    ref_points[0],  # aortic reference point
+    ref_points[0],  # main reference point (aortic at the ostium)
     ref_points[1],  # superior reference point
     ref_points[2],  # inferior reference point
     results["rca_points"],  # CCTA point cloud for the refinement
@@ -108,22 +133,24 @@ prox_scaling, distal_scaling = mm.find_distal_and_proximal_scaling(
     results=results,
 )
 
-aortic_scaling = mm.find_aorta_scaling(
-    frames=aligned.geom_a.frames,
-    cl_aorta=aorta_cl,
-    results=results,
-)
-
-aortic_wall_scaling = mm.find_aortic_wall_scaling(
-    frames=aligned.geom_a.frames,
-    cl_aorta=aorta_cl,
-    results=results,
-)
-
 print(f"Proximal scaling:    {prox_scaling:.3f} mm")
 print(f"Distal scaling:      {distal_scaling:.3f} mm")
-print(f"Aortic scaling:      {aortic_scaling:.3f} mm")
-print(f"Aortic wall scaling: {aortic_wall_scaling:.3f} mm")
+
+# The aortic scaling only applies to a pullback from the ostium.
+aortic_scaling = 0.0
+if not SYNTHETIC_PULLBACK:
+    aortic_scaling = mm.find_aorta_scaling(
+        frames=aligned.geom_a.frames,
+        cl_aorta=aorta_cl,
+        results=results,
+    )
+    aortic_wall_scaling = mm.find_aortic_wall_scaling(
+        frames=aligned.geom_a.frames,
+        cl_aorta=aorta_cl,
+        results=results,
+    )
+    print(f"Aortic scaling:      {aortic_scaling:.3f} mm")
+    print(f"Aortic wall scaling: {aortic_wall_scaling:.3f} mm")
 
 # 1. Scale the distal segment along the RCA centerline
 scaled_distal = mm.scale_region_centerline_morphing(
@@ -152,9 +179,15 @@ scaled_proximal = mm.scale_region_centerline_morphing(
 )
 results = mm.sync_results_to_mesh(results, results["mesh"], scaled_proximal)
 
+# From the ostium the intravascular vessel replaces the proximal segment too and
+# is stitched to the aorta; mid-vessel it only replaces the anomalous segment.
 updated_results = mm.remove_labeled_points_from_mesh(
     results,
-    ["anomalous_points", "proximal_points"],
+    (
+        ["anomalous_points"]
+        if SYNTHETIC_PULLBACK
+        else ["anomalous_points", "proximal_points"]
+    ),
     target_boundaries=2,
 )
 
@@ -164,7 +197,8 @@ stitched = mm.stitch_ccta_to_intravascular(
     aligned.geom_a,
     updated_results["mesh"],
     updated_results,
-    prox_start_mode="highest_z",
+    prox_start_mode="nearest_iv" if SYNTHETIC_PULLBACK else "highest_z",
+    proximal_is_ostium=not SYNTHETIC_PULLBACK,
     clamp_overshoot=0.5,
 )
 stitched["mesh"].export("prefixed.stl")
