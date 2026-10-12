@@ -60,7 +60,7 @@ results = mm.label_geometry(
 # Every RCA/LCA vertex now belongs to exactly one branch id:
 # results["rca_branches"] = {0: [...], 1: [...], ...}, and everything downstream
 # (discretization, anomalous labelling, remove_branch) works on these ids.
-results = mm.label_branches_pair(rca_cl, lca_cl, results)
+results = mm.label_branches_pair(rca_cl, lca_cl, results, control_plot=True)
 
 tree = mm.discretize_vessel_tree(
     aorta_cl,
@@ -200,6 +200,7 @@ stitched = mm.stitch_ccta_to_intravascular(
     prox_start_mode="nearest_iv" if SYNTHETIC_PULLBACK else "highest_z",
     proximal_is_ostium=not SYNTHETIC_PULLBACK,
     clamp_overshoot=0.5,
+    tree=tree,  # reconnects side branches leaving the anomalous segment
 )
 stitched["mesh"].export("prefixed.stl")
 print("Raw stitched mesh exported → prefixed_mesh.stl")

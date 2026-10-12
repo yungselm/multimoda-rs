@@ -19,8 +19,17 @@ which branch a vertex belongs to, and every later step refers to branches by the
 - `"off_path_points"` from `label_anomalous_region`, and `off_path_points` flag in
   `plot_results_key`.
 - `fill_ring_on_vessel_wall`: closes a single boundary ring with a patch on a vessel wall.
+- `stitch_ccta_to_intravascular(..., tree=None)` / `stitch(..., tree=None)`: with the
+  discretized tree, side branches leaving the removed segment are reconnected
+  (`reconnect_side_branches`): each is cut at its first tree contour outside the intravascular
+  lumen, that contour is projected along the branch axis onto the intravascular wall, the wall
+  inside the footprint is removed, and the two rims are joined by a straight strip.
+- `examples/synthetic_ivus.py` (`write_synthetic_pullback`): a synthetic pullback cut from the
+  CCTA, its reference frame mid-pullback at a bifurcation. `SYNTHETIC_PULLBACK = True` in
+  `examples/fullworkflow.py` aligns it with that bifurcation's triplet - a pullback with a side
+  branch leaving the anomalous segment, for debugging.
 - `remove_labeled_points_from_mesh` (and so `stitch`) warns when off-path vertices border the
-  removed region.
+  removed region, and keeps their rims out of the `target_boundaries` rings.
 
 ### Changed
 - **Breaking:** `label_branches(centerline, results, vessel=None, bounding_sphere_radius_mm=3.0)`

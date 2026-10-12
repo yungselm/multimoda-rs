@@ -12,7 +12,12 @@ from . import debug_plots as debug_plots
 from . import postprocessing as _postprocessing
 
 if TYPE_CHECKING:
-    from ..multimodars import PyCenterline, PyFrame, PyGeometry
+    from ..multimodars import (
+        PyCenterline,
+        PyDiscretizedVesselTree,
+        PyFrame,
+        PyGeometry,
+    )
 
 
 # -------------------------------
@@ -274,6 +279,7 @@ def stitch(
     region_remove: list[str] | str | None = None,
     prox_start_mode: str = "highest_z",
     dist_start_mode: str = "nearest_iv",
+    tree: PyDiscretizedVesselTree | None = None,
 ) -> dict:
     """Stitch a CCTA mesh to the intravascular geometry.
 
@@ -288,7 +294,8 @@ def stitch(
     Only the pullback branch is cut: the regions come from
     :func:`~multimodars.label_anomalous_region`, which leaves every branch off
     the pullback path in ``"off_path_points"``.  A branch leaving the removed
-    segment therefore stays in the mesh, and a warning says so.
+    segment is cut off from the vessel; pass *tree* to join it to the
+    intravascular wall, otherwise it stays loose and a warning says so.
 
     The result is only hole-filled, not remeshed or smoothed.  For that, run
     :func:`postprocessing.postprocess_stitched_mesh` on the returned mesh as a
@@ -315,6 +322,11 @@ def stitch(
     dist_start_mode : str, optional
         Same as *prox_start_mode* but for the distal boundary ring (default
         ``"nearest_iv"``).
+    tree : PyDiscretizedVesselTree, optional
+        Discretized tree of the mesh before the removal (from
+        :func:`~multimodars.discretize_vessel_tree`), used to reconnect side
+        branches leaving the removed segment (see
+        :func:`~multimodars.ccta.stitching.reconnect_side_branches`).
 
     Returns
     -------
@@ -336,6 +348,7 @@ def stitch(
         updated_results,
         prox_start_mode=prox_start_mode,
         dist_start_mode=dist_start_mode,
+        tree=tree,
     )
 
     stitched["mesh"] = _postprocessing.manual_hole_fill(stitched["mesh"])

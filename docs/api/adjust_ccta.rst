@@ -32,6 +32,7 @@ Trimming and stitching
 .. autofunction:: multimodars.ccta.mesh_regions.remove_branch
 .. autofunction:: multimodars.ccta.postprocessing.fill_ring_on_vessel_wall
 .. autofunction:: multimodars.ccta.stitching.stitch_ccta_to_intravascular
+.. autofunction:: multimodars.ccta.stitching.reconnect_side_branches
 .. autofunction:: multimodars.ccta.stitching.order_points_list
 
 Boundary rings

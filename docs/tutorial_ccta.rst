@@ -617,6 +617,7 @@ triangulated patch:
         updated_results['mesh'],
         updated_results,
         prox_start_mode="highest_z",
+        tree=tree,          # reconnects side branches leaving the removed segment
     )
 
 Each ring is assigned to an intravascular end **as a whole**, by whichever pairing of rings to
@@ -674,6 +675,30 @@ The return value is a new ``results``-like dictionary that additionally contains
 
 - ``"prox_boundary_points"`` - the ordered proximal boundary ring used for stitching.
 - ``"dist_boundary_points"`` - the ordered distal boundary ring.
+
+Side branches leaving the removed segment
+"""""""""""""""""""""""""""""""""""""""""
+
+A side branch that leaves the anomalous segment is not part of the pullback path
+(``"off_path_points"``, step 4), so it is not removed with the segment: it stays in the mesh as a
+loose piece, and :func:`multimodars.remove_labeled_points_from_mesh` warns about it.  Its rim is
+kept out of the two rings of the opening.  Passing the discretized ``tree`` to the stitch joins
+each such branch to the intravascular wall
+(:func:`multimodars.ccta.stitching.reconnect_side_branches`):
+
+1. The branch's first contour in the tree that lies fully outside the intravascular lumen is its
+   starting frame.
+2. The CCTA branch is cut at that contour's plane; everything between it and the parent vessel
+   is removed.  The rest of the branch - including branches growing out of it - is kept.
+3. The contour is projected along the branch axis onto the intravascular wall facing it, the
+   wall inside that footprint is removed, and the hole's rim is snapped onto the footprint.
+4. The branch rim and the hole rim are joined by a straight triangle strip.
+
+Without ``tree`` the branch stays loose.  The tree must describe the mesh the segment was cut
+from (compute it before scaling, or again after scaling off-path branches).  For a pullback that
+starts mid-vessel, as in the synthetic example (``SYNTHETIC_PULLBACK = True`` in
+``examples/fullworkflow.py``), remove only ``"anomalous_points"`` and stitch with
+``proximal_is_ostium=False``.
 
 Export the raw stitched mesh before remeshing to allow inspection:
 

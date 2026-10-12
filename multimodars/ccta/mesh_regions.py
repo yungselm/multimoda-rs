@@ -87,8 +87,8 @@ def _warn_off_path_attached(
     if n:
         warnings.warn(
             f"{n} off-path vertices border the removed region: branches leaving it "
-            "stay in the mesh, cut off from the vessel, and the opening may have "
-            "extra rings",
+            "stay in the mesh, cut off from the vessel; pass the discretized tree "
+            "to the stitch to reconnect them",
             UserWarning,
             stacklevel=3,
         )
@@ -120,6 +120,9 @@ def remove_labeled_points_from_mesh(
         Removing a single blob leaves one ring (default); removing a region
         that splits the surface (e.g. aorta + intramural wall) can leave two.
         The rim is cleaned and reduced to this many rings before it is stored.
+        Rims of branches off the pullback path (``"off_path_points"``) that
+        leave the removed region are not counted: they stay as they are, with
+        a warning, for the stitch to reconnect.
 
     Returns
     -------
@@ -168,6 +171,15 @@ def remove_labeled_points_from_mesh(
         for i in range(n_vertices)
         if keep_mask[i] and any(j in remove_indices for j in adj_map.get(i, []))
     }
+    # Rims of branches off the pullback path that leave the removed region are
+    # not part of the opening: leaving them unseeded keeps them out of the
+    # reduction to *target_boundaries* rings.  The stitch reconnects them.
+    off_path = {
+        coord_to_idx[tuple(p)]
+        for p in results.get("off_path_points", [])
+        if tuple(p) in coord_to_idx
+    }
+    boundary_indices = (boundary_indices - off_path) or boundary_indices
 
     # 4. Drop faces that reference any removed vertex, then clean the exposed
     #    rim.  Vertices that cannot form a clean ring are deleted from the mesh
