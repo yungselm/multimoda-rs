@@ -65,7 +65,8 @@ impl DiscretizedVesselTree {
 }
 
 /// Discretizes every side branch. A failing branch is skipped with a warning and left empty,
-/// so indices stay aligned with branch ids.
+/// so indices stay aligned with branch ids. A branch without labelled points (e.g. removed)
+/// is left empty without a warning.
 fn side_branches(
     vessel: &str,
     centerline: &Centerline,
@@ -79,6 +80,9 @@ fn side_branches(
         .enumerate()
         .map(|(i, pts)| {
             let branch_id = (i + 1) as u32;
+            if pts.is_empty() {
+                return vec![];
+            }
             super::discretize_vessel_rs(centerline, mesh, Some(pts), branch_id, step_size, n_points)
                 .unwrap_or_else(|e| {
                     eprintln!("Warning: skipping {vessel} side branch {branch_id}: {e}");

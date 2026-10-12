@@ -3,6 +3,26 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- `remove_branch(results, centerline, branch_id, fill_hole=True)`: cuts a labelled side branch,
+  and every branch growing out of it, off the mesh and the centerline, and closes the ostium with
+  a patch following the parent vessel's wall. The vessel (RCA/LCA) is found from the side-branch
+  labels. Returns the updated results and centerline.
+- `PyCenterline.branch_ids()`, `branch_parents()` and `remove_branches(branch_ids)`.
+- `fill_ring_on_vessel_wall`: closes a single boundary ring with a patch on a vessel wall.
+
+### Changed
+- Branch ids are stable: a removed branch keeps its slot in `branch_start_indices` as an empty
+  range, so the other branches are not renumbered. `remove_branch_overlap` now empties a fully
+  overlapping branch instead of dropping it. `split_branch` / `merge_branches` still reassign
+  ids, so use them before labelling.
+- `label_branches` labels the branches in `branch_ids()`; `discretize_vessel_tree` and
+  `plot_centerline_branches` read every `*_side_{k}` key instead of stopping at the first gap.
+- `remove_labeled_points_from_mesh` / `keep_labeled_points_from_mesh` update every point list in
+  the results (e.g. `rca_points_main`, `lca_points_side_2`), not only the fixed region keys.
+
 ## [0.7.8] - 2026-10-08
 
 ### Added

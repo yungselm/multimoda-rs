@@ -3,17 +3,30 @@
 Cross-cutting mesh-region utilities used throughout the pipeline: trimming a
 labelled region off the CCTA mesh before stitching (:func:`stitch` in
 ``__init__.py``), extracting a single labelled sub-region for STL export, and
-building an isolated wall mesh. None of this is stitching-specific, hence its
+building an isolated wall mesh, and removing a labelled side branch
+(:func:`remove_branch`). None of this is stitching-specific, hence its
 own module rather than living inside :mod:`multimodars.ccta.stitching`.
 """
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import trimesh
+from scipy.sparse import coo_matrix
+from scipy.sparse.csgraph import connected_components
+from scipy.spatial import cKDTree
 
 from ..multimodars import build_adjacency_map
+from ._branch_keys import side_branch_ids
+from .postprocessing import fill_ring_on_vessel_wall
 from .stitching.boundary import BOUNDARY_RING_PREFIX, clean_open_boundary
+
+if TYPE_CHECKING:
+    from ..multimodars import PyCenterline
+
+_VESSEL_PREFIXES = ("rca_points", "lca_points")
 
 
 def _store_boundary_rings(
@@ -38,6 +51,18 @@ def _store_boundary_rings(
     updated["boundary_points"] = [pt for pts in per_ring for pt in pts]
 
 
+def _point_list_keys(results: dict) -> list[str]:
+    """Keys of *results* holding a list of ``(x, y, z)`` vertex coordinates."""
+    return [
+        key
+        for key, value in results.items()
+        if isinstance(value, list)
+        and all(
+            isinstance(p, (tuple, list, np.ndarray)) and len(p) == 3 for p in value[:1]
+        )
+    ]
+
+
 def remove_labeled_points_from_mesh(
     results: dict,
     region_keys: list[str] | str = "anomalous_points",
@@ -53,11 +78,9 @@ def remove_labeled_points_from_mesh(
     Parameters
     ----------
     results : dict
-        Dictionary containing at minimum the key ``"mesh"``.  Any of
-        ``"aorta_points"``, ``"rca_points"``, ``"lca_points"``,
-        ``"rca_removed_points"``, ``"lca_removed_points"``,
-        ``"proximal_points"``, and ``"distal_points"`` are also updated if
-        present.
+        Dictionary containing at minimum the key ``"mesh"``.  Every other
+        point list (``"aorta_points"``, ``"rca_points_main"``,
+        ``"rca_points_side_2"``, ...) is updated to the trimmed mesh.
     region_keys : str or list of str
         Key(s) in *results* whose point lists should be removed from the mesh.
         Defaults to ``"anomalous_points"`` for backwards compatibility.
@@ -156,16 +179,8 @@ def remove_labeled_points_from_mesh(
     for key in region_keys:
         updated[key] = []
 
-    for key in (
-        "aorta_points",
-        "rca_points",
-        "lca_points",
-        "rca_removed_points",
-        "lca_removed_points",
-        "proximal_points",
-        "distal_points",
-    ):
-        if key in updated and key not in region_keys:
+    for key in _point_list_keys(updated):
+        if key not in region_keys and not key.startswith("boundary_points"):
             updated[key] = [p for p in updated[key] if tuple(p) in new_coord_set]
 
     return updated
@@ -185,11 +200,9 @@ def keep_labeled_points_from_mesh(
     Parameters
     ----------
     results : dict
-        Dictionary containing at minimum the key ``"mesh"``.  Any of
-        ``"aorta_points"``, ``"rca_points"``, ``"lca_points"``,
-        ``"rca_removed_points"``, ``"lca_removed_points"``,
-        ``"proximal_points"``, and ``"distal_points"`` are also updated if
-        present.
+        Dictionary containing at minimum the key ``"mesh"``.  Every other
+        point list (``"aorta_points"``, ``"rca_points_main"``,
+        ``"rca_points_side_2"``, ...) is updated to the trimmed mesh.
     region_key : str or list[str]
         Key (or list of keys) in *results* whose point lists define the
         vertices to *keep*.  When multiple keys are given the union of all
@@ -267,17 +280,8 @@ def keep_labeled_points_from_mesh(
     updated["mesh"] = new_mesh
     _store_boundary_rings(updated, mesh.vertices, components)
 
-    for key in (
-        "aorta_points",
-        "rca_points",
-        "lca_points",
-        "rca_removed_points",
-        "lca_removed_points",
-        "proximal_points",
-        "distal_points",
-        *region_keys,
-    ):
-        if key in updated:
+    for key in _point_list_keys(updated):
+        if not key.startswith("boundary_points"):
             updated[key] = [p for p in updated[key] if tuple(p) in new_coord_set]
 
     return updated
@@ -317,3 +321,181 @@ def extract_region_with_border_faces(
         faces=remap[selected_faces],
         process=False,
     )
+
+
+def _branch_coords(centerline: PyCenterline, branch_ids: set[int]) -> np.ndarray:
+    """``(N, 3)`` coordinates of the centerline points on *branch_ids*."""
+    return np.array(
+        [
+            (p.contour_point.x, p.contour_point.y, p.contour_point.z)
+            for p in centerline.points
+            if p.branch_id in branch_ids
+        ],
+        dtype=np.float64,
+    ).reshape(-1, 3)
+
+
+def _vessel_of_branch(results: dict, centerline: PyCenterline, branch_id: int) -> str:
+    """``"rca_points"`` or ``"lca_points"``: the vessel whose side branch *branch_id* is.
+
+    Both vessels number their side branches from 1, so the id alone is
+    ambiguous; the labelled points nearer to the centerline's branch decide.
+    """
+    candidates = [
+        pre for pre in _VESSEL_PREFIXES if results.get(f"{pre}_side_{branch_id}")
+    ]
+    if not candidates:
+        raise ValueError(
+            f"results has no points for side branch {branch_id} "
+            f"('rca_points_side_{branch_id}' / 'lca_points_side_{branch_id}'); "
+            "run label_branches_pair first"
+        )
+    if len(candidates) == 1:
+        return candidates[0]
+    tree = cKDTree(_branch_coords(centerline, {branch_id}))
+    return min(
+        candidates,
+        key=lambda pre: tree.query(np.asarray(results[f"{pre}_side_{branch_id}"]))[
+            0
+        ].mean(),
+    )
+
+
+def _detached_fragments(mesh: trimesh.Trimesh, remove_idx: set[int]) -> set[int]:
+    """Kept vertices that only hung on to the mesh through *remove_idx*.
+
+    Vertices of the branch that its labels missed (e.g. a wide distal end)
+    would be left floating once the branch is cut off.  Of the connected pieces
+    touching the removed region, the largest is the parent vessel; the rest are
+    returned.
+    """
+    n = len(mesh.vertices)
+    keep = np.ones(n, dtype=bool)
+    keep[list(remove_idx)] = False
+    faces = mesh.faces
+    kept_faces = faces[keep[faces].all(axis=1)]
+    edges = kept_faces[:, [0, 1, 1, 2, 2, 0]].reshape(-1, 2)
+    graph = coo_matrix((np.ones(len(edges)), (edges[:, 0], edges[:, 1])), shape=(n, n))
+    _, labels = connected_components(graph, directed=False)
+
+    cut_faces = faces[(~keep[faces]).any(axis=1)]
+    touching = set(labels[cut_faces[keep[cut_faces]]].tolist())
+    if len(touching) <= 1:
+        return set()
+    sizes = np.bincount(labels)
+    parent = max(touching, key=lambda c: sizes[c])
+    loose = keep & np.isin(labels, list(touching - {parent}))
+    return set(np.flatnonzero(loose).tolist())
+
+
+def remove_branch(
+    results: dict,
+    centerline: PyCenterline,
+    branch_id: int,
+    fill_hole: bool = True,
+) -> tuple[dict, PyCenterline]:
+    """Cut a side branch off the mesh and the centerline, and close its ostium.
+
+    The branch's vertices come from the side-branch labels
+    (``"rca_points_side_{k}"`` / ``"lca_points_side_{k}"``, see
+    :func:`~multimodars.label_branches_pair`); which vessel the branch belongs
+    to is found from those labels.  Every branch growing out of *branch_id* is
+    removed with it.  A vertex at a bifurcation that is also labelled for a
+    kept branch stays when that branch's centerline is nearer.
+
+    Branch ids are not renumbered: the removed branches keep their (now empty)
+    ids in the returned centerline and their ``_side_{k}`` lists are emptied,
+    so ``"rca_points_side_3"`` still belongs to branch 3 afterwards.
+
+    Parameters
+    ----------
+    results : dict
+        Labelled results with ``"mesh"`` and the side-branch labels.
+    centerline : PyCenterline
+        Whole centerline of the vessel the branch belongs to.
+    branch_id : int
+        Side branch to remove (not 0, the main vessel).
+    fill_hole : bool, optional
+        Close the ostium with a patch following the parent vessel's wall
+        (default).  With ``False`` the hole stays open and its rim is stored
+        as ``"boundary_points_1"`` / ``"boundary_points"``.
+
+    Returns
+    -------
+    (dict, PyCenterline)
+        Updated *results* - mesh without the branch, every point list updated
+        to it, patch vertices added to the labels most of the ostium rim
+        carries - and the centerline without the removed branches.
+
+    Raises
+    ------
+    ValueError
+        If *branch_id* is 0, not in *centerline*, or has no labelled points.
+    """
+    if branch_id == 0:
+        raise ValueError("branch 0 is the main vessel and cannot be removed")
+    new_centerline = centerline.remove_branches([branch_id])
+    removed = sorted(set(centerline.branch_ids()) - set(new_centerline.branch_ids()))
+    prefix = _vessel_of_branch(results, centerline, branch_id)
+
+    removed_coords = {
+        tuple(p) for k in removed for p in results.get(f"{prefix}_side_{k}", [])
+    }
+    removed_tree = cKDTree(_branch_coords(centerline, set(removed)))
+    for k in side_branch_ids(results, prefix):
+        kept_axis = _branch_coords(centerline, {k})
+        if k in removed or len(kept_axis) == 0:
+            continue
+        shared = list(
+            removed_coords.intersection(map(tuple, results[f"{prefix}_side_{k}"]))
+        )
+        if not shared:
+            continue
+        pts = np.asarray(shared)
+        nearer_kept = cKDTree(kept_axis).query(pts)[0] < removed_tree.query(pts)[0]
+        removed_coords.difference_update(c for c, n in zip(shared, nearer_kept) if n)
+
+    mesh: trimesh.Trimesh = results["mesh"]
+    coord_to_idx = {tuple(v): i for i, v in enumerate(mesh.vertices)}
+    remove_idx = {coord_to_idx[c] for c in removed_coords if c in coord_to_idx}
+    remove_idx |= _detached_fragments(mesh, remove_idx)
+
+    staging_key = "_remove_branch_points"
+    staged = dict(results)
+    staged[staging_key] = [tuple(mesh.vertices[i]) for i in remove_idx]
+    updated = remove_labeled_points_from_mesh(staged, staging_key, target_boundaries=1)
+    del updated[staging_key]
+    for k in removed:
+        if f"{prefix}_side_{k}" in updated:
+            updated[f"{prefix}_side_{k}"] = []
+
+    ring_coords = updated.get(f"{BOUNDARY_RING_PREFIX}1", [])
+    if fill_hole and ring_coords:
+        new_mesh = updated["mesh"]
+        idx = {tuple(v): i for i, v in enumerate(new_mesh.vertices)}
+        parent = centerline.branch_parents()[branch_id]
+        assert parent is not None  # branch_id is a side branch of centerline
+        axis = np.asarray(
+            centerline.get_branch(parent).points_as_tuples(), dtype=np.float64
+        )
+        patched, added = fill_ring_on_vessel_wall(
+            new_mesh, [idx[tuple(c)] for c in ring_coords], axis
+        )
+        updated["mesh"] = patched
+
+        # The patch is part of the parent wall: give it the labels most of the
+        # rim has (e.g. rca_points, rca_points_main, distal_points).
+        ring_set = {tuple(c) for c in ring_coords}
+        added_pts = [tuple(float(x) for x in p) for p in added]
+        for key in _point_list_keys(updated):
+            if key.startswith("boundary_points"):
+                continue
+            on_rim = len(ring_set.intersection(map(tuple, updated[key])))
+            if 2 * on_rim > len(ring_set):
+                updated[key] = updated[key] + added_pts
+        # The rim is closed now; keeping it would describe a hole that is gone.
+        _store_boundary_rings(updated, patched.vertices, [])
+        print(f"Closed the ostium with {len(added_pts)} patch vertices")
+
+    print(f"Removed {prefix} branch(es) {removed} ({len(remove_idx)} vertices)")
+    return updated, new_centerline

@@ -7,20 +7,20 @@ from ..multimodars import (
 from ..multimodars import (
     discretize_vessel_tree as _discretize_vessel_tree,
 )
+from ._branch_keys import side_branch_ids
 from .labeling import label_branches as _label_branches
 
 
 def _extract_side_branches(results_dict: dict, prefix: str) -> list[list[tuple]]:
-    """Return ``[points_side_1, points_side_2, ...]`` from *results_dict*."""
-    branches = []
-    i = 1
-    while True:
-        key = f"{prefix}_side_{i}"
-        if key not in results_dict:
-            break
-        branches.append(results_dict[key])
-        i += 1
-    return branches
+    """Return ``[points_side_1, points_side_2, ...]`` from *results_dict*.
+
+    Entry ``i`` is branch id ``i + 1``. A missing id (e.g. a removed branch)
+    gives an empty list, so the ids after it do not shift.
+    """
+    ids = side_branch_ids(results_dict, prefix)
+    if not ids:
+        return []
+    return [results_dict.get(f"{prefix}_side_{k}", []) for k in range(1, ids[-1] + 1)]
 
 
 def discretize_vessel_tree(

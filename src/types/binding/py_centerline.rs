@@ -161,7 +161,8 @@ impl PyCenterline {
     /// Returns
     /// -------
     /// PyCenterline
-    ///     New centerline with the branch split and all IDs reassigned.
+    ///     New centerline with the branch split and all IDs reassigned. Split
+    ///     before labelling a mesh with the branches.
     pub fn split_branch(&self, branch_id: u32, point_index: usize) -> PyResult<PyCenterline> {
         let mut cl = self.to_rust_centerline();
         cl.split_branch(branch_id, point_index);
@@ -183,9 +184,63 @@ impl PyCenterline {
     /// -------
     /// PyCenterline
     ///     New centerline with the two branches merged and all IDs reassigned.
+    ///     Merge before labelling a mesh with the branches.
     pub fn merge_branches(&self, branch_id_a: u32, branch_id_b: u32) -> PyResult<PyCenterline> {
         let mut cl = self.to_rust_centerline();
         cl.merge_branches(branch_id_a, branch_id_b);
+        Ok(PyCenterline::from(&cl))
+    }
+
+    /// Ids of the branches that have points, ascending.
+    ///
+    /// A branch removed with ``remove_branches`` keeps its id (the other branches
+    /// are not renumbered) but is left out here, so iterate over this rather than
+    /// ``range(len(branch_start_indices))``.
+    ///
+    /// Returns
+    /// -------
+    /// list[int]
+    pub fn branch_ids(&self) -> Vec<u32> {
+        self.to_rust_centerline().branch_ids()
+    }
+
+    /// Parent branch of every branch, indexed by branch id.
+    ///
+    /// A side branch's parent is the lower-numbered branch holding the point
+    /// nearest to its junction end (the rule ``get_branch(..., with_parents=True)``
+    /// follows).
+    ///
+    /// Returns
+    /// -------
+    /// list[int | None]
+    ///     ``None`` for branch 0 and for removed branches.
+    pub fn branch_parents(&self) -> Vec<Option<u32>> {
+        self.to_rust_centerline().branch_parents()
+    }
+
+    /// Remove branches together with every branch growing out of them.
+    ///
+    /// The other branches keep their ids: a removed branch keeps its entry in
+    /// ``branch_start_indices`` as an empty range and drops out of ``branch_ids``.
+    ///
+    /// Parameters
+    /// ----------
+    /// branch_ids : list[int]
+    ///     Branches to remove.
+    ///
+    /// Returns
+    /// -------
+    /// PyCenterline
+    ///     New centerline without the removed branches.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If a branch is 0 (the main vessel) or not in the centerline.
+    pub fn remove_branches(&self, branch_ids: Vec<u32>) -> PyResult<PyCenterline> {
+        let mut cl = self.to_rust_centerline();
+        cl.remove_branches(&branch_ids)
+            .map_err(pyo3::exceptions::PyValueError::new_err)?;
         Ok(PyCenterline::from(&cl))
     }
 
@@ -248,8 +303,8 @@ impl PyCenterline {
     /// the vessel origin, so side branches share a common prefix with branch 0.
     /// This trims that prefix from each side branch, keeping only the bifurcation
     /// junction and the diverged portion. Branches that overlap with branch 0
-    /// entirely are dropped. The trim threshold is one mean inter-point spacing
-    /// of branch 0.
+    /// entirely are emptied; their id is kept, so the other branches keep theirs.
+    /// The trim threshold is one mean inter-point spacing of branch 0.
     ///
     /// Returns
     /// -------

@@ -6,11 +6,95 @@ use nalgebra::Vector3;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Centerline {
     pub points: Vec<CenterlinePoint>,
-    /// First index in `points` for each branch (branch 0 = main vessel).
+    /// First index in `points` for each branch (branch 0 = main vessel). Entry `k` always
+    /// belongs to `branch_id` `k`: a removed branch (see [`Centerline::remove_branches`])
+    /// keeps its entry as an empty range, so the ids of the other branches never shift.
     pub branch_start_indices: Vec<usize>,
 }
 
 impl Centerline {
+    /// Range of branch `branch_id` in `points`; `None` if the id was never assigned. A
+    /// removed branch gives an empty range.
+    pub fn branch_range(&self, branch_id: u32) -> Option<std::ops::Range<usize>> {
+        let idx = branch_id as usize;
+        let start = *self.branch_start_indices.get(idx)?;
+        let end = self
+            .branch_start_indices
+            .get(idx + 1)
+            .copied()
+            .unwrap_or(self.points.len());
+        Some(start..end)
+    }
+
+    /// Ids of the branches that still have points, ascending. Removed branches are skipped.
+    pub fn branch_ids(&self) -> Vec<u32> {
+        (0..self.branch_start_indices.len() as u32)
+            .filter(|&id| self.branch_range(id).is_some_and(|r| !r.is_empty()))
+            .collect()
+    }
+
+    /// Parent of every branch, indexed by branch id: the lower-numbered branch holding the
+    /// point nearest to the branch's junction end (the rule [`Centerline::branch_path`]
+    /// follows). `None` for branch 0 and for removed branches.
+    pub fn branch_parents(&self) -> Vec<Option<u32>> {
+        let branches = self.branches_as_vecs();
+        (0..branches.len())
+            .map(|b| {
+                if b == 0 || branches[b].is_empty() || branches[..b].iter().all(Vec::is_empty) {
+                    return None;
+                }
+                let junction = Self::junction_first(&branches, b)[0].contour_point;
+                Some(Self::nearest_point(&branches[..b], &junction).0 as u32)
+            })
+            .collect()
+    }
+
+    /// Remove branches `branch_ids` together with every branch growing out of them, and
+    /// return the ids removed, ascending. Each removed branch keeps its slot in
+    /// `branch_start_indices` as an empty range, so all other branches keep their id.
+    ///
+    /// Fails for branch 0 (the main vessel) and for ids that are not in the centerline.
+    pub fn remove_branches(&mut self, branch_ids: &[u32]) -> Result<Vec<u32>, String> {
+        let existing = self.branch_ids();
+        for &id in branch_ids {
+            if id == 0 {
+                return Err("branch 0 is the main vessel and cannot be removed".to_string());
+            }
+            if !existing.contains(&id) {
+                return Err(format!("centerline has no branch {id}"));
+            }
+        }
+
+        // Parents come from the untouched centerline: once a branch is emptied its children
+        // would attach to whatever else is nearest.
+        let parents = self.branch_parents();
+        let mut removed = vec![false; parents.len()];
+        for &id in branch_ids {
+            removed[id as usize] = true;
+        }
+        // Parents always have a lower id, so one ascending pass reaches every descendant.
+        for b in 1..parents.len() {
+            if let Some(p) = parents[b] {
+                removed[b] |= removed[p as usize];
+            }
+        }
+
+        let mut branches = self.branches_as_vecs();
+        for (b, branch) in branches.iter_mut().enumerate() {
+            if removed[b] {
+                branch.clear();
+            }
+        }
+        self.rebuild_from_branches(branches);
+
+        Ok(removed
+            .iter()
+            .enumerate()
+            .filter(|&(_, &r)| r)
+            .map(|(b, _)| b as u32)
+            .collect())
+    }
+
     pub fn from_contour_points(contour_points: Vec<ContourPoint>) -> Self {
         let mut points: Vec<CenterlinePoint> = Vec::with_capacity(contour_points.len());
 
@@ -382,24 +466,17 @@ impl Centerline {
         }
     }
 
-    /// Decompose the flat points Vec into one Vec per branch.
+    /// Decompose the flat points Vec into one Vec per branch, indexed by branch id (removed
+    /// branches are empty).
     fn branches_as_vecs(&self) -> Vec<Vec<CenterlinePoint>> {
-        let n = self.branch_start_indices.len();
-        (0..n)
-            .map(|i| {
-                let start = self.branch_start_indices[i];
-                let end = if i + 1 < n {
-                    self.branch_start_indices[i + 1]
-                } else {
-                    self.points.len()
-                };
-                self.points[start..end].to_vec()
-            })
+        (0..self.branch_start_indices.len() as u32)
+            .map(|id| self.points[self.branch_range(id).unwrap_or_default()].to_vec())
             .collect()
     }
 
     /// Rebuild the flat points Vec and branch_start_indices from a list of branch segments,
-    /// reassigning branch_id and point_index sequentially.
+    /// reassigning branch_id (= position in `branches`) and point_index sequentially. Empty
+    /// segments keep their slot, so pass them through to keep the following ids.
     fn rebuild_from_branches(&mut self, branches: Vec<Vec<CenterlinePoint>>) {
         let total: usize = branches.iter().map(|b| b.len()).sum();
         let mut new_points: Vec<CenterlinePoint> = Vec::with_capacity(total);
@@ -426,18 +503,11 @@ impl Centerline {
     /// the opening angle satisfies `cos_angle > cos_threshold`.
     /// Use `cos_threshold = 0.0` for < 90°, `0.5` for < 60°, etc.
     pub fn find_sharp_angles(&self, branch_id: u32, cos_threshold: f64) -> Vec<usize> {
-        let idx = branch_id as usize;
-        let n = self.branch_start_indices.len();
-        if idx >= n {
+        let Some(range) = self.branch_range(branch_id) else {
             return vec![];
-        }
-        let start = self.branch_start_indices[idx];
-        let end = if idx + 1 < n {
-            self.branch_start_indices[idx + 1]
-        } else {
-            self.points.len()
         };
-        let branch = &self.points[start..end];
+        let start = range.start;
+        let branch = &self.points[range];
 
         (1..branch.len().saturating_sub(1))
             .filter(|&i| {
@@ -462,23 +532,17 @@ impl Centerline {
     /// `branch_id`'s own range). Both resulting segments include the split
     /// point. Branches are re-sorted by descending length afterwards, so
     /// branch 0 is always the longest overall, matching the invariant
-    /// established by [`Centerline::calculate_branches`].
+    /// established by [`Centerline::calculate_branches`]. This reassigns branch
+    /// ids, so split before labelling a mesh with the branches.
     pub fn split_branch(&mut self, branch_id: u32, point_index: usize) {
         let idx = branch_id as usize;
-        let n = self.branch_start_indices.len();
-        if idx >= n {
+        let Some(range) = self.branch_range(branch_id) else {
             return;
-        }
-        let start = self.branch_start_indices[idx];
-        let end = if idx + 1 < n {
-            self.branch_start_indices[idx + 1]
-        } else {
-            self.points.len()
         };
-        if point_index < start || point_index >= end {
+        if !range.contains(&point_index) {
             return;
         }
-        let local_pos = point_index - start;
+        let local_pos = point_index - range.start;
 
         let mut branches = self.branches_as_vecs();
         let branch = branches.remove(idx);
@@ -500,12 +564,18 @@ impl Centerline {
     /// so the segments are concatenated in the correct spatial order. Branches
     /// are re-sorted by descending length afterwards, so branch 0 is always
     /// the longest overall, matching the invariant established by
-    /// [`Centerline::calculate_branches`].
+    /// [`Centerline::calculate_branches`]. This reassigns branch ids, so merge
+    /// before labelling a mesh with the branches. Nothing happens if either
+    /// branch is missing or removed.
     pub fn merge_branches(&mut self, branch_id_a: u32, branch_id_b: u32) {
         let mut branches = self.branches_as_vecs();
         let idx_a = branch_id_a as usize;
         let idx_b = branch_id_b as usize;
         if idx_a == idx_b || idx_a >= branches.len() || idx_b >= branches.len() {
+            return;
+        }
+
+        if branches[idx_a].is_empty() || branches[idx_b].is_empty() {
             return;
         }
 
@@ -669,7 +739,7 @@ impl Centerline {
     /// all lie within one mean inter-point spacing of branch 0 of at least one
     /// main-branch point. The last point of the trimmed prefix is kept as the
     /// bifurcation junction. Branches whose entire extent lies within that buffer
-    /// are dropped completely.
+    /// are emptied; their slot stays, so the other branches keep their id.
     pub fn remove_branch_overlap(&mut self) {
         if self.branch_start_indices.is_empty() {
             return;
@@ -998,7 +1068,7 @@ impl Centerline {
     /// branch rather than directly off the main vessel. Processing branches in order
     /// and growing the reference point set as each branch is cleaned handles that case
     /// too, instead of only ever comparing against branch 0.
-    fn remove_overlapping(branches: &mut Vec<Vec<CenterlinePoint>>, buffer_sq: f64) {
+    fn remove_overlapping(branches: &mut [Vec<CenterlinePoint>], buffer_sq: f64) {
         if branches.len() <= 1 {
             return;
         }
@@ -1032,8 +1102,6 @@ impl Centerline {
                     .map(|p| (p.contour_point.x, p.contour_point.y, p.contour_point.z)),
             );
         }
-
-        branches.retain(|b| !b.is_empty());
     }
 
     /// Trims points off the start of the main branch (branch 0) until `rm_start_mm` of
@@ -1404,9 +1472,14 @@ mod centerline_tests {
         cl.remove_branch_overlap();
 
         assert_eq!(
+            cl.branch_ids(),
+            vec![0],
+            "fully-overlapping branch must be emptied"
+        );
+        assert_eq!(
             cl.branch_start_indices.len(),
-            1,
-            "fully-overlapping branch must be dropped"
+            2,
+            "the emptied branch keeps its slot"
         );
     }
 
@@ -1767,5 +1840,102 @@ mod centerline_tests {
 
         assert_eq!(coords(&cl.branch_path(0).unwrap()), main);
         assert!(cl.branch_path(2).is_err());
+    }
+
+    /// Main along z; side 1 leaves it at z = 5, side 2 grows out of side 1 at x = 3, side 3
+    /// leaves the main vessel at z = 8.
+    fn tree() -> Centerline {
+        let main = main_along_z();
+        let side1: Vec<_> = (1..=5).map(|x| (x as f64, 0.0, 5.0)).collect();
+        let side2: Vec<_> = (1..=3).map(|y| (3.0, y as f64, 5.0)).collect();
+        let side3: Vec<_> = (1..=4).map(|x| (-x as f64, 0.0, 8.0)).collect();
+        make_multi_branch(&[&main, &side1, &side2, &side3])
+    }
+
+    #[test]
+    fn test_branch_parents() {
+        assert_eq!(
+            tree().branch_parents(),
+            vec![None, Some(0), Some(1), Some(0)]
+        );
+    }
+
+    #[test]
+    fn test_remove_branches_cascades_to_children_and_keeps_ids() {
+        let mut cl = tree();
+        let side3_before: Vec<_> = cl.points[cl.branch_range(3).unwrap()].to_vec();
+
+        assert_eq!(cl.remove_branches(&[1]).unwrap(), vec![1, 2]);
+        assert_eq!(cl.branch_ids(), vec![0, 3]);
+        assert_eq!(cl.branch_start_indices.len(), 4);
+        assert!(cl.branch_range(1).unwrap().is_empty());
+        assert!(cl.branch_range(2).unwrap().is_empty());
+
+        let side3: Vec<_> = cl.points[cl.branch_range(3).unwrap()].to_vec();
+        assert!(side3.iter().all(|p| p.branch_id == 3));
+        let xyz = |pts: &[CenterlinePoint]| -> Vec<(f64, f64, f64)> {
+            pts.iter()
+                .map(|p| (p.contour_point.x, p.contour_point.y, p.contour_point.z))
+                .collect()
+        };
+        assert_eq!(xyz(&side3), xyz(&side3_before));
+        assert!(cl
+            .points
+            .iter()
+            .enumerate()
+            .all(|(i, p)| p.contour_point.point_index == i as u32));
+    }
+
+    #[test]
+    fn test_remove_branches_rejects_main_and_missing() {
+        let mut cl = tree();
+        assert!(cl.remove_branches(&[0]).is_err());
+        assert!(cl.remove_branches(&[9]).is_err());
+        cl.remove_branches(&[2]).unwrap();
+        assert!(cl.remove_branches(&[2]).is_err(), "already removed");
+        assert_eq!(cl.branch_ids(), vec![0, 1, 3]);
+    }
+
+    #[test]
+    fn test_ids_survive_processing_after_removal() {
+        let mut cl = tree();
+        cl.remove_branches(&[1]).unwrap();
+        cl.remove_branch_overlap();
+        cl.trim_start(0.5);
+        cl.resample(0.5);
+        cl.orient_by_max_z();
+        cl.smooth(1.0);
+
+        assert_eq!(cl.branch_ids(), vec![0, 3]);
+        assert_eq!(cl.branch_start_indices.len(), 4);
+        for id in [0, 3] {
+            assert!(cl.points[cl.branch_range(id).unwrap()]
+                .iter()
+                .all(|p| p.branch_id == id));
+        }
+        // Branch 3 still leaves the main vessel towards -x at z = 8.
+        let tip = cl
+            .branch_path(3)
+            .unwrap()
+            .points
+            .last()
+            .unwrap()
+            .contour_point;
+        assert!((tip.x + 4.0).abs() < 1e-6 && (tip.z - 8.0).abs() < 0.5);
+    }
+
+    #[test]
+    fn test_removed_branch_is_absent_everywhere() {
+        let mut cl = tree();
+        cl.remove_branches(&[3]).unwrap();
+        let before = cl.clone();
+
+        assert!(cl.branch_path(3).is_err());
+        assert!(cl.find_sharp_angles(3, -1.0).is_empty());
+        cl.split_branch(3, 0);
+        cl.merge_branches(0, 3);
+        assert_eq!(cl, before, "split/merge on a removed branch are no-ops");
+        assert_eq!(cl.branch_parents()[3], None);
+        assert_eq!(cl.branch_ids(), vec![0, 1, 2]);
     }
 }

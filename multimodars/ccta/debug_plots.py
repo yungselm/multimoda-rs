@@ -8,6 +8,7 @@ import trimesh
 from trimesh.points import PointCloud
 from trimesh.visual import ColorVisuals
 
+from ._branch_keys import side_branch_ids
 from .stitching.boundary import open_boundary_edges, order_boundary_rings
 
 if TYPE_CHECKING:
@@ -366,20 +367,13 @@ def plot_centerline_branches(
     _add_cl_branches(lca_cl, _LCA_COLORS)
 
     if results_dict is not None:
-        _add_surface_points("rca_points_main", _RCA_COLORS[0])
-        i = 1
-        while f"rca_points_side_{i}" in results_dict:
-            _add_surface_points(
-                f"rca_points_side_{i}", _RCA_COLORS[i % len(_RCA_COLORS)]
-            )
-            i += 1
-        _add_surface_points("lca_points_main", _LCA_COLORS[0])
-        i = 1
-        while f"lca_points_side_{i}" in results_dict:
-            _add_surface_points(
-                f"lca_points_side_{i}", _LCA_COLORS[i % len(_LCA_COLORS)]
-            )
-            i += 1
+        for prefix, colors in (
+            ("rca_points", _RCA_COLORS),
+            ("lca_points", _LCA_COLORS),
+        ):
+            _add_surface_points(f"{prefix}_main", colors[0])
+            for i in side_branch_ids(results_dict, prefix):
+                _add_surface_points(f"{prefix}_side_{i}", colors[i % len(colors)])
 
     trimesh.Scene(scene_geoms).show()
 

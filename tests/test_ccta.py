@@ -9,8 +9,12 @@ Covers:
                 for find_points_by_cl_region's proximal/distal/anomalous output)
   - labeling.core: label_anomalous_region (label bookkeeping, with the
                 find_points_by_cl_region split stubbed)
-  - postprocessing: manual_hole_fill, postprocess_stitched_mesh
-  - mesh_regions: remove_labeled_points_from_mesh, keep_labeled_points_from_mesh
+  - postprocessing: manual_hole_fill, postprocess_stitched_mesh,
+               fill_ring_on_vessel_wall
+  - mesh_regions: remove_labeled_points_from_mesh, keep_labeled_points_from_mesh,
+               remove_branch (with the branch-id bookkeeping it relies on:
+               PyCenterline.branch_ids / remove_branches, label_branches,
+               discretization_map._extract_side_branches)
   - stitching.boundary: open_boundary_edges, order_boundary_rings,
                clean_open_boundary, order_points_list, _rotate_to_nearest_iv,
                _fix_ring_direction_by_distance, _prepare_prox_dist_boundary_pts,
@@ -30,13 +34,16 @@ from __future__ import annotations
 
 import importlib
 import warnings
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 import trimesh
 
+import multimodars as mm
 from multimodars import PyContour, PyContourPoint, PyFrame, PyGeometry
+from multimodars.ccta.discretization_map import _extract_side_branches
 from multimodars.ccta.labeling import core as labeling_core
 from multimodars.ccta.labeling.helpers import _keep_largest_connected_component
 from multimodars.ccta.mesh_regions import (
@@ -44,6 +51,7 @@ from multimodars.ccta.mesh_regions import (
     remove_labeled_points_from_mesh,
 )
 from multimodars.ccta.postprocessing import (
+    fill_ring_on_vessel_wall,
     manual_hole_fill,
     postprocess_stitched_mesh,
 )
@@ -2288,3 +2296,234 @@ class TestBoundaryRingStorage:
             p[2] == pytest.approx(q[2] + 5.0)
             for p, q in zip(synced["boundary_points_1"], updated["boundary_points_1"])
         )
+
+
+# ===========================================================================
+# Branch removal: postprocessing.fill_ring_on_vessel_wall,
+# mesh_regions.remove_branch and the branch-id bookkeeping
+# ===========================================================================
+
+_EXAMPLE_DATA = Path(__file__).resolve().parents[1] / "examples" / "data"
+
+
+def _open_tube(radius=2.0, n_around=24, n_along=21, spacing=0.5) -> trimesh.Trimesh:
+    """Open cylinder along z, outward-facing, rings of *n_around* vertices."""
+    theta = np.linspace(0.0, 2.0 * np.pi, n_around, endpoint=False)
+    verts = np.array(
+        [
+            (radius * np.cos(t), radius * np.sin(t), k * spacing)
+            for k in range(n_along)
+            for t in theta
+        ]
+    )
+    faces = []
+    for k in range(n_along - 1):
+        for i in range(n_around):
+            a = k * n_around + i
+            b = k * n_around + (i + 1) % n_around
+            faces += [[a, b, b + n_around], [a, b + n_around, a + n_around]]
+    return trimesh.Trimesh(verts, np.array(faces), process=False)
+
+
+class TestFillRingOnVesselWall:
+    def _holed_tube(self):
+        tube = _open_tube()
+        # Punch a hole in the +x side, mid-length.
+        v = tube.vertices
+        hole = (v[:, 0] > 1.5) & (np.abs(v[:, 2] - 5.0) < 1.6)
+        results = {"mesh": tube, "hole": [tuple(p) for p in v[hole]]}
+        holed = remove_labeled_points_from_mesh(results, "hole")
+        mesh = holed["mesh"]
+        idx = {tuple(p): i for i, p in enumerate(mesh.vertices)}
+        ring = [idx[tuple(p)] for p in holed["boundary_points_1"]]
+        return mesh, ring
+
+    def test_closes_only_the_ring(self):
+        mesh, ring = self._holed_tube()
+        assert len(mesh.outline().entities) == 3  # two tube ends + the hole
+        axis = np.array([(0.0, 0.0, 0.0), (0.0, 0.0, 10.0)])
+        patched, added = fill_ring_on_vessel_wall(mesh, ring, axis)
+        assert len(added) > 0
+        assert len(patched.outline().entities) == 2  # tube ends stay open
+        assert patched.is_winding_consistent
+
+    def test_patch_follows_the_wall(self):
+        mesh, ring = self._holed_tube()
+        axis = np.array([(0.0, 0.0, 0.0), (0.0, 0.0, 10.0)])
+        _, added = fill_ring_on_vessel_wall(mesh, ring, axis)
+        radial = np.linalg.norm(added[:, :2], axis=1)
+        np.testing.assert_allclose(radial, 2.0, atol=1e-6)
+
+    def test_patch_faces_outward(self):
+        mesh, ring = self._holed_tube()
+        axis = np.array([(0.0, 0.0, 0.0), (0.0, 0.0, 10.0)])
+        patched, _ = fill_ring_on_vessel_wall(mesh, ring, axis)
+        new = slice(len(mesh.faces), None)
+        outward = patched.triangles_center[new].copy()
+        outward[:, 2] = 0.0
+        assert np.all(np.einsum("ij,ij->i", patched.face_normals[new], outward) > 0)
+
+
+class TestExtractSideBranches:
+    def test_missing_id_keeps_later_ids_in_place(self):
+        results = {
+            "rca_points_side_1": [(1.0, 0.0, 0.0)],
+            "rca_points_side_3": [(3.0, 0.0, 0.0)],
+        }
+        sides = _extract_side_branches(results, "rca_points")
+        assert sides == [[(1.0, 0.0, 0.0)], [], [(3.0, 0.0, 0.0)]]
+
+    def test_no_side_keys(self):
+        assert _extract_side_branches({"rca_points": []}, "rca_points") == []
+
+
+@pytest.fixture(scope="module")
+def example_centerlines():
+    if not (_EXAMPLE_DATA / "lca_cl.vtp").exists():
+        pytest.skip("example data not available")
+    ao = mm.prepare_centerline(
+        mm.load_centerline(str(_EXAMPLE_DATA / "ao_cl.vtp"), name="Aorta"),
+        spacing_mm=1.0,
+    )
+    rca, lca = (
+        mm.prepare_centerline(
+            mm.load_centerline(str(_EXAMPLE_DATA / f"{v}_cl.vtp"), name=v.upper()),
+            ref_centerline=ao,
+            spacing_mm=1.0,
+            rm_start_mm=5.0,
+        )
+        for v in ("rca", "lca")
+    )
+    return ao, rca, lca
+
+
+class TestCenterlineBranchIds:
+    def test_remove_branches_keeps_other_ids(self, example_centerlines):
+        _, _, lca = example_centerlines
+        # In the example LCA, branch 2 grows out of branch 1.
+        assert lca.branch_parents()[2] == 1
+        before = {k: lca.get_branch(k).points_as_tuples() for k in lca.branch_ids()}
+
+        cl = lca.remove_branches([1])
+        assert cl.branch_ids() == [k for k in lca.branch_ids() if k not in (1, 2)]
+        assert len(cl.branch_start_indices) == len(lca.branch_start_indices)
+        for k in cl.branch_ids():
+            assert cl.get_branch(k).points_as_tuples() == before[k]
+        for k in (1, 2):
+            with pytest.raises(ValueError):
+                cl.get_branch(k)
+            with pytest.raises(ValueError):
+                cl.get_branch(k, with_parents=True)
+
+    def test_ids_survive_prepare_steps(self, example_centerlines):
+        ao, _, lca = example_centerlines
+        cl = lca.remove_branches([1]).resample(0.5).orient_to_reference(ao).smooth(1.0)
+        cl = cl.remove_branch_overlap()
+        assert cl.branch_ids() == [0, 3, 4]
+
+    def test_remove_main_branch_rejected(self, example_centerlines):
+        _, _, lca = example_centerlines
+        with pytest.raises(ValueError):
+            lca.remove_branches([0])
+
+    def test_label_branches_skips_removed(self, example_centerlines):
+        _, _, lca = example_centerlines
+        cl = lca.remove_branches([1])
+        pts = [tuple(p) for p in cl.points_as_tuples()]
+        results = labeling_core.label_branches(cl, {"lca_points": pts}, "lca_points")
+        assert "lca_points_side_1" not in results
+        assert "lca_points_side_2" not in results
+        assert "lca_points_side_3" in results
+
+
+@pytest.fixture(scope="module")
+def example_labelled(example_centerlines):
+    ao, rca, lca = example_centerlines
+    results = mm.label_geometry(
+        path_ccta_geometry=str(_EXAMPLE_DATA / "NARCO_119.stl"),
+        centerline_aorta=ao,
+        centerline_rca=rca,
+        centerline_lca=lca,
+        bounding_sphere_radius_mm_rca=3.5,
+        bounding_sphere_radius_mm_lca=3.5,
+        range_mm_takeoff_rca=60.0,
+        range_mm_takeoff_lca=40.0,
+        acute_takeoff_rca=True,
+        acute_takeoff_lca=False,
+        control_plot=False,
+    )
+    return mm.label_branches_pair(rca, lca, results)
+
+
+class TestRemoveBranch:
+    def test_removes_branch_and_children(self, example_centerlines, example_labelled):
+        _, _, lca = example_centerlines
+        results, cl = mm.remove_branch(example_labelled, lca, 1)
+
+        assert cl.branch_ids() == [0, 3, 4]
+        assert results["lca_points_side_1"] == []
+        assert results["lca_points_side_2"] == []
+        assert len(results["lca_points_side_3"]) > 0
+        assert len(results["mesh"].vertices) < len(example_labelled["mesh"].vertices)
+
+    def test_mesh_stays_closed_and_consistent(
+        self, example_centerlines, example_labelled
+    ):
+        _, _, lca = example_centerlines
+        results, _ = mm.remove_branch(example_labelled, lca, 1)
+        mesh = results["mesh"]
+        assert mesh.is_watertight
+        assert mesh.is_winding_consistent
+        assert mesh.volume > 0
+        assert len(mesh.split(only_watertight=False)) == 1
+        assert results["boundary_points"] == []
+
+    def test_every_label_points_at_the_new_mesh(
+        self, example_centerlines, example_labelled
+    ):
+        _, _, lca = example_centerlines
+        results, _ = mm.remove_branch(example_labelled, lca, 1)
+        verts = {tuple(v) for v in results["mesh"].vertices}
+        for key, value in results.items():
+            if isinstance(value, list) and value and len(value[0]) == 3:
+                assert all(tuple(p) in verts for p in value), key
+        labelled = set().union(
+            *(
+                map(tuple, results[k])
+                for k in ("aorta_points", "rca_points", "lca_points")
+            )
+        )
+        assert labelled | set(map(tuple, results["rca_removed_points"])) == verts
+
+    def test_vessel_found_without_results_key(
+        self, example_centerlines, example_labelled
+    ):
+        _, rca, _ = example_centerlines
+        # Both vessels have a side branch 2; the RCA one must go.
+        results, cl = mm.remove_branch(example_labelled, rca, 2)
+        assert results["rca_points_side_2"] == []
+        assert results["lca_points_side_2"] == example_labelled["lca_points_side_2"]
+        assert cl.branch_ids() == [0, 1, 3]
+
+    def test_open_hole_when_not_filled(self, example_centerlines, example_labelled):
+        _, rca, _ = example_centerlines
+        results, _ = mm.remove_branch(example_labelled, rca, 2, fill_hole=False)
+        assert len(results["mesh"].outline().entities) == 1
+        assert len(results["boundary_points_1"]) > 0
+
+    def test_downstream_works_with_gaps(self, example_centerlines, example_labelled):
+        ao, rca, lca = example_centerlines
+        results, lca_cut = mm.remove_branch(example_labelled, lca, 1)
+        tree = mm.discretize_vessel_tree(
+            ao, rca, lca_cut, results, step_size=1.0, n_points=50, control_plot=False
+        )
+        assert len(tree.lca_branches) == 4
+        assert tree.lca_branches[0] == [] and tree.lca_branches[1] == []
+        assert len(tree.lca_branches[2]) > 0
+
+    def test_rejects_main_and_unknown(self, example_centerlines, example_labelled):
+        _, rca, _ = example_centerlines
+        with pytest.raises(ValueError):
+            mm.remove_branch(example_labelled, rca, 0)
+        with pytest.raises(ValueError):
+            mm.remove_branch(example_labelled, rca, 99)

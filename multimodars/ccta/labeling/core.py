@@ -428,7 +428,8 @@ def label_branches(
           key per side branch discovered in *centerline*.  A point may appear
           in more than one side-branch set when it sits near a bifurcation;
           :func:`discretize_vessel` cuts each branch's faces separately, so
-          shared vertices are fine.
+          shared vertices are fine.  Removed branches (see
+          :func:`~multimodars.remove_branch`) get no key.
     """
     branch_ids = [branch_id] if isinstance(branch_id, int) else list(branch_id)
     main_id_set = set(branch_ids)
@@ -448,9 +449,9 @@ def label_branches(
     results[f"{results_key}_main"] = main_points
     results[f"{results_key}_side"] = side_points
 
-    # Split side points per individual side branch.
-    n_branches = len(centerline.branch_start_indices)
-    side_branch_ids = [k for k in range(n_branches) if k not in main_id_set]
+    # Split side points per individual side branch.  branch_ids() skips removed
+    # branches, which keep their id but have no points.
+    side_branch_ids = [k for k in centerline.branch_ids() if k not in main_id_set]
 
     print(f"\nBranch labeling for '{results_key}' (branch_ids={branch_ids}):")
     print(f"  {results_key}_main: {len(main_points)}")

@@ -302,8 +302,10 @@ class PyCenterline:
     points : list of PyCenterlinePoint
         Ordered list of centerline points.
     branch_start_indices : list of int
-        Index into ``points`` where each branch begins.
-        ``branch_start_indices[0]`` is always 0 (main vessel).
+        Index into ``points`` where each branch begins; entry ``k`` belongs to
+        branch id ``k``. ``branch_start_indices[0]`` is always 0 (main vessel).
+        A removed branch keeps its entry as an empty range, so use
+        ``branch_ids()`` to list the branches that have points.
     """
 
     points: list[PyCenterlinePoint]
@@ -342,6 +344,7 @@ class PyCenterline:
         Both resulting segments share the split point. Branches are re-sorted
         by descending length afterwards, so branch 0 is always the longest
         overall - the same invariant ``calculate_branches`` establishes.
+        This reassigns branch ids, so split before labelling a mesh.
 
         Parameters
         ----------
@@ -358,11 +361,49 @@ class PyCenterline:
         Segments are joined at the closest endpoint pair. Branches are
         re-sorted by descending length afterwards, so branch 0 is always the
         longest overall - the same invariant ``calculate_branches`` establishes.
+        This reassigns branch ids, so merge before labelling a mesh.
 
         Parameters
         ----------
         branch_id_a : int
         branch_id_b : int
+        """
+        ...
+
+    def branch_ids(self) -> list[int]:
+        """Ids of the branches that have points, ascending.
+
+        A branch removed with ``remove_branches`` keeps its id (the other
+        branches are not renumbered) but is left out here, so iterate over this
+        rather than ``range(len(branch_start_indices))``.
+        """
+        ...
+
+    def branch_parents(self) -> list[int | None]:
+        """Parent branch of every branch, indexed by branch id.
+
+        A side branch's parent is the lower-numbered branch holding the point
+        nearest to its junction end. ``None`` for branch 0 and for removed
+        branches.
+        """
+        ...
+
+    def remove_branches(self, branch_ids: list[int]) -> PyCenterline:
+        """Remove branches together with every branch growing out of them.
+
+        The other branches keep their ids: a removed branch keeps its entry in
+        ``branch_start_indices`` as an empty range and drops out of
+        ``branch_ids()``.
+
+        Parameters
+        ----------
+        branch_ids : list of int
+            Branches to remove.
+
+        Raises
+        ------
+        ValueError
+            If a branch is 0 (the main vessel) or not in the centerline.
         """
         ...
 
@@ -395,7 +436,8 @@ class PyCenterline:
         from the vessel origin, so side branches share a common prefix with
         branch 0. This trims that prefix from each side branch, keeping the
         bifurcation junction point and the diverged portion. Branches that
-        overlap branch 0 entirely are dropped. The trim threshold is one mean
+        overlap branch 0 entirely are emptied (their id is kept, so the other
+        branches keep theirs). The trim threshold is one mean
         inter-point spacing of branch 0.
 
         Returns
