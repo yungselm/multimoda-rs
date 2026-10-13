@@ -324,9 +324,7 @@ pub struct ReclassifiedLabels {
     pub lca_removed_points: Vec<(f64, f64, f64)>,
 }
 
-/// Refine vertex labels using a mesh adjacency map. Replaces the old pure-Python
-/// `_final_reclassification`, which did the same per-vertex adjacency traversal but
-/// paid Python-loop overhead for every one of up to tens of thousands of vertices.
+/// Refine vertex labels using a mesh adjacency map.
 ///
 /// Applies two adjacency-based correction rules, identical to the original:
 /// * Logic A - an isolated RCA/LCA vertex (no same-label neighbours) is reassigned

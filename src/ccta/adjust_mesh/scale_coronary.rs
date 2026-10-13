@@ -3,8 +3,25 @@ use nalgebra::Point3;
 use rayon::prelude::*;
 use rstar::primitives::GeomWithData;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::ops::RangeInclusive;
 
 type Coords3 = (f64, f64, f64);
+/// R-tree over centerline points, each tagged with its coordinates' bit pattern.
+type CenterlineTree = rstar::RTree<GeomWithData<[f64; 3], [u64; 3]>>;
+
+/// Points of a vessel split by where they sit relative to the pullback segment.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PullbackRegions {
+    /// On the pullback path, before the segment the frames cover.
+    pub proximal: Vec<Coords3>,
+    /// On the pullback path, after the segment.
+    pub distal: Vec<Coords3>,
+    /// On the pullback path, inside the segment.
+    pub anomalous: Vec<Coords3>,
+    /// Not on the pullback path: other branches, and parent vessels beyond the junction
+    /// the path leaves them at.
+    pub off_path: Vec<Coords3>,
+}
 
 pub fn centerline_based_wall_diameter_optimization(
     centerline: &Centerline,
@@ -261,20 +278,6 @@ fn find_closest_centerline_point_optimized(
     closest_point
 }
 
-/// Points of a vessel split by where they sit relative to the pullback segment.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct PullbackRegions {
-    /// On the pullback path, before the segment the frames cover.
-    pub proximal: Vec<Coords3>,
-    /// On the pullback path, after the segment.
-    pub distal: Vec<Coords3>,
-    /// On the pullback path, inside the segment.
-    pub anomalous: Vec<Coords3>,
-    /// Not on the pullback path: other branches, and parent vessels beyond the junction
-    /// the path leaves them at.
-    pub off_path: Vec<Coords3>,
-}
-
 /// Split the labelled points of a vessel by where they sit along the pullback path of
 /// branch `branch_id`, relative to the segment the `frames` cover.
 ///
@@ -339,35 +342,46 @@ pub fn find_points_by_cl_region_rs(
         on_path_branches.push(*p);
     }
 
+    let segment = seg_start..=seg_end;
+
     let mut regions = PullbackRegions::default();
-    let mut between = Vec::new();
     for (&b, points) in branch_points {
         let range = centerline.branch_range(b).unwrap_or_default();
-        if !on_path_branches.contains(&b) || range.is_empty() {
-            regions.off_path.extend(points);
-            continue;
-        }
-        let branch_tree = tree_of(&centerline.points[range]);
-        for point in points {
-            match position_of(&branch_tree, [point.0, point.1, point.2]) {
-                Some(pos) if pos < seg_start => regions.proximal.push(*point),
-                Some(pos) if pos <= seg_end => between.push(*point),
-                Some(_) => regions.distal.push(*point),
-                None => regions.off_path.push(*point),
-            }
+        let branch_tree = (on_path_branches.contains(&b) && !range.is_empty())
+            .then(|| tree_of(&centerline.points[range]));
+        for &point in points {
+            let position = branch_tree
+                .as_ref()
+                .and_then(|tree| position_of(tree, [point.0, point.1, point.2]));
+            regions.region_for(position, &segment).push(point);
         }
     }
 
-    let (proximal, between) = clean_up_non_section_points(regions.proximal, between, 1.0, 0.6);
-    let (distal, between) = clean_up_non_section_points(regions.distal, between, 1.0, 0.6);
-    regions.proximal = proximal;
-    regions.distal = distal;
-    regions.anomalous = between;
-    Ok(regions)
+    let (proximal, anomalous) =
+        clean_up_non_section_points(regions.proximal, regions.anomalous, 1.0, 0.6);
+    let (distal, anomalous) = clean_up_non_section_points(regions.distal, anomalous, 1.0, 0.6);
+    Ok(PullbackRegions {
+        proximal,
+        distal,
+        anomalous,
+        off_path: regions.off_path,
+    })
 }
 
-/// R-tree over centerline points, each tagged with its coordinates' bit pattern.
-type CenterlineTree = rstar::RTree<GeomWithData<[f64; 3], [u64; 3]>>;
+impl PullbackRegions {
+    fn region_for(
+        &mut self,
+        position: Option<usize>,
+        segment: &RangeInclusive<usize>,
+    ) -> &mut Vec<Coords3> {
+        match position {
+            None => &mut self.off_path,
+            Some(p) if p < *segment.start() => &mut self.proximal,
+            Some(p) if segment.contains(&p) => &mut self.anomalous,
+            Some(_) => &mut self.distal,
+        }
+    }
+}
 
 pub fn clean_up_non_section_points(
     points_to_cleanup: Vec<Coords3>,

@@ -11,6 +11,7 @@ use pyo3::prelude::*;
 
 type Point3D = (f64, f64, f64);
 type TriangleTuple = (Point3D, Point3D, Point3D);
+/// (aorta, lca, rca, lca_removed, rca_removed) point lists.
 type FiveRegionPointLists = (
     Vec<Point3D>,
     Vec<Point3D>,
@@ -18,6 +19,8 @@ type FiveRegionPointLists = (
     Vec<Point3D>,
     Vec<Point3D>,
 );
+/// (proximal, distal, anomalous, off_path) point lists.
+type PointLists4 = (Vec<Point3D>, Vec<Point3D>, Vec<Point3D>, Vec<Point3D>);
 
 /// Find points bounded by spheres along a coronary vessel centerline.
 ///
@@ -57,7 +60,6 @@ pub fn find_centerline_bounded_points_simple(
 ) -> PyResult<Vec<Point3D>> {
     let rust_centerline = centerline.to_rust_centerline();
 
-    // Call Rust function directly - no complex conversions needed
     let result_points =
         label_coronary::find_centerline_bounded_points(rust_centerline, &points, radius)
             .map_err(pyo3::exceptions::PyValueError::new_err)?;
@@ -337,9 +339,6 @@ pub fn find_points_by_cl_region(
         regions.off_path,
     ))
 }
-
-/// (proximal, distal, anomalous, off_path) point lists.
-type PointLists4 = (Vec<Point3D>, Vec<Point3D>, Vec<Point3D>, Vec<Point3D>);
 
 /// Clean up outlier points based on neighbourhood density and reference points.
 ///
