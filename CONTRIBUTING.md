@@ -9,6 +9,7 @@ By participating, you agree to respect everyone in this community. **˗ˏˋ ♡ 
 
 ## Table of Contents
 
+0. [LLM usage](#llm-usage)
 1. [Getting Started](#getting-started)  
 2. [I Have a Question](#i-have-a-question)  
 3. [Reporting Bugs](#reporting-bugs)  
@@ -18,6 +19,18 @@ By participating, you agree to respect everyone in this community. **˗ˏˋ ♡ 
 7. [Coding Style & Tests](#coding-style--tests)  
 8. [Writing Documentation](#writing-documentation)  
 9. [Where to Get Help](#where-to-get-help)
+
+## LLM usage
+I personally used LLMs to help me with especially docstrings, documentation and writing tests. I also used it to generate code especially on the Python side. That said,
+I am not against the usage of LLMs, however I also realized the flaws, resulting in bloated and often very hard to read code.
+
+This project should however be available to everybody, especially to people coming from a medical background, who can provide valuable ideas but maybe lack the necessary coding experience, to implement everything themselves. This very well respects the prototype nature of the LLMs were they can get you 80% the way, but fail to get it implemented all the way with the "optimal" solution. This is also how I treat this project, I prototype in the `multimodars` python core and when I am happy with the feature I implement it in the Rust `src`.
+
+That said I came up with the following rules:
+- LLM generated code is only accepted for the Python side, **no LLM code in the Rust core**.
+- Bloated PRs will be rejected instantly, since my time is limited.
+- I expect strong ownership of your code, if you can't reason about decision, when requested, the PR will also be rejected.
+- And of course I expect you to actually read your code and personally communicate, so LLM generated or coauthored PRs will also be instant-rejected.
 
 ## Getting started
 1. Fork the repo and clone your fork
