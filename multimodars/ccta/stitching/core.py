@@ -6,7 +6,8 @@ import numpy as np
 import trimesh
 
 from ..._converters import geometry_to_trimesh
-from ...multimodars import PyGeometry
+from ...multimodars import PyDiscretizedVesselTree, PyGeometry
+from .._results import map_point_lists
 from .boundary import (
     _adjust_start_point_by_z,
     _carry_ring_weights,
@@ -16,6 +17,7 @@ from .boundary import (
     _rotate_to_nearest_iv,
 )
 from .helpers import _fast_fix_normals, _plane_normal_svd
+from .side_branches import reconnect_side_branches
 
 
 def stitch_ccta_to_intravascular(
@@ -32,6 +34,7 @@ def stitch_ccta_to_intravascular(
     fillet_layers: int = 2,
     seam_points_a: int = 2,
     seam_points_b: int = 4,
+    tree: PyDiscretizedVesselTree | None = None,
 ) -> dict:
     """Stitch an aligned intravascular geometry into a CCTA mesh.
 
@@ -99,6 +102,13 @@ def stitch_ccta_to_intravascular(
         a warning and is ignored.
     fillet_layers : int, optional
         Intermediate rings each fillet arc is built from (default 2).
+    tree : PyDiscretizedVesselTree, optional
+        Discretized tree of the mesh before the removal.  With it, side
+        branches that leave the removed segment (loose pieces of *mesh*,
+        labelled ``"off_path_points"``) are cut at their first contour outside
+        the intravascular lumen and joined to a hole in the intravascular wall
+        (see :func:`~multimodars.ccta.stitching.reconnect_side_branches`).
+        Without it they stay loose.
     seam_points_a, seam_points_b : int, optional
         How many Half A / Half B points either side of each of the two seams
         where the halves meet are replaced by a smooth arc (default 2 / 4).
@@ -220,11 +230,34 @@ def stitch_ccta_to_intravascular(
     test_mesh = geometry_to_trimesh(iv_mesh)
     test_mesh.update_faces(test_mesh.unique_faces())
     test_mesh.update_faces(test_mesh.nondegenerate_faces())
+    branch_patches: list[trimesh.Trimesh] = []
+    if tree is not None:
+        ccta_before, iv_before = mesh, test_mesh
+        mesh, test_mesh, branch_patches = reconnect_side_branches(
+            mesh, test_mesh, list(iv_mesh.frames), results, tree
+        )
+        kept = {tuple(v) for v in mesh.vertices} | {
+            tuple(v) for v in test_mesh.vertices
+        }
+        dropped = (
+            {tuple(v) for v in ccta_before.vertices}
+            | {tuple(v) for v in iv_before.vertices}
+        ) - kept
+        if dropped:
+            results.update(
+                map_point_lists(
+                    results, lambda pts: [p for p in pts if p not in dropped]
+                )
+            )
+        # The holes' rim vertices moved, so take the lumen points from the mesh.
+        iv_mesh_points = [tuple(v) for v in test_mesh.vertices]
     _fast_fix_normals(test_mesh)
     # Concatenating Trimeshes gives a Trimesh; trimesh only types it as Geometry.
     mesh = cast(
         trimesh.Trimesh,
-        trimesh.util.concatenate([mesh, prox_patch, dist_patch, test_mesh]),
+        trimesh.util.concatenate(
+            [mesh, prox_patch, dist_patch, test_mesh, *branch_patches]
+        ),
     )
     trimesh.tol.merge = 0.001
     mesh.merge_vertices()

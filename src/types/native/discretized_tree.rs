@@ -1,5 +1,6 @@
 use crate::types::native::Contour;
 use nalgebra::Vector3;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone)]
 pub struct ReferenceTriplet {
@@ -8,22 +9,27 @@ pub struct ReferenceTriplet {
     pub clock_ref: (f64, f64, f64),         // former lower_ref
 }
 
+/// One branch of a discretized coronary.
+#[derive(Debug, Clone, Default)]
+pub struct DiscretizedBranch {
+    pub contours: Vec<Contour>,
+    /// Parent branch id (from the centerline) and the parent contour nearest this branch's
+    /// start. `None` for the main vessel (branch 0).
+    pub parent: Option<(u32, usize)>,
+    /// Triplet at this branch's ostium, on its first contour.
+    pub ostium: Option<ReferenceTriplet>,
+    /// Triplet on this branch where each child branch leaves it, by child branch id.
+    pub bifurcations: BTreeMap<u32, ReferenceTriplet>,
+}
+
 #[derive(Debug, Clone)]
 pub struct DiscretizedVesselTree {
     pub discretized_aorta: Vec<Contour>,
-    pub discretized_rca_main: Vec<Contour>,
-    pub discretized_lca_main: Vec<Contour>,
     pub spacing: f64,
-    /// Index `i` is RCA side branch `i + 1`.
-    pub rca_branches: Vec<Vec<Contour>>,
-    /// Index `i` is LCA side branch `i + 1`.
-    pub lca_branches: Vec<Vec<Contour>>,
-    /// Ostium triplet, then one per branch leaving the main vessel.
-    pub rca_references: Vec<ReferenceTriplet>,
-    pub lca_references: Vec<ReferenceTriplet>,
-    /// Per side branch (as in `rca_branches`): its ostium, then one per branch leaving it.
-    pub rca_branch_references: Vec<Vec<ReferenceTriplet>>,
-    pub lca_branch_references: Vec<Vec<ReferenceTriplet>>,
+    /// RCA branches by branch id, 0 being the main vessel.
+    pub rca: BTreeMap<u32, DiscretizedBranch>,
+    /// LCA branches by branch id, 0 being the main vessel.
+    pub lca: BTreeMap<u32, DiscretizedBranch>,
     /// Centroid of the aorta slice closest to the RCA ostium.
     pub ao_rca: (f64, f64, f64),
     /// Centroid of the aorta slice closest to the LCA ostium.
@@ -36,41 +42,25 @@ pub struct DiscretizedVesselTree {
 }
 
 impl DiscretizedVesselTree {
-    /// Computes `ao_rca`/`ao_lca` (aorta slice centroid nearest each main vessel's start) and the
-    /// reference triplets of every branch, sorted proximal → distal:
+    /// Computes `ao_rca`/`ao_lca` (aorta slice centroid nearest each main vessel's start), each
+    /// branch's junction contour on its parent, and the reference triplets:
     /// - ostium, on the first contour: `main_ref` faces the vessel the branch leaves (aorta or
     ///   parent branch), the side refs lie a quarter ring either side
-    /// - one per branch leaving this one, on the nearest contour: `main_ref` is the child's
-    ///   start, the side refs lie a quarter ring either side of the point closest to it
+    /// - one per child branch, on the parent contour nearest the child's start: `main_ref` is
+    ///   the child's start, the side refs lie a quarter ring either side of the point closest
+    ///   to it
     ///
-    /// A side branch's parent is the earlier branch with a contour nearest its start.
+    /// Parent ids are kept as they are (they come from the centerline). A parent missing from
+    /// the map is treated like the aorta.
     pub fn calculate_ref_pts(mut self) -> Self {
-        if let Some(refs) = coronary_references(
-            &self.discretized_aorta,
-            &self.discretized_rca_main,
-            &self.rca_branches,
-        ) {
-            self.ao_rca = refs.ao_centroid;
-            self.rca_references = refs.main;
-            self.rca_branch_references = refs.branches;
+        if let Some(ao) = coronary_references(&self.discretized_aorta, &mut self.rca) {
+            self.ao_rca = ao;
         }
-        if let Some(refs) = coronary_references(
-            &self.discretized_aorta,
-            &self.discretized_lca_main,
-            &self.lca_branches,
-        ) {
-            self.ao_lca = refs.ao_centroid;
-            self.lca_references = refs.main;
-            self.lca_branch_references = refs.branches;
+        if let Some(ao) = coronary_references(&self.discretized_aorta, &mut self.lca) {
+            self.ao_lca = ao;
         }
         self
     }
-}
-
-struct CoronaryReferences {
-    ao_centroid: (f64, f64, f64),
-    main: Vec<ReferenceTriplet>,
-    branches: Vec<Vec<ReferenceTriplet>>,
 }
 
 struct BranchSlices<'a> {
@@ -78,36 +68,48 @@ struct BranchSlices<'a> {
     centroids: Vec<Vector3<f64>>,
 }
 
+/// Fills in the junction contour and reference triplets of every branch in `branches` and
+/// returns the centroid of the aorta slice nearest the main vessel's start.
 fn coronary_references(
     aorta: &[Contour],
-    main: &[Contour],
-    side_branches: &[Vec<Contour>],
-) -> Option<CoronaryReferences> {
-    let first_main = contour_centroid(main.first()?);
+    branches: &mut BTreeMap<u32, DiscretizedBranch>,
+) -> Option<(f64, f64, f64)> {
+    let first_main = contour_centroid(branches.get(&0)?.contours.first()?);
     let ao_centroid = aorta
         .iter()
         .map(contour_centroid)
         .min_by(|a, b| (a - first_main).norm().total_cmp(&(b - first_main).norm()))?;
 
-    // Index 0 is the main vessel, index `j` side branch `j` (branch_id `j`).
-    let branches: Vec<BranchSlices> = std::iter::once(main)
-        .chain(side_branches.iter().map(Vec::as_slice))
-        .map(|contours| BranchSlices {
-            contours,
-            centroids: contours.iter().map(contour_centroid).collect(),
+    let slices: BTreeMap<u32, BranchSlices> = branches
+        .iter()
+        .map(|(&id, b)| {
+            let slices = BranchSlices {
+                contours: &b.contours,
+                centroids: b.contours.iter().map(contour_centroid).collect(),
+            };
+            (id, slices)
         })
         .collect();
-    let parents: Vec<Option<(usize, usize)>> = (0..branches.len())
-        .map(|b| find_parent(b, &branches))
+    // Parent id and the parent contour nearest the branch's start.
+    let parents: BTreeMap<u32, Option<(u32, usize)>> = branches
+        .iter()
+        .map(|(&id, b)| {
+            let junction = b.parent.and_then(|(p, _)| {
+                let start = *slices[&id].centroids.first()?;
+                let slice = nearest_centroid(&slices.get(&p)?.centroids, start)?;
+                Some((p, slice))
+            });
+            (id, junction)
+        })
         .collect();
 
-    let references_of = |b: usize| -> Vec<ReferenceTriplet> {
-        let branch = &branches[b];
+    let references_of = |id: u32| -> (Option<ReferenceTriplet>, BTreeMap<u32, ReferenceTriplet>) {
+        let branch = &slices[&id];
         let Some(&first) = branch.centroids.first() else {
-            return vec![];
+            return (None, BTreeMap::new());
         };
-        let origin = match parents[b] {
-            Some((p, slice)) => branches[p].centroids[slice],
+        let origin = match parents[&id] {
+            Some((p, slice)) => slices[&p].centroids[slice],
             None => ao_centroid,
         };
         let up_hint = (first - origin)
@@ -117,55 +119,44 @@ fn coronary_references(
         // Facing preference: the vessel left behind, back up the parent (a branch leaving at
         // ~90° has the parent's centre straight behind it), then down.
         let mut facing = vec![origin - first];
-        if let Some((p, slice)) = parents[b] {
-            facing.push(-branch_direction(&branches[p], slice, ao_centroid));
+        if let Some((p, slice)) = parents[&id] {
+            facing.push(-branch_direction(&slices[&p], slice, ao_centroid));
         }
         facing.push(-Vector3::z());
 
-        let mut tagged: Vec<(usize, ReferenceTriplet)> = Vec::new();
-        if let Some(r) = ostium_reference(origin, branch, &facing, up_hint) {
-            tagged.push((0, r));
-        }
-        for (child, parent) in parents.iter().enumerate() {
-            if let Some((p, slice)) = *parent {
-                if p == b {
-                    if let Some(r) =
-                        bifurcation_reference(origin, branch, slice, &branches[child], up_hint)
-                    {
-                        tagged.push((slice, r));
-                    }
+        let ostium = ostium_reference(origin, branch, &facing, up_hint);
+        let bifurcations = parents
+            .iter()
+            .filter_map(|(&child, parent)| match *parent {
+                Some((p, slice)) if p == id => {
+                    bifurcation_reference(origin, branch, slice, &slices[&child], up_hint)
+                        .map(|r| (child, r))
                 }
-            }
-        }
-        tagged.sort_by_key(|(k, _)| *k);
-        tagged.into_iter().map(|(_, r)| r).collect()
+                _ => None,
+            })
+            .collect();
+        (ostium, bifurcations)
     };
+    let references: Vec<_> = slices.keys().map(|&id| (id, references_of(id))).collect();
 
-    Some(CoronaryReferences {
-        ao_centroid: (ao_centroid.x, ao_centroid.y, ao_centroid.z),
-        main: references_of(0),
-        branches: (1..branches.len()).map(references_of).collect(),
-    })
+    for (id, (ostium, bifurcations)) in references {
+        let branch = branches.get_mut(&id).expect("id comes from the map");
+        if let Some(junction) = parents[&id] {
+            branch.parent = Some(junction);
+        }
+        branch.ostium = ostium;
+        branch.bifurcations = bifurcations;
+    }
+    Some((ao_centroid.x, ao_centroid.y, ao_centroid.z))
 }
 
-/// Parent of side branch `b` (main or lower id) and the parent slice nearest `b`'s start.
-fn find_parent(b: usize, branches: &[BranchSlices]) -> Option<(usize, usize)> {
-    if b == 0 {
-        return None;
-    }
-    let start = *branches[b].centroids.first()?;
-    branches[..b]
+/// Index of the centroid in `centroids` nearest `target`.
+fn nearest_centroid(centroids: &[Vector3<f64>], target: Vector3<f64>) -> Option<usize> {
+    centroids
         .iter()
         .enumerate()
-        .flat_map(|(p, branch)| {
-            branch
-                .centroids
-                .iter()
-                .enumerate()
-                .map(move |(slice, c)| (p, slice, (c - start).norm()))
-        })
-        .min_by(|a, b| a.2.total_cmp(&b.2))
-        .map(|(p, slice, _)| (p, slice))
+        .min_by(|(_, a), (_, b)| (*a - target).norm().total_cmp(&(*b - target).norm()))
+        .map(|(i, _)| i)
 }
 
 /// Unit direction of the branch at `slice` (from `origin` for a single contour).
@@ -363,24 +354,31 @@ mod tests {
         Vector3::new(t.0, t.1, t.2)
     }
 
+    fn branch(contours: Vec<Contour>, parent: Option<u32>) -> DiscretizedBranch {
+        DiscretizedBranch {
+            contours,
+            parent: parent.map(|p| (p, 0)),
+            ..Default::default()
+        }
+    }
+
     /// Aorta along z at y = −8, main vessel along +x from (15, 0, 0), side branch 1 off main
-    /// slice 10 along +y, side branch 2 off side branch 1 slice 8 along +z. Both leave at 90°.
+    /// slice 10 along +y, side branch 3 off side branch 1 slice 8 along +z. Both leave at 90°.
+    /// Branch 2 was removed, so ids have a gap.
     fn tree() -> DiscretizedVesselTree {
         let aorta = vessel(Vector3::new(0.0, -8.0, -10.0), Vector3::z(), 21, 12.0);
         let main = vessel(Vector3::new(15.0, 0.0, 0.0), Vector3::x(), 30, 2.0);
         let side1 = vessel(Vector3::new(25.0, 4.0, 0.0), Vector3::y(), 20, 1.5);
-        let side2 = vessel(Vector3::new(25.0, 12.0, 3.0), Vector3::z(), 10, 1.0);
+        let side3 = vessel(Vector3::new(25.0, 12.0, 3.0), Vector3::z(), 10, 1.0);
         DiscretizedVesselTree {
             discretized_aorta: aorta,
-            discretized_rca_main: vec![],
-            discretized_lca_main: main,
             spacing: 1.0,
-            rca_branches: vec![],
-            lca_branches: vec![side1, side2],
-            rca_references: vec![],
-            lca_references: vec![],
-            rca_branch_references: vec![],
-            lca_branch_references: vec![],
+            rca: BTreeMap::new(),
+            lca: BTreeMap::from([
+                (0, branch(main, None)),
+                (1, branch(side1, Some(0))),
+                (3, branch(side3, Some(1))),
+            ]),
             ao_rca: (0.0, 0.0, 0.0),
             ao_lca: (0.0, 0.0, 0.0),
             pts_cusp_rcc: None,
@@ -395,7 +393,7 @@ mod tests {
     #[test]
     fn test_ostium_main_ref_faces_aorta_on_round_contour() {
         let t = tree();
-        let ostium = &t.lca_references[0];
+        let ostium = t.lca[&0].ostium.as_ref().unwrap();
         // First main contour: centre (15, 0, 0), radius 2, in the yz plane. The aorta centre
         // (0, −8, 0) projects onto −y, so main_ref ≈ (15, −2, 0). Ring points are 9° apart, so
         // the nearest one is within 2·sin(4.5°) ≈ 0.16 mm.
@@ -411,31 +409,50 @@ mod tests {
     }
 
     #[test]
-    fn test_references_are_placed_on_the_parent_branch() {
+    fn test_references_are_keyed_by_child_id_on_the_parent() {
         let t = tree();
-        // Main vessel: ostium + side branch 1 only (side branch 2 leaves side branch 1).
-        assert_eq!(t.lca_references.len(), 2);
-        assert!((v(t.lca_references[1].main_ref) - Vector3::new(25.0, 4.0, 0.0)).norm() < 1e-9);
-        // Side branch 1 has its ostium and side branch 2's bifurcation, side branch 2 its ostium.
-        assert_eq!(t.lca_branch_references.len(), 2);
-        assert_eq!(t.lca_branch_references[0].len(), 2);
-        assert!(
-            (v(t.lca_branch_references[0][1].main_ref) - Vector3::new(25.0, 12.0, 3.0)).norm()
-                < 1e-9
+        // Main vessel: side branch 1 only (side branch 3 leaves side branch 1).
+        let main = &t.lca[&0];
+        assert_eq!(
+            main.bifurcations.keys().copied().collect::<Vec<_>>(),
+            vec![1]
         );
-        assert_eq!(t.lca_branch_references[1].len(), 1);
+        assert!((v(main.bifurcations[&1].main_ref) - Vector3::new(25.0, 4.0, 0.0)).norm() < 1e-9);
+        // Side branch 1 has side branch 3's bifurcation, side branch 3 has none.
+        let side1 = &t.lca[&1];
+        assert_eq!(side1.parent, Some((0, 10)));
+        assert_eq!(
+            side1.bifurcations.keys().copied().collect::<Vec<_>>(),
+            vec![3]
+        );
+        assert!((v(side1.bifurcations[&3].main_ref) - Vector3::new(25.0, 12.0, 3.0)).norm() < 1e-9);
+        assert_eq!(t.lca[&3].parent, Some((1, 8)));
+        assert!(t.lca[&3].bifurcations.is_empty());
         // Side branch 1 leaves at 90°: the main vessel's centre is straight behind it, so its
         // main_ref faces back up the main vessel (−x): ≈ (23.5, 4, 0).
-        let m = v(t.lca_branch_references[0][0].main_ref);
+        let m = v(side1.ostium.as_ref().unwrap().main_ref);
         assert!(
             (m - Vector3::new(23.5, 4.0, 0.0)).norm() < 0.12,
             "main_ref {m}"
         );
-        // Side branch 2 likewise faces back up side branch 1 (−y): ≈ (25, 11, 3).
-        let m = v(t.lca_branch_references[1][0].main_ref);
+        // Side branch 3 likewise faces back up side branch 1 (−y): ≈ (25, 11, 3).
+        let m = v(t.lca[&3].ostium.as_ref().unwrap().main_ref);
         assert!(
             (m - Vector3::new(25.0, 11.0, 3.0)).norm() < 0.08,
             "main_ref {m}"
         );
+    }
+
+    #[test]
+    fn test_parent_comes_from_the_branch_not_the_geometry() {
+        // Branch 3 starts right next to the main vessel, but its parent is branch 1: the
+        // bifurcation goes on branch 1, the nearest contour of branch 1.
+        let mut t = tree();
+        let near_main = vessel(Vector3::new(20.0, 2.5, 0.0), Vector3::y(), 5, 0.5);
+        t.lca.insert(3, branch(near_main, Some(1)));
+        let t = t.calculate_ref_pts();
+        assert!(!t.lca[&0].bifurcations.contains_key(&3));
+        assert!(t.lca[&1].bifurcations.contains_key(&3));
+        assert_eq!(t.lca[&3].parent.map(|(p, _)| p), Some(1));
     }
 }

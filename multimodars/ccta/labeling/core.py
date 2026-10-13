@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import warnings
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import trimesh
+from scipy.spatial import cKDTree
 
 from ...io.read_geometrical import read_mesh
 from ...multimodars import (
@@ -15,6 +16,7 @@ from ...multimodars import (
     find_centerline_bounded_points_simple,
     find_points_by_cl_region,
 )
+from .._results import branches_key, vessel_branches, vessel_of_centerline
 from ..debug_plots import plot_results_key
 from .helpers import _apply_occlusion_removal, _keep_largest_connected_component
 
@@ -252,40 +254,35 @@ def label_anomalous_region(
     centerline,
     frames,
     results: dict,
-    results_key: str = "rca_points",
+    branch_id: int = 0,
     debug_plot: bool = False,
 ) -> dict:
-    """Partition a coronary region into proximal, anomalous, and distal sub-regions.
+    """Split the pullback branch into proximal, anomalous and distal regions.
 
-    Uses the intravascular imaging frames to determine where along the centerline
-    the anomalous (intramural) segment begins and ends, then tags each mesh
-    vertex accordingly.
+    Uses the intravascular imaging frames, aligned to branch *branch_id*, to find
+    where along that branch the anomalous (intramural) segment begins and ends.
+    Only the pullback path is split: branch *branch_id* and its parent branches,
+    each up to the junction the path leaves it at (the path
+    ``centerline.get_branch(branch_id, with_parents=True)`` follows).  Every
+    other vertex of the vessel (its other branches, and parent vessels beyond
+    the junction) goes to ``"off_path_points"`` and keeps its branch label.
 
-    The frames may lie on any branch of *centerline*, and may continue into its
-    parent vessel (``get_branch(..., with_parents=True)``). Positions are measured
-    along the pullback path, from the ostium through the parent branches to the
-    tip of the branch the frames lie on. Only vertices on that path can be
-    anomalous. Every other vertex (side branches, and a parent vessel beyond the
-    junction it is left at) is proximal if it leaves the path before the middle
-    of the anomalous segment, distal otherwise.
+    The vessel (RCA or LCA) is the one *centerline* belongs to, and its vertices
+    per branch come from :func:`label_branches`.
 
     Parameters
     ----------
     centerline : PyCenterline
-        Centerline of the whole coronary vessel of interest, with all its
-        branches, oriented from the ostium (e.g. from
-        :func:`~multimodars.ccta.centerline_prep.prepare_centerline` with
-        ``ref_centerline``). Not the single branch from ``get_branch`` that
-        the frames were aligned on: without the other branches, every vertex
-        is placed on that one branch.
+        Centerline of the whole coronary vessel, with all its branches, the one
+        the branches were labelled with.
     frames : list of PyFrame
-        Intravascular imaging frames, aligned onto a branch of *centerline*.
+        Intravascular imaging frames, aligned onto branch *branch_id* (possibly
+        continuing into its parent vessels).
     results : dict
-        Labelled results dictionary (e.g. from :func:`label_geometry`).
-        Must contain the key specified by *results_key*.
-    results_key : str, optional
-        Key in *results* whose point list is partitioned.
-        Default is ``"rca_points"``.
+        Labelled results with ``"mesh"`` and the per-branch labels
+        (``"rca_branches"`` / ``"lca_branches"``).
+    branch_id : int, optional
+        Branch the frames are aligned to. Default ``0``, the main vessel.
     debug_plot : bool, optional
         When ``True`` opens an interactive visualisation of the three
         sub-regions.  Default is ``False``.
@@ -293,64 +290,79 @@ def label_anomalous_region(
     Returns
     -------
     dict
-        The input *results* dictionary extended with three new keys:
+        The input *results* dictionary extended with:
 
-        * ``"proximal_points"`` - vertices proximal to the anomalous segment.
-        * ``"distal_points"`` - vertices distal to the anomalous segment.
-        * ``"anomalous_points"`` - vertices within the anomalous segment.
+        * ``"proximal_points"`` - path vertices proximal to the anomalous segment.
+        * ``"distal_points"`` - path vertices distal to the anomalous segment.
+        * ``"anomalous_points"`` - path vertices within the anomalous segment.
+        * ``"off_path_points"`` - the vessel's vertices off the pullback path.
 
-        Island points dropped from these sub-regions are moved from
-        *results_key* to ``"aorta_points"``. ``"aorta_points"`` stays disjoint
+        Island points dropped from the three path regions are moved from the
+        vessel's labels to ``"aorta_points"``. ``"aorta_points"`` stays disjoint
         from ``"rca_removed_points"`` and ``"lca_removed_points"``, as returned
         by :func:`label_geometry`.
+
+    Raises
+    ------
+    ValueError
+        If the branches were not labelled, *branch_id* is not a labelled
+        branch, or the labels hold branches *centerline* does not have.
     """
-    side_keys = [k for k in results if k.startswith(f"{results_key}_side_")]
-    if len(centerline.branch_start_indices) <= 1 and side_keys:
-        warnings.warn(
-            f"label_anomalous_region got a single-branch centerline, but results has "
-            f"side branches for '{results_key}' ({', '.join(side_keys)}). Pass the "
-            f"whole vessel centerline, not get_branch(...): otherwise every vertex is "
-            f"placed on this one branch.",
-            UserWarning,
-            stacklevel=2,
+    vessel = vessel_of_centerline(results, centerline)
+    branches = vessel_branches(results, vessel)
+    if branch_id not in branches:
+        raise ValueError(
+            f"branch {branch_id} is not labelled for {vessel.upper()} "
+            f"(branches {sorted(branches)})"
+        )
+    unknown = sorted(set(branches) - set(centerline.branch_ids()))
+    if unknown:
+        raise ValueError(
+            f"{vessel.upper()} branches {unknown} are not in the centerline. Pass the "
+            "centerline the branches were labelled with, not get_branch(...)"
         )
 
-    proximal_points_raw, distal_points_raw, anomalous_points_raw = (
-        find_points_by_cl_region(
-            centerline=centerline,
-            frames=frames,
-            points=results[results_key],
-        )
-    )
+    (
+        proximal_points_raw,
+        distal_points_raw,
+        anomalous_points_raw,
+        off_path_points,
+    ) = find_points_by_cl_region(centerline, branch_id, frames, branches)
 
     mesh = results["mesh"]
     proximal_points = _keep_largest_connected_component(mesh, proximal_points_raw)
     distal_points = _keep_largest_connected_component(mesh, distal_points_raw)
     anomalous_points = _keep_largest_connected_component(mesh, anomalous_points_raw)
 
-    # Island points dropped above are still nominally part of results[results_key]
-    # (e.g. rca_points), which would otherwise keep them out of the aorta_points
-    # complement below - stranding them in no region at all, so no scaling step
-    # ever touches them.  Reassign them fully to aorta by removing them from
-    # results[results_key] too, mirroring how final_reclassification's Logic A
-    # reassigns isolated vertices to aorta rather than leaving them ambiguous.
+    # Island points dropped above are still nominally part of the vessel's
+    # labels, which would otherwise keep them out of the aorta_points complement
+    # below, stranding them in no region at all, so no scaling step ever touches
+    # them.  Reassign them fully to aorta by removing them from the vessel's
+    # labels too, mirroring how final_reclassification's Logic A reassigns
+    # isolated vertices to aorta rather than leaving them ambiguous.
     dropped_points = (
         (set(proximal_points_raw) - set(proximal_points))
         | (set(distal_points_raw) - set(distal_points))
         | (set(anomalous_points_raw) - set(anomalous_points))
     )
+    points_key = f"{vessel}_points"
     if dropped_points:
-        results[results_key] = [
-            p for p in results[results_key] if p not in dropped_points
+        results[points_key] = [
+            p for p in results[points_key] if p not in dropped_points
         ]
+        results[branches_key(vessel)] = {
+            k: [p for p in pts if p not in dropped_points]
+            for k, pts in branches.items()
+        }
         print(
             f"  {len(dropped_points)} island point(s) reassigned from "
-            f"'{results_key}' sub-regions to aorta_points"
+            f"'{points_key}' sub-regions to aorta_points"
         )
 
     results["proximal_points"] = proximal_points
     results["distal_points"] = distal_points
     results["anomalous_points"] = anomalous_points
+    results["off_path_points"] = off_path_points
 
     # The occlusion-removed points are excluded too: label_geometry returns them
     # as their own classes, disjoint from aorta_points, and callers that want the
@@ -368,10 +380,14 @@ def label_anomalous_region(
         tuple(v) for v in results["mesh"].vertices if tuple(v) not in non_aorta
     ]
 
-    print("\nApplying anomalous labeling based on aligned intravascular frames...")
+    print(
+        f"\nApplying anomalous labeling on {vessel.upper()} branch {branch_id} "
+        "based on aligned intravascular frames..."
+    )
     print(f"proximal_points: {len(results['proximal_points'])}")
     print(f"distal_points: {len(results['distal_points'])}")
     print(f"anomalous_points: {len(results['anomalous_points'])}")
+    print(f"off_path_points: {len(results['off_path_points'])}")
 
     if debug_plot:
         plot_results_key(
@@ -394,25 +410,27 @@ def label_anomalous_region(
 def label_branches(
     centerline,
     results: dict,
-    results_key: str = "rca_points",
-    branch_id: int | list[int] = 0,
+    vessel: str | None = None,
     bounding_sphere_radius_mm: float = 3.0,
 ) -> dict:
-    """Partition a coronary region into main branch and per-side-branch point sets.
+    """Split a coronary's vertices into one label per centerline branch.
+
+    Every vertex of ``results["{vessel}_points"]`` is assigned to exactly one
+    branch of *centerline*.  A rolling sphere along each branch collects its
+    candidates.  A vertex several branches collect goes to the one closest to the
+    main vessel in the branch tree (a parent before its children, so the parent
+    keeps its wall at a junction), then to the nearest of those.  A vertex no
+    sphere reaches goes to the nearest branch.
 
     Parameters
     ----------
     centerline : PyCenterline
-        Centerline of the coronary vessel of interest.
+        Centerline of the whole coronary, with its branches.
     results : dict
         Labelled results dictionary (e.g. from :func:`label_geometry`).
-        Must contain the key specified by *results_key*.
-    results_key : str, optional
-        Key in *results* whose point list is partitioned.
-        Default is ``"rca_points"``.
-    branch_id : int or list of int, optional
-        Branch index or list of branch indices whose combined points form the
-        main branch (e.g. ``[0, 1]`` for LAD + LCx).  Default is ``0``.
+    vessel : {"rca", "lca"}, optional
+        Vessel *centerline* belongs to. By default the one whose vertices lie
+        nearest to it.
     bounding_sphere_radius_mm : float, optional
         Radius of the rolling sphere used to collect candidate vertices.
         Default is ``3.0``.
@@ -420,48 +438,52 @@ def label_branches(
     Returns
     -------
     dict
-        The input *results* dictionary extended with:
-
-        * ``"{results_key}_main"`` - vertices along the main branch(es).
-        * ``"{results_key}_side"`` - all remaining vertices (aggregate).
-        * ``"{results_key}_side_{k}"`` - vertices near side branch *k*, one
-          key per side branch discovered in *centerline*.  A point may appear
-          in more than one side-branch set when it sits near a bifurcation;
-          :func:`discretize_vessel` cuts each branch's faces separately, so
-          shared vertices are fine.
+        *results* with ``"{vessel}_branches"``: a dict from every branch id of
+        *centerline* (``centerline.branch_ids()``, 0 being the main vessel) to
+        the list of its vertices.  The lists partition
+        ``results["{vessel}_points"]``.
     """
-    branch_ids = [branch_id] if isinstance(branch_id, int) else list(branch_id)
-    main_id_set = set(branch_ids)
+    if vessel is None:
+        vessel = vessel_of_centerline(results, centerline)
+    points = results[f"{vessel}_points"]
+    ids = centerline.branch_ids()
+    parents = centerline.branch_parents()
 
-    # Collect main-branch points.
-    main_set: set = set()
-    for bid in branch_ids:
-        branch = centerline.get_branch(bid)
-        points_found = find_centerline_bounded_points_simple(
-            branch, results[results_key], bounding_sphere_radius_mm
+    def depth(k: int) -> int:
+        d = 0
+        while (p := parents[k]) is not None:
+            d, k = d + 1, p
+        return d
+
+    claims: dict[tuple, list[int]] = {}
+    for k in ids:
+        found = find_centerline_bounded_points_simple(
+            centerline.get_branch(k), points, bounding_sphere_radius_mm
         )
-        main_set.update(points_found)
+        for p in found:
+            claims.setdefault(tuple(p), []).append(k)
 
-    main_points = [p for p in results[results_key] if p in main_set]
-    side_points = [p for p in results[results_key] if p not in main_set]
+    pts = np.asarray(points, dtype=np.float64).reshape(-1, 3)
 
-    results[f"{results_key}_main"] = main_points
-    results[f"{results_key}_side"] = side_points
+    def distance_to_branch(k: int) -> np.ndarray:
+        axis = np.asarray(centerline.get_branch(k).points_as_tuples())
+        return cKDTree(axis).query(pts)[0]
 
-    # Split side points per individual side branch.
-    n_branches = len(centerline.branch_start_indices)
-    side_branch_ids = [k for k in range(n_branches) if k not in main_id_set]
+    distance = {k: distance_to_branch(k) for k in ids}
+    depths = {k: depth(k) for k in ids}
 
-    print(f"\nBranch labeling for '{results_key}' (branch_ids={branch_ids}):")
-    print(f"  {results_key}_main: {len(main_points)}")
-    print(f"  {results_key}_side: {len(side_points)}")
+    branches: dict[int, list] = {k: [] for k in ids}
+    for i, p in enumerate(points):
+        candidates = claims.get(tuple(p))
+        if candidates:
+            owner = min(candidates, key=lambda k: (depths[k], distance[k][i]))
+        else:
+            owner = min(ids, key=lambda k: distance[k][i])
+        branches[owner].append(p)
+    results[branches_key(vessel)] = branches
 
-    for k in side_branch_ids:
-        branch_k = centerline.get_branch(k)
-        branch_k_points = find_centerline_bounded_points_simple(
-            branch_k, side_points, bounding_sphere_radius_mm
-        )
-        results[f"{results_key}_side_{k}"] = branch_k_points
-        print(f"  {results_key}_side_{k}: {len(branch_k_points)}")
+    print(f"\nBranch labeling for '{vessel}_points':")
+    for k, branch_points in branches.items():
+        print(f"  branch {k}: {len(branch_points)}")
 
     return results

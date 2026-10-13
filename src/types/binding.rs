@@ -13,7 +13,7 @@ pub use py_centerline::PyCenterline;
 pub use py_centerline_point::PyCenterlinePoint;
 pub use py_contour::{PyContour, PyContourType};
 pub use py_contour_point::PyContourPoint;
-pub use py_discretized_vessel_tree::PyDiscretizedVesselTree;
+pub use py_discretized_vessel_tree::{PyDiscretizedBranch, PyDiscretizedVesselTree};
 pub use py_frame::PyFrame;
 pub use py_geometry::PyGeometry;
 pub use py_geometry_pair::PyGeometryPair;

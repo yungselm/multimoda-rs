@@ -1,95 +1,129 @@
 use crate::types::binding::PyContour;
-use crate::types::native::{DiscretizedVesselTree, ReferenceTriplet};
+use crate::types::native::{Contour, DiscretizedBranch, DiscretizedVesselTree, ReferenceTriplet};
 use pyo3::prelude::*;
+use std::collections::BTreeMap;
 
 type Point3D = (f64, f64, f64);
 /// (main_ref, clock_ref, counter_clock_ref) as xyz tuples.
 type RefTriplet = (Point3D, Point3D, Point3D);
+type PyBranches = BTreeMap<u32, Py<PyDiscretizedBranch>>;
 
-/// Discretized coronary vessel tree (aorta, RCA, LCA and side branches).
+/// One discretized branch of a coronary.
 ///
 /// Attributes
 /// ----------
-/// discretized_aorta, discretized_rca_main, discretized_lca_main : list of PyContour
-///     Cross-sections along the aorta and the two main vessels.
-/// rca_branches, lca_branches : list of list of PyContour
-///     Cross-sections per side branch, ``rca_branches[i]`` is branch_id ``i + 1``.
-/// rca_references, lca_references : list of tuple
-///     Triplets ``(main_ref, clock_ref, counter_clock_ref)`` of ``(x, y, z)``
-///     tuples along the main vessel, proximal → distal.
-/// rca_branch_references, lca_branch_references : list of list of tuple
-///     Per side branch (as in ``rca_branches``): its ostium triplet, then one
-///     per branch leaving it.
-/// ao_rca, ao_lca : tuple of float
-///     Centroid of the aorta slice closest to each ostium.
+/// contours : list of PyContour
+///     Cross-sections along the branch, proximal → distal.
+/// parent : tuple of (int, int) or None
+///     Parent branch id (from the centerline) and the index of the parent
+///     contour nearest this branch's start. ``None`` for the main vessel.
+/// ostium : tuple or None
+///     Triplet ``(main_ref, clock_ref, counter_clock_ref)`` of ``(x, y, z)``
+///     tuples on the first contour. Its ``main_ref`` faces the vessel the
+///     branch leaves.
+/// bifurcations : dict of int to tuple
+///     Triplet on this branch where each child branch leaves it, by child
+///     branch id. Its ``main_ref`` is the child's start.
 #[pyclass(skip_from_py_object)]
 #[derive(Debug, Clone)]
+pub struct PyDiscretizedBranch {
+    #[pyo3(get, set)]
+    pub contours: Vec<PyContour>,
+    #[pyo3(get)]
+    pub parent: Option<(u32, usize)>,
+    #[pyo3(get)]
+    pub ostium: Option<RefTriplet>,
+    #[pyo3(get)]
+    pub bifurcations: BTreeMap<u32, RefTriplet>,
+}
+
+#[pymethods]
+impl PyDiscretizedBranch {
+    fn __repr__(&self) -> String {
+        format!(
+            "DiscretizedBranch(contours={}, parent={:?}, bifurcations={:?})",
+            self.contours.len(),
+            self.parent,
+            self.bifurcations.keys().collect::<Vec<_>>(),
+        )
+    }
+}
+
+impl PyDiscretizedBranch {
+    fn from_native(b: &DiscretizedBranch) -> Self {
+        Self {
+            contours: b.contours.iter().map(PyContour::from).collect(),
+            parent: b.parent,
+            ostium: b.ostium.clone().map(to_py_triplet),
+            bifurcations: b
+                .bifurcations
+                .iter()
+                .map(|(&id, r)| (id, to_py_triplet(r.clone())))
+                .collect(),
+        }
+    }
+
+    fn to_native(&self) -> PyResult<DiscretizedBranch> {
+        Ok(DiscretizedBranch {
+            contours: to_rust_contours(&self.contours)?,
+            parent: self.parent,
+            ..Default::default()
+        })
+    }
+}
+
+/// Discretized coronary vessel tree: the aorta, and every RCA and LCA branch by branch id.
+///
+/// Attributes
+/// ----------
+/// discretized_aorta : list of PyContour
+///     Cross-sections along the aorta.
+/// rca, lca : dict of int to PyDiscretizedBranch
+///     Branches by branch id, 0 being the main vessel. Ids are the centerline's
+///     branch ids. A removed or failed branch is missing, the others keep their
+///     id. ``tree.rca[0].ostium`` is the RCA ostium triplet,
+///     ``tree.lca[0].bifurcations[1]`` the triplet where LCA branch 1 leaves the
+///     main vessel.
+/// ao_rca, ao_lca : tuple of float
+///     Centroid of the aorta slice closest to each ostium.
+/// spacing : float
+///     Arc length between cross-sections in mm.
+#[pyclass(skip_from_py_object)]
+#[derive(Debug)]
 pub struct PyDiscretizedVesselTree {
     #[pyo3(get, set)]
     pub discretized_aorta: Vec<PyContour>,
     #[pyo3(get, set)]
-    pub discretized_rca_main: Vec<PyContour>,
+    pub rca: PyBranches,
     #[pyo3(get, set)]
-    pub discretized_lca_main: Vec<PyContour>,
-    #[pyo3(get, set)]
-    pub rca_branches: Vec<Vec<PyContour>>,
-    #[pyo3(get, set)]
-    pub lca_branches: Vec<Vec<PyContour>>,
-    #[pyo3(get)]
-    pub rca_references: Vec<RefTriplet>,
-    #[pyo3(get)]
-    pub lca_references: Vec<RefTriplet>,
-    #[pyo3(get)]
-    pub rca_branch_references: Vec<Vec<RefTriplet>>,
-    #[pyo3(get)]
-    pub lca_branch_references: Vec<Vec<RefTriplet>>,
+    pub lca: PyBranches,
     #[pyo3(get, set)]
     pub ao_rca: Point3D,
     #[pyo3(get, set)]
     pub ao_lca: Point3D,
+    #[pyo3(get)]
+    pub spacing: f64,
 }
 
 #[pymethods]
 impl PyDiscretizedVesselTree {
     fn __repr__(&self) -> String {
         format!(
-            "DiscretizedVesselTree(ao={}, rca_main={}, lca_main={}, rca_branches={}, lca_branches={}, rca_refs={}, lca_refs={})",
+            "DiscretizedVesselTree(ao={}, rca_branches={:?}, lca_branches={:?})",
             self.discretized_aorta.len(),
-            self.discretized_rca_main.len(),
-            self.discretized_lca_main.len(),
-            self.rca_branches.len(),
-            self.lca_branches.len(),
-            self.rca_references.len(),
-            self.lca_references.len(),
+            self.rca.keys().collect::<Vec<_>>(),
+            self.lca.keys().collect::<Vec<_>>(),
         )
     }
 
-    /// Recompute the reference triplets, ``ao_rca`` and ``ao_lca`` after
-    /// editing contours.
-    pub fn calculate_ref_pts(&mut self) -> PyResult<()> {
-        let convert = |contours: &[PyContour]| -> PyResult<Vec<crate::types::native::Contour>> {
-            contours.iter().map(|c| c.to_rust_contour()).collect()
-        };
-
-        let rust_aorta = convert(&self.discretized_aorta)?;
-        let rust_rca = convert(&self.discretized_rca_main)?;
-        let rust_lca = convert(&self.discretized_lca_main)?;
-        let rust_rca_branches: PyResult<Vec<Vec<_>>> =
-            self.rca_branches.iter().map(|b| convert(b)).collect();
-        let rust_lca_branches: PyResult<Vec<Vec<_>>> =
-            self.lca_branches.iter().map(|b| convert(b)).collect();
-
+    /// Recompute the junction contours, the reference triplets, ``ao_rca`` and
+    /// ``ao_lca`` after editing contours. Branch parents are kept.
+    pub fn calculate_ref_pts(&mut self, py: Python<'_>) -> PyResult<()> {
         let tree = DiscretizedVesselTree {
-            discretized_aorta: rust_aorta,
-            discretized_rca_main: rust_rca,
-            discretized_lca_main: rust_lca,
-            rca_branches: rust_rca_branches?,
-            lca_branches: rust_lca_branches?,
-            spacing: 1.0,
-            rca_references: vec![],
-            lca_references: vec![],
-            rca_branch_references: vec![],
-            lca_branch_references: vec![],
+            discretized_aorta: to_rust_contours(&self.discretized_aorta)?,
+            spacing: self.spacing,
+            rca: to_native_branches(py, &self.rca)?,
+            lca: to_native_branches(py, &self.lca)?,
             ao_rca: (0.0, 0.0, 0.0),
             ao_lca: (0.0, 0.0, 0.0),
             pts_cusp_rcc: None,
@@ -97,52 +131,62 @@ impl PyDiscretizedVesselTree {
             pts_cusp_acc: None,
             index_stj_slice: None,
             index_aa: None,
-        };
+        }
+        .calculate_ref_pts();
 
-        let updated = tree.calculate_ref_pts();
-        self.rca_references = to_py_triplets(updated.rca_references);
-        self.lca_references = to_py_triplets(updated.lca_references);
-        self.rca_branch_references = to_py_branch_triplets(updated.rca_branch_references);
-        self.lca_branch_references = to_py_branch_triplets(updated.lca_branch_references);
-        self.ao_rca = updated.ao_rca;
-        self.ao_lca = updated.ao_lca;
-
+        // Write into the existing branch objects, so references held in Python see the update.
+        for (py_branches, branches) in [(&self.rca, &tree.rca), (&self.lca, &tree.lca)] {
+            for (id, b) in branches {
+                let mut target = py_branches[id].borrow_mut(py);
+                let updated = PyDiscretizedBranch::from_native(b);
+                target.parent = updated.parent;
+                target.ostium = updated.ostium;
+                target.bifurcations = updated.bifurcations;
+            }
+        }
+        self.ao_rca = tree.ao_rca;
+        self.ao_lca = tree.ao_lca;
         Ok(())
     }
 }
 
-impl From<DiscretizedVesselTree> for PyDiscretizedVesselTree {
-    fn from(t: DiscretizedVesselTree) -> Self {
-        Self {
+impl PyDiscretizedVesselTree {
+    pub fn from_native(py: Python<'_>, t: &DiscretizedVesselTree) -> PyResult<Self> {
+        Ok(Self {
             discretized_aorta: t.discretized_aorta.iter().map(PyContour::from).collect(),
-            discretized_rca_main: t.discretized_rca_main.iter().map(PyContour::from).collect(),
-            discretized_lca_main: t.discretized_lca_main.iter().map(PyContour::from).collect(),
-            rca_branches: t
-                .rca_branches
-                .iter()
-                .map(|b| b.iter().map(PyContour::from).collect())
-                .collect(),
-            lca_branches: t
-                .lca_branches
-                .iter()
-                .map(|b| b.iter().map(PyContour::from).collect())
-                .collect(),
-            rca_references: to_py_triplets(t.rca_references),
-            lca_references: to_py_triplets(t.lca_references),
-            rca_branch_references: to_py_branch_triplets(t.rca_branch_references),
-            lca_branch_references: to_py_branch_triplets(t.lca_branch_references),
+            rca: to_py_branches(py, &t.rca)?,
+            lca: to_py_branches(py, &t.lca)?,
             ao_rca: t.ao_rca,
             ao_lca: t.ao_lca,
-        }
+            spacing: t.spacing,
+        })
     }
 }
 
-fn to_py_triplets(refs: Vec<ReferenceTriplet>) -> Vec<RefTriplet> {
-    refs.into_iter()
-        .map(|r| (r.main_ref, r.clock_ref, r.counter_clock_ref))
+fn to_py_branches(
+    py: Python<'_>,
+    branches: &BTreeMap<u32, DiscretizedBranch>,
+) -> PyResult<PyBranches> {
+    branches
+        .iter()
+        .map(|(&id, b)| Ok((id, Py::new(py, PyDiscretizedBranch::from_native(b))?)))
         .collect()
 }
 
-fn to_py_branch_triplets(refs: Vec<Vec<ReferenceTriplet>>) -> Vec<Vec<RefTriplet>> {
-    refs.into_iter().map(to_py_triplets).collect()
+fn to_native_branches(
+    py: Python<'_>,
+    branches: &PyBranches,
+) -> PyResult<BTreeMap<u32, DiscretizedBranch>> {
+    branches
+        .iter()
+        .map(|(&id, b)| Ok((id, b.borrow(py).to_native()?)))
+        .collect()
+}
+
+fn to_rust_contours(contours: &[PyContour]) -> PyResult<Vec<Contour>> {
+    contours.iter().map(|c| c.to_rust_contour()).collect()
+}
+
+fn to_py_triplet(r: ReferenceTriplet) -> RefTriplet {
+    (r.main_ref, r.clock_ref, r.counter_clock_ref)
 }

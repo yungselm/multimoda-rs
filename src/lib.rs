@@ -97,6 +97,7 @@ fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<(
     m.add_class::<PyCenterlinePoint>()?;
     m.add_class::<PyCenterline>()?;
     m.add_class::<PyRecord>()?;
+    m.add_class::<PyDiscretizedBranch>()?;
     m.add_class::<PyDiscretizedVesselTree>()?;
     Ok(())
 }

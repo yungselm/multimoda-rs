@@ -2,12 +2,26 @@ use crate::types::native::{Centerline, CenterlinePoint, Frame};
 use nalgebra::Point3;
 use rayon::prelude::*;
 use rstar::primitives::GeomWithData;
-use std::collections::{HashMap, HashSet};
-use std::ops::Range;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::ops::RangeInclusive;
 
 type Coords3 = (f64, f64, f64);
-/// (proximal, distal, between) point lists.
-type RegionSplit = (Vec<Coords3>, Vec<Coords3>, Vec<Coords3>);
+/// R-tree over centerline points, each tagged with its coordinates' bit pattern.
+type CenterlineTree = rstar::RTree<GeomWithData<[f64; 3], [u64; 3]>>;
+
+/// Points of a vessel split by where they sit relative to the pullback segment.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PullbackRegions {
+    /// On the pullback path, before the segment the frames cover.
+    pub proximal: Vec<Coords3>,
+    /// On the pullback path, after the segment.
+    pub distal: Vec<Coords3>,
+    /// On the pullback path, inside the segment.
+    pub anomalous: Vec<Coords3>,
+    /// Not on the pullback path: other branches, and parent vessels beyond the junction
+    /// the path leaves them at.
+    pub off_path: Vec<Coords3>,
+}
 
 pub fn centerline_based_wall_diameter_optimization(
     centerline: &Centerline,
@@ -264,273 +278,109 @@ fn find_closest_centerline_point_optimized(
     closest_point
 }
 
-/// Split `points` into (proximal, distal, between) by where they sit along the pullback
-/// path of `centerline`, relative to the segment the `frames` cover.
+/// Split the labelled points of a vessel by where they sit along the pullback path of
+/// branch `branch_id`, relative to the segment the `frames` cover.
 ///
-/// The pullback path runs from the ostium (the first point of branch 0) through the parent
-/// branches to the tip of the branch the frames lie on: of all such paths, the one the
-/// most frame centroids are nearest to, so frames aligned on a side branch together with
-/// its parent vessel (`get_branch(.., with_parents=True)`) are handled too. Each frame is
-/// snapped to the path, and the lowest and highest path positions bound the segment.
-///
-/// Each point is placed at its nearest centerline point and walked up the branch tree
-/// until it reaches the path. Points on the path are proximal below the segment, "between"
-/// inside it, and distal above it. Every other point (branches leaving the path, and the
-/// part of a parent vessel beyond the junction it is left at) is never "between": it is
-/// proximal if it leaves the path before the middle of the segment, distal otherwise.
-///
-/// Positions count from the end of a branch that attaches to its parent; branch 0 counts
-/// from its first point, which must be the ostium. A side branch's parent is the earlier
-/// branch nearest to either of its ends, the same order `remove_branch_overlap` trims
-/// branches in. Pass the whole vessel centerline: with a single branch there is no tree
-/// to walk, and every point is placed on that branch.
-///
-/// Positions are point indices, not `frame_index` values: `resample` restarts
-/// `frame_index` at 0 on every branch, so it is not unique across branches.
+/// The pullback path is [`Centerline::branch_path`]: from the ostium through the parent
+/// branches (each up to the junction the path leaves it at) to the tip of `branch_id`.
+/// `branch_points` holds the vertices labelled for each branch id. Only vertices of branches
+/// on the path are placed on it, at the nearest point of their own branch. A vertex whose
+/// nearest point is past the junction, and every vertex of another branch, is off the path.
+/// Each frame is snapped to the path, and the lowest and highest path positions bound the
+/// segment: vertices on the path are proximal below it, anomalous inside it, distal above.
 pub fn find_points_by_cl_region_rs(
     centerline: &Centerline,
+    branch_id: u32,
     frames: &[Frame],
-    points: &[Coords3],
-) -> Result<RegionSplit, String> {
+    branch_points: &BTreeMap<u32, Vec<Coords3>>,
+) -> Result<PullbackRegions, String> {
     if frames.is_empty() {
         return Err("find_points_by_cl_region requires at least one frame".to_string());
     }
     if centerline.points.is_empty() {
         return Err("find_points_by_cl_region requires a non-empty centerline".to_string());
     }
+    let path = centerline.branch_path(branch_id)?;
 
-    let n_cl = centerline.points.len();
-    let mut branch_starts: Vec<usize> = centerline
-        .branch_start_indices
-        .iter()
-        .copied()
-        .filter(|&s| s < n_cl)
-        .collect();
-    branch_starts.push(0);
-    branch_starts.sort_unstable();
-    branch_starts.dedup();
-    let ranges: Vec<Range<usize>> = branch_starts
+    let key = |x: f64, y: f64, z: f64| [x.to_bits(), y.to_bits(), z.to_bits()];
+    let path_position: HashMap<[u64; 3], usize> = path
+        .points
         .iter()
         .enumerate()
-        .map(|(b, &start)| start..branch_starts.get(b + 1).copied().unwrap_or(n_cl))
+        .map(|(i, p)| {
+            (
+                key(p.contour_point.x, p.contour_point.y, p.contour_point.z),
+                i,
+            )
+        })
         .collect();
-
-    let coords = |g: usize| {
-        let p = &centerline.points[g].contour_point;
-        [p.x, p.y, p.z]
-    };
-    let tagged_tree = |indices: Vec<usize>| -> CenterlineTree {
+    let tree_of = |pts: &[CenterlinePoint]| -> CenterlineTree {
         rstar::RTree::bulk_load(
-            indices
-                .into_iter()
-                .map(|g| GeomWithData::new(coords(g), g))
+            pts.iter()
+                .map(|p| {
+                    let c = &p.contour_point;
+                    GeomWithData::new([c.x, c.y, c.z], key(c.x, c.y, c.z))
+                })
                 .collect(),
         )
     };
-    let branch_trees: Vec<CenterlineTree> = ranges
-        .iter()
-        .map(|r| tagged_tree(r.clone().collect()))
-        .collect();
-    let links = link_branches(&ranges, &branch_trees, coords);
-    let branch_of = |g: usize| links.partition_point(|l| l.range.start <= g) - 1;
+    let position_of = |tree: &CenterlineTree, p: [f64; 3]| {
+        tree.nearest_neighbor(p)
+            .and_then(|n| path_position.get(&n.data).copied())
+    };
 
-    // A side branch's attachment point duplicates a point on its parent; leaving it out
-    // keeps the parent's wall around the junction on the parent.
-    let attach_points: HashSet<usize> = links.iter().skip(1).map(|l| l.attach_index()).collect();
-    let all_tree = tagged_tree((0..n_cl).filter(|g| !attach_points.contains(g)).collect());
-
-    let frame_coords: Vec<[f64; 3]> = frames
+    let path_tree = tree_of(&path.points);
+    let (seg_start, seg_end) = frames
         .iter()
-        .map(|f| [f.centroid.0, f.centroid.1, f.centroid.2])
-        .collect();
-    let frame_nn: Vec<usize> = frame_coords
-        .iter()
-        .filter_map(|&c| all_tree.nearest_neighbor(c))
-        .map(|n| n.data)
-        .collect();
-    // Ties go to the lower branch index, i.e. the shorter path.
-    let path = (0..links.len())
-        .map(|b| PullbackPath::new(&links, b))
-        .max_by_key(|path| {
-            let on_path = frame_nn
-                .iter()
-                .filter(|&&g| path.contains(&links, branch_of(g), g))
-                .count();
-            (on_path, std::cmp::Reverse(path.tip))
-        })
-        .expect("centerline has at least one branch");
-
-    let path_tree = tagged_tree(
-        (0..n_cl)
-            .filter(|&g| !attach_points.contains(&g) && path.contains(&links, branch_of(g), g))
-            .collect(),
-    );
-    let (seg_start, seg_end) = frame_coords
-        .iter()
-        .filter_map(|&c| path_tree.nearest_neighbor(c))
-        .map(|n| path.position(&links, branch_of(n.data), n.data).0)
+        .filter_map(|f| position_of(&path_tree, [f.centroid.0, f.centroid.1, f.centroid.2]))
         .fold((usize::MAX, 0), |(lo, hi), p| (lo.min(p), hi.max(p)));
 
-    let mut proximal_points: Vec<Coords3> = Vec::new();
-    let mut distal_points: Vec<Coords3> = Vec::new();
-    let mut points_between: Vec<Coords3> = Vec::new();
+    // Branches on the path: `branch_id` and its ancestors.
+    let parents = centerline.branch_parents();
+    let mut on_path_branches = vec![branch_id];
+    while let Some(Some(p)) = parents.get(*on_path_branches.last().unwrap() as usize) {
+        on_path_branches.push(*p);
+    }
 
-    for point in points {
-        let g = all_tree
-            .nearest_neighbor([point.0, point.1, point.2])
-            .map_or(0, |n| n.data);
-        let (pos, on_path) = path.position(&links, branch_of(g), g);
+    let segment = seg_start..=seg_end;
 
-        if on_path {
-            match pos {
-                p if p < seg_start => proximal_points.push(*point),
-                p if p <= seg_end => points_between.push(*point),
-                _ => distal_points.push(*point),
-            }
-        } else if 2 * pos <= seg_start + seg_end {
-            proximal_points.push(*point);
-        } else {
-            distal_points.push(*point);
+    let mut regions = PullbackRegions::default();
+    for (&b, points) in branch_points {
+        let range = centerline.branch_range(b).unwrap_or_default();
+        let branch_tree = (on_path_branches.contains(&b) && !range.is_empty())
+            .then(|| tree_of(&centerline.points[range]));
+        for &point in points {
+            let position = branch_tree
+                .as_ref()
+                .and_then(|tree| position_of(tree, [point.0, point.1, point.2]));
+            regions.region_for(position, &segment).push(point);
         }
     }
 
-    let (proximal_points, points_between) =
-        clean_up_non_section_points(proximal_points, points_between, 1.0, 0.6);
-    let (distal_points, points_between) =
-        clean_up_non_section_points(distal_points, points_between, 1.0, 0.6);
-    Ok((proximal_points, distal_points, points_between))
+    let (proximal, anomalous) =
+        clean_up_non_section_points(regions.proximal, regions.anomalous, 1.0, 0.6);
+    let (distal, anomalous) = clean_up_non_section_points(regions.distal, anomalous, 1.0, 0.6);
+    Ok(PullbackRegions {
+        proximal,
+        distal,
+        anomalous,
+        off_path: regions.off_path,
+    })
 }
 
-type CenterlineTree = rstar::RTree<GeomWithData<[f64; 3], usize>>;
-
-/// The centerline path from the ostium to the tip of branch `tip`: each ancestor of `tip`
-/// up to the position where the next branch on the path leaves it, then all of `tip`.
-struct PullbackPath {
-    tip: usize,
-    /// Per branch on the path: the path position of its position 0, and its last position
-    /// on the path (`usize::MAX` for `tip`).
-    on_path: HashMap<usize, (usize, usize)>,
-}
-
-impl PullbackPath {
-    fn new(links: &[BranchLink], tip: usize) -> Self {
-        let mut chain = vec![(tip, usize::MAX)];
-        let mut b = tip;
-        while let Some((parent, parent_pos)) = links[b].parent {
-            chain.push((parent, parent_pos));
-            b = parent;
-        }
-        // A child's position 0 is the junction, at its parent's cut-off position.
-        let mut on_path = HashMap::with_capacity(chain.len());
-        let mut offset: usize = 0;
-        for &(b, last) in chain.iter().rev() {
-            on_path.insert(b, (offset, last));
-            offset = offset.saturating_add(last);
-        }
-        PullbackPath { tip, on_path }
-    }
-
-    /// Whether centerline index `g` on `branch` lies on the path.
-    fn contains(&self, links: &[BranchLink], branch: usize, g: usize) -> bool {
-        self.on_path
-            .get(&branch)
-            .is_some_and(|&(_, last)| links[branch].position(g) <= last)
-    }
-
-    /// Path position of centerline index `g` on `branch`, and whether `g` is on the path
-    /// itself. A point off the path takes the position where its branch (or the part of
-    /// a parent vessel beyond the junction) leaves the path.
-    fn position(&self, links: &[BranchLink], branch: usize, g: usize) -> (usize, bool) {
-        let mut branch = branch;
-        let mut pos = links[branch].position(g);
-        let mut on_path = true;
-        // Parents always have a lower branch index and branch 0 is on every path, so this
-        // terminates.
-        loop {
-            if let Some(&(offset, last)) = self.on_path.get(&branch) {
-                return (offset + pos.min(last), on_path && pos <= last);
-            }
-            let (parent, parent_pos) = links[branch]
-                .parent
-                .expect("branch 0 is on every pullback path");
-            branch = parent;
-            pos = parent_pos;
-            on_path = false;
+impl PullbackRegions {
+    fn region_for(
+        &mut self,
+        position: Option<usize>,
+        segment: &RangeInclusive<usize>,
+    ) -> &mut Vec<Coords3> {
+        match position {
+            None => &mut self.off_path,
+            Some(p) if p < *segment.start() => &mut self.proximal,
+            Some(p) if segment.contains(&p) => &mut self.anomalous,
+            Some(_) => &mut self.distal,
         }
     }
-}
-
-/// One branch of a centerline tree: its slice of `centerline.points`, which end attaches
-/// to its parent, and where on the parent it attaches.
-struct BranchLink {
-    range: Range<usize>,
-    /// The branch attaches to its parent at its last point instead of its first.
-    reversed: bool,
-    /// Parent branch and the position on it where this branch attaches; `None` for
-    /// branch 0.
-    parent: Option<(usize, usize)>,
-}
-
-impl BranchLink {
-    /// Position of centerline index `g` along this branch, counted from the end that
-    /// attaches to the parent.
-    fn position(&self, g: usize) -> usize {
-        if self.reversed {
-            self.range.end - 1 - g
-        } else {
-            g - self.range.start
-        }
-    }
-
-    fn attach_index(&self) -> usize {
-        if self.reversed {
-            self.range.end - 1
-        } else {
-            self.range.start
-        }
-    }
-}
-
-/// Link every side branch to the earlier branch nearest to either of its ends.
-fn link_branches(
-    ranges: &[Range<usize>],
-    trees: &[CenterlineTree],
-    coords: impl Fn(usize) -> [f64; 3],
-) -> Vec<BranchLink> {
-    let mut links: Vec<BranchLink> = Vec::with_capacity(ranges.len());
-    for (b, range) in ranges.iter().enumerate() {
-        if b == 0 {
-            links.push(BranchLink {
-                range: range.clone(),
-                reversed: false,
-                parent: None,
-            });
-            continue;
-        }
-        let nearest_earlier = |g: usize| {
-            trees[..b]
-                .iter()
-                .filter_map(|t| t.nearest_neighbor_with_distance_2(coords(g)))
-                .min_by(|x, y| x.1.total_cmp(&y.1))
-                .map(|(n, d2)| (n.data, d2))
-                .expect("branch 0 is non-empty")
-        };
-        let first = nearest_earlier(range.start);
-        let last = nearest_earlier(range.end - 1);
-        let (reversed, (joint, _)) = if last.1 < first.1 {
-            (true, last)
-        } else {
-            (false, first)
-        };
-        let parent = links.partition_point(|l| l.range.start <= joint) - 1;
-        let parent_pos = links[parent].position(joint);
-        links.push(BranchLink {
-            range: range.clone(),
-            reversed,
-            parent: Some((parent, parent_pos)),
-        });
-    }
-    links
 }
 
 pub fn clean_up_non_section_points(
@@ -801,82 +651,85 @@ mod tests {
         (main, side)
     }
 
+    fn labels(branches: &[&[Vec<Coords3>]]) -> BTreeMap<u32, Vec<Coords3>> {
+        branches
+            .iter()
+            .enumerate()
+            .map(|(b, rings)| (b as u32, rings.concat()))
+            .collect()
+    }
+
+    fn total(r: &PullbackRegions) -> usize {
+        r.proximal.len() + r.distal.len() + r.anomalous.len() + r.off_path.len()
+    }
+
     #[test]
-    fn test_find_points_by_cl_region_splits_by_main_branch_index() {
+    fn test_find_points_by_cl_region_splits_main_branch_and_leaves_side_off_path() {
         let centerline = branched_centerline(15.0);
         let main_rings: Vec<Vec<Coords3>> = (0..21)
             .map(|x| ring((x as f64, 0.0, 0.0), true, 1.0))
             .collect();
-        let side_points: Vec<Coords3> = (2..10)
-            .flat_map(|y| ring((15.0, y as f64, 0.0), false, 0.5))
+        let side_rings: Vec<Vec<Coords3>> = (2..10)
+            .map(|y| ring((15.0, y as f64, 0.0), false, 0.5))
             .collect();
-        let mut points: Vec<Coords3> = main_rings.concat();
-        points.extend(&side_points);
+        let points = labels(&[&main_rings, &side_rings]);
 
-        let (proximal, distal, between) =
-            find_points_by_cl_region_rs(&centerline, &horizontal_frames(), &points).unwrap();
-        assert_eq!(proximal.len() + distal.len() + between.len(), points.len());
+        let r = find_points_by_cl_region_rs(&centerline, 0, &horizontal_frames(), &points).unwrap();
+        assert_eq!(total(&r), points.values().map(Vec::len).sum::<usize>());
 
-        assert!(all_in(&main_rings[0..=1], &proximal));
+        assert!(all_in(&main_rings[0..=1], &r.proximal));
         // Frames cover main-branch indices 3..=8; check away from the boundary rings.
-        assert!(all_in(&main_rings[4..=7], &between));
-        assert!(all_in(&main_rings[10..=20], &distal));
-        // Side-branch points follow their junction (x = 15, distal), not their own
-        // colliding frame_index values.
-        assert!(side_points.iter().all(|p| distal.contains(p)));
+        assert!(all_in(&main_rings[4..=7], &r.anomalous));
+        assert!(all_in(&main_rings[10..=20], &r.distal));
+        // The side branch is not on the pullback path, whatever its frame_index values.
+        assert_eq!(r.off_path, side_rings.concat());
     }
 
     #[test]
-    fn test_find_points_by_cl_region_side_branch_inside_segment_follows_nearer_end() {
-        // Frames cover main-branch positions 3..=8. Only the pullback path is "between": a
-        // side branch leaving inside the segment goes with the nearer segment end.
-        for (junction_x, expect_proximal) in [(5.0, true), (7.0, false)] {
-            let centerline = branched_centerline(junction_x);
-            let side_points: Vec<Coords3> = (2..10)
-                .flat_map(|y| ring((junction_x, y as f64, 0.0), false, 0.5))
-                .collect();
-            let (proximal, distal, between) =
-                find_points_by_cl_region_rs(&centerline, &horizontal_frames(), &side_points)
-                    .unwrap();
-            assert!(between.is_empty());
-            let expected = if expect_proximal { &proximal } else { &distal };
-            assert_eq!(expected.len(), side_points.len());
-        }
+    fn test_find_points_by_cl_region_side_branch_leaving_segment_is_off_path() {
+        let centerline = branched_centerline(5.0);
+        let side_rings: Vec<Vec<Coords3>> = (2..10)
+            .map(|y| ring((5.0, y as f64, 0.0), false, 0.5))
+            .collect();
+        let points = labels(&[&[], &side_rings]);
+        let r = find_points_by_cl_region_rs(&centerline, 0, &horizontal_frames(), &points).unwrap();
+        assert!(r.anomalous.is_empty() && r.proximal.is_empty() && r.distal.is_empty());
+        assert_eq!(r.off_path.len(), 8 * 8);
     }
 
     #[test]
-    fn test_find_points_by_cl_region_rejects_empty_input() {
+    fn test_find_points_by_cl_region_rejects_bad_input() {
         let centerline = branched_centerline(15.0);
-        assert!(find_points_by_cl_region_rs(&centerline, &[], &[(0.0, 0.0, 0.0)]).is_err());
+        let points = labels(&[&[ring((0.0, 0.0, 0.0), true, 1.0)]]);
+        assert!(find_points_by_cl_region_rs(&centerline, 0, &[], &points).is_err());
+        assert!(
+            find_points_by_cl_region_rs(&centerline, 7, &horizontal_frames(), &points).is_err(),
+            "unknown pullback branch"
+        );
         let empty = Centerline {
             points: Vec::new(),
             branch_start_indices: Vec::new(),
         };
-        assert!(find_points_by_cl_region_rs(&empty, &horizontal_frames(), &[]).is_err());
+        assert!(find_points_by_cl_region_rs(&empty, 0, &horizontal_frames(), &points).is_err());
     }
 
     #[test]
     fn test_find_points_by_cl_region_pullback_on_side_branch() {
-        // Side branch at x = 5 with 16 points (y = 1..=16, positions 0..=15); the frames
-        // cover positions 3..=9 (y = 4..=10).
+        // Side branch at x = 5 with 16 points (y = 1..=16). The path is main x = 0..=5, then
+        // the side branch. The frames cover y = 4..=10.
         let centerline = tree_centerline(&[main_branch(), side_branch_at(5.0, 16)]);
         let (main_rings, side_rings) = rings_for_side_pullback(16);
-        let points: Vec<Coords3> = main_rings
-            .iter()
-            .chain(&side_rings)
-            .flatten()
-            .copied()
-            .collect();
+        let points = labels(&[&main_rings, &side_rings]);
 
-        let (proximal, distal, between) =
-            find_points_by_cl_region_rs(&centerline, &side_branch_frames(), &points).unwrap();
+        let r =
+            find_points_by_cl_region_rs(&centerline, 1, &side_branch_frames(), &points).unwrap();
 
-        // The parent vessel leaves the path before the segment, so all of it - also beyond
-        // the junction - is proximal.
-        assert!(all_in(&main_rings, &proximal));
-        assert!(all_in(&side_rings[2..=2], &proximal));
-        assert!(all_in(&side_rings[5..=9], &between));
-        assert!(all_in(&side_rings[12..=16], &distal));
+        // The parent vessel up to the junction is proximal, beyond it off the path.
+        assert!(all_in(&main_rings[0..=4], &r.proximal));
+        assert!(all_in(&main_rings[7..=20], &r.off_path));
+        assert!(all_in(&side_rings[2..=2], &r.proximal));
+        assert!(all_in(&side_rings[5..=9], &r.anomalous));
+        assert!(all_in(&side_rings[12..=16], &r.distal));
     }
 
     #[test]
@@ -885,43 +738,37 @@ mod tests {
         side.reverse();
         let centerline = tree_centerline(&[main_branch(), side]);
         let (main_rings, side_rings) = rings_for_side_pullback(16);
-        let points: Vec<Coords3> = main_rings
-            .iter()
-            .chain(&side_rings)
-            .flatten()
-            .copied()
-            .collect();
+        let points = labels(&[&main_rings, &side_rings]);
 
-        let (proximal, distal, between) =
-            find_points_by_cl_region_rs(&centerline, &side_branch_frames(), &points).unwrap();
+        let r =
+            find_points_by_cl_region_rs(&centerline, 1, &side_branch_frames(), &points).unwrap();
 
-        assert!(all_in(&main_rings, &proximal));
-        assert!(all_in(&side_rings[2..=2], &proximal));
-        assert!(all_in(&side_rings[5..=9], &between));
-        assert!(all_in(&side_rings[12..=16], &distal));
+        assert!(all_in(&main_rings[0..=4], &r.proximal));
+        assert!(all_in(&main_rings[7..=20], &r.off_path));
+        assert!(all_in(&side_rings[2..=2], &r.proximal));
+        assert!(all_in(&side_rings[5..=9], &r.anomalous));
+        assert!(all_in(&side_rings[12..=16], &r.distal));
     }
 
     #[test]
-    fn test_find_points_by_cl_region_nested_branch_follows_its_parent() {
-        // Branch 2 leaves the side branch (not the main branch) at y = 3, position 2,
-        // before the frames start, so it is proximal. Placing it by the nearest
-        // main-branch point instead would make it distal.
+    fn test_find_points_by_cl_region_nested_branch_is_off_path() {
+        // Branch 2 leaves the pullback branch 1 at y = 3, so it is not on the path.
         let nested: Vec<(f64, f64)> = (0..9).map(|i| (6.0 + i as f64, 3.0)).collect();
         let centerline = tree_centerline(&[main_branch(), side_branch_at(5.0, 16), nested]);
         let nested_rings: Vec<Vec<Coords3>> = (8..=13)
             .map(|x| ring((x as f64, 3.0, 0.0), true, 0.5))
             .collect();
-        let points: Vec<Coords3> = nested_rings.concat();
+        let points = labels(&[&[], &[], &nested_rings]);
 
-        let (proximal, _, _) =
-            find_points_by_cl_region_rs(&centerline, &side_branch_frames(), &points).unwrap();
-        assert!(all_in(&nested_rings, &proximal));
+        let r =
+            find_points_by_cl_region_rs(&centerline, 1, &side_branch_frames(), &points).unwrap();
+        assert_eq!(r.off_path, nested_rings.concat());
     }
 
     #[test]
     fn test_find_points_by_cl_region_frames_continue_into_parent() {
         // Frames aligned with `get_branch(1, with_parents=True)`: main branch x = 2..=5, then
-        // the side branch at x = 5 up to y = 9 (side positions 0..=8).
+        // the side branch at x = 5 up to y = 9.
         let centerline = tree_centerline(&[main_branch(), side_branch_at(5.0, 16)]);
         let frames = frames_at(
             (2..=4)
@@ -929,22 +776,15 @@ mod tests {
                 .chain((1..=9).map(|y| (5.3, y as f64, 0.0))),
         );
         let (main_rings, side_rings) = rings_for_side_pullback(16);
-        let points: Vec<Coords3> = main_rings
-            .iter()
-            .chain(&side_rings)
-            .flatten()
-            .copied()
-            .collect();
+        let points = labels(&[&main_rings, &side_rings]);
 
-        let (proximal, distal, between) =
-            find_points_by_cl_region_rs(&centerline, &frames, &points).unwrap();
+        let r = find_points_by_cl_region_rs(&centerline, 1, &frames, &points).unwrap();
 
-        assert!(all_in(&main_rings[0..=0], &proximal));
-        assert!(all_in(&main_rings[3..=3], &between));
-        assert!(all_in(&side_rings[3..=7], &between));
-        assert!(all_in(&side_rings[12..=16], &distal));
-        // The main branch beyond the junction leaves the path in the first half of the
-        // segment: proximal, not "between".
-        assert!(all_in(&main_rings[8..=20], &proximal));
+        assert!(all_in(&main_rings[0..=0], &r.proximal));
+        assert!(all_in(&main_rings[3..=3], &r.anomalous));
+        assert!(all_in(&side_rings[3..=7], &r.anomalous));
+        assert!(all_in(&side_rings[12..=16], &r.distal));
+        // The main branch beyond the junction is not on the path.
+        assert!(all_in(&main_rings[8..=20], &r.off_path));
     }
 }

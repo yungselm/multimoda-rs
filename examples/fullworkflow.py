@@ -2,8 +2,18 @@ import os
 from pathlib import Path
 
 import trimesh
+from synthetic_ivus import write_synthetic_pullback
 
 import multimodars as mm
+
+# Pullback to use:
+# - False: the example IVUS pullback from the RCA ostium, aligned with the
+#   ostium triplet (tree.rca[0].ostium). An anomalous (intramural) course.
+# - True: a synthetic pullback cut from the CCTA around the most proximal RCA
+#   bifurcation, its reference frame in the middle, aligned with that
+#   bifurcation's triplet (the "second" triplet along the RCA). A side branch
+#   then leaves the anomalous segment, for debugging that case.
+SYNTHETIC_PULLBACK = True
 
 cwd = Path.cwd()
 for candidate in [cwd, cwd.parent, cwd.parent.parent]:
@@ -47,7 +57,10 @@ results = mm.label_geometry(
 )
 
 # Branches (and their ordering) already come from prepare_centerline above.
-results = mm.label_branches_pair(rca_cl, lca_cl, results)
+# Every RCA/LCA vertex now belongs to exactly one branch id:
+# results["rca_branches"] = {0: [...], 1: [...], ...}, and everything downstream
+# (discretization, anomalous labelling, remove_branch) works on these ids.
+results = mm.label_branches_pair(rca_cl, lca_cl, results, control_plot=True)
 
 tree = mm.discretize_vessel_tree(
     aorta_cl,
@@ -61,19 +74,38 @@ tree = mm.discretize_vessel_tree(
 
 print(tree)
 
+# The pullback lies on RCA branch 0 (the main vessel). For a side-branch
+# pullback use its id here, tree.rca[branch].ostium and
+# rca_cl.get_branch(branch, with_parents=True).
+pullback_branch = 0
+
+if SYNTHETIC_PULLBACK:
+    main = tree.rca[pullback_branch]
+    # Most proximal bifurcation along the main vessel (by junction contour).
+    side = min(main.bifurcations, key=lambda k: tree.rca[k].parent[1])
+    ref_points = main.bifurcations[side]  # (main, clock, counter_clock)
+    ivus_dir = write_synthetic_pullback(
+        main.contours,
+        ref_slice=tree.rca[side].parent[1],
+        ref_target=ref_points[0],
+        out_dir="output/ivus_synthetic",
+    )
+    print(f"Synthetic pullback around RCA branch {side} written to {ivus_dir}")
+else:
+    ivus_dir = "ivus_rest"
+    ref_points = tree.rca[pullback_branch].ostium  # (main, clock, counter_clock)
+
 rest, (dia_logs, sys_logs) = mm.from_file_singlepair(
-    input_path="ivus_rest",
+    input_path=str(ivus_dir),
     labels=["aligned_dia", "aligned_sys"],
     output_path="output/rest",
 )
 
-ref_points = tree.rca_references[0]
-
-rca_cl_main = rca_cl.get_branch(0)  # alignment needs single-branch CL
+rca_cl_main = rca_cl.get_branch(pullback_branch)  # alignment needs single-branch CL
 aligned, spacing_mm, total_rotation_deg = mm.align_combined(
     rca_cl_main,
     rest,
-    ref_points[0],  # aortic reference point
+    ref_points[0],  # main reference point (aortic at the ostium)
     ref_points[1],  # superior reference point
     ref_points[2],  # inferior reference point
     results["rca_points"],  # CCTA point cloud for the refinement
@@ -84,11 +116,14 @@ aligned, spacing_mm, total_rotation_deg = mm.align_combined(
     align_wall_anomalous=True,
 )
 
+# Only the pullback branch is split into proximal / anomalous / distal. Every
+# other RCA branch goes to results["off_path_points"] and is neither scaled nor
+# cut below.
 results = mm.label_anomalous_region(
     centerline=rca_cl,
     frames=aligned.geom_a.frames,
     results=results,
-    results_key="rca_points",
+    branch_id=pullback_branch,
     debug_plot=False,
 )
 
@@ -98,22 +133,24 @@ prox_scaling, distal_scaling = mm.find_distal_and_proximal_scaling(
     results=results,
 )
 
-aortic_scaling = mm.find_aorta_scaling(
-    frames=aligned.geom_a.frames,
-    cl_aorta=aorta_cl,
-    results=results,
-)
-
-aortic_wall_scaling = mm.find_aortic_wall_scaling(
-    frames=aligned.geom_a.frames,
-    cl_aorta=aorta_cl,
-    results=results,
-)
-
 print(f"Proximal scaling:    {prox_scaling:.3f} mm")
 print(f"Distal scaling:      {distal_scaling:.3f} mm")
-print(f"Aortic scaling:      {aortic_scaling:.3f} mm")
-print(f"Aortic wall scaling: {aortic_wall_scaling:.3f} mm")
+
+# The aortic scaling only applies to a pullback from the ostium.
+aortic_scaling = 0.0
+if not SYNTHETIC_PULLBACK:
+    aortic_scaling = mm.find_aorta_scaling(
+        frames=aligned.geom_a.frames,
+        cl_aorta=aorta_cl,
+        results=results,
+    )
+    aortic_wall_scaling = mm.find_aortic_wall_scaling(
+        frames=aligned.geom_a.frames,
+        cl_aorta=aorta_cl,
+        results=results,
+    )
+    print(f"Aortic scaling:      {aortic_scaling:.3f} mm")
+    print(f"Aortic wall scaling: {aortic_wall_scaling:.3f} mm")
 
 # 1. Scale the distal segment along the RCA centerline
 scaled_distal = mm.scale_region_centerline_morphing(
@@ -142,9 +179,15 @@ scaled_proximal = mm.scale_region_centerline_morphing(
 )
 results = mm.sync_results_to_mesh(results, results["mesh"], scaled_proximal)
 
+# From the ostium the intravascular vessel replaces the proximal segment too and
+# is stitched to the aorta. Mid-vessel it only replaces the anomalous segment.
 updated_results = mm.remove_labeled_points_from_mesh(
     results,
-    ["anomalous_points", "proximal_points"],
+    (
+        ["anomalous_points"]
+        if SYNTHETIC_PULLBACK
+        else ["anomalous_points", "proximal_points"]
+    ),
     target_boundaries=2,
 )
 
@@ -154,8 +197,10 @@ stitched = mm.stitch_ccta_to_intravascular(
     aligned.geom_a,
     updated_results["mesh"],
     updated_results,
-    prox_start_mode="highest_z",
+    prox_start_mode="nearest_iv" if SYNTHETIC_PULLBACK else "highest_z",
+    proximal_is_ostium=not SYNTHETIC_PULLBACK,
     clamp_overshoot=0.5,
+    tree=tree,  # reconnects side branches leaving the anomalous segment
 )
 stitched["mesh"].export("prefixed.stl")
 print("Raw stitched mesh exported → prefixed_mesh.stl")

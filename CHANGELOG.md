@@ -3,6 +3,68 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] - 2026-10-12
+
+Branch ids are now the single source of truth: the branch labels from `label_branches` decide
+which branch a vertex belongs to, and every later step refers to branches by these ids.
+
+### Added
+- `remove_branch(results, centerline, branch_id, fill_hole=True)`: cuts a labelled side branch,
+  and every branch growing out of it, off the mesh and the centerline, and closes the ostium with
+  a patch following the parent vessel's wall. The vessel (RCA/LCA) is found from the centerline.
+  Returns the updated results and centerline.
+- `PyCenterline.branch_ids()`, `branch_parents()` and `remove_branches(branch_ids)`.
+- `PyDiscretizedBranch`: contours, parent, ostium triplet and bifurcation triplets (by child id)
+  of one discretized branch.
+- `"off_path_points"` from `label_anomalous_region`, and `off_path_points` flag in
+  `plot_results_key`.
+- `fill_ring_on_vessel_wall`: closes a single boundary ring with a patch on a vessel wall.
+- `stitch_ccta_to_intravascular(..., tree=None)` / `stitch(..., tree=None)`: with the
+  discretized tree, side branches leaving the removed segment are reconnected
+  (`reconnect_side_branches`): each is cut at its first tree contour outside the intravascular
+  lumen, that contour is projected along the branch axis onto the intravascular wall, the wall
+  inside the footprint is removed, and the two rims are joined by a straight strip.
+- `examples/synthetic_ivus.py` (`write_synthetic_pullback`): a synthetic pullback cut from the
+  CCTA, its reference frame mid-pullback at a bifurcation. `SYNTHETIC_PULLBACK = True` in
+  `examples/fullworkflow.py` aligns it with that bifurcation's triplet. That gives a pullback
+  with a side branch leaving the anomalous segment, for debugging.
+- `remove_labeled_points_from_mesh` (and so `stitch`) warns when off-path vertices border the
+  removed region, and keeps their rims out of the `target_boundaries` rings.
+
+### Changed
+- **Breaking:** `label_branches(centerline, results, vessel=None, bounding_sphere_radius_mm=3.0)`
+  writes `results["rca_branches"]` / `results["lca_branches"]`: a dict from every branch id of the
+  centerline to its vertices, partitioning `rca_points` / `lca_points`. A vertex several branches
+  claim goes to the one nearest the main vessel in the tree, then to the nearest. Unclaimed
+  vertices go to the nearest branch. Replaces `rca_points_main`, `rca_points_side` and
+  `rca_points_side_{k}`. `results_key` and the merged-main `branch_id=[0, 1]` are gone. The
+  vessel is detected from the centerline when not given.
+- **Breaking:** `label_anomalous_region(centerline, frames, results, branch_id=0)` splits only
+  the pullback path of `branch_id` (the branch and its parents up to each junction) into
+  proximal / anomalous / distal, using the branch labels. Every other vertex of the vessel goes to
+  `"off_path_points"` instead of proximal or distal, so stitching and scaling leave other
+  branches alone. `results_key` is gone, and the pullback branch is given, not guessed from the
+  frames. `find_points_by_cl_region(centerline, branch_id, frames, branch_points)` returns
+  `(proximal, distal, anomalous, off_path)`.
+- **Breaking:** `PyDiscretizedVesselTree` holds `rca` / `lca`: dicts from branch id (0 = main
+  vessel) to `PyDiscretizedBranch`, replacing `discretized_rca_main`, `rca_branches`,
+  `rca_references`, `rca_branch_references` and the LCA equivalents. `tree.rca[0].ostium` replaces
+  `tree.rca_references[0]`, `tree.lca[1].ostium` replaces `tree.lca_branch_references[0][0]`.
+  Branch parents come from the centerline instead of the nearest contour.
+  `discretize_vessel_tree` takes the branch dicts and drops `branch_id_rca` / `branch_id_lca`.
+- `ccta.label` labels the branches and takes `branch_id` for the pullback branch.
+- Branch ids are stable: a removed branch keeps its slot in `branch_start_indices` as an empty
+  range, so the other branches are not renumbered. `remove_branch_overlap` now empties a fully
+  overlapping branch instead of dropping it. `split_branch` / `merge_branches` still reassign
+  ids, so use them before labelling.
+- `remove_labeled_points_from_mesh`, `keep_labeled_points_from_mesh` and
+  `sync_results_to_mesh` update every vertex list in the results, including each branch of
+  `rca_branches` / `lca_branches`, not only a fixed set of keys.
+
+### Fixed
+- The reference triplet order in the type stubs and `plot_vessel_tree`: triplets are
+  `(main_ref, clock_ref, counter_clock_ref)`, as the bindings return them.
+
 ## [0.7.8] - 2026-10-08
 
 ### Added

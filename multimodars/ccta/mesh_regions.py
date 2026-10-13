@@ -3,17 +3,35 @@
 Cross-cutting mesh-region utilities used throughout the pipeline: trimming a
 labelled region off the CCTA mesh before stitching (:func:`stitch` in
 ``__init__.py``), extracting a single labelled sub-region for STL export, and
-building an isolated wall mesh. None of this is stitching-specific, hence its
+building an isolated wall mesh, and removing a labelled side branch
+(:func:`remove_branch`). None of this is stitching-specific, hence its
 own module rather than living inside :mod:`multimodars.ccta.stitching`.
 """
 
 from __future__ import annotations
 
+import warnings
+from typing import TYPE_CHECKING
+
 import numpy as np
 import trimesh
+from scipy.sparse import coo_matrix
+from scipy.sparse.csgraph import connected_components
 
 from ..multimodars import build_adjacency_map
+from ._results import (
+    branches_key,
+    map_point_lists,
+    point_lists,
+    set_point_list,
+    vessel_branches,
+    vessel_of_centerline,
+)
+from .postprocessing import fill_ring_on_vessel_wall
 from .stitching.boundary import BOUNDARY_RING_PREFIX, clean_open_boundary
+
+if TYPE_CHECKING:
+    from ..multimodars import PyCenterline
 
 
 def _store_boundary_rings(
@@ -38,6 +56,44 @@ def _store_boundary_rings(
     updated["boundary_points"] = [pt for pts in per_ring for pt in pts]
 
 
+def _is_boundary_key(key: str) -> bool:
+    return key.startswith("boundary_points")
+
+
+def _warn_off_path_attached(
+    results: dict,
+    mesh: trimesh.Trimesh,
+    coord_to_idx: dict,
+    remove_indices: set[int],
+) -> None:
+    """Warn when vertices off the pullback path border the region being removed.
+
+    Branches leaving the removed segment are not removed with it (see
+    :func:`~multimodars.label_anomalous_region`): they stay in the mesh, cut off
+    from the vessel, and their rim joins the opening.
+    """
+    off_path = {
+        coord_to_idx[tuple(p)]
+        for p in results.get("off_path_points", [])
+        if tuple(p) in coord_to_idx
+    } - remove_indices
+    if not off_path:
+        return
+    edges = mesh.edges_unique
+    removed = np.isin(edges, list(remove_indices))
+    off = np.isin(edges, list(off_path))
+    touching = edges[(removed[:, 0] & off[:, 1]) | (removed[:, 1] & off[:, 0])]
+    n = len(off_path.intersection(touching.ravel().tolist()))
+    if n:
+        warnings.warn(
+            f"{n} off-path vertices border the removed region: branches leaving it "
+            "stay in the mesh, cut off from the vessel. Pass the discretized tree "
+            "to the stitch to reconnect them",
+            UserWarning,
+            stacklevel=3,
+        )
+
+
 def remove_labeled_points_from_mesh(
     results: dict,
     region_keys: list[str] | str = "anomalous_points",
@@ -53,11 +109,9 @@ def remove_labeled_points_from_mesh(
     Parameters
     ----------
     results : dict
-        Dictionary containing at minimum the key ``"mesh"``.  Any of
-        ``"aorta_points"``, ``"rca_points"``, ``"lca_points"``,
-        ``"rca_removed_points"``, ``"lca_removed_points"``,
-        ``"proximal_points"``, and ``"distal_points"`` are also updated if
-        present.
+        Dictionary containing at minimum the key ``"mesh"``.  Every other
+        vertex list (``"aorta_points"``, ``"distal_points"``, each branch in
+        ``"rca_branches"``, ...) is updated to the trimmed mesh.
     region_keys : str or list of str
         Key(s) in *results* whose point lists should be removed from the mesh.
         Defaults to ``"anomalous_points"`` for backwards compatibility.
@@ -66,6 +120,9 @@ def remove_labeled_points_from_mesh(
         Removing a single blob leaves one ring (default); removing a region
         that splits the surface (e.g. aorta + intramural wall) can leave two.
         The rim is cleaned and reduced to this many rings before it is stored.
+        Rims of branches off the pullback path (``"off_path_points"``) that
+        leave the removed region are not counted: they stay as they are, with
+        a warning, for the stitch to reconnect.
 
     Returns
     -------
@@ -99,6 +156,8 @@ def remove_labeled_points_from_mesh(
     if not remove_indices:
         return results
 
+    _warn_off_path_attached(results, mesh, coord_to_idx, remove_indices)
+
     n_vertices = len(mesh.vertices)
     keep_mask = np.ones(n_vertices, dtype=bool)
     keep_mask[list(remove_indices)] = False
@@ -112,6 +171,15 @@ def remove_labeled_points_from_mesh(
         for i in range(n_vertices)
         if keep_mask[i] and any(j in remove_indices for j in adj_map.get(i, []))
     }
+    # Rims of branches off the pullback path that leave the removed region are
+    # not part of the opening: leaving them unseeded keeps them out of the
+    # reduction to *target_boundaries* rings.  The stitch reconnects them.
+    off_path = {
+        coord_to_idx[tuple(p)]
+        for p in results.get("off_path_points", [])
+        if tuple(p) in coord_to_idx
+    }
+    boundary_indices = (boundary_indices - off_path) or boundary_indices
 
     # 4. Drop faces that reference any removed vertex, then clean the exposed
     #    rim.  Vertices that cannot form a clean ring are deleted from the mesh
@@ -156,19 +224,11 @@ def remove_labeled_points_from_mesh(
     for key in region_keys:
         updated[key] = []
 
-    for key in (
-        "aorta_points",
-        "rca_points",
-        "lca_points",
-        "rca_removed_points",
-        "lca_removed_points",
-        "proximal_points",
-        "distal_points",
-    ):
-        if key in updated and key not in region_keys:
-            updated[key] = [p for p in updated[key] if tuple(p) in new_coord_set]
-
-    return updated
+    return map_point_lists(
+        updated,
+        lambda pts: [p for p in pts if tuple(p) in new_coord_set],
+        skip=lambda key: key in region_keys or _is_boundary_key(key),
+    )
 
 
 def keep_labeled_points_from_mesh(
@@ -185,11 +245,9 @@ def keep_labeled_points_from_mesh(
     Parameters
     ----------
     results : dict
-        Dictionary containing at minimum the key ``"mesh"``.  Any of
-        ``"aorta_points"``, ``"rca_points"``, ``"lca_points"``,
-        ``"rca_removed_points"``, ``"lca_removed_points"``,
-        ``"proximal_points"``, and ``"distal_points"`` are also updated if
-        present.
+        Dictionary containing at minimum the key ``"mesh"``.  Every other
+        vertex list (``"aorta_points"``, ``"distal_points"``, each branch in
+        ``"rca_branches"``, ...) is updated to the trimmed mesh.
     region_key : str or list[str]
         Key (or list of keys) in *results* whose point lists define the
         vertices to *keep*.  When multiple keys are given the union of all
@@ -267,20 +325,11 @@ def keep_labeled_points_from_mesh(
     updated["mesh"] = new_mesh
     _store_boundary_rings(updated, mesh.vertices, components)
 
-    for key in (
-        "aorta_points",
-        "rca_points",
-        "lca_points",
-        "rca_removed_points",
-        "lca_removed_points",
-        "proximal_points",
-        "distal_points",
-        *region_keys,
-    ):
-        if key in updated:
-            updated[key] = [p for p in updated[key] if tuple(p) in new_coord_set]
-
-    return updated
+    return map_point_lists(
+        updated,
+        lambda pts: [p for p in pts if tuple(p) in new_coord_set],
+        skip=_is_boundary_key,
+    )
 
 
 def extract_region_with_border_faces(
@@ -317,3 +366,129 @@ def extract_region_with_border_faces(
         faces=remap[selected_faces],
         process=False,
     )
+
+
+def _detached_fragments(mesh: trimesh.Trimesh, remove_idx: set[int]) -> set[int]:
+    """Kept vertices that only hung on to the mesh through *remove_idx*.
+
+    Vertices of the branch that its labels missed (e.g. a wide distal end)
+    would be left floating once the branch is cut off.  Of the connected pieces
+    touching the removed region, the largest is the parent vessel, and the rest
+    are returned.
+    """
+    n = len(mesh.vertices)
+    keep = np.ones(n, dtype=bool)
+    keep[list(remove_idx)] = False
+    faces = mesh.faces
+    kept_faces = faces[keep[faces].all(axis=1)]
+    edges = kept_faces[:, [0, 1, 1, 2, 2, 0]].reshape(-1, 2)
+    graph = coo_matrix((np.ones(len(edges)), (edges[:, 0], edges[:, 1])), shape=(n, n))
+    _, labels = connected_components(graph, directed=False)
+
+    cut_faces = faces[(~keep[faces]).any(axis=1)]
+    touching = set(labels[cut_faces[keep[cut_faces]]].tolist())
+    if len(touching) <= 1:
+        return set()
+    sizes = np.bincount(labels)
+    parent = max(touching, key=lambda c: sizes[c])
+    loose = keep & np.isin(labels, list(touching - {parent}))
+    return set(np.flatnonzero(loose).tolist())
+
+
+def remove_branch(
+    results: dict,
+    centerline: PyCenterline,
+    branch_id: int,
+    fill_hole: bool = True,
+) -> tuple[dict, PyCenterline]:
+    """Cut a side branch off the mesh and the centerline, and close its ostium.
+
+    The branch's vertices are its label from :func:`~multimodars.label_branches`
+    (``results["rca_branches"][branch_id]`` or the LCA's, whichever vessel
+    *centerline* belongs to).  Every branch growing out of *branch_id* is
+    removed with it.
+
+    Branch ids are not renumbered: the removed branches are dropped from the
+    vessel's branch labels and from the returned centerline, the other branches
+    keep their id.
+
+    Parameters
+    ----------
+    results : dict
+        Labelled results with ``"mesh"`` and the per-branch labels.
+    centerline : PyCenterline
+        Whole centerline of the vessel the branch belongs to.
+    branch_id : int
+        Side branch to remove (not 0, the main vessel).
+    fill_hole : bool, optional
+        Close the ostium with a patch following the parent vessel's wall
+        (default).  With ``False`` the hole stays open and its rim is stored
+        as ``"boundary_points_1"`` / ``"boundary_points"``.
+
+    Returns
+    -------
+    (dict, PyCenterline)
+        Updated *results* (mesh without the branch, every vertex list updated
+        to it, patch vertices added to the labels most of the ostium rim
+        carries) and the centerline without the removed branches.
+
+    Raises
+    ------
+    ValueError
+        If *branch_id* is 0 or not in *centerline*, or the branches were not
+        labelled.
+    """
+    if branch_id == 0:
+        raise ValueError("branch 0 is the main vessel and cannot be removed")
+    vessel = vessel_of_centerline(results, centerline)
+    branches = vessel_branches(results, vessel)
+    new_centerline = centerline.remove_branches([branch_id])
+    removed = sorted(set(centerline.branch_ids()) - set(new_centerline.branch_ids()))
+
+    mesh: trimesh.Trimesh = results["mesh"]
+    coord_to_idx = {tuple(v): i for i, v in enumerate(mesh.vertices)}
+    remove_idx = {
+        coord_to_idx[tuple(p)]
+        for k in removed
+        for p in branches.get(k, [])
+        if tuple(p) in coord_to_idx
+    }
+    remove_idx |= _detached_fragments(mesh, remove_idx)
+
+    staging_key = "_remove_branch_points"
+    staged = dict(results)
+    staged[staging_key] = [tuple(mesh.vertices[i]) for i in remove_idx]
+    updated = remove_labeled_points_from_mesh(staged, staging_key, target_boundaries=1)
+    del updated[staging_key]
+    key = branches_key(vessel)
+    updated[key] = {k: pts for k, pts in updated[key].items() if k not in removed}
+
+    ring_coords = updated.get(f"{BOUNDARY_RING_PREFIX}1", [])
+    if fill_hole and ring_coords:
+        new_mesh = updated["mesh"]
+        idx = {tuple(v): i for i, v in enumerate(new_mesh.vertices)}
+        parent = centerline.branch_parents()[branch_id]
+        assert parent is not None  # branch_id is a side branch of centerline
+        axis = np.asarray(
+            centerline.get_branch(parent).points_as_tuples(), dtype=np.float64
+        )
+        patched, added = fill_ring_on_vessel_wall(
+            new_mesh, [idx[tuple(c)] for c in ring_coords], axis
+        )
+        updated["mesh"] = patched
+
+        # The patch is part of the parent wall: give it the labels most of the
+        # rim has (e.g. rca_points, the parent's branch, distal_points).
+        ring_set = {tuple(c) for c in ring_coords}
+        added_pts = [tuple(float(x) for x in p) for p in added]
+        for where, pts in point_lists(updated):
+            if _is_boundary_key(where[0]):
+                continue
+            if 2 * len(ring_set.intersection(map(tuple, pts))) > len(ring_set):
+                set_point_list(updated, where, pts + added_pts)
+        # The rim is closed now, and keeping it would describe a hole that is gone.
+        _store_boundary_rings(updated, patched.vertices, [])
+        print(f"Closed the ostium with {len(added_pts)} patch vertices")
+
+    print(f"Removed {vessel.upper()} branch(es) {removed} ({len(remove_idx)} vertices)")
+    return updated, new_centerline

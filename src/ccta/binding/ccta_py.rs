@@ -1,5 +1,5 @@
 // src/ccta/binding/ccta_py.rs
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use crate::ccta::adjust_mesh::label_coronary;
 use crate::ccta::adjust_mesh::label_coronary::Triangle;
@@ -11,6 +11,7 @@ use pyo3::prelude::*;
 
 type Point3D = (f64, f64, f64);
 type TriangleTuple = (Point3D, Point3D, Point3D);
+/// (aorta, lca, rca, lca_removed, rca_removed) point lists.
 type FiveRegionPointLists = (
     Vec<Point3D>,
     Vec<Point3D>,
@@ -18,6 +19,8 @@ type FiveRegionPointLists = (
     Vec<Point3D>,
     Vec<Point3D>,
 );
+/// (proximal, distal, anomalous, off_path) point lists.
+type PointLists4 = (Vec<Point3D>, Vec<Point3D>, Vec<Point3D>, Vec<Point3D>);
 
 /// Find points bounded by spheres along a coronary vessel centerline.
 ///
@@ -57,7 +60,6 @@ pub fn find_centerline_bounded_points_simple(
 ) -> PyResult<Vec<Point3D>> {
     let rust_centerline = centerline.to_rust_centerline();
 
-    // Call Rust function directly - no complex conversions needed
     let result_points =
         label_coronary::find_centerline_bounded_points(rust_centerline, &points, radius)
             .map_err(pyo3::exceptions::PyValueError::new_err)?;
@@ -277,58 +279,65 @@ pub fn adjust_diameter_centerline_morphing_simple(
     Ok(result_points)
 }
 
-/// Find points that lie within a specified frame region along the centerline.
+/// Split the labelled points of a vessel along the pullback path of one branch.
 ///
-/// Positions are measured along the pullback path: from the ostium through the
-/// parent branches to the tip of the branch the frames lie on. Only points on that
-/// path can be "between". A point off the path (a branch leaving it, or a parent
-/// vessel beyond the junction) takes the position where it leaves the path and is
-/// proximal if that is before the middle of the frame segment, distal otherwise.
+/// The pullback path runs from the ostium through the parent branches, each up
+/// to the junction the path leaves it at, to the tip of ``branch_id``. Only
+/// vertices labelled for a branch on that path are placed on it, at the nearest
+/// point of their own branch, and the frames snapped to the path bound the segment.
+/// Every other vertex (other branches, parent vessels beyond the junction) is
+/// off the path.
 ///
 /// Parameters
 /// ----------
 /// centerline : PyCenterline
 ///     Centerline of the whole vessel with all its branches, branch 0 running
 ///     from the ostium distally.
+/// branch_id : int
+///     Branch the frames are aligned to.
 /// frames : list of PyFrame
-///     Aligned frames defining the region of interest along the centerline.
-/// points : list of tuple of float
-///     Input ``(x, y, z)`` point coordinates.
+///     Aligned frames defining the segment along the path.
+/// branch_points : dict of int to list of tuple of float
+///     Vertices labelled for each branch id (``results["rca_branches"]``).
 ///
 /// Returns
 /// -------
-/// proximal_points : list of tuple of float
-///     Points located before the first frame in the region.
-/// distal_points : list of tuple of float
-///     Points located after the last frame in the region.
-/// points_between : list of tuple of float
-///     Points located within the frame region.
+/// proximal_points, distal_points, anomalous_points, off_path_points : list of tuple of float
+///     Path vertices before, after and inside the segment, and the vertices off
+///     the path.
 ///
 /// Raises
 /// ------
 /// ValueError
-///     If *frames* or *centerline* is empty.
-///
-/// Examples
-/// --------
-/// >>> import multimodars as mm
+///     If *frames* or *centerline* is empty, or *branch_id* is not in
+///     *centerline*.
 #[pyfunction]
 pub fn find_points_by_cl_region(
     centerline: PyCenterline,
+    branch_id: u32,
     frames: Vec<PyFrame>,
-    points: Vec<Point3D>,
-) -> PyResult<(Vec<Point3D>, Vec<Point3D>, Vec<Point3D>)> {
+    branch_points: BTreeMap<u32, Vec<Point3D>>,
+) -> PyResult<PointLists4> {
     let rust_centerline = centerline.to_rust_centerline();
     let rust_frames: Vec<crate::types::native::frame::Frame> = frames
         .into_iter()
         .map(|f| f.to_rust_frame())
         .collect::<Result<_, _>>()?;
 
-    let result_points =
-        scale_coronary::find_points_by_cl_region_rs(&rust_centerline, &rust_frames, &points)
-            .map_err(pyo3::exceptions::PyValueError::new_err)?;
+    let regions = scale_coronary::find_points_by_cl_region_rs(
+        &rust_centerline,
+        branch_id,
+        &rust_frames,
+        &branch_points,
+    )
+    .map_err(pyo3::exceptions::PyValueError::new_err)?;
 
-    Ok(result_points)
+    Ok((
+        regions.proximal,
+        regions.distal,
+        regions.anomalous,
+        regions.off_path,
+    ))
 }
 
 /// Clean up outlier points based on neighbourhood density and reference points.
@@ -720,7 +729,7 @@ pub fn fix_mesh_winding(faces: Vec<[usize; 3]>) -> Vec<[usize; 3]> {
 /// n_points : int
 ///     Points per output contour.
 /// region_points : list of tuple of float, optional
-///     Vertices labelling the region to cut (e.g. ``results["rca_points_main"]``).
+///     Vertices labelling the region to cut (e.g. ``results["rca_branches"][0]``).
 ///     A face is cut when at least two of its vertices are labelled. ``None``
 ///     cuts the whole mesh.
 ///
@@ -844,9 +853,10 @@ pub fn smooth_mesh_labels(
 
 /// Discretize the full coronary vessel tree and compute orientation references.
 ///
-/// Runs :func:`discretize_vessel` for the aorta, both main vessels and every side
-/// branch, each on its own labelled faces, then computes the reference triplets.
-/// The centerlines must already be smoothed and resampled.
+/// Runs :func:`discretize_vessel` for the aorta and every labelled RCA and LCA
+/// branch, each on its own labelled faces, then computes the reference
+/// triplets. Branch parents come from the centerlines. The centerlines must
+/// already be smoothed and resampled.
 ///
 /// Parameters
 /// ----------
@@ -856,13 +866,12 @@ pub fn smooth_mesh_labels(
 ///     Vertices of the labelled mesh (``results["mesh"]``).
 /// mesh_faces : list of list of int
 ///     Its triangles as vertex-index triples.
-/// points_ao, points_rca_main, points_lca_main : list of tuple of float
-///     Vertices labelling the aorta and the two main vessels.
-/// side_branches_rca, side_branches_lca : list of list of tuple of float
-///     One label list per side branch, ``side_branches_rca[i]`` is branch_id
-///     ``i + 1`` (``results["rca_points_side_1"]``, ``..._2``, … in order).
-/// branch_id_rca, branch_id_lca : int
-///     Branch ID of each main vessel (almost always ``0``).
+/// points_ao : list of tuple of float
+///     Vertices labelling the aorta.
+/// rca_branches, lca_branches : dict of int to list of tuple of float
+///     Vertices per branch id (``results["rca_branches"]``,
+///     ``results["lca_branches"]``). Every id must be a branch of its
+///     centerline, and 0 is the main vessel.
 /// step_size : float
 ///     Arc length between cross-sections in mm.
 /// n_points : int
@@ -871,47 +880,40 @@ pub fn smooth_mesh_labels(
 /// Returns
 /// -------
 /// PyDiscretizedVesselTree
-///     Vessel tree including the reference triplets.
+///     Vessel tree with the branches by id, including the reference triplets.
 ///
 /// Raises
 /// ------
 /// ValueError
 ///     If the aorta or a main vessel cannot be discretized (see
-///     :func:`discretize_vessel`). A failing side branch is skipped with a
-///     warning and left empty.
+///     :func:`discretize_vessel`), or a labelled branch is not in its
+///     centerline. A failing side branch is left out with a warning.
 ///
 /// Examples
 /// --------
 /// >>> mesh = results["mesh"]
-/// >>> side_rca = [results["rca_points_side_1"], results["rca_points_side_2"]]
 /// >>> tree = mm.discretize_vessel_tree(
 /// ...     ao_cl, rca_cl, lca_cl,
 /// ...     [tuple(v) for v in mesh.vertices.tolist()], mesh.faces.tolist(),
-/// ...     results["aorta_points"], results["rca_points_main"], results["lca_points_main"],
-/// ...     side_rca, [results["lca_points_side_1"]],
+/// ...     results["aorta_points"], results["rca_branches"], results["lca_branches"],
 /// ... )
 #[pyfunction]
 #[pyo3(signature = (
     ao_cl, rca_cl, lca_cl,
     mesh_vertices, mesh_faces,
-    points_ao, points_rca_main, points_lca_main,
-    side_branches_rca, side_branches_lca,
-    branch_id_rca = 0, branch_id_lca = 0,
+    points_ao, rca_branches, lca_branches,
     step_size = 1.0, n_points = 100,
 ))]
 pub fn discretize_vessel_tree(
+    py: Python<'_>,
     ao_cl: PyCenterline,
     rca_cl: PyCenterline,
     lca_cl: PyCenterline,
     mesh_vertices: Vec<Point3D>,
     mesh_faces: Vec<[usize; 3]>,
     points_ao: Vec<Point3D>,
-    points_rca_main: Vec<Point3D>,
-    points_lca_main: Vec<Point3D>,
-    side_branches_rca: Vec<Vec<Point3D>>,
-    side_branches_lca: Vec<Vec<Point3D>>,
-    branch_id_rca: u32,
-    branch_id_lca: u32,
+    rca_branches: BTreeMap<u32, Vec<Point3D>>,
+    lca_branches: BTreeMap<u32, Vec<Point3D>>,
     step_size: f64,
     n_points: usize,
 ) -> PyResult<PyDiscretizedVesselTree> {
@@ -923,19 +925,15 @@ pub fn discretize_vessel_tree(
         &lca_cl.to_rust_centerline(),
         &mesh,
         &points_ao,
-        &points_rca_main,
-        &points_lca_main,
-        side_branches_rca,
-        side_branches_lca,
-        branch_id_rca,
-        branch_id_lca,
+        &rca_branches,
+        &lca_branches,
         step_size,
         n_points,
     )
     .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?
     .calculate_ref_pts();
 
-    Ok(PyDiscretizedVesselTree::from(tree))
+    PyDiscretizedVesselTree::from_native(py, &tree)
 }
 
 #[cfg(test)]

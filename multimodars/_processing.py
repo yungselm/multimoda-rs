@@ -1587,7 +1587,7 @@ def discretize_vessel(
     n_points : int, optional
         Points per output contour. Default is ``200``.
     region_points : list of tuple of (float, float, float), optional
-        Vertices labelling the region to cut (e.g. ``results["rca_points_main"]``). A face is
+        Vertices labelling the region to cut (e.g. ``results["rca_branches"][0]``). A face is
         cut when at least two of its vertices are labelled. ``None`` (default) cuts the whole mesh.
 
     Returns
