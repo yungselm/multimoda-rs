@@ -7,10 +7,6 @@
   </a>
 </p>
 
-> [!warning]
-> Currently under heavy construction. Real world data proved the existing labeling algorithms to be insufficient for many cases.
-> Brace for breaking changes!
-
 [![PyPI](https://img.shields.io/pypi/v/multimodars.svg)](https://pypi.org/project/multimodars)
 <!-- [![Downloads](https://static.pepy.tech/badge/multimodars)](https://pepy.tech/project/multimodars) -->
 [![License](https://img.shields.io/pypi/l/multimodars.svg)](LICENSE)
