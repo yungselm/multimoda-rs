@@ -1,10 +1,12 @@
 // src/ccta/binding/ccta_py.rs
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
+use crate::ccta::adjust_mesh::fill_holes;
 use crate::ccta::adjust_mesh::label_coronary;
 use crate::ccta::adjust_mesh::label_coronary::Triangle;
 use crate::ccta::adjust_mesh::scale_coronary;
 use crate::ccta::discretizing;
+use crate::ccta::discretizing::cutting;
 use crate::types::binding::{PyCenterline, PyContour, PyDiscretizedVesselTree, PyFrame};
 use crate::types::native::DiscretizedVesselTree;
 use pyo3::prelude::*;
@@ -934,6 +936,130 @@ pub fn discretize_vessel_tree(
     .calculate_ref_pts();
 
     PyDiscretizedVesselTree::from_native(py, &tree)
+}
+
+/// Close every open boundary loop with a fan of triangles around its centroid.
+///
+/// Each loop gets one new vertex, its edge-length-weighted centroid, and one
+/// triangle per loop edge, wound like the faces around the loop. A closed mesh
+/// comes back unchanged.
+///
+/// Parameters
+/// ----------
+/// vertices : list of (float, float, float)
+///     Mesh vertices.
+/// faces : list of [int, int, int]
+///     Mesh faces.
+///
+/// Returns
+/// -------
+/// (list of (float, float, float), list of [int, int, int])
+///     Vertices (the input ones first, then one centroid per loop) and faces
+///     (the input ones first, then the fans).
+#[pyfunction]
+pub fn fill_holes_fan(
+    vertices: Vec<Point3D>,
+    faces: Vec<[usize; 3]>,
+) -> PyResult<(Vec<Point3D>, Vec<[usize; 3]>)> {
+    let mesh = discretizing::SurfaceMesh::new(&vertices, faces)
+        .map_err(pyo3::exceptions::PyValueError::new_err)?;
+    let (v, f) = fill_holes::fill_holes_fan(&mesh.vertices, &mesh.faces);
+    Ok((v.iter().map(|p| (p.x, p.y, p.z)).collect(), f))
+}
+
+/// Cut a mesh with the plane of a discretized contour and close the cut flat.
+///
+/// The plane runs through the contour's centroid, normal to its outline
+/// (pointing distally). Only the closed ring of the mesh around the centroid
+/// is cut, so other vessels crossing the plane are untouched. The ring lies
+/// exactly on the plane: vertices closer to it than *snap_fraction* of a
+/// crossed edge are moved onto it, the other crossed edges are split. The
+/// part of the surface the ring separates off on the dropped side is removed
+/// (with any branch leaving it), and the ring is closed with a flat fan
+/// around its area centroid.
+///
+/// Parameters
+/// ----------
+/// vertices : list of (float, float, float)
+///     Mesh vertices.
+/// faces : list of [int, int, int]
+///     Mesh faces.
+/// contour : PyContour
+///     A contour of a discretized tree. Only its plane is used, so the mesh
+///     may have changed (smoothed, remeshed) since discretizing.
+/// keep : {"larger", "proximal", "distal"}
+///     Side of the plane that stays: the one with the larger surface area
+///     (default), or the side against / along the centerline direction.
+/// search_radius_factor : float
+///     Only faces within this multiple of the contour radius from its
+///     centroid are cut.
+/// snap_fraction : float
+///     Fraction of a crossed edge within which its end vertex is snapped onto
+///     the plane, in ``[0, 0.5)``.
+///
+/// Returns
+/// -------
+/// (vertices, faces, ring, centroid, cap_faces, old_to_new)
+///     The cut and capped mesh, the ring vertex indices in cap order, the
+///     cap centre's index, the cap faces (also in *faces*) and each input
+///     vertex's new index (``None`` where it was cut away).
+///
+/// Raises
+/// ------
+/// ValueError
+///     If no closed ring encloses the centroid (the plane cuts a junction),
+///     the ring does not separate the mesh, or the fan would fold over.
+#[pyfunction]
+#[pyo3(signature = (
+    vertices, faces, contour,
+    keep = "larger", search_radius_factor = 2.0, snap_fraction = 0.2,
+))]
+#[allow(clippy::type_complexity)]
+pub fn cut_mesh_at_contour(
+    vertices: Vec<Point3D>,
+    faces: Vec<[usize; 3]>,
+    contour: PyContour,
+    keep: &str,
+    search_radius_factor: f64,
+    snap_fraction: f64,
+) -> PyResult<(
+    Vec<Point3D>,
+    Vec<[usize; 3]>,
+    Vec<usize>,
+    usize,
+    Vec<[usize; 3]>,
+    Vec<Option<usize>>,
+)> {
+    let value_error = pyo3::exceptions::PyValueError::new_err;
+    let keep = match keep {
+        "proximal" => cutting::Keep::Proximal,
+        "distal" => cutting::Keep::Distal,
+        "larger" => cutting::Keep::Larger,
+        other => {
+            return Err(value_error(format!(
+                "keep must be 'larger', 'proximal' or 'distal', got {other:?}"
+            )))
+        }
+    };
+    let mesh = discretizing::SurfaceMesh::new(&vertices, faces).map_err(value_error)?;
+    let plane =
+        cutting::CutPlane::from_contour(&contour.to_rust_contour()?).map_err(value_error)?;
+    let cut = cutting::cut_mesh_at_plane(
+        &mesh,
+        &plane,
+        search_radius_factor * plane.radius,
+        keep,
+        snap_fraction,
+    )
+    .map_err(value_error)?;
+    Ok((
+        cut.vertices.iter().map(|p| (p.x, p.y, p.z)).collect(),
+        cut.faces,
+        cut.ring,
+        cut.centroid,
+        cut.cap_faces,
+        cut.old_to_new,
+    ))
 }
 
 #[cfg(test)]

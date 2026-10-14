@@ -19,6 +19,7 @@ from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
 
 from ..multimodars import build_adjacency_map
+from ..multimodars import cut_mesh_at_contour as _cut_mesh_at_contour
 from ._results import (
     branches_key,
     map_point_lists,
@@ -31,7 +32,7 @@ from .postprocessing import fill_ring_on_vessel_wall
 from .stitching.boundary import BOUNDARY_RING_PREFIX, clean_open_boundary
 
 if TYPE_CHECKING:
-    from ..multimodars import PyCenterline
+    from ..multimodars import PyCenterline, PyDiscretizedVesselTree
 
 
 def _store_boundary_rings(
@@ -492,3 +493,141 @@ def remove_branch(
 
     print(f"Removed {vessel.upper()} branch(es) {removed} ({len(remove_idx)} vertices)")
     return updated, new_centerline
+
+
+def cut_at_slice(
+    results: dict,
+    tree: PyDiscretizedVesselTree,
+    vessel: str,
+    slice_idx: int,
+    branch_id: int = 0,
+    keep: str = "larger",
+    search_radius_factor: float = 2.0,
+    snap_fraction: float = 0.2,
+) -> tuple[dict, trimesh.Trimesh]:
+    """Cut the mesh flat at a slice of the discretized tree and cap the cut.
+
+    Only the slice's plane is taken from *tree* (through the contour's
+    centroid, normal to it), so ``results["mesh"]`` may have been scaled,
+    smoothed or remeshed since :func:`~multimodars.discretize_vessel_tree`.
+    Only the vessel ring around the slice centre is cut, every other part of
+    the mesh crossing the plane is left alone. Ring vertices lie exactly on
+    the plane, and the ring is closed with a flat fan around its centroid, so
+    the end is a clean planar inlet/outlet. Branches leaving the dropped part
+    are dropped with it.
+
+    Parameters
+    ----------
+    results : dict
+        Results with ``"mesh"`` and its vertex labels.
+    tree : PyDiscretizedVesselTree
+        Discretized tree giving the plane.
+    vessel : {"aorta", "rca", "lca"}
+        Vessel to cut: ``tree.discretized_aorta`` or the branch
+        ``tree.<vessel>[branch_id]``.
+    slice_idx : int
+        Index into that vessel's ``contours`` list (negative counts from the
+        distal end). Not the contour ``id``: end slices may have been trimmed.
+    branch_id : int, optional
+        Branch of *vessel* (ignored for the aorta). Default 0, the main vessel.
+    keep : {"larger", "proximal", "distal"}, optional
+        Side of the plane that stays: the one with the larger surface area
+        (default, independent of the centerline direction), or the side
+        against / along the centerline direction.
+    search_radius_factor : float, optional
+        Only the mesh within this multiple of the slice radius from its
+        centre is cut. Raise it if the vessel has widened since discretizing.
+    snap_fraction : float, optional
+        Vertices closer to the plane than this fraction of a crossed edge are
+        moved onto it instead of splitting the edge, avoiding sliver
+        triangles. ``0`` splits every crossed edge.
+
+    Returns
+    -------
+    (dict, trimesh.Trimesh)
+        *results* with the cut and capped ``"mesh"`` and every vertex list
+        updated to it (removed vertices dropped, snapped ones moved, the new
+        ring and cap vertices added to the labels the ring's neighbours carry),
+        and a copy of the cap as its own mesh for export: its vertices are the
+        ring in order, then the centre, with the faces' normals pointing out
+        of the kept mesh.
+
+    Raises
+    ------
+    ValueError
+        If no closed ring of the mesh encloses the slice centre (the plane
+        cuts a junction, choose a slice further from it), the ring does not
+        separate the mesh, or the ring is not star-shaped around its centroid.
+    """
+    if vessel == "aorta":
+        contours = tree.discretized_aorta
+    elif vessel in ("rca", "lca"):
+        branches = getattr(tree, vessel)
+        if branch_id not in branches:
+            raise ValueError(
+                f"{vessel.upper()} has no branch {branch_id} (branches {sorted(branches)})"
+            )
+        contours = branches[branch_id].contours
+    else:
+        raise ValueError(f"vessel must be 'aorta', 'rca' or 'lca', got {vessel!r}")
+    if not -len(contours) <= slice_idx < len(contours):
+        raise IndexError(f"slice_idx {slice_idx} out of range ({len(contours)} slices)")
+
+    mesh: trimesh.Trimesh = results["mesh"]
+    vertices, faces, ring, centroid, cap_faces, old_to_new = _cut_mesh_at_contour(
+        [tuple(v) for v in mesh.vertices.tolist()],
+        mesh.faces.tolist(),
+        contours[slice_idx],
+        keep=keep,
+        search_radius_factor=search_radius_factor,
+        snap_fraction=snap_fraction,
+    )
+    new_mesh = trimesh.Trimesh(
+        vertices=np.asarray(vertices, dtype=np.float64),
+        faces=np.asarray(faces, dtype=np.int64),
+        process=False,
+    )
+    new_coords = [tuple(v) for v in new_mesh.vertices.tolist()]
+    moved = {
+        tuple(old): new_coords[new]
+        for old, new in zip(mesh.vertices.tolist(), old_to_new, strict=True)
+        if new is not None
+    }
+
+    def remap(pts: list) -> list:
+        return [moved[tuple(p)] for p in pts if tuple(p) in moved]
+
+    updated = map_point_lists(results, remap)
+    updated["mesh"] = new_mesh
+
+    # Label the new vertices like most of the kept vertices along the ring.
+    kept = {new for new in old_to_new if new is not None}
+    added = [i for i in range(len(new_coords)) if i not in kept]
+    ring_set = set(ring)
+    neighbours = {
+        new_coords[v]
+        for face in faces
+        if ring_set.intersection(face)
+        for v in face
+        if v in kept and v not in ring_set
+    }
+    added_pts = [new_coords[i] for i in added]
+    for where, pts in point_lists(updated):
+        if _is_boundary_key(where[0]):
+            continue
+        if 2 * len(neighbours.intersection(pts)) > len(neighbours):
+            set_point_list(updated, where, pts + added_pts)
+
+    # The cap on its own: ring in order, then the centre.
+    order = [*ring, centroid]
+    local = {v: i for i, v in enumerate(order)}
+    cap = trimesh.Trimesh(
+        vertices=new_mesh.vertices[order],
+        faces=[[local[v] for v in f] for f in cap_faces],
+        process=False,
+    )
+    print(
+        f"Cut {vessel.upper() if vessel != 'aorta' else 'aorta'} at slice {slice_idx}: "
+        f"kept {len(kept)} of {len(mesh.vertices)} vertices, cap with {len(ring)} ring points"
+    )
+    return updated, cap

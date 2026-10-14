@@ -2959,3 +2959,80 @@ class TestStitchAcrossABifurcation:
     def test_without_the_tree_the_branch_stays_loose(self, bifurcation_cut):
         _, _, stitched = self._stitch(bifurcation_cut, None)
         assert len(stitched["mesh"].split(only_watertight=False)) > 1
+
+
+# ===========================================================================
+# mesh_regions.cut_at_slice
+# ===========================================================================
+
+
+def _ring_plane_residual(ring: np.ndarray) -> float:
+    centred = ring - ring.mean(axis=0)
+    normal = np.linalg.svd(centred)[2][2]
+    return float(np.abs(centred @ normal).max())
+
+
+class TestCutAtSlice:
+    def _cut(self, results, tree, **kwargs):
+        k = len(tree.rca[0].contours) // 2
+        return mm.cut_at_slice(results, tree, "rca", k, **kwargs)
+
+    def test_flat_capped_cut(self, example_labelled, example_tree):
+        mesh = example_labelled["mesh"]
+        results, cap = self._cut(example_labelled, example_tree)
+        cut = results["mesh"]
+        assert len(cut.vertices) < len(mesh.vertices)
+        assert cut.is_winding_consistent
+        assert cut.is_watertight == mesh.is_watertight
+        ring = cap.vertices[:-1]
+        assert _ring_plane_residual(ring) < 1e-9
+        # The cap is a disc whose rim is the ring, and the same faces are in the cut mesh.
+        assert len(cap.outline().entities) == 1
+        assert len(cap.faces) == len(ring)
+        cut_coords = {tuple(v) for v in cut.vertices.tolist()}
+        assert all(tuple(v) in cut_coords for v in cap.vertices.tolist())
+
+    def test_labels_follow_the_cut_mesh(self, example_labelled, example_tree):
+        results, cap = self._cut(example_labelled, example_tree)
+        coords = {tuple(v) for v in results["mesh"].vertices.tolist()}
+        assert all(tuple(p) in coords for p in results["rca_points"])
+        for pts in results["rca_branches"].values():
+            assert all(tuple(p) in coords for p in pts)
+        # The new ring and cap vertices carry the cut vessel's labels.
+        rca = {tuple(p) for p in results["rca_points"]}
+        assert {tuple(v) for v in cap.vertices.tolist()} <= rca
+        # The LCA is not touched.
+        assert results["lca_points"] == example_labelled["lca_points"]
+
+    def test_sides_split_the_vessel(self, example_labelled, example_tree):
+        n = len(example_labelled["mesh"].vertices)
+        prox, _ = self._cut(example_labelled, example_tree, keep="proximal")
+        dist, _ = self._cut(example_labelled, example_tree, keep="distal")
+        assert len(prox["mesh"].vertices) > len(dist["mesh"].vertices)
+        # Each original vertex ends up on one side, plus the shared ring and two caps.
+        assert len(prox["mesh"].vertices) + len(dist["mesh"].vertices) >= n
+
+    def test_works_on_a_smoothed_mesh(self, example_labelled, example_tree):
+        smoothed = example_labelled["mesh"].copy()
+        trimesh.smoothing.filter_taubin(smoothed, lamb=0.6, iterations=5)
+        results, cap = self._cut({"mesh": smoothed}, example_tree)
+        assert results["mesh"].is_winding_consistent
+        assert _ring_plane_residual(cap.vertices[:-1]) < 1e-9
+
+    def test_invalid_input(self, example_labelled, example_tree):
+        with pytest.raises(ValueError):
+            mm.cut_at_slice(example_labelled, example_tree, "pda", 0)
+        with pytest.raises(ValueError):
+            mm.cut_at_slice(example_labelled, example_tree, "rca", 0, branch_id=99)
+        with pytest.raises(IndexError):
+            mm.cut_at_slice(example_labelled, example_tree, "rca", 10_000)
+        with pytest.raises(ValueError):
+            self._cut(example_labelled, example_tree, keep="middle")
+
+    def test_default_keeps_the_larger_side(self, example_labelled, example_tree):
+        n = len(example_labelled["mesh"].vertices)
+        for slice_idx in (2, -3):
+            results, _ = mm.cut_at_slice(
+                example_labelled, example_tree, "aorta", slice_idx
+            )
+            assert len(results["mesh"].vertices) > n / 2

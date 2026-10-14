@@ -47,6 +47,7 @@ from .ccta.labeling import (
     label_geometry,
 )
 from .ccta.mesh_regions import (
+    cut_at_slice,
     keep_labeled_points_from_mesh,
     remove_branch,
     remove_labeled_points_from_mesh,
@@ -99,6 +100,7 @@ __all__ = [
     "align_three_point",
     "build_adjacency_map",
     "create_wall_mesh",
+    "cut_at_slice",
     "discretize_vessel",
     "discretize_vessel_tree",
     "export_section_stl",

@@ -85,6 +85,8 @@ fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<(
         ccta_py::discretize_vessel_tree,
         m.clone()
     )?)?;
+    m.add_function(wrap_pyfunction!(ccta_py::fill_holes_fan, m.clone())?)?;
+    m.add_function(wrap_pyfunction!(ccta_py::cut_mesh_at_contour, m.clone())?)?;
 
     // Updated class registration
     m.add_class::<PyInputData>()?;

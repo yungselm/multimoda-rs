@@ -1044,6 +1044,25 @@ def keep_largest_connected_component(
 def fix_mesh_winding(
     faces: list[list[int]],
 ) -> list[list[int]]: ...
+def fill_holes_fan(
+    vertices: list[tuple[float, float, float]],
+    faces: list[list[int]],
+) -> tuple[list[tuple[float, float, float]], list[list[int]]]: ...
+def cut_mesh_at_contour(
+    vertices: list[tuple[float, float, float]],
+    faces: list[list[int]],
+    contour: PyContour,
+    keep: str = ...,
+    search_radius_factor: float = ...,
+    snap_fraction: float = ...,
+) -> tuple[
+    list[tuple[float, float, float]],
+    list[list[int]],
+    list[int],
+    int,
+    list[list[int]],
+    list[int | None],
+]: ...
 def smooth_mesh_labels(
     labels: list[int],
     adjacency_map: dict[int, set[int]],
