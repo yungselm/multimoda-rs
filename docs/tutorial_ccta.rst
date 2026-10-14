@@ -20,6 +20,7 @@ This step-by-step tutorial demonstrates how to:
 8. Remesh and smooth the stitched geometry
 9. Visualise labeled regions and export section STL files
 10. Re-label the final stitched geometry
+11. Cut flat inlets and outlets for simulation
 
 The goal of this module is to replace a section on the CCTA geometry with an intravascular geometry.
 
@@ -950,3 +951,43 @@ objects prepared in step 1:
     mm.export_section_stl(results, "aorta")
     mm.export_section_stl(results, "lca")
     mm.export_section_stl(results, "rca")
+
+11. Cut flat inlets and outlets
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Flow simulations need flat, capped inlets and outlets.
+:func:`multimodars.cut_at_slice` cuts the mesh with the plane of one slice of the discretized tree
+from step 2 and closes the cut with a flat fan around the ring's centroid.  Only the plane is taken
+from the tree, so the remeshed and smoothed mesh can be cut, and the slice is picked by its index
+in ``tree.discretized_aorta`` or ``tree.<vessel>[branch_id].contours``:
+
+.. code-block:: python
+
+    # Top of the aorta, at its third-last slice
+    results_cut, aorta_cap = mm.cut_at_slice(results, tree, "aorta", slice_idx=3)
+    # RCA main vessel, at its 80th slice
+    results_cut, rca_cap = mm.cut_at_slice(results_cut, tree, "rca", slice_idx=80)
+
+    results_cut["mesh"].export("final_cut.stl")
+    aorta_cap.export("aorta_outlet.stl")
+    rca_cap.export("rca_outlet.stl")
+
+Only the vessel ring around the slice centre is cut, so another vessel crossing the same plane is
+left alone.  The ring lies exactly on the plane: vertices closer to it than ``snap_fraction`` of a
+crossed edge (default 0.2) are moved onto it, the other crossed edges are split.  Branches beyond
+the cut are removed with the dropped part.  All vertex lists in ``results`` follow the cut, and
+every other vertex keeps its coordinates, so the caps and the cut mesh line up in the original
+CCTA coordinates (do not let a mesh editor re-centre them separately).
+
+**Parameter reference:**
+
+- ``keep``: ``"larger"`` (default) keeps the side with the larger surface area, whichever way the
+  centerline runs.  ``"proximal"`` / ``"distal"`` keep the side against / along the centerline.
+- ``branch_id``: branch of the RCA/LCA to cut (ignored for the aorta).
+- ``search_radius_factor``: only the mesh within this multiple of the slice radius is cut.  Raise
+  it if the vessel has widened since discretizing.
+
+The returned cap is a mesh of its own: ``cap.vertices[:-1]`` is the ring in order and
+``cap.vertices[-1]`` its centre.  A ``ValueError`` is raised if the plane does not cut a closed ring
+around the slice centre, as at the first slice of a branch, which still lies in the junction:
+choose a slice further from it.

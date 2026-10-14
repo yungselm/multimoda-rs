@@ -3,6 +3,29 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+Inlets and outlets can be cut flat at any slice of the discretized tree, e.g. for CFD. Almost
+everything this needs was already there: the planes come from the discretized tree, the cut
+reuses the plane intersection and ring selection of the discretization, and the cap is the fan
+fill of `manual_hole_fill`, now in Rust.
+
+### Added
+- `cut_at_slice(results, tree, vessel, slice_idx, branch_id=0, keep="larger")`: cuts the mesh
+  with the plane of a tree slice (`"aorta"`, `"rca"` or `"lca"`) and closes the cut with a flat
+  fan around the ring's centroid. Only the plane is taken from the tree, so the mesh may be
+  scaled, smoothed or remeshed after discretizing. Only the vessel ring around the slice centre
+  is cut, ring vertices lie exactly on the plane, and branches beyond the cut go with the dropped
+  part. `keep="larger"` keeps the side with the larger surface area, `"proximal"` / `"distal"`
+  pick a side along the centerline. Returns the updated results and the cap as its own mesh for
+  export.
+- `multimodars.multimodars.cut_mesh_at_contour` and `fill_holes_fan`: the Rust functions behind `cut_at_slice` and
+  `manual_hole_fill`.
+
+### Changed
+- `manual_hole_fill` runs in Rust. Each fan's centre is weighted by edge length instead of the
+  plain mean of the loop points, and the fan is wound like the faces around the hole.
+
 ## [0.8.0] - 2026-10-12
 
 Branch ids are now the single source of truth: the branch labels from `label_branches` decide
