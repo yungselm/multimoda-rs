@@ -8,7 +8,8 @@ Converters
 .. autofunction:: multimodars._converters.array_to_pyinputdata
 .. autofunction:: multimodars._converters.geometry_to_frames_array
 
-VTP Reader
-----------
+VTP Reader and Writer
+---------------------
 
 .. autofunction:: multimodars.read_centerline_vtp
+.. autofunction:: multimodars.write_centerline_vtp

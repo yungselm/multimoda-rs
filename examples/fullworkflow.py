@@ -246,3 +246,4 @@ results_cut, aorta_cl_cut, aorta_cap = mm.cut_at_slice(
 print(f"Cut mesh watertight? {results_cut['mesh'].is_watertight}")
 results_cut["mesh"].export("final_aorta_cut.stl")
 aorta_cap.export("aorta_outlet.stl")
+mm.write_centerline_vtp(aorta_cl_cut, "aorta_cl_cut.vtp")

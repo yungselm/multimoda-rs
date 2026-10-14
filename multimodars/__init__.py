@@ -24,6 +24,7 @@ from ._processing import (
     from_file_singlepair,
     read_centerline_vtp,
     to_obj,
+    write_centerline_vtp,
 )
 from .ccta import create_wall_mesh, export_section_stl, label, scale, stitch
 from .ccta.centerline_prep import (
@@ -147,6 +148,7 @@ __all__ = [
     "sync_results_to_mesh",
     "to_array",
     "to_obj",
+    "write_centerline_vtp",
     "write_geometries",
 ]
 

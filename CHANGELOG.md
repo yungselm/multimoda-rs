@@ -23,6 +23,8 @@ fill of `manual_hole_fill`, now in Rust.
 - `PyCenterline.cut_branch(branch_id, position, keep="proximal", tolerance=inf)`: cuts a branch at
   a position, which becomes its new end point. Branches growing out of the dropped part are
   removed, the others keep their id.
+- `write_centerline_vtp(centerline, path)`: writes a centerline as an ASCII `.vtp` file that
+  `read_centerline_vtp` reads back, e.g. to save a cut centerline.
 - `multimodars.multimodars.cut_mesh_at_contour` and `fill_holes_fan`: the Rust functions behind
   `cut_at_slice` and `manual_hole_fill`.
 

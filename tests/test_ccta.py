@@ -3066,3 +3066,27 @@ class TestCutAtSlice:
         # The wrong vessel's centerline does not pass through the slice.
         with pytest.raises(ValueError):
             mm.cut_at_slice(r, t, self.lca, "rca", len(t.rca[0].contours) // 2)
+
+
+def test_write_centerline_vtp_round_trip(tmp_path):
+    if not (_EXAMPLE_DATA / "rca_cl.vtp").exists():
+        pytest.skip("example data not available")
+    cl = mm.read_centerline_vtp(str(_EXAMPLE_DATA / "rca_cl.vtp"))
+    path = tmp_path / "out" / "rca_cl.vtp"
+    mm.write_centerline_vtp(cl, str(path))
+    back = mm.read_centerline_vtp(str(path))
+
+    assert back.branch_ids() == cl.branch_ids()
+    a = np.array(
+        [
+            [p.contour_point.x, p.contour_point.y, p.contour_point.z, p.radius]
+            for p in cl.points
+        ]
+    )
+    b = np.array(
+        [
+            [p.contour_point.x, p.contour_point.y, p.contour_point.z, p.radius]
+            for p in back.points
+        ]
+    )
+    np.testing.assert_array_equal(a, b)

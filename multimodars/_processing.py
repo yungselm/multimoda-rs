@@ -60,6 +60,9 @@ from .multimodars import (
 from .multimodars import (
     to_obj as _to_obj,
 )
+from .multimodars import (
+    write_centerline_vtp as _write_centerline_vtp,
+)
 
 _AlignLog = list[tuple[int, int, float, float, float, float, float]]
 
@@ -1433,6 +1436,40 @@ def read_centerline_vtp(file_path: str) -> PyCenterline:
     >>> print(cl.branch_start_indices)
     """
     return _read_centerline_vtp(file_path)
+
+
+def write_centerline_vtp(centerline: PyCenterline, file_path: str) -> None:
+    """Write a ``PyCenterline`` to an ASCII-format VTP file.
+
+    The inverse of :func:`read_centerline_vtp`: each branch becomes one VTK
+    line, and the radii are stored as ``PointData/MaximumInscribedSphereRadius``
+    as VMTK writes them. Removed (empty) branches are skipped. Tangents are not
+    stored; the reader recomputes them.
+
+    Parameters
+    ----------
+    centerline : PyCenterline
+        Centerline to write.
+    file_path : str
+        Output ``.vtp`` path. Missing parent directories are created.
+
+    Raises
+    ------
+    RuntimeError
+        If the centerline has no points or the file cannot be written.
+
+    Notes
+    -----
+    :func:`read_centerline_vtp` numbers branches by descending arc length, so
+    branch ids only survive a round trip if they already follow that order.
+
+    Examples
+    --------
+    >>> import multimodars as mm
+    >>> cl = mm.read_centerline_vtp("data/rca_cl.vtp")
+    >>> mm.write_centerline_vtp(cl, "out/rca_cl.vtp")
+    """
+    _write_centerline_vtp(centerline, file_path)
 
 
 # ---------------------------------------------------------------------------

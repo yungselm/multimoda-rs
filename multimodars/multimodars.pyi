@@ -420,6 +420,7 @@ class PyCenterline:
             junction of a side branch with its parent.
         """
         ...
+
     def remove_branches(self, branch_ids: list[int]) -> PyCenterline:
         """Remove branches together with every branch growing out of them.
 
@@ -881,6 +882,7 @@ def to_obj(
 # ---------------------------------------------------------------------------
 
 def read_centerline_vtp(path: str) -> PyCenterline: ...
+def write_centerline_vtp(centerline: PyCenterline, path: str) -> None: ...
 
 # Implemented in Python (multimodars.ccta.centerline_prep), re-declared here for
 # discoverability alongside the other centerline loading/prep functions.
