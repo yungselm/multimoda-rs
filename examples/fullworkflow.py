@@ -247,3 +247,21 @@ print(f"Cut mesh watertight? {results_cut['mesh'].is_watertight}")
 results_cut["mesh"].export("final_aorta_cut.stl")
 aorta_cap.export("aorta_outlet.stl")
 mm.write_centerline_vtp(aorta_cl_cut, "aorta_cl_cut.vtp")
+
+# Cut the circumflex artery (branch 1) in half and cap it. The cut is
+# chained on the aorta cut, so the result has both outlets. Branches growing
+# out of the dropped half are removed from the mesh, centerline and labels.
+side_branch = tree.lca[1]
+results_cut, lca_cl_cut, side_cap = mm.cut_at_slice(
+    results_cut,
+    tree,
+    lca_cl,
+    "lca",
+    slice_idx=len(side_branch.contours) // 2,
+    branch_id=1,
+    keep="larger",
+)
+print(f"Side branch cut watertight? {results_cut['mesh'].is_watertight}")
+results_cut["mesh"].export("final_lca_side_cut.stl")
+side_cap.export("lca_side_outlet.stl")
+mm.write_centerline_vtp(lca_cl_cut, "lca_cl_cut.vtp")
