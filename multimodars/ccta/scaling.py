@@ -6,7 +6,7 @@ import trimesh
 from ..multimodars import (
     PyCenterline,
     PyFrame,
-    adjust_diameter_centerline_morphing_simple,
+    adjust_diameter_centerline_morphing,
     find_aortic_scaling,
     find_proximal_distal_scaling,
 )
@@ -73,7 +73,7 @@ def scale_region_centerline_morphing(
     region_vertices_list = [
         tuple(vertex) for vertex in scaled_mesh.vertices[region_vertex_indices]
     ]
-    adjusted_points = adjust_diameter_centerline_morphing_simple(
+    adjusted_points = adjust_diameter_centerline_morphing(
         centerline=centerline,
         points=region_vertices_list,
         diameter_adjustment_mm=diameter_adjustment_mm,

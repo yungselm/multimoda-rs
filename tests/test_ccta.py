@@ -1,12 +1,11 @@
 """Tests for the multimodars.ccta module.
 
 Covers:
-  - multimodars.multimodars: find_faces_near_points, find_aortic_points,
-                final_reclassification (Rust bindings backing
-                labeling.label_geometry's occlusion-removal and
-                adjacency-based label-smoothing steps)
-  - labeling.helpers: _keep_largest_connected_component (island-point filter
-                for find_points_by_cl_region's proximal/distal/anomalous output)
+  - multimodars.multimodars: find_aortic_points, final_reclassification
+                (Rust bindings backing labeling.label_geometry's adjacency-based
+                label-smoothing step), keep_largest_connected_component
+                (island-point filter for find_points_by_cl_region's
+                proximal/distal/anomalous output)
   - labeling.core: label_anomalous_region (label bookkeeping, with the
                 find_points_by_cl_region split stubbed, and on the example
                 data per branch), label_branches (partition into branches)
@@ -44,7 +43,6 @@ import trimesh
 import multimodars as mm
 from multimodars import PyContour, PyContourPoint, PyFrame, PyGeometry
 from multimodars.ccta.labeling import core as labeling_core
-from multimodars.ccta.labeling.helpers import _keep_largest_connected_component
 from multimodars.ccta.mesh_regions import (
     keep_labeled_points_from_mesh,
     remove_labeled_points_from_mesh,
@@ -89,7 +87,7 @@ from multimodars.ccta.stitching.helpers import (
 from multimodars.multimodars import (
     final_reclassification,
     find_aortic_points,
-    find_faces_near_points,
+    keep_largest_connected_component,
 )
 
 # ---------------------------------------------------------------------------
@@ -293,54 +291,6 @@ class TestFindAorticPoints:
         aortic = find_aortic_points(verts, [], [])
         assert all(isinstance(p, tuple) for p in aortic)
         assert all(len(p) == 3 for p in aortic)
-
-
-# ===========================================================================
-# multimodars.multimodars.find_faces_near_points
-# (Rust binding that replaced labeling._find_faces_for_points +
-#  labeling._prepare_faces_for_rust)
-# ===========================================================================
-
-
-class TestFindFacesNearPoints:
-    @staticmethod
-    def _call(grid_mesh, points, tol=1e-6):
-        vertices = [tuple(v) for v in grid_mesh.vertices]
-        faces = grid_mesh.faces.tolist()
-        return find_faces_near_points(vertices, faces, points, tol)
-
-    def test_corner_vertex_finds_its_face(self, grid_mesh):
-        # vertex 0 = (0,0,0) belongs to exactly face [0,1,3]
-        result = self._call(grid_mesh, [(0.0, 0.0, 0.0)])
-        verts = grid_mesh.vertices
-        expected = (tuple(verts[0]), tuple(verts[1]), tuple(verts[3]))
-        assert len(result) == 1
-        assert result[0] == expected
-
-    def test_centre_vertex_touches_many_faces(self, grid_mesh):
-        # vertex 4 = (1,1,0) appears in 6 of the 8 faces
-        result = self._call(grid_mesh, [(1.0, 1.0, 0.0)])
-        assert len(result) == 6
-
-    def test_empty_points_returns_empty(self, grid_mesh):
-        assert self._call(grid_mesh, []) == []
-
-    def test_no_vertex_within_tol(self, grid_mesh):
-        result = self._call(grid_mesh, [(99.0, 99.0, 0.0)])
-        assert result == []
-
-    def test_each_face_is_triple_of_triples(self, grid_mesh):
-        result = self._call(grid_mesh, [(1.0, 1.0, 0.0)])
-        for face in result:
-            assert len(face) == 3
-            for v in face:
-                assert len(v) == 3
-                assert all(isinstance(c, float) for c in v)
-
-    def test_subset_via_points(self, grid_mesh):
-        # corner vertex 0 only in 1 face, so subset < all faces
-        result = self._call(grid_mesh, [(0.0, 0.0, 0.0)])
-        assert 0 < len(result) < len(grid_mesh.faces)
 
 
 # ===========================================================================
@@ -565,13 +515,18 @@ class TestFinalReclassification:
 
 
 # ===========================================================================
-# labeling.helpers._keep_largest_connected_component
+# multimodars.multimodars.keep_largest_connected_component
 # (island-point filter for find_points_by_cl_region's proximal/distal/
 # anomalous output - see grid_mesh layout in the module docstring above:
 # vertices {0,1,3,4} are mutually mesh-adjacent; vertex 8's neighbours are
 # {5,7}, neither of which is in that cluster, so it's a true singleton
 # within the induced subgraph over {0,1,3,4,8}.)
 # ===========================================================================
+
+
+def _keep_largest_connected_component(mesh, points):
+    vertices = [tuple(v) for v in mesh.vertices.tolist()]
+    return keep_largest_connected_component(vertices, mesh.faces.tolist(), points)
 
 
 class TestKeepLargestConnectedComponent:

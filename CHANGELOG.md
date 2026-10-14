@@ -31,6 +31,21 @@ fill of `manual_hole_fill`, now in Rust.
 ### Changed
 - `manual_hole_fill` runs in Rust. Each fan's centre is weighted by edge length instead of the
   plain mean of the loop points, and the fan is wound like the faces around the hole.
+- The CCTA Rust code is split by what it does to the mesh: `labeling` (assigns vertices to
+  vessels, branches and the pullback segment, no change to the mesh), `morphing` (changes its
+  shape: scaling, winding, hole filling) and `discretizing` (builds the vessel tree, the skeleton
+  with reference points and cutting planes). The bindings follow the same split, replacing
+  `ccta_py.rs`.
+- `multimodars.multimodars.remove_occluded_points(vertices, faces, points, centerline_coronary,
+  centerline_aorta, range_mm)` returns `(kept, removed)` and replaces `find_faces_near_points`
+  plus `remove_occluded_points_ray_triangle`, which are removed. `label_geometry` calls it
+  directly; the Python helpers `_apply_occlusion_removal` and `_keep_largest_connected_component`
+  are gone.
+- Renamed `find_centerline_bounded_points_simple` to `find_centerline_bounded_points` and
+  `adjust_diameter_centerline_morphing_simple` to `adjust_diameter_centerline_morphing`.
+
+### Removed
+- `smooth_mesh_labels`, which nothing used.
 
 ## [0.8.0] - 2026-10-12
 

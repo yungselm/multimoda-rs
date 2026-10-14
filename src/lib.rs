@@ -5,7 +5,6 @@ mod ccta;
 mod intravascular;
 pub mod types;
 
-use crate::ccta::binding::ccta_py;
 use crate::intravascular::binding;
 use crate::types::binding::*;
 
@@ -39,55 +38,9 @@ fn multimodars(_py: Python, m: pyo3::prelude::Bound<'_, PyModule>) -> PyResult<(
     m.add_function(wrap_pyfunction!(binding::to_obj, m.clone())?)?;
     m.add_function(wrap_pyfunction!(binding::read_centerline_vtp, m.clone())?)?;
     m.add_function(wrap_pyfunction!(binding::write_centerline_vtp, m.clone())?)?;
-    m.add_function(wrap_pyfunction!(
-        ccta_py::find_centerline_bounded_points_simple,
-        m.clone()
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        ccta_py::remove_occluded_points_ray_triangle,
-        m.clone()
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        ccta_py::find_faces_near_points,
-        m.clone()
-    )?)?;
-    m.add_function(wrap_pyfunction!(ccta_py::find_aortic_points, m.clone())?)?;
-    m.add_function(wrap_pyfunction!(
-        ccta_py::final_reclassification,
-        m.clone()
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        ccta_py::adjust_diameter_centerline_morphing_simple,
-        m.clone()
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        ccta_py::find_points_by_cl_region,
-        m.clone()
-    )?)?;
-    m.add_function(wrap_pyfunction!(ccta_py::clean_outlier_points, m.clone())?)?;
-    m.add_function(wrap_pyfunction!(
-        ccta_py::find_proximal_distal_scaling,
-        m.clone()
-    )?)?;
-    m.add_function(wrap_pyfunction!(ccta_py::find_aortic_scaling, m.clone())?)?;
-    m.add_function(wrap_pyfunction!(
-        ccta_py::find_aortic_wall_scaling,
-        m.clone()
-    )?)?;
-    m.add_function(wrap_pyfunction!(ccta_py::build_adjacency_map, m.clone())?)?;
-    m.add_function(wrap_pyfunction!(
-        ccta_py::keep_largest_connected_component,
-        m.clone()
-    )?)?;
-    m.add_function(wrap_pyfunction!(ccta_py::fix_mesh_winding, m.clone())?)?;
-    m.add_function(wrap_pyfunction!(ccta_py::smooth_mesh_labels, m.clone())?)?;
-    m.add_function(wrap_pyfunction!(ccta_py::discretize_vessel, m.clone())?)?;
-    m.add_function(wrap_pyfunction!(
-        ccta_py::discretize_vessel_tree,
-        m.clone()
-    )?)?;
-    m.add_function(wrap_pyfunction!(ccta_py::fill_holes_fan, m.clone())?)?;
-    m.add_function(wrap_pyfunction!(ccta_py::cut_mesh_at_contour, m.clone())?)?;
+    ccta::binding::labeling::register(&m)?;
+    ccta::binding::morphing::register(&m)?;
+    ccta::binding::discretizing::register(&m)?;
 
     // Updated class registration
     m.add_class::<PyInputData>()?;

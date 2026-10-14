@@ -969,21 +969,17 @@ def prepare_centerline(
 # CCTA mesh labelling and scaling functions
 # ---------------------------------------------------------------------------
 
-def remove_occluded_points_ray_triangle(
+def remove_occluded_points(
+    vertices: list[tuple[float, float, float]],
+    faces: list[list[int]],
+    points: list[tuple[float, float, float]],
     centerline_coronary: PyCenterline,
     centerline_aorta: PyCenterline,
     range_mm: float,
-    points: list[tuple[float, float, float]],
-    faces: list[
-        tuple[
-            tuple[float, float, float],
-            tuple[float, float, float],
-            tuple[float, float, float],
-        ]
-    ],
-    step_size_mm: float,
-) -> list[tuple[float, float, float]]: ...
-def adjust_diameter_centerline_morphing_simple(
+    step_size_mm: float = ...,
+    tol: float = ...,
+) -> tuple[list[tuple[float, float, float]], list[tuple[float, float, float]]]: ...
+def adjust_diameter_centerline_morphing(
     centerline: PyCenterline,
     points: list[tuple[float, float, float]],
     diameter_adjustment_mm: float,
@@ -1031,23 +1027,11 @@ def find_aortic_wall_scaling(
     ref_pt_coronary: tuple[float, float, float],
     aortic_pts: list[tuple[float, float, float]],
 ) -> float: ...
-def find_centerline_bounded_points_simple(
+def find_centerline_bounded_points(
     centerline: PyCenterline,
     points: list[tuple[float, float, float]],
     radius: float,
 ) -> list[tuple[float, float, float]]: ...
-def find_faces_near_points(
-    vertices: list[tuple[float, float, float]],
-    faces: list[list[int]],
-    points: list[tuple[float, float, float]],
-    tol: float = ...,
-) -> list[
-    tuple[
-        tuple[float, float, float],
-        tuple[float, float, float],
-        tuple[float, float, float],
-    ]
-]: ...
 def find_aortic_points(
     vertices: list[tuple[float, float, float]],
     points_a: list[tuple[float, float, float]],
@@ -1098,11 +1082,6 @@ def cut_mesh_at_contour(
     list[int | None],
     str,
 ]: ...
-def smooth_mesh_labels(
-    labels: list[int],
-    adjacency_map: dict[int, set[int]],
-    iterations: int,
-) -> list[int]: ...
 def discretize_vessel(
     centerline: PyCenterline,
     vertices: list[tuple[float, float, float]],

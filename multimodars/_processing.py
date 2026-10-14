@@ -25,7 +25,7 @@ from .multimodars import (
     discretize_vessel as _discretize_vessel,
 )
 from .multimodars import (
-    find_centerline_bounded_points_simple as _find_centerline_bounded_points_simple,
+    find_centerline_bounded_points as _find_centerline_bounded_points,
 )
 from .multimodars import (
     find_proximal_distal_scaling as _find_proximal_distal_scaling,
@@ -1477,14 +1477,12 @@ def write_centerline_vtp(centerline: PyCenterline, file_path: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def find_centerline_bounded_points_simple(
+def find_centerline_bounded_points(
     centerline: PyCenterline,
     points: list[tuple[float, float, float]],
     radius: float,
 ) -> list[tuple[float, float, float]]:
     """Find points bounded by spheres along a coronary vessel centerline.
-
-    This version accepts and returns simple Python lists of tuples.
 
     Parameters
     ----------
@@ -1512,7 +1510,7 @@ def find_centerline_bounded_points_simple(
     >>> bounded_points = mm.find_centerline_bounded_points(centerline, points, 2.0)
     >>> print(f"Found {len(bounded_points)} points inside vessel bounds")
     """
-    return _find_centerline_bounded_points_simple(centerline, points, radius)
+    return _find_centerline_bounded_points(centerline, points, radius)
 
 
 def find_proximal_distal_scaling(

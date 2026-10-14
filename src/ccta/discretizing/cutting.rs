@@ -2,7 +2,7 @@ use super::slicing::{
     chain_segments, contains_origin, cut_triangle_by, signed_area, to_2d, Chain, PlaneFrame,
 };
 use super::SurfaceMesh;
-use crate::ccta::adjust_mesh::fill_holes::fan_faces;
+use crate::ccta::morphing::fill_holes::fan_faces;
 use crate::types::native::Contour;
 use nalgebra::{Vector2, Vector3};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -448,7 +448,7 @@ fn sorted(a: usize, b: usize) -> (usize, usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ccta::adjust_mesh::fill_holes::boundary_loops;
+    use crate::ccta::morphing::fill_holes::boundary_loops;
     use std::f64::consts::{PI, TAU};
 
     /// Outward-wound open tube along +z: radius `r`, `m` vertices per ring, rings every `dz`.
