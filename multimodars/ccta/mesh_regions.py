@@ -498,14 +498,15 @@ def remove_branch(
 def cut_at_slice(
     results: dict,
     tree: PyDiscretizedVesselTree,
+    centerline: PyCenterline,
     vessel: str,
     slice_idx: int,
     branch_id: int = 0,
     keep: str = "larger",
     search_radius_factor: float = 2.0,
     snap_fraction: float = 0.2,
-) -> tuple[dict, trimesh.Trimesh]:
-    """Cut the mesh flat at a slice of the discretized tree and cap the cut.
+) -> tuple[dict, PyCenterline, trimesh.Trimesh]:
+    """Cut the mesh and its centerline at a slice of the discretized tree, capping the cut.
 
     Only the slice's plane is taken from *tree* (through the contour's
     centroid, normal to it), so ``results["mesh"]`` may have been scaled,
@@ -516,12 +517,19 @@ def cut_at_slice(
     the end is a clean planar inlet/outlet. Branches leaving the dropped part
     are dropped with it.
 
+    The centerline is cut at the slice centre on the same side, so its new end
+    point lies exactly on the cap. Branches removed with the dropped part are
+    removed from the centerline and the branch labels too, the others keep
+    their id. *tree* is not changed: its slices beyond the cut are stale.
+
     Parameters
     ----------
     results : dict
         Results with ``"mesh"`` and its vertex labels.
     tree : PyDiscretizedVesselTree
         Discretized tree giving the plane.
+    centerline : PyCenterline
+        Whole centerline of *vessel*, the one *tree* was discretized with.
     vessel : {"aorta", "rca", "lca"}
         Vessel to cut: ``tree.discretized_aorta`` or the branch
         ``tree.<vessel>[branch_id]``.
@@ -544,11 +552,11 @@ def cut_at_slice(
 
     Returns
     -------
-    (dict, trimesh.Trimesh)
+    (dict, PyCenterline, trimesh.Trimesh)
         *results* with the cut and capped ``"mesh"`` and every vertex list
         updated to it (removed vertices dropped, snapped ones moved, the new
         ring and cap vertices added to the labels the ring's neighbours carry),
-        and a copy of the cap as its own mesh for export: its vertices are the
+        the cut centerline, and a copy of the cap as its own mesh for export: its vertices are the
         ring in order, then the centre, with the faces' normals pointing out
         of the kept mesh.
 
@@ -558,9 +566,13 @@ def cut_at_slice(
         If no closed ring of the mesh encloses the slice centre (the plane
         cuts a junction, choose a slice further from it), the ring does not
         separate the mesh, or the ring is not star-shaped around its centroid.
+        If the slice centre is further from *centerline* than the slice
+        radius, or the kept part would be cut off from the rest of the
+        centerline.
     """
     if vessel == "aorta":
         contours = tree.discretized_aorta
+        branch_id = 0
     elif vessel in ("rca", "lca"):
         branches = getattr(tree, vessel)
         if branch_id not in branches:
@@ -573,15 +585,29 @@ def cut_at_slice(
     if not -len(contours) <= slice_idx < len(contours):
         raise IndexError(f"slice_idx {slice_idx} out of range ({len(contours)} slices)")
 
+    contour = contours[slice_idx]
     mesh: trimesh.Trimesh = results["mesh"]
-    vertices, faces, ring, centroid, cap_faces, old_to_new = _cut_mesh_at_contour(
-        [tuple(v) for v in mesh.vertices.tolist()],
-        mesh.faces.tolist(),
-        contours[slice_idx],
-        keep=keep,
-        search_radius_factor=search_radius_factor,
-        snap_fraction=snap_fraction,
+    vertices, faces, ring, centroid, cap_faces, old_to_new, kept_side = (
+        _cut_mesh_at_contour(
+            [tuple(v) for v in mesh.vertices.tolist()],
+            mesh.faces.tolist(),
+            contour,
+            keep=keep,
+            search_radius_factor=search_radius_factor,
+            snap_fraction=snap_fraction,
+        )
     )
+    # The centerline is cut on the side the mesh kept, ending on the slice centre.
+    cx, cy, cz = contour.centroid
+    centre = np.array([cx, cy, cz], dtype=np.float64)
+    radius = max(
+        np.linalg.norm(np.array([p.x, p.y, p.z]) - centre) for p in contour.points
+    )
+    new_centerline = centerline.cut_branch(
+        branch_id, (cx, cy, cz), keep=kept_side, tolerance=radius
+    )
+    removed = set(centerline.branch_ids()) - set(new_centerline.branch_ids())
+
     new_mesh = trimesh.Trimesh(
         vertices=np.asarray(vertices, dtype=np.float64),
         faces=np.asarray(faces, dtype=np.int64),
@@ -599,6 +625,9 @@ def cut_at_slice(
 
     updated = map_point_lists(results, remap)
     updated["mesh"] = new_mesh
+    key = branches_key(vessel)
+    if removed and key in updated:
+        updated[key] = {k: pts for k, pts in updated[key].items() if k not in removed}
 
     # Label the new vertices like most of the kept vertices along the ring.
     kept = {new for new in old_to_new if new is not None}
@@ -628,6 +657,8 @@ def cut_at_slice(
     )
     print(
         f"Cut {vessel.upper() if vessel != 'aorta' else 'aorta'} at slice {slice_idx}: "
-        f"kept {len(kept)} of {len(mesh.vertices)} vertices, cap with {len(ring)} ring points"
+        f"kept the {kept_side} side, {len(kept)} of {len(mesh.vertices)} vertices, "
+        f"cap with {len(ring)} ring points"
+        + (f", removed branch(es) {sorted(removed)}" if removed else "")
     )
-    return updated, cap
+    return updated, new_centerline, cap

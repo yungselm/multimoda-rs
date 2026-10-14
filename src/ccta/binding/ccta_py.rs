@@ -999,10 +999,11 @@ pub fn fill_holes_fan(
 ///
 /// Returns
 /// -------
-/// (vertices, faces, ring, centroid, cap_faces, old_to_new)
+/// (vertices, faces, ring, centroid, cap_faces, old_to_new, kept)
 ///     The cut and capped mesh, the ring vertex indices in cap order, the
 ///     cap centre's index, the cap faces (also in *faces*) and each input
-///     vertex's new index (``None`` where it was cut away).
+///     vertex's new index (``None`` where it was cut away), and the side kept
+///     (``"proximal"`` or ``"distal"``, also when *keep* is ``"larger"``).
 ///
 /// Raises
 /// ------
@@ -1029,6 +1030,7 @@ pub fn cut_mesh_at_contour(
     usize,
     Vec<[usize; 3]>,
     Vec<Option<usize>>,
+    &'static str,
 )> {
     let value_error = pyo3::exceptions::PyValueError::new_err;
     let keep = match keep {
@@ -1059,6 +1061,11 @@ pub fn cut_mesh_at_contour(
         cut.centroid,
         cut.cap_faces,
         cut.old_to_new,
+        if cut.kept_distal {
+            "distal"
+        } else {
+            "proximal"
+        },
     ))
 }
 

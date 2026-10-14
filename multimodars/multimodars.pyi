@@ -388,6 +388,38 @@ class PyCenterline:
         """
         ...
 
+    def cut_branch(
+        self,
+        branch_id: int,
+        position: tuple[float, float, float],
+        keep: str = "proximal",
+        tolerance: float = ...,
+    ) -> PyCenterline:
+        """Cut a branch at a position, which becomes its new end point.
+
+        The position is projected onto the branch to place the cut, and the new
+        end point lies exactly at it. Branches growing out of the dropped part
+        are removed with their descendants, the others keep their ids.
+
+        Parameters
+        ----------
+        branch_id : int
+            Branch to cut.
+        position : tuple[float, float, float]
+            Cut position, e.g. the centroid of a discretized contour.
+        keep : {"proximal", "distal"}
+            Part that stays: before or after the cut, in the branch's point order.
+        tolerance : float
+            Largest allowed distance in mm of *position* from the branch.
+
+        Raises
+        ------
+        ValueError
+            If the branch does not exist or has a single point, *position* is
+            further than *tolerance* from it, or the dropped part holds the
+            junction of a side branch with its parent.
+        """
+        ...
     def remove_branches(self, branch_ids: list[int]) -> PyCenterline:
         """Remove branches together with every branch growing out of them.
 
@@ -1062,6 +1094,7 @@ def cut_mesh_at_contour(
     int,
     list[list[int]],
     list[int | None],
+    str,
 ]: ...
 def smooth_mesh_labels(
     labels: list[int],

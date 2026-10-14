@@ -11,16 +11,20 @@ reuses the plane intersection and ring selection of the discretization, and the 
 fill of `manual_hole_fill`, now in Rust.
 
 ### Added
-- `cut_at_slice(results, tree, vessel, slice_idx, branch_id=0, keep="larger")`: cuts the mesh
-  with the plane of a tree slice (`"aorta"`, `"rca"` or `"lca"`) and closes the cut with a flat
-  fan around the ring's centroid. Only the plane is taken from the tree, so the mesh may be
+- `cut_at_slice(results, tree, centerline, vessel, slice_idx, branch_id=0, keep="larger")`: cuts
+  the mesh with the plane of a tree slice (`"aorta"`, `"rca"` or `"lca"`) and closes the cut with
+  a flat fan around the ring's centroid. Only the plane is taken from the tree, so the mesh may be
   scaled, smoothed or remeshed after discretizing. Only the vessel ring around the slice centre
   is cut, ring vertices lie exactly on the plane, and branches beyond the cut go with the dropped
   part. `keep="larger"` keeps the side with the larger surface area, `"proximal"` / `"distal"`
-  pick a side along the centerline. Returns the updated results and the cap as its own mesh for
-  export.
-- `multimodars.multimodars.cut_mesh_at_contour` and `fill_holes_fan`: the Rust functions behind `cut_at_slice` and
-  `manual_hole_fill`.
+  pick a side along the centerline. The centerline is cut on the same side, its new end point on
+  the slice centre. Returns the updated results, the cut centerline and the cap as its own mesh
+  for export.
+- `PyCenterline.cut_branch(branch_id, position, keep="proximal", tolerance=inf)`: cuts a branch at
+  a position, which becomes its new end point. Branches growing out of the dropped part are
+  removed, the others keep their id.
+- `multimodars.multimodars.cut_mesh_at_contour` and `fill_holes_fan`: the Rust functions behind
+  `cut_at_slice` and `manual_hole_fill`.
 
 ### Changed
 - `manual_hole_fill` runs in Rust. Each fan's centre is weighted by edge length instead of the

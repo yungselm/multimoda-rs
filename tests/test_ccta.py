@@ -2973,13 +2973,26 @@ def _ring_plane_residual(ring: np.ndarray) -> float:
 
 
 class TestCutAtSlice:
-    def _cut(self, results, tree, **kwargs):
-        k = len(tree.rca[0].contours) // 2
-        return mm.cut_at_slice(results, tree, "rca", k, **kwargs)
+    @pytest.fixture(autouse=True)
+    def _inputs(self, example_labelled, example_tree, example_centerlines):
+        self.results = example_labelled
+        self.tree = example_tree
+        self.ao, self.rca, self.lca = example_centerlines
 
-    def test_flat_capped_cut(self, example_labelled, example_tree):
-        mesh = example_labelled["mesh"]
-        results, cap = self._cut(example_labelled, example_tree)
+    def _cut(self, results=None, **kwargs):
+        k = len(self.tree.rca[0].contours) // 2
+        return mm.cut_at_slice(
+            self.results if results is None else results,
+            self.tree,
+            self.rca,
+            "rca",
+            k,
+            **kwargs,
+        )
+
+    def test_flat_capped_cut(self):
+        mesh = self.results["mesh"]
+        results, _, cap = self._cut()
         cut = results["mesh"]
         assert len(cut.vertices) < len(mesh.vertices)
         assert cut.is_winding_consistent
@@ -2992,8 +3005,8 @@ class TestCutAtSlice:
         cut_coords = {tuple(v) for v in cut.vertices.tolist()}
         assert all(tuple(v) in cut_coords for v in cap.vertices.tolist())
 
-    def test_labels_follow_the_cut_mesh(self, example_labelled, example_tree):
-        results, cap = self._cut(example_labelled, example_tree)
+    def test_labels_follow_the_cut_mesh(self):
+        results, _, cap = self._cut()
         coords = {tuple(v) for v in results["mesh"].vertices.tolist()}
         assert all(tuple(p) in coords for p in results["rca_points"])
         for pts in results["rca_branches"].values():
@@ -3002,37 +3015,54 @@ class TestCutAtSlice:
         rca = {tuple(p) for p in results["rca_points"]}
         assert {tuple(v) for v in cap.vertices.tolist()} <= rca
         # The LCA is not touched.
-        assert results["lca_points"] == example_labelled["lca_points"]
+        assert results["lca_points"] == self.results["lca_points"]
 
-    def test_sides_split_the_vessel(self, example_labelled, example_tree):
-        n = len(example_labelled["mesh"].vertices)
-        prox, _ = self._cut(example_labelled, example_tree, keep="proximal")
-        dist, _ = self._cut(example_labelled, example_tree, keep="distal")
+    def test_centerline_ends_on_the_cut(self):
+        k = len(self.tree.rca[0].contours) // 2
+        centre = self.tree.rca[0].contours[k].centroid
+        results, cl, _ = self._cut(keep="proximal")
+        main = cl.get_branch(0).points_as_tuples()
+        assert np.allclose(main[-1], centre, atol=1e-12)
+        assert len(main) < len(self.rca.get_branch(0).points_as_tuples())
+        # Branches leaving the dropped part are gone from the centerline and the labels.
+        assert sorted(results["rca_branches"]) == cl.branch_ids()
+        _, cl, _ = self._cut(keep="distal")
+        assert np.allclose(cl.get_branch(0).points_as_tuples()[0], centre, atol=1e-12)
+
+    def test_sides_split_the_vessel(self):
+        n = len(self.results["mesh"].vertices)
+        prox, _, _ = self._cut(keep="proximal")
+        dist, _, _ = self._cut(keep="distal")
         assert len(prox["mesh"].vertices) > len(dist["mesh"].vertices)
         # Each original vertex ends up on one side, plus the shared ring and two caps.
         assert len(prox["mesh"].vertices) + len(dist["mesh"].vertices) >= n
 
-    def test_works_on_a_smoothed_mesh(self, example_labelled, example_tree):
-        smoothed = example_labelled["mesh"].copy()
+    def test_default_keeps_the_larger_side(self):
+        n = len(self.results["mesh"].vertices)
+        for slice_idx in (2, -3):
+            results, cl, _ = mm.cut_at_slice(
+                self.results, self.tree, self.ao, "aorta", slice_idx
+            )
+            assert len(results["mesh"].vertices) > n / 2
+            assert len(cl.points_as_tuples()) > 0
+
+    def test_works_on_a_smoothed_mesh(self):
+        smoothed = self.results["mesh"].copy()
         trimesh.smoothing.filter_taubin(smoothed, lamb=0.6, iterations=5)
-        results, cap = self._cut({"mesh": smoothed}, example_tree)
+        results, _, cap = self._cut({"mesh": smoothed})
         assert results["mesh"].is_winding_consistent
         assert _ring_plane_residual(cap.vertices[:-1]) < 1e-9
 
-    def test_invalid_input(self, example_labelled, example_tree):
+    def test_invalid_input(self):
+        r, t = self.results, self.tree
         with pytest.raises(ValueError):
-            mm.cut_at_slice(example_labelled, example_tree, "pda", 0)
+            mm.cut_at_slice(r, t, self.rca, "pda", 0)
         with pytest.raises(ValueError):
-            mm.cut_at_slice(example_labelled, example_tree, "rca", 0, branch_id=99)
+            mm.cut_at_slice(r, t, self.rca, "rca", 0, branch_id=99)
         with pytest.raises(IndexError):
-            mm.cut_at_slice(example_labelled, example_tree, "rca", 10_000)
+            mm.cut_at_slice(r, t, self.rca, "rca", 10_000)
         with pytest.raises(ValueError):
-            self._cut(example_labelled, example_tree, keep="middle")
-
-    def test_default_keeps_the_larger_side(self, example_labelled, example_tree):
-        n = len(example_labelled["mesh"].vertices)
-        for slice_idx in (2, -3):
-            results, _ = mm.cut_at_slice(
-                example_labelled, example_tree, "aorta", slice_idx
-            )
-            assert len(results["mesh"].vertices) > n / 2
+            self._cut(keep="middle")
+        # The wrong vessel's centerline does not pass through the slice.
+        with pytest.raises(ValueError):
+            mm.cut_at_slice(r, t, self.lca, "rca", len(t.rca[0].contours) // 2)

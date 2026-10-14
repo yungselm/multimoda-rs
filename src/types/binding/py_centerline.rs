@@ -244,6 +244,62 @@ impl PyCenterline {
         Ok(PyCenterline::from(&cl))
     }
 
+    /// Cut a branch at a position, which becomes its new end point.
+    ///
+    /// The position is projected onto the branch to place the cut, and the new
+    /// end point lies exactly at it. Branches growing out of the dropped part are
+    /// removed with their descendants, the others keep their ids.
+    ///
+    /// Parameters
+    /// ----------
+    /// branch_id : int
+    ///     Branch to cut.
+    /// position : tuple[float, float, float]
+    ///     Cut position, e.g. the centroid of a discretized contour.
+    /// keep : {"proximal", "distal"}
+    ///     Part that stays: before or after the cut, in the branch's point order.
+    /// tolerance : float
+    ///     Largest allowed distance in mm of *position* from the branch.
+    ///
+    /// Returns
+    /// -------
+    /// PyCenterline
+    ///     The cut centerline.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the branch does not exist or has a single point, *position* is
+    ///     further than *tolerance* from it, or the dropped part holds the
+    ///     junction of a side branch with its parent.
+    #[pyo3(signature = (branch_id, position, keep = "proximal", tolerance = f64::INFINITY))]
+    pub fn cut_branch(
+        &self,
+        branch_id: u32,
+        position: (f64, f64, f64),
+        keep: &str,
+        tolerance: f64,
+    ) -> PyResult<PyCenterline> {
+        let keep_after = match keep {
+            "proximal" => false,
+            "distal" => true,
+            other => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "keep must be 'proximal' or 'distal', got {other:?}"
+                )))
+            }
+        };
+        let mut cl = self.to_rust_centerline();
+        cl.cut_branch(
+            branch_id,
+            nalgebra::Vector3::new(position.0, position.1, position.2),
+            keep_after,
+            tolerance,
+        )
+        .map_err(pyo3::exceptions::PyValueError::new_err)?;
+        Ok(PyCenterline::from(&cl))
+    }
+
     /// Return a new centerline containing only the points of one branch.
     ///
     /// All retained points are reassigned to ``branch_id = 0`` and

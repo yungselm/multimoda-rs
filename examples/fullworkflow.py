@@ -231,12 +231,14 @@ results_final = mm.label_geometry(
 
 results_final["mesh"].export("final.stl")
 
-# Cut the top of the aorta flat at its third-highest slice and cap it, e.g. as
-# a CFD outlet. Only the plane comes from the tree, so the remeshed and
-# smoothed final mesh can be cut. The larger side (the rest of the model) stays.
-results_cut, aorta_cap = mm.cut_at_slice(
+# Cut the top of the aorta flat at a slice and cap it, e.g. as a CFD outlet.
+# Only the plane comes from the tree, so the remeshed and smoothed final mesh
+# can be cut. The larger side (the rest of the model) stays, and the aortic
+# centerline is cut on the same side, ending on the slice centre in the cap.
+results_cut, aorta_cl_cut, aorta_cap = mm.cut_at_slice(
     results_final,
     tree,
+    aorta_cl,
     "aorta",
     slice_idx=3,
     keep="larger",

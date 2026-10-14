@@ -85,6 +85,9 @@ pub struct MeshCut {
     pub cap_faces: Vec<[usize; 3]>,
     /// New index of each input vertex, `None` where it was cut away.
     pub old_to_new: Vec<Option<usize>>,
+    /// Whether the side along the plane normal (distal) was kept, as resolved for
+    /// [`Keep::Larger`].
+    pub kept_distal: bool,
 }
 
 /// Cuts `mesh` with `plane`, drops everything on the `keep` side's opposite and closes the cut
@@ -215,9 +218,9 @@ pub fn cut_mesh_at_plane(
             "the cut ring does not separate the mesh (both sides are still connected)".into(),
         );
     }
-    let dropped = match keep {
-        Keep::Proximal => above,
-        Keep::Distal => flood_fill(&faces, &below_seeds, &barrier),
+    let (dropped, kept_distal) = match keep {
+        Keep::Proximal => (above, false),
+        Keep::Distal => (flood_fill(&faces, &below_seeds, &barrier), true),
         Keep::Larger => {
             let below = flood_fill(&faces, &below_seeds, &barrier);
             let area = |side: &[bool]| -> f64 {
@@ -233,9 +236,9 @@ pub fn cut_mesh_at_plane(
                     .sum()
             };
             if area(&above) < area(&below) {
-                above
+                (above, false)
             } else {
-                below
+                (below, true)
             }
         }
     };
@@ -262,14 +265,10 @@ pub fn cut_mesh_at_plane(
     let cap = fan_faces(&ring, centroid);
     kept.extend(&cap);
 
-    Ok(compact(
-        vertices,
-        kept,
-        ring,
-        centroid,
-        cap,
-        mesh.vertices.len(),
-    ))
+    Ok(MeshCut {
+        kept_distal,
+        ..compact(vertices, kept, ring, centroid, cap, mesh.vertices.len())
+    })
 }
 
 /// The closed ring around the plane origin: the smallest enclosing loop, so a loop of a larger
@@ -434,6 +433,7 @@ fn compact(
         centroid: remap(centroid),
         cap_faces: cap.iter().map(|f| f.map(remap)).collect(),
         old_to_new: new_index[..n_input].to_vec(),
+        kept_distal: false,
     }
 }
 
@@ -552,6 +552,7 @@ mod tests {
             };
             let cut = cut_mesh_at_plane(&mesh, &plane, 5.0, Keep::Larger, 0.0).unwrap();
             assert!(cut.vertices.iter().all(|v| v.z >= 1.2 - 1e-12));
+            assert_eq!(cut.kept_distal, normal.z > 0.0);
             assert_consistent_manifold(&cut.faces);
         }
     }
