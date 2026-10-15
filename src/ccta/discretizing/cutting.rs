@@ -17,6 +17,9 @@ pub enum Keep {
     Larger,
 }
 
+/// Ring vertex of each mesh edge the ring crosses.
+type CrossingVertices = HashMap<(usize, usize), usize>;
+
 /// A cutting plane taken from a discretized contour.
 #[derive(Debug, Clone)]
 pub struct CutPlane {
@@ -79,7 +82,6 @@ pub struct MeshCut {
     pub faces: Vec<[usize; 3]>,
     /// Ring vertices on the plane, in the cap's winding order.
     pub ring: Vec<usize>,
-    /// The cap's centre vertex.
     pub centroid: usize,
     /// The cap faces, also contained in `faces`.
     pub cap_faces: Vec<[usize; 3]>,
@@ -121,7 +123,7 @@ pub fn cut_mesh_at_plane(
     }
     let frame = PlaneFrame::new(plane.origin, &plane.normal);
     let mut vertices = mesh.vertices.clone();
-    let mut dist: Vec<f64> = vertices.iter().map(|v| plane.dist(v)).collect();
+    let mut distances: Vec<f64> = vertices.iter().map(|v| plane.dist(v)).collect();
     let r2 = search_radius * search_radius;
     let candidates: Vec<usize> = (0..mesh.faces.len())
         .filter(|&f| {
@@ -132,137 +134,27 @@ pub fn cut_mesh_at_plane(
         .collect();
 
     // Snap vertices near the ring onto the plane, then find the ring again through them.
-    let ring_chain = find_ring(&vertices, &dist, &mesh.faces, &candidates, &frame)?;
-    for &(i, j) in &ring_chain.edges {
-        let t = dist[i] / (dist[i] - dist[j]);
-        let snap = if t <= 0.5 { i } else { j };
-        if t.min(1.0 - t) < snap_fraction {
-            vertices[snap] -= plane.normal * dist[snap];
-            dist[snap] = 0.0;
-        }
-    }
-    let ring_chain = find_ring(&vertices, &dist, &mesh.faces, &candidates, &frame)?;
-
-    // One ring vertex per crossed edge: an endpoint on the plane, or a new vertex.
-    let mut crossing_vertex: HashMap<(usize, usize), usize> = HashMap::new();
-    let mut ring: Vec<usize> = Vec::with_capacity(ring_chain.edges.len());
-    for (&(i, j), pos) in ring_chain.edges.iter().zip(&ring_chain.points) {
-        let id = if dist[i] == 0.0 {
-            i
-        } else if dist[j] == 0.0 {
-            j
-        } else {
-            vertices.push(pos - plane.normal * plane.dist(pos));
-            dist.push(0.0);
-            vertices.len() - 1
-        };
-        crossing_vertex.insert((i, j), id);
-        if ring.last() != Some(&id) {
-            ring.push(id);
-        }
-    }
-    while ring.len() > 1 && ring.first() == ring.last() {
-        ring.pop();
-    }
-    if ring.len() < 3 {
-        return Err("the cut ring collapsed to fewer than 3 vertices".into());
-    }
-
-    // Split the faces the ring runs through.
-    let mut faces: Vec<[usize; 3]> = Vec::with_capacity(mesh.faces.len() + ring.len());
-    let mut is_split = vec![false; mesh.faces.len()];
-    for &f in &candidates {
-        let face = mesh.faces[f];
-        let Some([a, b]) = cut_triangle_by(&face, &vertices, |v| dist[v]) else {
-            continue;
-        };
-        let (Some(&x), Some(&y)) = (crossing_vertex.get(&a.edge), crossing_vertex.get(&b.edge))
-        else {
-            continue;
-        };
-        is_split[f] = true;
-        faces.extend(split_face(face, &dist, (a.edge, x), (b.edge, y)));
-    }
-    faces.extend(
-        mesh.faces
-            .iter()
-            .zip(&is_split)
-            .filter(|(_, &split)| !split)
-            .map(|(f, _)| *f),
+    let ring_chain = find_ring(&vertices, &distances, &mesh.faces, &candidates, &frame)?;
+    snap_to_plane(
+        &mut vertices,
+        &mut distances,
+        &ring_chain,
+        plane,
+        snap_fraction,
     );
+    let ring_chain = find_ring(&vertices, &distances, &mesh.faces, &candidates, &frame)?;
 
-    // Drop what the ring separates off on the far side. The faces along the ring seed either
-    // side, by the vertex opposite their ring edge.
-    let barrier: HashSet<(usize, usize)> = (0..ring.len())
-        .map(|k| sorted(ring[k], ring[(k + 1) % ring.len()]))
-        .collect();
-    let mut above_seeds = Vec::new();
-    let mut below_seeds = Vec::new();
-    for (f, &[a, b, c]) in faces.iter().enumerate() {
-        for (u, w, opposite) in [(a, b, c), (b, c, a), (c, a, b)] {
-            if barrier.contains(&sorted(u, w)) {
-                match dist[opposite] {
-                    d if d > 0.0 => above_seeds.push(f),
-                    d if d < 0.0 => below_seeds.push(f),
-                    _ => {}
-                }
-            }
-        }
-    }
-    if above_seeds.is_empty() || below_seeds.is_empty() {
-        return Err("the cut ring has faces on one side only".into());
-    }
-    let above = flood_fill(&faces, &above_seeds, &barrier);
-    if below_seeds.iter().any(|&f| above[f]) {
-        return Err(
-            "the cut ring does not separate the mesh (both sides are still connected)".into(),
-        );
-    }
-    let (dropped, kept_distal) = match keep {
-        Keep::Proximal => (above, false),
-        Keep::Distal => (flood_fill(&faces, &below_seeds, &barrier), true),
-        Keep::Larger => {
-            let below = flood_fill(&faces, &below_seeds, &barrier);
-            let area = |side: &[bool]| -> f64 {
-                faces
-                    .iter()
-                    .zip(side)
-                    .filter(|(_, &on)| on)
-                    .map(|(&[a, b, c], _)| {
-                        (vertices[b] - vertices[a])
-                            .cross(&(vertices[c] - vertices[a]))
-                            .norm()
-                    })
-                    .sum()
-            };
-            if area(&above) < area(&below) {
-                (above, false)
-            } else {
-                (below, true)
-            }
-        }
-    };
-    let mut kept: Vec<[usize; 3]> = faces
-        .into_iter()
-        .zip(dropped)
-        .filter(|(_, d)| !d)
-        .map(|(f, _)| f)
-        .collect();
-
-    // Wind the ring against the kept faces along it, so the cap continues their orientation.
-    let directed: HashSet<(usize, usize)> = kept
-        .iter()
-        .flat_map(|&[a, b, c]| [(a, b), (b, c), (c, a)])
-        .collect();
-    if directed.contains(&(ring[0], ring[1])) {
-        ring.reverse();
-    }
-    let ring_2d: Vec<Vector2<f64>> = ring.iter().map(|&i| frame.to_2d(&vertices[i])).collect();
-    let center_2d = polygon_centroid(&ring_2d);
-    check_star_shaped(&ring_2d, &center_2d)?;
-    let centroid = vertices.len();
-    vertices.push(frame.origin + frame.u * center_2d.x + frame.v * center_2d.y);
-    let cap = fan_faces(&ring, centroid);
+    let (mut ring, crossing_vertex) =
+        add_ring_vertices(&mut vertices, &mut distances, &ring_chain, plane)?;
+    let faces = split_along_ring(
+        &mesh.faces,
+        &candidates,
+        &vertices,
+        &distances,
+        &crossing_vertex,
+    );
+    let (mut kept, kept_distal) = drop_far_side(faces, &ring, &vertices, &distances, keep)?;
+    let (centroid, cap) = add_cap(&mut vertices, &kept, &mut ring, &frame)?;
     kept.extend(&cap);
 
     Ok(MeshCut {
@@ -299,6 +191,185 @@ fn find_ring(
              vessel is wider than the search radius"
                 .into()
         })
+}
+
+/// Moves each ring edge's endpoint onto the plane where the crossing lies closer to it than
+/// `snap_fraction` of the edge, so splitting the edge would leave a sliver triangle.
+fn snap_to_plane(
+    vertices: &mut [Vector3<f64>],
+    distances: &mut [f64],
+    ring_chain: &Chain,
+    plane: &CutPlane,
+    snap_fraction: f64,
+) {
+    for &(i, j) in &ring_chain.edges {
+        let t = distances[i] / (distances[i] - distances[j]);
+        let snap = if t <= 0.5 { i } else { j };
+        if t.min(1.0 - t) < snap_fraction {
+            vertices[snap] -= plane.normal * distances[snap];
+            distances[snap] = 0.0;
+        }
+    }
+}
+
+/// One ring vertex per crossed edge: an endpoint on the plane, or a new vertex on the plane.
+/// Returns the ring in chain order and the ring vertex of each crossed edge.
+fn add_ring_vertices(
+    vertices: &mut Vec<Vector3<f64>>,
+    distances: &mut Vec<f64>,
+    ring_chain: &Chain,
+    plane: &CutPlane,
+) -> Result<(Vec<usize>, CrossingVertices), String> {
+    let mut crossing_vertex = CrossingVertices::new();
+    let mut ring: Vec<usize> = Vec::with_capacity(ring_chain.edges.len());
+    for (&(i, j), pos) in ring_chain.edges.iter().zip(&ring_chain.points) {
+        let id = if distances[i] == 0.0 {
+            i
+        } else if distances[j] == 0.0 {
+            j
+        } else {
+            vertices.push(pos - plane.normal * plane.dist(pos));
+            distances.push(0.0);
+            vertices.len() - 1
+        };
+        crossing_vertex.insert((i, j), id);
+        if ring.last() != Some(&id) {
+            ring.push(id);
+        }
+    }
+    while ring.len() > 1 && ring.first() == ring.last() {
+        ring.pop();
+    }
+    if ring.len() < 3 {
+        return Err("the cut ring collapsed to fewer than 3 vertices".into());
+    }
+    Ok((ring, crossing_vertex))
+}
+
+/// All faces, with those the ring runs through replaced by their pieces either side of it.
+fn split_along_ring(
+    faces: &[[usize; 3]],
+    candidates: &[usize],
+    vertices: &[Vector3<f64>],
+    distances: &[f64],
+    crossing_vertex: &CrossingVertices,
+) -> Vec<[usize; 3]> {
+    let mut split: Vec<[usize; 3]> = Vec::with_capacity(faces.len() + crossing_vertex.len());
+    let mut is_split = vec![false; faces.len()];
+    for &f in candidates {
+        let face = faces[f];
+        let Some([a, b]) = cut_triangle_by(&face, vertices, |v| distances[v]) else {
+            continue;
+        };
+        let (Some(&x), Some(&y)) = (crossing_vertex.get(&a.edge), crossing_vertex.get(&b.edge))
+        else {
+            continue;
+        };
+        is_split[f] = true;
+        split.extend(split_face(face, distances, (a.edge, x), (b.edge, y)));
+    }
+    split.extend(
+        faces
+            .iter()
+            .zip(&is_split)
+            .filter(|(_, &s)| !s)
+            .map(|(f, _)| *f),
+    );
+    split
+}
+
+/// Drops what the ring separates off on the side not kept. The faces along the ring seed either
+/// side, by the vertex opposite their ring edge. Returns the kept faces and whether the distal
+/// side was kept.
+fn drop_far_side(
+    faces: Vec<[usize; 3]>,
+    ring: &[usize],
+    vertices: &[Vector3<f64>],
+    distances: &[f64],
+    keep: Keep,
+) -> Result<(Vec<[usize; 3]>, bool), String> {
+    let barrier: HashSet<(usize, usize)> = (0..ring.len())
+        .map(|k| sorted(ring[k], ring[(k + 1) % ring.len()]))
+        .collect();
+    let mut above_seeds = Vec::new();
+    let mut below_seeds = Vec::new();
+    for (f, &[a, b, c]) in faces.iter().enumerate() {
+        for (u, w, opposite) in [(a, b, c), (b, c, a), (c, a, b)] {
+            if barrier.contains(&sorted(u, w)) {
+                match distances[opposite] {
+                    d if d > 0.0 => above_seeds.push(f),
+                    d if d < 0.0 => below_seeds.push(f),
+                    _ => {}
+                }
+            }
+        }
+    }
+    if above_seeds.is_empty() || below_seeds.is_empty() {
+        return Err("the cut ring has faces on one side only".into());
+    }
+    let above = flood_fill(&faces, &above_seeds, &barrier);
+    if below_seeds.iter().any(|&f| above[f]) {
+        return Err(
+            "the cut ring does not separate the mesh (both sides are still connected)".into(),
+        );
+    }
+    let (dropped, kept_distal) = match keep {
+        Keep::Proximal => (above, false),
+        Keep::Distal => (flood_fill(&faces, &below_seeds, &barrier), true),
+        Keep::Larger => {
+            let below = flood_fill(&faces, &below_seeds, &barrier);
+            if surface_area(&faces, vertices, &above) < surface_area(&faces, vertices, &below) {
+                (above, false)
+            } else {
+                (below, true)
+            }
+        }
+    };
+    let kept = faces
+        .into_iter()
+        .zip(dropped)
+        .filter(|(_, d)| !d)
+        .map(|(f, _)| f)
+        .collect();
+    Ok((kept, kept_distal))
+}
+
+/// Twice the area of the faces marked in `selected`.
+fn surface_area(faces: &[[usize; 3]], vertices: &[Vector3<f64>], selected: &[bool]) -> f64 {
+    faces
+        .iter()
+        .zip(selected)
+        .filter(|(_, &on)| on)
+        .map(|(&[a, b, c], _)| {
+            (vertices[b] - vertices[a])
+                .cross(&(vertices[c] - vertices[a]))
+                .norm()
+        })
+        .sum()
+}
+
+/// Closes `ring` with a flat fan around its area centroid, wound to continue the orientation of
+/// the kept faces along it (`ring` is reversed where needed). Returns the new centre vertex and
+/// the cap faces.
+fn add_cap(
+    vertices: &mut Vec<Vector3<f64>>,
+    kept: &[[usize; 3]],
+    ring: &mut [usize],
+    frame: &PlaneFrame,
+) -> Result<(usize, Vec<[usize; 3]>), String> {
+    let directed: HashSet<(usize, usize)> = kept
+        .iter()
+        .flat_map(|&[a, b, c]| [(a, b), (b, c), (c, a)])
+        .collect();
+    if directed.contains(&(ring[0], ring[1])) {
+        ring.reverse();
+    }
+    let ring_2d: Vec<Vector2<f64>> = ring.iter().map(|&i| frame.to_2d(&vertices[i])).collect();
+    let center_2d = polygon_centroid(&ring_2d);
+    check_star_shaped(&ring_2d, &center_2d)?;
+    let centroid = vertices.len();
+    vertices.push(frame.origin + frame.u * center_2d.x + frame.v * center_2d.y);
+    Ok((centroid, fan_faces(ring, centroid)))
 }
 
 /// Pieces of `face` either side of the plane. The crossings are given as (crossed edge, ring

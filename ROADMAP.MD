@@ -8,6 +8,22 @@
 - [ ] `manual_hole_fill` (`fixing_functions.py`) rebuilds `coord_to_idx` and `build_adjacency_map`
   from scratch on every hole/boundary loop instead of once outside the loop.
 
+# Rust core: mesh cutting and labelled-mesh operations
+
+`cut_mesh_at_contour` ([src/ccta/binding/discretizing.rs](src/ccta/binding/discretizing.rs)) returns a
+7-tuple of internal bookkeeping (`old_to_new`, `ring`, `centroid`, `cap_faces`, ...) that
+`cut_at_slice` ([multimodars/ccta/mesh_regions.py](multimodars/ccta/mesh_regions.py)) finishes in
+Python: label remapping, majority-neighbour labels for new vertices, centerline cut, cap extraction.
+
+- [ ] Move the whole cut into Rust (`cut_vessel(mesh, labels, centerline, branch_id, plane, keep, ...)
+      -> VesselCut { mesh, labels, centerline, cap, kept, removed_branches }`), labels as named
+      index sets (e.g. `BTreeMap<String, Vec<usize>>`, branch maps flattened to `"rca_branches/1"`)
+- [ ] Native `inherit_labels` helper (majority label of ring neighbours), reuse in `remove_branch`
+- [ ] Drop redundant outputs (`cap_faces` = `fan_faces(ring, centroid)`; `plane.radius` recomputed in Python)
+- [ ] End state: native `LabeledMesh { vertices, faces, labels }` pyclass so `sync_results_to_mesh`,
+      `map_point_lists`, `remove_labeled_points_from_mesh`, `remove_branch` stop remapping by coordinates
+- Open questions: labels as named sets vs per-vertex enum; take a `Contour` or a `CutPlane`
+
 # Mesh combination (v0.3.0/0.4.0)
 ## New/improved features
 - [ ] `numpy_to_report` function that allows to read in lists for the four variables of interest (frame, phase, measurement_1, measurement_2)

@@ -1,10 +1,27 @@
 use nalgebra::Vector3;
 use std::collections::{BTreeMap, HashSet};
 
+/// Closes every open boundary loop with a fan of triangles around its centroid (one new vertex
+/// per loop). A closed mesh comes back unchanged.
+pub fn fill_holes_fan(
+    vertices: &[Vector3<f64>],
+    faces: &[[usize; 3]],
+) -> (Vec<Vector3<f64>>, Vec<[usize; 3]>) {
+    let mut vertices = vertices.to_vec();
+    let mut faces = faces.to_vec();
+    for ring in boundary_loops(&faces) {
+        let points: Vec<Vector3<f64>> = ring.iter().map(|&i| vertices[i]).collect();
+        let centroid = vertices.len();
+        vertices.push(polyline_centroid(&points));
+        faces.extend(fan_faces(&ring, centroid));
+    }
+    (vertices, faces)
+}
+
 /// Open boundary loops of a triangle mesh, each ordered so that [`fan_faces`] closes it with
 /// the winding of the faces around it. Walks that do not come back to their start (non-manifold
 /// boundaries) and loops shorter than 3 are skipped.
-pub fn boundary_loops(faces: &[[usize; 3]]) -> Vec<Vec<usize>> {
+pub(in crate::ccta) fn boundary_loops(faces: &[[usize; 3]]) -> Vec<Vec<usize>> {
     let directed: HashSet<(usize, usize)> = faces
         .iter()
         .flat_map(|&[a, b, c]| [(a, b), (b, c), (c, a)])
@@ -44,17 +61,9 @@ pub fn boundary_loops(faces: &[[usize; 3]]) -> Vec<Vec<usize>> {
     loops
 }
 
-/// Triangles `[ring[i], ring[i + 1], centroid]` closing `ring` around vertex `centroid`.
-pub fn fan_faces(ring: &[usize], centroid: usize) -> Vec<[usize; 3]> {
-    let n = ring.len();
-    (0..n)
-        .map(|i| [ring[i], ring[(i + 1) % n], centroid])
-        .collect()
-}
-
 /// Centroid of a closed polyline, each edge weighted by its length so unevenly spaced points do
 /// not pull it to one side.
-pub fn polyline_centroid(points: &[Vector3<f64>]) -> Vector3<f64> {
+fn polyline_centroid(points: &[Vector3<f64>]) -> Vector3<f64> {
     let n = points.len();
     let mut sum = Vector3::zeros();
     let mut total = 0.0;
@@ -71,21 +80,12 @@ pub fn polyline_centroid(points: &[Vector3<f64>]) -> Vector3<f64> {
     }
 }
 
-/// Closes every open boundary loop with a fan of triangles around its centroid (one new vertex
-/// per loop). A closed mesh comes back unchanged.
-pub fn fill_holes_fan(
-    vertices: &[Vector3<f64>],
-    faces: &[[usize; 3]],
-) -> (Vec<Vector3<f64>>, Vec<[usize; 3]>) {
-    let mut vertices = vertices.to_vec();
-    let mut faces = faces.to_vec();
-    for ring in boundary_loops(&faces) {
-        let points: Vec<Vector3<f64>> = ring.iter().map(|&i| vertices[i]).collect();
-        let centroid = vertices.len();
-        vertices.push(polyline_centroid(&points));
-        faces.extend(fan_faces(&ring, centroid));
-    }
-    (vertices, faces)
+/// Triangles `[ring[i], ring[i + 1], centroid]` closing `ring` around vertex `centroid`.
+pub fn fan_faces(ring: &[usize], centroid: usize) -> Vec<[usize; 3]> {
+    let n = ring.len();
+    (0..n)
+        .map(|i| [ring[i], ring[(i + 1) % n], centroid])
+        .collect()
 }
 
 #[cfg(test)]

@@ -7,6 +7,16 @@ use std::collections::HashMap;
 /// covers planes fanning out on bends.
 const PLANE_REACH: usize = 2;
 
+/// Where the plane crosses a mesh edge. `edge` is sorted, so both triangles sharing it compute
+/// the same position and the crossing links them.
+#[derive(Clone, Copy)]
+pub(super) struct Crossing {
+    pub(super) edge: (usize, usize),
+    pub(super) pos: Vector3<f64>,
+}
+
+pub(super) type Segment = [Crossing; 2];
+
 /// Cuts the mesh with each anchor's plane and returns one raw `Contour` per anchor: the closed
 /// outline, counter-clockwise about the tangent, empty where the plane misses the mesh.
 ///
@@ -63,16 +73,6 @@ pub fn slice_mesh(
         })
         .collect()
 }
-
-/// Where the plane crosses a mesh edge. `edge` is sorted, so both triangles sharing it compute
-/// the same position and the crossing links them.
-#[derive(Clone, Copy)]
-pub(super) struct Crossing {
-    pub(super) edge: (usize, usize),
-    pub(super) pos: Vector3<f64>,
-}
-
-pub(super) type Segment = [Crossing; 2];
 
 /// Intersects a triangle with the anchor's plane. "Above" means distance > 0, so a vertex on the
 /// plane is treated alike by all its triangles and each triangle is crossed on 0 or 2 edges.
