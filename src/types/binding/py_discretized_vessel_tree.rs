@@ -24,7 +24,7 @@ type PyBranches = BTreeMap<u32, Py<PyDiscretizedBranch>>;
 /// bifurcations : dict of int to tuple
 ///     Triplet on this branch where each child branch leaves it, by child
 ///     branch id. Its ``main_ref`` is the child's start.
-#[pyclass(skip_from_py_object)]
+#[pyclass]
 #[derive(Debug, Clone)]
 pub struct PyDiscretizedBranch {
     #[pyo3(get, set)]
@@ -88,7 +88,7 @@ impl PyDiscretizedBranch {
 ///     Centroid of the aorta slice closest to each ostium.
 /// spacing : float
 ///     Arc length between cross-sections in mm.
-#[pyclass(skip_from_py_object)]
+#[pyclass]
 #[derive(Debug)]
 pub struct PyDiscretizedVesselTree {
     #[pyo3(get, set)]

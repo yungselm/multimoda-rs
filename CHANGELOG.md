@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.9.0] - 2026-10-15
 
 Inlets and outlets can be cut flat at any slice of the discretized tree, e.g. for CFD. Almost
 everything this needs was already there: the planes come from the discretized tree, the cut
