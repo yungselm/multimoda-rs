@@ -5,7 +5,7 @@ from itertools import pairwise
 import numpy as np
 import trimesh
 
-from .stitching.boundary import order_points_list
+from ..multimodars import fill_holes_fan as _fill_holes_fan
 
 try:
     import pymeshlab
@@ -14,38 +14,18 @@ except ImportError:
 
 
 def manual_hole_fill(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
-    """Fill holes by fan-triangulating each boundary loop to its centroid."""
-    outline = mesh.outline()
+    """Fill holes by fan-triangulating each boundary loop to its centroid.
 
-    new_vertices = list(mesh.vertices)
-    new_faces = list(mesh.faces)
-
-    # Build a lookup from coordinate tuple -> vertex index (original mesh)
-    coord_to_idx = {tuple(v): i for i, v in enumerate(mesh.vertices)}
-
-    for entity in outline.entities:
-        pts = outline.vertices[entity.points]
-
-        ordered = order_points_list(mesh, pts)
-        if len(ordered) < 3:
-            continue
-
-        ordered_arr = np.array(ordered)
-        centroid = ordered_arr.mean(axis=0)
-
-        centroid_idx = len(new_vertices)
-        new_vertices.append(centroid)
-
-        n = len(ordered)
-        for i in range(n):
-            i0 = coord_to_idx.get(tuple(ordered[i]))
-            i1 = coord_to_idx.get(tuple(ordered[(i + 1) % n]))
-            if i0 is not None and i1 is not None:
-                new_faces.append([i0, i1, centroid_idx])
-
+    Runs in Rust (:func:`~multimodars.fill_holes_fan`): one centroid vertex per
+    loop, weighted by edge length, and fan faces wound like the faces around
+    the loop.
+    """
+    vertices, faces = _fill_holes_fan(
+        [tuple(v) for v in mesh.vertices.tolist()], mesh.faces.tolist()
+    )
     result = trimesh.Trimesh(
-        vertices=np.array(new_vertices),
-        faces=np.array(new_faces),
+        vertices=np.asarray(vertices, dtype=np.float64),
+        faces=np.asarray(faces, dtype=np.int64).reshape(-1, 3),
         process=False,
     )
     result.fix_normals()

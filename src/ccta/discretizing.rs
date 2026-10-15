@@ -1,4 +1,5 @@
 pub mod anchors;
+pub mod cutting;
 pub mod resampling;
 pub mod slicing;
 pub mod vessel_tree;

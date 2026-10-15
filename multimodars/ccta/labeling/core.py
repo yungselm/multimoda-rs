@@ -13,12 +13,13 @@ from ...multimodars import (
     clean_outlier_points,
     final_reclassification,
     find_aortic_points,
-    find_centerline_bounded_points_simple,
+    find_centerline_bounded_points,
     find_points_by_cl_region,
+    keep_largest_connected_component,
+    remove_occluded_points,
 )
 from .._results import branches_key, vessel_branches, vessel_of_centerline
 from ..debug_plots import plot_results_key
-from .helpers import _apply_occlusion_removal, _keep_largest_connected_component
 
 
 def label_geometry(
@@ -131,12 +132,12 @@ def label_geometry(
     mesh_faces_list = mesh.faces.tolist()
 
     # Rust implementation using a rolling sphere with fixed radius
-    rca_points_found = find_centerline_bounded_points_simple(
+    rca_points_found = find_centerline_bounded_points(
         centerline=centerline_rca,
         points=points_list,
         radius=bounding_sphere_radius_mm_rca,
     )
-    lca_points_found = find_centerline_bounded_points_simple(
+    lca_points_found = find_centerline_bounded_points(
         centerline=centerline_lca,
         points=points_list,
         radius=bounding_sphere_radius_mm_lca,
@@ -145,37 +146,36 @@ def label_geometry(
     print(f"\nRCA points found: {len(rca_points_found)}")
     print(f"LCA points found: {len(lca_points_found)}")
 
+    # With an acute take-off the coronary runs along the aortic wall, so its
+    # bounding spheres also pick up wall vertices: remove those hidden from the
+    # centerlines.
+    rca_removed_points: list[tuple[float, float, float]] = []
+    lca_removed_points: list[tuple[float, float, float]] = []
+    final_rca_points_found, final_lca_points_found = rca_points_found, lca_points_found
     if acute_takeoff_rca:
-        rca_removed_points, final_rca_points_found = _apply_occlusion_removal(
-            range_mm_takeoff_rca,
-            step_size_mm,
-            tolerance_float,
-            centerline_aorta,
-            centerline_rca,
+        final_rca_points_found, rca_removed_points = remove_occluded_points(
             points_list,
             mesh_faces_list,
             rca_points_found,
-            "RCA",
-        )
-    else:
-        final_rca_points_found = rca_points_found.copy()
-        rca_removed_points = []
-
-    if acute_takeoff_lca:
-        lca_removed_points, final_lca_points_found = _apply_occlusion_removal(
-            range_mm_takeoff_lca,
-            step_size_mm,
-            tolerance_float,
+            centerline_rca,
             centerline_aorta,
-            centerline_lca,
+            range_mm_takeoff_rca,
+            step_size_mm=step_size_mm,
+            tol=tolerance_float,
+        )
+        print(f"RCA: relabeled {len(rca_removed_points)} points in intramural course")
+    if acute_takeoff_lca:
+        final_lca_points_found, lca_removed_points = remove_occluded_points(
             points_list,
             mesh_faces_list,
             lca_points_found,
-            "LCA",
+            centerline_lca,
+            centerline_aorta,
+            range_mm_takeoff_lca,
+            step_size_mm=step_size_mm,
+            tol=tolerance_float,
         )
-    else:
-        final_lca_points_found = lca_points_found.copy()
-        lca_removed_points = []
+        print(f"LCA: relabeled {len(lca_removed_points)} points in intramural course")
 
     print("\nRemoving LCA and RCA island points...")
     aortic_points = find_aortic_points(
@@ -329,10 +329,18 @@ def label_anomalous_region(
         off_path_points,
     ) = find_points_by_cl_region(centerline, branch_id, frames, branches)
 
+    # find_points_by_cl_region goes by distance alone, so a region can include
+    # points not mesh-connected to its main cluster: keep the largest component.
     mesh = results["mesh"]
-    proximal_points = _keep_largest_connected_component(mesh, proximal_points_raw)
-    distal_points = _keep_largest_connected_component(mesh, distal_points_raw)
-    anomalous_points = _keep_largest_connected_component(mesh, anomalous_points_raw)
+    vertices = [tuple(v) for v in mesh.vertices.tolist()]
+    faces = mesh.faces.tolist()
+    proximal_points = keep_largest_connected_component(
+        vertices, faces, proximal_points_raw
+    )
+    distal_points = keep_largest_connected_component(vertices, faces, distal_points_raw)
+    anomalous_points = keep_largest_connected_component(
+        vertices, faces, anomalous_points_raw
+    )
 
     # Island points dropped above are still nominally part of the vessel's
     # labels, which would otherwise keep them out of the aorta_points complement
@@ -457,7 +465,7 @@ def label_branches(
 
     claims: dict[tuple, list[int]] = {}
     for k in ids:
-        found = find_centerline_bounded_points_simple(
+        found = find_centerline_bounded_points(
             centerline.get_branch(k), points, bounding_sphere_radius_mm
         )
         for p in found:

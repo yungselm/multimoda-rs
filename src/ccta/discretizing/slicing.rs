@@ -7,6 +7,16 @@ use std::collections::HashMap;
 /// covers planes fanning out on bends.
 const PLANE_REACH: usize = 2;
 
+/// Where the plane crosses a mesh edge. `edge` is sorted, so both triangles sharing it compute
+/// the same position and the crossing links them.
+#[derive(Clone, Copy)]
+pub(super) struct Crossing {
+    pub(super) edge: (usize, usize),
+    pub(super) pos: Vector3<f64>,
+}
+
+pub(super) type Segment = [Crossing; 2];
+
 /// Cuts the mesh with each anchor's plane and returns one raw `Contour` per anchor: the closed
 /// outline, counter-clockwise about the tangent, empty where the plane misses the mesh.
 ///
@@ -64,16 +74,6 @@ pub fn slice_mesh(
         .collect()
 }
 
-/// Where the plane crosses a mesh edge. `edge` is sorted, so both triangles sharing it compute
-/// the same position and the crossing links them.
-#[derive(Clone, Copy)]
-struct Crossing {
-    edge: (usize, usize),
-    pos: Vector3<f64>,
-}
-
-type Segment = [Crossing; 2];
-
 /// Intersects a triangle with the anchor's plane. "Above" means distance > 0, so a vertex on the
 /// plane is treated alike by all its triangles and each triangle is crossed on 0 or 2 edges.
 fn cut_triangle(
@@ -82,8 +82,17 @@ fn cut_triangle(
     anchor: &CenterlinePoint,
 ) -> Option<Segment> {
     let center = anchor_pos(anchor);
-    let dist = |vi: usize| (vertices[vi] - center).dot(&anchor.tangent);
+    cut_triangle_by(face, vertices, |vi| {
+        (vertices[vi] - center).dot(&anchor.tangent)
+    })
+}
 
+/// [`cut_triangle`] with the signed plane distance of each vertex given by `dist`.
+pub(super) fn cut_triangle_by(
+    face: &[usize; 3],
+    vertices: &[Vector3<f64>],
+    dist: impl Fn(usize) -> f64,
+) -> Option<Segment> {
     let mut crossings = [None, None];
     let mut n = 0;
     for (a, b) in [(face[0], face[1]), (face[1], face[2]), (face[2], face[0])] {
@@ -107,13 +116,15 @@ fn cut_triangle(
     }
 }
 
-struct Chain {
-    points: Vec<Vector3<f64>>,
-    closed: bool,
+pub(super) struct Chain {
+    pub(super) points: Vec<Vector3<f64>>,
+    /// The crossed mesh edge of each point.
+    pub(super) edges: Vec<(usize, usize)>,
+    pub(super) closed: bool,
 }
 
 /// Joins segments sharing a crossed edge into paths and closed loops (manifold mesh).
-fn chain_segments(segments: &[Segment]) -> Vec<Chain> {
+pub(super) fn chain_segments(segments: &[Segment]) -> Vec<Chain> {
     let mut by_edge: HashMap<(usize, usize), Vec<usize>> = HashMap::new();
     let mut pos: HashMap<(usize, usize), Vector3<f64>> = HashMap::new();
     for (s, seg) in segments.iter().enumerate() {
@@ -143,6 +154,7 @@ fn chain_segments(segments: &[Segment]) -> Vec<Chain> {
         };
         Chain {
             points: edges.iter().map(|e| pos[e]).collect(),
+            edges,
             closed,
         }
     };
@@ -170,14 +182,24 @@ fn chain_segments(segments: &[Segment]) -> Vec<Chain> {
 }
 
 /// Origin and in-plane axes of one anchor's cutting plane.
-struct PlaneFrame {
-    origin: Vector3<f64>,
-    u: Vector3<f64>,
-    v: Vector3<f64>,
+pub(super) struct PlaneFrame {
+    pub(super) origin: Vector3<f64>,
+    pub(super) u: Vector3<f64>,
+    pub(super) v: Vector3<f64>,
 }
 
 impl PlaneFrame {
-    fn to_2d(&self, p: &Vector3<f64>) -> Vector2<f64> {
+    /// Frame of the plane through `origin` with unit normal `normal`.
+    pub(super) fn new(origin: Vector3<f64>, normal: &Vector3<f64>) -> Self {
+        let u = any_perpendicular(normal);
+        Self {
+            origin,
+            u,
+            v: normal.cross(&u),
+        }
+    }
+
+    pub(super) fn to_2d(&self, p: &Vector3<f64>) -> Vector2<f64> {
         let d = p - self.origin;
         Vector2::new(d.dot(&self.u), d.dot(&self.v))
     }
@@ -332,7 +354,7 @@ fn anchor_pos(a: &CenterlinePoint) -> Vector3<f64> {
     Vector3::new(a.contour_point.x, a.contour_point.y, a.contour_point.z)
 }
 
-fn to_2d(points: &[Vector3<f64>], frame: &PlaneFrame) -> Vec<Vector2<f64>> {
+pub(super) fn to_2d(points: &[Vector3<f64>], frame: &PlaneFrame) -> Vec<Vector2<f64>> {
     points.iter().map(|p| frame.to_2d(p)).collect()
 }
 
@@ -346,7 +368,7 @@ fn wrap_angle(a: f64) -> f64 {
 }
 
 /// Shoelace formula, positive when counter-clockwise.
-fn signed_area(pts: &[Vector2<f64>]) -> f64 {
+pub(super) fn signed_area(pts: &[Vector2<f64>]) -> f64 {
     let n = pts.len();
     (0..n)
         .map(|i| {
@@ -358,7 +380,7 @@ fn signed_area(pts: &[Vector2<f64>]) -> f64 {
 }
 
 /// Even-odd ray cast from the origin along +x.
-fn contains_origin(pts: &[Vector2<f64>]) -> bool {
+pub(super) fn contains_origin(pts: &[Vector2<f64>]) -> bool {
     let n = pts.len();
     let mut inside = false;
     for i in 0..n {

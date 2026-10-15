@@ -1,8 +1,10 @@
-use crate::ccta::binding::ccta_py::build_adjacency_map;
+use super::topology::{bits_key, build_adjacency_map, connected_components};
 use crate::types::native::Centerline;
 use nalgebra::{Point3, Vector3};
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
+
+type Coords3 = (f64, f64, f64);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Triangle {
@@ -67,7 +69,7 @@ fn ray_triangle_intersection(
     }
 }
 
-pub fn remove_occluded_points_ray_triangle_rust(
+pub fn remove_occluded_points_ray_triangle(
     centerline_coronary: &Centerline,
     centerline_aorta: &Centerline,
     range_mm: f64,
@@ -196,6 +198,38 @@ pub fn remove_occluded_points_ray_triangle_rust(
     filtered_points
 }
 
+/// Splits the coronary `points` into `(kept, removed)`: removed are the ones hidden behind the
+/// mesh faces touching `points` when seen from the proximal `range_mm` of the coronary
+/// centerline (see [`remove_occluded_points_ray_triangle`]). Used for acute take-offs, where
+/// the coronary runs along the aortic wall.
+pub fn split_occluded_points(
+    vertices: &[Coords3],
+    faces: &[[usize; 3]],
+    points: &[Coords3],
+    centerline_coronary: &Centerline,
+    centerline_aorta: &Centerline,
+    range_mm: f64,
+    step_size_mm: f64,
+    tol: f64,
+) -> (Vec<Coords3>, Vec<Coords3>) {
+    let triangles = find_faces_near_points(vertices, faces, points, tol);
+    let kept = remove_occluded_points_ray_triangle(
+        centerline_coronary,
+        centerline_aorta,
+        range_mm,
+        points,
+        &triangles,
+        step_size_mm,
+    );
+    let kept_keys: HashSet<(u64, u64, u64)> = kept.iter().map(bits_key).collect();
+    let removed = points
+        .iter()
+        .filter(|p| !kept_keys.contains(&bits_key(p)))
+        .copied()
+        .collect();
+    (kept, removed)
+}
+
 /// Find mesh points that fall within a bounding sphere of any centerline point,
 /// using a single fixed `radius` (mm) for every centerline point.
 pub fn find_centerline_bounded_points(
@@ -285,15 +319,6 @@ pub fn find_faces_near_points(
         .collect()
 }
 
-/// Exact-match key for a mesh-vertex coordinate. Vertex-derived point lists passed
-/// around this pipeline (e.g. `rca_points`, `lca_points`) are always bit-identical
-/// copies of the originating `vertices` entries (no arithmetic in between), so an
-/// exact bit-pattern key is the correct tool here — unlike a radius/nearest-neighbor
-/// query, this is a plain exact-membership test, so no spatial index is needed.
-pub(crate) fn bits_key(p: &(f64, f64, f64)) -> (u64, u64, u64) {
-    (p.0.to_bits(), p.1.to_bits(), p.2.to_bits())
-}
-
 /// Vertices present in neither `points_a` nor `points_b` (exact-match set
 /// difference). Replaces the old pure-Python `_find_aortic_points`, which did the
 /// same set-based filtering but paid per-vertex Python-loop overhead.
@@ -371,7 +396,7 @@ pub fn final_reclassification(
         }
     }
 
-    let adjacency = build_adjacency_map(faces.to_vec());
+    let adjacency = build_adjacency_map(faces);
 
     let mut new_labels = labels.clone();
 
@@ -416,40 +441,6 @@ pub fn final_reclassification(
         }
     }
     result
-}
-
-/// Connected components of `subset`, restricted to mesh adjacency: neighbour
-/// traversal only follows vertices that are themselves in `subset` (islands
-/// within the subset stay separate components). Shared by
-/// [`restore_removed_components`] and the `keep_largest_connected_component`
-/// PyO3 binding.
-pub(crate) fn connected_components(
-    adjacency: &HashMap<usize, HashSet<usize>>,
-    subset: &HashSet<usize>,
-) -> Vec<HashSet<usize>> {
-    let mut remaining: HashSet<usize> = subset.clone();
-    let mut components = Vec::new();
-
-    while let Some(&start) = remaining.iter().next() {
-        let mut stack = vec![start];
-        let mut component = HashSet::new();
-        while let Some(i) = stack.pop() {
-            if !component.insert(i) {
-                continue;
-            }
-            if let Some(neighbors) = adjacency.get(&i) {
-                for &n in neighbors {
-                    if remaining.contains(&n) && !component.contains(&n) {
-                        stack.push(n);
-                    }
-                }
-            }
-        }
-        remaining.retain(|i| !component.contains(i));
-        components.push(component);
-    }
-
-    components
 }
 
 /// External boundary of `component`: every mesh-adjacent vertex not itself in
@@ -770,6 +761,43 @@ mod test_find_cl_bounded_points {
         let points = vec![(5.0, 5.0, 5.0)];
         let result = find_faces_near_points(&vertices, &faces, &points, 1e-6);
         assert!(result.is_empty());
+    }
+
+    fn line_centerline(points: &[(f64, f64, f64)]) -> Centerline {
+        Centerline::from_contour_points(
+            points
+                .iter()
+                .enumerate()
+                .map(|(i, &(x, y, z))| ContourPoint {
+                    frame_index: i as u32,
+                    point_index: i as u32,
+                    x,
+                    y,
+                    z,
+                    aortic: false,
+                })
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn test_split_occluded_points_removes_the_wall_nearest_the_aorta() {
+        // Three walls at x = 1, 2, 3 between the aorta (x = 0) and the coronary (x >= 4): the
+        // rays cross all three, so the wall nearest the aorta is the occluding one.
+        let walls = [1.0, 2.0, 3.0];
+        let vertices: Vec<Coords3> = walls
+            .iter()
+            .flat_map(|&x| [(x, -1.0, -1.0), (x, 1.0, -1.0), (x, 0.0, 1.0)])
+            .collect();
+        let faces = vec![[0, 1, 2], [3, 4, 5], [6, 7, 8]];
+        let aorta = line_centerline(&[(0.0, 0.0, 0.0), (0.0, 0.0, -1.0)]);
+        let coronary = line_centerline(&[(4.0, 0.0, 0.0), (5.0, 0.0, 0.0)]);
+
+        let (kept, removed) = split_occluded_points(
+            &vertices, &faces, &vertices, &coronary, &aorta, 10.0, 1.0, 1e-6,
+        );
+        assert_eq!(removed, vertices[..3]);
+        assert_eq!(kept, vertices[3..]);
     }
 
     #[test]

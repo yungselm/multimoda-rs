@@ -1,12 +1,11 @@
 """Tests for the multimodars.ccta module.
 
 Covers:
-  - multimodars.multimodars: find_faces_near_points, find_aortic_points,
-                final_reclassification (Rust bindings backing
-                labeling.label_geometry's occlusion-removal and
-                adjacency-based label-smoothing steps)
-  - labeling.helpers: _keep_largest_connected_component (island-point filter
-                for find_points_by_cl_region's proximal/distal/anomalous output)
+  - multimodars.multimodars: find_aortic_points, final_reclassification
+                (Rust bindings backing labeling.label_geometry's adjacency-based
+                label-smoothing step), keep_largest_connected_component
+                (island-point filter for find_points_by_cl_region's
+                proximal/distal/anomalous output)
   - labeling.core: label_anomalous_region (label bookkeeping, with the
                 find_points_by_cl_region split stubbed, and on the example
                 data per branch), label_branches (partition into branches)
@@ -44,7 +43,6 @@ import trimesh
 import multimodars as mm
 from multimodars import PyContour, PyContourPoint, PyFrame, PyGeometry
 from multimodars.ccta.labeling import core as labeling_core
-from multimodars.ccta.labeling.helpers import _keep_largest_connected_component
 from multimodars.ccta.mesh_regions import (
     keep_labeled_points_from_mesh,
     remove_labeled_points_from_mesh,
@@ -89,7 +87,7 @@ from multimodars.ccta.stitching.helpers import (
 from multimodars.multimodars import (
     final_reclassification,
     find_aortic_points,
-    find_faces_near_points,
+    keep_largest_connected_component,
 )
 
 # ---------------------------------------------------------------------------
@@ -293,54 +291,6 @@ class TestFindAorticPoints:
         aortic = find_aortic_points(verts, [], [])
         assert all(isinstance(p, tuple) for p in aortic)
         assert all(len(p) == 3 for p in aortic)
-
-
-# ===========================================================================
-# multimodars.multimodars.find_faces_near_points
-# (Rust binding that replaced labeling._find_faces_for_points +
-#  labeling._prepare_faces_for_rust)
-# ===========================================================================
-
-
-class TestFindFacesNearPoints:
-    @staticmethod
-    def _call(grid_mesh, points, tol=1e-6):
-        vertices = [tuple(v) for v in grid_mesh.vertices]
-        faces = grid_mesh.faces.tolist()
-        return find_faces_near_points(vertices, faces, points, tol)
-
-    def test_corner_vertex_finds_its_face(self, grid_mesh):
-        # vertex 0 = (0,0,0) belongs to exactly face [0,1,3]
-        result = self._call(grid_mesh, [(0.0, 0.0, 0.0)])
-        verts = grid_mesh.vertices
-        expected = (tuple(verts[0]), tuple(verts[1]), tuple(verts[3]))
-        assert len(result) == 1
-        assert result[0] == expected
-
-    def test_centre_vertex_touches_many_faces(self, grid_mesh):
-        # vertex 4 = (1,1,0) appears in 6 of the 8 faces
-        result = self._call(grid_mesh, [(1.0, 1.0, 0.0)])
-        assert len(result) == 6
-
-    def test_empty_points_returns_empty(self, grid_mesh):
-        assert self._call(grid_mesh, []) == []
-
-    def test_no_vertex_within_tol(self, grid_mesh):
-        result = self._call(grid_mesh, [(99.0, 99.0, 0.0)])
-        assert result == []
-
-    def test_each_face_is_triple_of_triples(self, grid_mesh):
-        result = self._call(grid_mesh, [(1.0, 1.0, 0.0)])
-        for face in result:
-            assert len(face) == 3
-            for v in face:
-                assert len(v) == 3
-                assert all(isinstance(c, float) for c in v)
-
-    def test_subset_via_points(self, grid_mesh):
-        # corner vertex 0 only in 1 face, so subset < all faces
-        result = self._call(grid_mesh, [(0.0, 0.0, 0.0)])
-        assert 0 < len(result) < len(grid_mesh.faces)
 
 
 # ===========================================================================
@@ -565,13 +515,18 @@ class TestFinalReclassification:
 
 
 # ===========================================================================
-# labeling.helpers._keep_largest_connected_component
+# multimodars.multimodars.keep_largest_connected_component
 # (island-point filter for find_points_by_cl_region's proximal/distal/
 # anomalous output - see grid_mesh layout in the module docstring above:
 # vertices {0,1,3,4} are mutually mesh-adjacent; vertex 8's neighbours are
 # {5,7}, neither of which is in that cluster, so it's a true singleton
 # within the induced subgraph over {0,1,3,4,8}.)
 # ===========================================================================
+
+
+def _keep_largest_connected_component(mesh, points):
+    vertices = [tuple(v) for v in mesh.vertices.tolist()]
+    return keep_largest_connected_component(vertices, mesh.faces.tolist(), points)
 
 
 class TestKeepLargestConnectedComponent:
@@ -2959,3 +2914,134 @@ class TestStitchAcrossABifurcation:
     def test_without_the_tree_the_branch_stays_loose(self, bifurcation_cut):
         _, _, stitched = self._stitch(bifurcation_cut, None)
         assert len(stitched["mesh"].split(only_watertight=False)) > 1
+
+
+# ===========================================================================
+# mesh_regions.cut_at_slice
+# ===========================================================================
+
+
+def _ring_plane_residual(ring: np.ndarray) -> float:
+    centred = ring - ring.mean(axis=0)
+    normal = np.linalg.svd(centred)[2][2]
+    return float(np.abs(centred @ normal).max())
+
+
+class TestCutAtSlice:
+    @pytest.fixture(autouse=True)
+    def _inputs(self, example_labelled, example_tree, example_centerlines):
+        self.results = example_labelled
+        self.tree = example_tree
+        self.ao, self.rca, self.lca = example_centerlines
+
+    def _cut(self, results=None, **kwargs):
+        k = len(self.tree.rca[0].contours) // 2
+        return mm.cut_at_slice(
+            self.results if results is None else results,
+            self.tree,
+            self.rca,
+            "rca",
+            k,
+            **kwargs,
+        )
+
+    def test_flat_capped_cut(self):
+        mesh = self.results["mesh"]
+        results, _, cap = self._cut()
+        cut = results["mesh"]
+        assert len(cut.vertices) < len(mesh.vertices)
+        assert cut.is_winding_consistent
+        assert cut.is_watertight == mesh.is_watertight
+        ring = cap.vertices[:-1]
+        assert _ring_plane_residual(ring) < 1e-9
+        # The cap is a disc whose rim is the ring, and the same faces are in the cut mesh.
+        assert len(cap.outline().entities) == 1
+        assert len(cap.faces) == len(ring)
+        cut_coords = {tuple(v) for v in cut.vertices.tolist()}
+        assert all(tuple(v) in cut_coords for v in cap.vertices.tolist())
+
+    def test_labels_follow_the_cut_mesh(self):
+        results, _, cap = self._cut()
+        coords = {tuple(v) for v in results["mesh"].vertices.tolist()}
+        assert all(tuple(p) in coords for p in results["rca_points"])
+        for pts in results["rca_branches"].values():
+            assert all(tuple(p) in coords for p in pts)
+        # The new ring and cap vertices carry the cut vessel's labels.
+        rca = {tuple(p) for p in results["rca_points"]}
+        assert {tuple(v) for v in cap.vertices.tolist()} <= rca
+        # The LCA is not touched.
+        assert results["lca_points"] == self.results["lca_points"]
+
+    def test_centerline_ends_on_the_cut(self):
+        k = len(self.tree.rca[0].contours) // 2
+        centre = self.tree.rca[0].contours[k].centroid
+        results, cl, _ = self._cut(keep="proximal")
+        main = cl.get_branch(0).points_as_tuples()
+        assert np.allclose(main[-1], centre, atol=1e-12)
+        assert len(main) < len(self.rca.get_branch(0).points_as_tuples())
+        # Branches leaving the dropped part are gone from the centerline and the labels.
+        assert sorted(results["rca_branches"]) == cl.branch_ids()
+        _, cl, _ = self._cut(keep="distal")
+        assert np.allclose(cl.get_branch(0).points_as_tuples()[0], centre, atol=1e-12)
+
+    def test_sides_split_the_vessel(self):
+        n = len(self.results["mesh"].vertices)
+        prox, _, _ = self._cut(keep="proximal")
+        dist, _, _ = self._cut(keep="distal")
+        assert len(prox["mesh"].vertices) > len(dist["mesh"].vertices)
+        # Each original vertex ends up on one side, plus the shared ring and two caps.
+        assert len(prox["mesh"].vertices) + len(dist["mesh"].vertices) >= n
+
+    def test_default_keeps_the_larger_side(self):
+        n = len(self.results["mesh"].vertices)
+        for slice_idx in (2, -3):
+            results, cl, _ = mm.cut_at_slice(
+                self.results, self.tree, self.ao, "aorta", slice_idx
+            )
+            assert len(results["mesh"].vertices) > n / 2
+            assert len(cl.points_as_tuples()) > 0
+
+    def test_works_on_a_smoothed_mesh(self):
+        smoothed = self.results["mesh"].copy()
+        trimesh.smoothing.filter_taubin(smoothed, lamb=0.6, iterations=5)
+        results, _, cap = self._cut({"mesh": smoothed})
+        assert results["mesh"].is_winding_consistent
+        assert _ring_plane_residual(cap.vertices[:-1]) < 1e-9
+
+    def test_invalid_input(self):
+        r, t = self.results, self.tree
+        with pytest.raises(ValueError):
+            mm.cut_at_slice(r, t, self.rca, "pda", 0)
+        with pytest.raises(ValueError):
+            mm.cut_at_slice(r, t, self.rca, "rca", 0, branch_id=99)
+        with pytest.raises(IndexError):
+            mm.cut_at_slice(r, t, self.rca, "rca", 10_000)
+        with pytest.raises(ValueError):
+            self._cut(keep="middle")
+        # The wrong vessel's centerline does not pass through the slice.
+        with pytest.raises(ValueError):
+            mm.cut_at_slice(r, t, self.lca, "rca", len(t.rca[0].contours) // 2)
+
+
+def test_write_centerline_vtp_round_trip(tmp_path):
+    if not (_EXAMPLE_DATA / "rca_cl.vtp").exists():
+        pytest.skip("example data not available")
+    cl = mm.read_centerline_vtp(str(_EXAMPLE_DATA / "rca_cl.vtp"))
+    path = tmp_path / "out" / "rca_cl.vtp"
+    mm.write_centerline_vtp(cl, str(path))
+    back = mm.read_centerline_vtp(str(path))
+
+    assert back.branch_ids() == cl.branch_ids()
+    a = np.array(
+        [
+            [p.contour_point.x, p.contour_point.y, p.contour_point.z, p.radius]
+            for p in cl.points
+        ]
+    )
+    b = np.array(
+        [
+            [p.contour_point.x, p.contour_point.y, p.contour_point.z, p.radius]
+            for p in back.points
+        ]
+    )
+    np.testing.assert_array_equal(a, b)

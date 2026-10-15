@@ -257,14 +257,13 @@ fn read_optional_records(path: &Path) -> anyhow::Result<Option<Vec<Record>>> {
     Ok(Some(records))
 }
 
-pub fn read_centerline_vtp<P: AsRef<Path>>(path: P) -> anyhow::Result<Centerline> {
-    use crate::types::native::centerline_point::CenterlinePoint;
-    use nalgebra::Vector3;
+/// Name of the per-point radius array VMTK writes into centerline VTP files.
+pub(crate) const VTP_RADIUS_ARRAY: &str = "MaximumInscribedSphereRadius";
 
+/// Reads `path` as text, rejecting binary VTP files and binary- or appended-encoded
+/// DataArrays: only the ASCII format is supported.
+fn read_ascii_vtp(path: &Path) -> anyhow::Result<String> {
     const BINARY_PROBE_BYTES: usize = 512;
-    const MIN_TANGENT_NORM: f64 = 1e-12;
-
-    let path = path.as_ref();
 
     let raw = std::fs::read(path).with_context(|| format!("cannot open {:?}", path))?;
 
@@ -292,55 +291,95 @@ pub fn read_centerline_vtp<P: AsRef<Path>>(path: P) -> anyhow::Result<Centerline
             );
         }
     }
+    Ok(xml)
+}
 
-    fn extract_section<'a>(xml: &'a str, tag: &str) -> anyhow::Result<&'a str> {
-        let open = format!("<{}", tag);
-        let close = format!("</{}>", tag);
-        let start = xml
-            .find(&open)
-            .ok_or_else(|| anyhow::anyhow!("VTP: <{}> section not found", tag))?;
-        let rest = &xml[start..];
-        let end_rel = rest
-            .find(&close)
-            .ok_or_else(|| anyhow::anyhow!("VTP: </{}> not found", tag))?;
-        Ok(&rest[..end_rel + close.len()])
-    }
+/// The first `<tag ...>...</tag>` element in `xml`, tags included.
+pub(crate) fn extract_section<'a>(xml: &'a str, tag: &str) -> anyhow::Result<&'a str> {
+    let open = format!("<{}", tag);
+    let close = format!("</{}>", tag);
+    let start = xml
+        .find(&open)
+        .ok_or_else(|| anyhow::anyhow!("VTP: <{}> section not found", tag))?;
+    let rest = &xml[start..];
+    let end_rel = rest
+        .find(&close)
+        .ok_or_else(|| anyhow::anyhow!("VTP: </{}> not found", tag))?;
+    Ok(&rest[..end_rel + close.len()])
+}
 
-    fn dataarray_text<'a>(section: &'a str, name: &str) -> anyhow::Result<&'a str> {
-        let needle = format!("Name=\"{}\"", name);
-        let pos = section
-            .find(&needle)
-            .ok_or_else(|| anyhow::anyhow!("VTP: DataArray Name=\"{}\" not found", name))?;
-        let before = &section[..pos];
-        let da_start = before
-            .rfind("<DataArray")
-            .ok_or_else(|| anyhow::anyhow!("VTP: no <DataArray before Name=\"{}\"", name))?;
-        let rest = &section[da_start..];
-        let tag_end = rest
-            .find('>')
-            .ok_or_else(|| anyhow::anyhow!("VTP: unclosed <DataArray Name=\"{}\">", name))?;
-        let inner = &rest[tag_end + 1..];
-        let close_pos = inner
-            .find("</DataArray>")
-            .ok_or_else(|| anyhow::anyhow!("VTP: no </DataArray> for Name=\"{}\"", name))?;
-        // <InformationKey> nodes can appear inside the Points array in some exporters.
-        let text = inner[..close_pos].trim();
-        let text_end = text.find('<').unwrap_or(text.len());
-        Ok(text[..text_end].trim())
-    }
+/// Text content of the DataArray called `name` inside `section`.
+pub(crate) fn dataarray_text<'a>(section: &'a str, name: &str) -> anyhow::Result<&'a str> {
+    let needle = format!("Name=\"{}\"", name);
+    let pos = section
+        .find(&needle)
+        .ok_or_else(|| anyhow::anyhow!("VTP: DataArray Name=\"{}\" not found", name))?;
+    let before = &section[..pos];
+    let da_start = before
+        .rfind("<DataArray")
+        .ok_or_else(|| anyhow::anyhow!("VTP: no <DataArray before Name=\"{}\"", name))?;
+    let rest = &section[da_start..];
+    let tag_end = rest
+        .find('>')
+        .ok_or_else(|| anyhow::anyhow!("VTP: unclosed <DataArray Name=\"{}\">", name))?;
+    let inner = &rest[tag_end + 1..];
+    let close_pos = inner
+        .find("</DataArray>")
+        .ok_or_else(|| anyhow::anyhow!("VTP: no </DataArray> for Name=\"{}\"", name))?;
+    // <InformationKey> nodes can appear inside the Points array in some exporters.
+    let text = inner[..close_pos].trim();
+    let text_end = text.find('<').unwrap_or(text.len());
+    Ok(text[..text_end].trim())
+}
 
-    fn parse_nums<T>(text: &str) -> anyhow::Result<Vec<T>>
-    where
-        T: std::str::FromStr,
-        T::Err: std::error::Error + Send + Sync + 'static,
-    {
-        text.split_ascii_whitespace()
-            .map(|s| {
-                s.parse::<T>()
-                    .with_context(|| format!("VTP: bad number '{s}'"))
-            })
-            .collect()
+/// Whitespace-separated numbers of a DataArray's text.
+pub(crate) fn parse_nums<T>(text: &str) -> anyhow::Result<Vec<T>>
+where
+    T: std::str::FromStr,
+    T::Err: std::error::Error + Send + Sync + 'static,
+{
+    text.split_ascii_whitespace()
+        .map(|s| {
+            s.parse::<T>()
+                .with_context(|| format!("VTP: bad number '{s}'"))
+        })
+        .collect()
+}
+
+/// Splits a VTK cell array into its cells: cell `i` is `connectivity[offsets[i - 1]..offsets[i]]`
+/// (starting at 0). Fails if there are no cells or the offsets do not cover `connectivity`.
+pub(crate) fn split_cells<'a>(
+    connectivity: &'a [usize],
+    offsets: &[usize],
+) -> anyhow::Result<Vec<&'a [usize]>> {
+    let Some(&last_off) = offsets.last() else {
+        anyhow::bail!("VTP: Lines section is empty (no branches)");
+    };
+    if last_off != connectivity.len() {
+        anyhow::bail!(
+            "VTP: last offset ({}) != connectivity length ({})",
+            last_off,
+            connectivity.len()
+        );
     }
+    std::iter::once(0)
+        .chain(offsets.iter().copied())
+        .zip(offsets.iter().copied())
+        .map(|(start, end)| {
+            connectivity
+                .get(start..end)
+                .ok_or_else(|| anyhow::anyhow!("VTP: offsets not ascending ({start} > {end})"))
+        })
+        .collect()
+}
+
+pub fn read_centerline_vtp<P: AsRef<Path>>(path: P) -> anyhow::Result<Centerline> {
+    use crate::types::native::centerline_point::CenterlinePoint;
+    use nalgebra::Vector3;
+
+    const MIN_TANGENT_NORM: f64 = 1e-12;
+
+    let xml = read_ascii_vtp(path.as_ref())?;
 
     let pts_raw: Vec<f64> =
         parse_nums(dataarray_text(extract_section(&xml, "Points")?, "Points")?)?;
@@ -360,7 +399,7 @@ pub fn read_centerline_vtp<P: AsRef<Path>>(path: P) -> anyhow::Result<Centerline
 
     let radii: Vec<f64> = extract_section(&xml, "PointData")
         .ok()
-        .and_then(|s| dataarray_text(s, "MaximumInscribedSphereRadius").ok())
+        .and_then(|s| dataarray_text(s, VTP_RADIUS_ARRAY).ok())
         .and_then(|t| parse_nums(t).ok())
         .filter(|r| r.len() == n_pts)
         .unwrap_or_else(|| vec![0.0; n_pts]);
@@ -368,24 +407,7 @@ pub fn read_centerline_vtp<P: AsRef<Path>>(path: P) -> anyhow::Result<Centerline
     let lines_sec = extract_section(&xml, "Lines")?;
     let connectivity: Vec<usize> = parse_nums(dataarray_text(lines_sec, "connectivity")?)?;
     let offsets: Vec<usize> = parse_nums(dataarray_text(lines_sec, "offsets")?)?;
-
-    if offsets.is_empty() {
-        anyhow::bail!("VTP: Lines section is empty (no branches)");
-    }
-    let last_off = *offsets.last().unwrap();
-    if last_off != connectivity.len() {
-        anyhow::bail!(
-            "VTP: last offset ({}) != connectivity length ({})",
-            last_off,
-            connectivity.len()
-        );
-    }
-
-    let vtk_branches: Vec<&[usize]> = std::iter::once(0)
-        .chain(offsets.iter().copied())
-        .zip(offsets.iter().copied())
-        .map(|(start, end)| &connectivity[start..end])
-        .collect();
+    let vtk_branches = split_cells(&connectivity, &offsets)?;
 
     let branch_arc_length = |branch: &[usize]| -> f64 {
         branch

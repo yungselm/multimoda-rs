@@ -3,6 +3,50 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] - 2026-10-15
+
+Inlets and outlets can be cut flat at any slice of the discretized tree, e.g. for CFD. Almost
+everything this needs was already there: the planes come from the discretized tree, the cut
+reuses the plane intersection and ring selection of the discretization, and the cap is the fan
+fill of `manual_hole_fill`, now in Rust.
+
+### Added
+- `cut_at_slice(results, tree, centerline, vessel, slice_idx, branch_id=0, keep="larger")`: cuts
+  the mesh with the plane of a tree slice (`"aorta"`, `"rca"` or `"lca"`) and closes the cut with
+  a flat fan around the ring's centroid. Only the plane is taken from the tree, so the mesh may be
+  scaled, smoothed or remeshed after discretizing. Only the vessel ring around the slice centre
+  is cut, ring vertices lie exactly on the plane, and branches beyond the cut go with the dropped
+  part. `keep="larger"` keeps the side with the larger surface area, `"proximal"` / `"distal"`
+  pick a side along the centerline. The centerline is cut on the same side, its new end point on
+  the slice centre. Returns the updated results, the cut centerline and the cap as its own mesh
+  for export.
+- `PyCenterline.cut_branch(branch_id, position, keep="proximal", tolerance=inf)`: cuts a branch at
+  a position, which becomes its new end point. Branches growing out of the dropped part are
+  removed, the others keep their id.
+- `write_centerline_vtp(centerline, path)`: writes a centerline as an ASCII `.vtp` file that
+  `read_centerline_vtp` reads back, e.g. to save a cut centerline.
+- `multimodars.multimodars.cut_mesh_at_contour` and `fill_holes_fan`: the Rust functions behind
+  `cut_at_slice` and `manual_hole_fill`.
+
+### Changed
+- `manual_hole_fill` runs in Rust. Each fan's centre is weighted by edge length instead of the
+  plain mean of the loop points, and the fan is wound like the faces around the hole.
+- The CCTA Rust code is split by what it does to the mesh: `labeling` (assigns vertices to
+  vessels, branches and the pullback segment, no change to the mesh), `morphing` (changes its
+  shape: scaling, winding, hole filling) and `discretizing` (builds the vessel tree, the skeleton
+  with reference points and cutting planes). The bindings follow the same split, replacing
+  `ccta_py.rs`.
+- `multimodars.multimodars.remove_occluded_points(vertices, faces, points, centerline_coronary,
+  centerline_aorta, range_mm)` returns `(kept, removed)` and replaces `find_faces_near_points`
+  plus `remove_occluded_points_ray_triangle`, which are removed. `label_geometry` calls it
+  directly; the Python helpers `_apply_occlusion_removal` and `_keep_largest_connected_component`
+  are gone.
+- Renamed `find_centerline_bounded_points_simple` to `find_centerline_bounded_points` and
+  `adjust_diameter_centerline_morphing_simple` to `adjust_diameter_centerline_morphing`.
+
+### Removed
+- `smooth_mesh_labels`, which nothing used.
+
 ## [0.8.0] - 2026-10-12
 
 Branch ids are now the single source of truth: the branch labels from `label_branches` decide

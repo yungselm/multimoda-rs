@@ -1545,6 +1545,43 @@ pub fn read_centerline_vtp(path: &str) -> PyResult<PyCenterline> {
     Ok(PyCenterline::from(&cl))
 }
 
+/// Write a centerline to an ASCII VTK PolyData (``.vtp``) file.
+///
+/// The inverse of :func:`read_centerline_vtp`: each branch becomes one VTK
+/// line, and the radii are stored as ``PointData/MaximumInscribedSphereRadius``
+/// as VMTK writes them. Removed (empty) branches are skipped. Tangents are not
+/// stored; the reader recomputes them.
+///
+/// Parameters
+/// ----------
+/// centerline : PyCenterline
+///     Centerline to write.
+/// path : str
+///     Output ``.vtp`` path. Missing parent directories are created.
+///
+/// Raises
+/// ------
+/// RuntimeError
+///     If the centerline has no points or the file cannot be written.
+///
+/// Notes
+/// -----
+/// :func:`read_centerline_vtp` numbers branches by descending arc length, so
+/// branch ids only survive a round trip if they already follow that order.
+///
+/// Examples
+/// --------
+/// >>> import multimodars as mm
+/// >>> cl = mm.read_centerline_vtp("data/rca_cl.vtp")
+/// >>> mm.write_centerline_vtp(cl, "out/rca_cl.vtp")
+///
+#[pyfunction]
+#[pyo3(signature = (centerline, path))]
+pub fn write_centerline_vtp(centerline: &PyCenterline, path: &str) -> PyResult<()> {
+    crate::intravascular::io::output::write_centerline_vtp(&centerline.to_rust_centerline(), path)
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))
+}
+
 #[cfg(test)]
 mod tests {
     use crate::intravascular::binding::entry::full_processing_rs;

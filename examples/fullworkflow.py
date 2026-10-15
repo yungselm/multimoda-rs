@@ -49,8 +49,8 @@ results = mm.label_geometry(
     centerline_lca=lca_cl,
     bounding_sphere_radius_mm_rca=3.5,
     bounding_sphere_radius_mm_lca=3.5,
-    range_mm_takeoff_rca=60.0,  # mm, was a point count before
-    range_mm_takeoff_lca=40.0,  # mm, was a point count before
+    range_mm_takeoff_rca=60.0,
+    range_mm_takeoff_lca=40.0,
     acute_takeoff_rca=True,
     acute_takeoff_lca=False,
     control_plot=True,
@@ -222,11 +222,46 @@ results_final = mm.label_geometry(
     centerline_lca=lca_cl,
     bounding_sphere_radius_mm_rca=3.5,
     bounding_sphere_radius_mm_lca=3.5,
-    range_mm_takeoff_rca=60.0,  # mm, was a point count before
-    range_mm_takeoff_lca=40.0,  # mm, was a point count before
+    range_mm_takeoff_rca=60.0,
+    range_mm_takeoff_lca=40.0,
     acute_takeoff_rca=True,
     acute_takeoff_lca=False,
     control_plot=True,
 )
 
 results_final["mesh"].export("final.stl")
+
+# Cut the top of the aorta flat at a slice and cap it, e.g. as a CFD outlet.
+# Only the plane comes from the tree, so the remeshed and smoothed final mesh
+# can be cut. The larger side (the rest of the model) stays, and the aortic
+# centerline is cut on the same side, ending on the slice centre in the cap.
+results_cut, aorta_cl_cut, aorta_cap = mm.cut_at_slice(
+    results_final,
+    tree,
+    aorta_cl,
+    "aorta",
+    slice_idx=3,
+    keep="larger",
+)
+print(f"Cut mesh watertight? {results_cut['mesh'].is_watertight}")
+results_cut["mesh"].export("final_aorta_cut.stl")
+aorta_cap.export("aorta_outlet.stl")
+mm.write_centerline_vtp(aorta_cl_cut, "aorta_cl_cut.vtp")
+
+# Cut the circumflex artery (branch 1) in half and cap it. The cut is
+# chained on the aorta cut, so the result has both outlets. Branches growing
+# out of the dropped half are removed from the mesh, centerline and labels.
+side_branch = tree.lca[1]
+results_cut, lca_cl_cut, side_cap = mm.cut_at_slice(
+    results_cut,
+    tree,
+    lca_cl,
+    "lca",
+    slice_idx=len(side_branch.contours) // 2,
+    branch_id=1,
+    keep="larger",
+)
+print(f"Side branch cut watertight? {results_cut['mesh'].is_watertight}")
+results_cut["mesh"].export("final_lca_side_cut.stl")
+side_cap.export("lca_side_outlet.stl")
+mm.write_centerline_vtp(lca_cl_cut, "lca_cl_cut.vtp")

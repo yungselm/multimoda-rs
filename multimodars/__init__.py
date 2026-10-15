@@ -12,7 +12,7 @@ from ._processing import (
     align_three_point,
     build_adjacency_map,
     discretize_vessel,
-    find_centerline_bounded_points_simple,
+    find_centerline_bounded_points,
     find_proximal_distal_scaling,
     from_array_doublepair,
     from_array_full,
@@ -24,6 +24,7 @@ from ._processing import (
     from_file_singlepair,
     read_centerline_vtp,
     to_obj,
+    write_centerline_vtp,
 )
 from .ccta import create_wall_mesh, export_section_stl, label, scale, stitch
 from .ccta.centerline_prep import (
@@ -47,6 +48,7 @@ from .ccta.labeling import (
     label_geometry,
 )
 from .ccta.mesh_regions import (
+    cut_at_slice,
     keep_labeled_points_from_mesh,
     remove_branch,
     remove_labeled_points_from_mesh,
@@ -99,12 +101,13 @@ __all__ = [
     "align_three_point",
     "build_adjacency_map",
     "create_wall_mesh",
+    "cut_at_slice",
     "discretize_vessel",
     "discretize_vessel_tree",
     "export_section_stl",
     "find_aorta_scaling",
     "find_aortic_wall_scaling",
-    "find_centerline_bounded_points_simple",
+    "find_centerline_bounded_points",
     "find_distal_and_proximal_scaling",
     "find_proximal_distal_scaling",
     "find_sharp_angles",
@@ -145,6 +148,7 @@ __all__ = [
     "sync_results_to_mesh",
     "to_array",
     "to_obj",
+    "write_centerline_vtp",
     "write_geometries",
 ]
 

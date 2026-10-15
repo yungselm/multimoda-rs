@@ -388,6 +388,39 @@ class PyCenterline:
         """
         ...
 
+    def cut_branch(
+        self,
+        branch_id: int,
+        position: tuple[float, float, float],
+        keep: str = "proximal",
+        tolerance: float = ...,
+    ) -> PyCenterline:
+        """Cut a branch at a position, which becomes its new end point.
+
+        The position is projected onto the branch to place the cut, and the new
+        end point lies exactly at it. Branches growing out of the dropped part
+        are removed with their descendants, the others keep their ids.
+
+        Parameters
+        ----------
+        branch_id : int
+            Branch to cut.
+        position : tuple[float, float, float]
+            Cut position, e.g. the centroid of a discretized contour.
+        keep : {"proximal", "distal"}
+            Part that stays: before or after the cut, in the branch's point order.
+        tolerance : float
+            Largest allowed distance in mm of *position* from the branch.
+
+        Raises
+        ------
+        ValueError
+            If the branch does not exist or has a single point, *position* is
+            further than *tolerance* from it, or the dropped part holds the
+            junction of a side branch with its parent.
+        """
+        ...
+
     def remove_branches(self, branch_ids: list[int]) -> PyCenterline:
         """Remove branches together with every branch growing out of them.
 
@@ -849,6 +882,7 @@ def to_obj(
 # ---------------------------------------------------------------------------
 
 def read_centerline_vtp(path: str) -> PyCenterline: ...
+def write_centerline_vtp(centerline: PyCenterline, path: str) -> None: ...
 
 # Implemented in Python (multimodars.ccta.centerline_prep), re-declared here for
 # discoverability alongside the other centerline loading/prep functions.
@@ -935,21 +969,17 @@ def prepare_centerline(
 # CCTA mesh labelling and scaling functions
 # ---------------------------------------------------------------------------
 
-def remove_occluded_points_ray_triangle(
+def remove_occluded_points(
+    vertices: list[tuple[float, float, float]],
+    faces: list[list[int]],
+    points: list[tuple[float, float, float]],
     centerline_coronary: PyCenterline,
     centerline_aorta: PyCenterline,
     range_mm: float,
-    points: list[tuple[float, float, float]],
-    faces: list[
-        tuple[
-            tuple[float, float, float],
-            tuple[float, float, float],
-            tuple[float, float, float],
-        ]
-    ],
-    step_size_mm: float,
-) -> list[tuple[float, float, float]]: ...
-def adjust_diameter_centerline_morphing_simple(
+    step_size_mm: float = ...,
+    tol: float = ...,
+) -> tuple[list[tuple[float, float, float]], list[tuple[float, float, float]]]: ...
+def adjust_diameter_centerline_morphing(
     centerline: PyCenterline,
     points: list[tuple[float, float, float]],
     diameter_adjustment_mm: float,
@@ -997,23 +1027,11 @@ def find_aortic_wall_scaling(
     ref_pt_coronary: tuple[float, float, float],
     aortic_pts: list[tuple[float, float, float]],
 ) -> float: ...
-def find_centerline_bounded_points_simple(
+def find_centerline_bounded_points(
     centerline: PyCenterline,
     points: list[tuple[float, float, float]],
     radius: float,
 ) -> list[tuple[float, float, float]]: ...
-def find_faces_near_points(
-    vertices: list[tuple[float, float, float]],
-    faces: list[list[int]],
-    points: list[tuple[float, float, float]],
-    tol: float = ...,
-) -> list[
-    tuple[
-        tuple[float, float, float],
-        tuple[float, float, float],
-        tuple[float, float, float],
-    ]
-]: ...
 def find_aortic_points(
     vertices: list[tuple[float, float, float]],
     points_a: list[tuple[float, float, float]],
@@ -1044,11 +1062,26 @@ def keep_largest_connected_component(
 def fix_mesh_winding(
     faces: list[list[int]],
 ) -> list[list[int]]: ...
-def smooth_mesh_labels(
-    labels: list[int],
-    adjacency_map: dict[int, set[int]],
-    iterations: int,
-) -> list[int]: ...
+def fill_holes_fan(
+    vertices: list[tuple[float, float, float]],
+    faces: list[list[int]],
+) -> tuple[list[tuple[float, float, float]], list[list[int]]]: ...
+def cut_mesh_at_contour(
+    vertices: list[tuple[float, float, float]],
+    faces: list[list[int]],
+    contour: PyContour,
+    keep: str = ...,
+    search_radius_factor: float = ...,
+    snap_fraction: float = ...,
+) -> tuple[
+    list[tuple[float, float, float]],
+    list[list[int]],
+    list[int],
+    int,
+    list[list[int]],
+    list[int | None],
+    str,
+]: ...
 def discretize_vessel(
     centerline: PyCenterline,
     vertices: list[tuple[float, float, float]],

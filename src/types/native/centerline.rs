@@ -95,6 +95,123 @@ impl Centerline {
             .collect())
     }
 
+    /// Cut branch `branch_id` at `position`, which becomes its new end point, and return the
+    /// ids of the branches removed with the cut-off part, ascending.
+    ///
+    /// `position` is projected onto the branch to place the cut. The new end point lies exactly
+    /// at `position`, with radius interpolated. `keep_after` keeps the part after the cut in
+    /// the stored point order, otherwise the part before it. Branches growing out of the
+    /// dropped part are removed with their descendants (see [`Centerline::remove_branches`]);
+    /// the other branches keep their id.
+    ///
+    /// Fails if the branch does not exist or has fewer than 2 points, if `position` is further
+    /// than `tolerance` from it, or if the dropped part holds the junction of a side branch with
+    /// its parent (the kept part would be cut off from the rest of the centerline).
+    pub fn cut_branch(
+        &mut self,
+        branch_id: u32,
+        position: Vector3<f64>,
+        keep_after: bool,
+        tolerance: f64,
+    ) -> Result<Vec<u32>, String> {
+        let b = branch_id as usize;
+        let branches = self.branches_as_vecs();
+        let pts = match branches.get(b) {
+            Some(pts) if pts.len() >= 2 => pts,
+            Some(pts) if !pts.is_empty() => {
+                return Err(format!(
+                    "branch {branch_id} has a single point, nothing to cut"
+                ))
+            }
+            _ => return Err(format!("centerline has no branch {branch_id}")),
+        };
+        let pos = |p: &CenterlinePoint| {
+            Vector3::new(p.contour_point.x, p.contour_point.y, p.contour_point.z)
+        };
+
+        // Segment `seg` and fraction `t` along it nearest to `position`.
+        let (seg, t, dist) = (0..pts.len() - 1)
+            .map(|j| {
+                let (a, d) = (pos(&pts[j]), pos(&pts[j + 1]) - pos(&pts[j]));
+                let t = ((position - a).dot(&d) / d.norm_squared().max(1e-24)).clamp(0.0, 1.0);
+                (j, t, (a + d * t - position).norm())
+            })
+            .min_by(|x, y| x.2.total_cmp(&y.2))
+            .expect("at least one segment");
+        if dist > tolerance {
+            return Err(format!(
+                "the cut position is {dist:.2} mm from branch {branch_id} (tolerance \
+                 {tolerance:.2} mm), is it the centerline the tree was discretized with?"
+            ));
+        }
+        let cut_s = seg as f64 + t;
+
+        if b > 0 {
+            let junction_at_end = Self::should_reverse_relative_to(pts, &branches[..b].concat());
+            if junction_at_end != keep_after {
+                return Err(format!(
+                    "the cut drops the junction of branch {branch_id} with its parent, so the \
+                     kept part would be cut off from the rest of the centerline"
+                ));
+            }
+        }
+
+        // Side branches growing out of the dropped part.
+        let parents = self.branch_parents();
+        let dropped_children: Vec<u32> = (b + 1..branches.len())
+            .filter(|&c| parents[c] == Some(branch_id))
+            .filter(|&c| {
+                let junction = Self::junction_first(&branches, c)[0].contour_point;
+                let attach = Self::nearest_point(std::slice::from_ref(pts), &junction).1 as f64;
+                if keep_after {
+                    attach < cut_s
+                } else {
+                    attach > cut_s
+                }
+            })
+            .map(|c| c as u32)
+            .collect();
+
+        let (p0, p1) = (&pts[seg], &pts[seg + 1]);
+        let cut_point = CenterlinePoint {
+            contour_point: ContourPoint {
+                x: position.x,
+                y: position.y,
+                z: position.z,
+                aortic: false,
+                ..p0.contour_point
+            },
+            tangent: p0.tangent,
+            radius: p0.radius + t * (p1.radius - p0.radius),
+            branch_id,
+        };
+        // A cut on an existing point replaces it.
+        const ON_POINT: f64 = 1e-9;
+        let new_branch: Vec<CenterlinePoint> = if keep_after {
+            let rest = if t > 1.0 - ON_POINT { seg + 2 } else { seg + 1 };
+            std::iter::once(cut_point)
+                .chain(pts[rest..].iter().cloned())
+                .collect()
+        } else {
+            let head = if t < ON_POINT { seg } else { seg + 1 };
+            pts[..head]
+                .iter()
+                .cloned()
+                .chain(std::iter::once(cut_point))
+                .collect()
+        };
+
+        let removed = if dropped_children.is_empty() {
+            vec![]
+        } else {
+            self.remove_branches(&dropped_children)?
+        };
+        let mut branches = self.branches_as_vecs();
+        branches[b] = new_branch;
+        self.rebuild_from_branches(branches);
+        Ok(removed)
+    }
+
     pub fn from_contour_points(contour_points: Vec<ContourPoint>) -> Self {
         let mut points: Vec<CenterlinePoint> = Vec::with_capacity(contour_points.len());
 
@@ -1431,6 +1548,77 @@ mod centerline_tests {
         assert_eq!(centerline.points[0].tangent, Vector3::new(1.0, 0.0, 0.0));
         assert_eq!(centerline.points[1].tangent, Vector3::new(1.0, 0.0, 0.0));
         assert_eq!(centerline.points[2].tangent, Vector3::new(1.0, 0.0, 0.0));
+    }
+
+    /// Main vessel along +x (0..=10), branch 1 leaving it at x = 3, branch 2 at x = 7, and
+    /// branch 3 growing out of branch 2.
+    fn cut_test_centerline() -> Centerline {
+        let main: Vec<(f64, f64, f64)> = (0..=10).map(|i| (i as f64, 0.0, 0.0)).collect();
+        let b1: Vec<(f64, f64, f64)> = (1..=4).map(|i| (3.0, i as f64, 0.0)).collect();
+        let b2: Vec<(f64, f64, f64)> = (1..=4).map(|i| (7.0, i as f64, 0.0)).collect();
+        let b3: Vec<(f64, f64, f64)> = (1..=3).map(|i| (7.0 + i as f64, 4.0, 0.0)).collect();
+        make_multi_branch(&[&main, &b1, &b2, &b3])
+    }
+
+    fn end_point(cl: &Centerline, branch_id: u32, last: bool) -> (f64, f64, f64) {
+        let r = cl.branch_range(branch_id).unwrap();
+        let p = &cl.points[if last { r.end - 1 } else { r.start }].contour_point;
+        (p.x, p.y, p.z)
+    }
+
+    #[test]
+    fn test_cut_branch_keep_before_ends_on_the_cut() {
+        let mut cl = cut_test_centerline();
+        let removed = cl
+            .cut_branch(0, Vector3::new(5.5, 0.0, 0.0), false, 1.0)
+            .unwrap();
+        // Branch 2 leaves after the cut and takes branch 3 with it.
+        assert_eq!(removed, vec![2, 3]);
+        assert_eq!(cl.branch_ids(), vec![0, 1]);
+        assert_eq!(end_point(&cl, 0, true), (5.5, 0.0, 0.0));
+        assert_eq!(cl.branch_range(0).unwrap().len(), 7);
+    }
+
+    #[test]
+    fn test_cut_branch_keep_after_starts_on_the_cut() {
+        let mut cl = cut_test_centerline();
+        let removed = cl
+            .cut_branch(0, Vector3::new(5.0, 0.1, 0.0), true, 1.0)
+            .unwrap();
+        assert_eq!(removed, vec![1]);
+        // The new first point is the given position, not its projection, and replaces x = 5.
+        assert_eq!(end_point(&cl, 0, false), (5.0, 0.1, 0.0));
+        assert_eq!(cl.branch_range(0).unwrap().len(), 6);
+        assert_eq!(cl.branch_ids(), vec![0, 2, 3]);
+    }
+
+    #[test]
+    fn test_cut_side_branch() {
+        let mut cl = cut_test_centerline();
+        // Cutting branch 2 before branch 3 leaves removes branch 3.
+        let removed = cl
+            .cut_branch(2, Vector3::new(7.0, 2.5, 0.0), false, 1.0)
+            .unwrap();
+        assert_eq!(removed, vec![3]);
+        assert_eq!(end_point(&cl, 2, true), (7.0, 2.5, 0.0));
+        assert_eq!(end_point(&cl, 0, true), (10.0, 0.0, 0.0));
+        // Keeping the tip would cut it off from the main vessel.
+        let mut cl = cut_test_centerline();
+        assert!(cl
+            .cut_branch(1, Vector3::new(3.0, 2.5, 0.0), true, 1.0)
+            .is_err());
+    }
+
+    #[test]
+    fn test_cut_branch_rejects_far_position_and_unknown_branch() {
+        let mut cl = cut_test_centerline();
+        assert!(cl
+            .cut_branch(0, Vector3::new(5.0, 3.0, 0.0), false, 1.0)
+            .is_err());
+        assert!(cl
+            .cut_branch(9, Vector3::new(5.0, 0.0, 0.0), false, 1.0)
+            .is_err());
+        assert_eq!(cl, cut_test_centerline());
     }
 
     #[test]

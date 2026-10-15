@@ -3,6 +3,8 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
+use crate::intravascular::io::input::VTP_RADIUS_ARRAY;
+use crate::types::native::centerline::Centerline;
 use crate::types::native::contour::{Contour, ContourType};
 use crate::types::native::geometry::Geometry;
 use rayon::prelude::*;
@@ -304,4 +306,177 @@ pub fn write_geometry_vec_to_obj(
     }
 
     Ok(())
+}
+
+/// Writes `centerline` as an ASCII VTP file that [`read_centerline_vtp`] reads back: one VTK
+/// line per branch (removed, empty branches are skipped) and the radii as the
+/// `MaximumInscribedSphereRadius` point array, as VMTK writes it. Tangents are not stored; the
+/// reader recomputes them from the points.
+///
+/// The reader numbers branches by descending arc length, so branch ids survive a round trip
+/// only if they already follow that order.
+///
+/// [`read_centerline_vtp`]: crate::intravascular::io::input::read_centerline_vtp
+pub fn write_centerline_vtp<P: AsRef<Path>>(
+    centerline: &Centerline,
+    path: P,
+) -> anyhow::Result<()> {
+    /// Values per text line inside a DataArray, as VTK writes them.
+    const VALUES_PER_LINE: usize = 6;
+
+    let path = path.as_ref();
+    let branches: Vec<_> = centerline
+        .branch_ids()
+        .into_iter()
+        .filter_map(|id| centerline.branch_range(id))
+        .map(|range| &centerline.points[range])
+        .collect();
+    if branches.is_empty() {
+        bail!("Centerline has no points to write.");
+    }
+    let n_pts: usize = branches.iter().map(|b| b.len()).sum();
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .context(format!("Could not create output directory: {parent:?}"))?;
+    }
+    let file = File::create(path).with_context(|| format!("cannot create {path:?}"))?;
+    let mut w = BufWriter::new(file);
+
+    // Writes `values` as the text of a DataArray, `VALUES_PER_LINE` to a line.
+    let write_values = |w: &mut BufWriter<File>, values: Vec<String>| -> std::io::Result<()> {
+        for line in values.chunks(VALUES_PER_LINE) {
+            writeln!(w, "          {}", line.join(" "))?;
+        }
+        Ok(())
+    };
+
+    let points = branches.iter().flat_map(|b| b.iter());
+    let coords = points
+        .clone()
+        .flat_map(|p| [p.contour_point.x, p.contour_point.y, p.contour_point.z])
+        .map(|v| v.to_string())
+        .collect();
+    let radii = points.map(|p| p.radius.to_string()).collect();
+    let connectivity = (0..n_pts).map(|i| i.to_string()).collect();
+    let offsets = branches
+        .iter()
+        .scan(0, |end, b| {
+            *end += b.len();
+            Some(end.to_string())
+        })
+        .collect();
+
+    writeln!(w, r#"<?xml version="1.0"?>"#)?;
+    writeln!(
+        w,
+        r#"<VTKFile type="PolyData" version="0.1" byte_order="LittleEndian" header_type="UInt32">"#
+    )?;
+    writeln!(w, "  <PolyData>")?;
+    writeln!(
+        w,
+        r#"    <Piece NumberOfPoints="{n_pts}" NumberOfVerts="0" NumberOfLines="{}" NumberOfStrips="0" NumberOfPolys="0">"#,
+        branches.len()
+    )?;
+    writeln!(w, "      <PointData>")?;
+    writeln!(
+        w,
+        r#"        <DataArray type="Float64" Name="{VTP_RADIUS_ARRAY}" format="ascii">"#
+    )?;
+    write_values(&mut w, radii)?;
+    writeln!(w, "        </DataArray>")?;
+    writeln!(w, "      </PointData>")?;
+    writeln!(w, "      <Points>")?;
+    writeln!(
+        w,
+        r#"        <DataArray type="Float64" Name="Points" NumberOfComponents="3" format="ascii">"#
+    )?;
+    write_values(&mut w, coords)?;
+    writeln!(w, "        </DataArray>")?;
+    writeln!(w, "      </Points>")?;
+    writeln!(w, "      <Lines>")?;
+    writeln!(
+        w,
+        r#"        <DataArray type="Int64" Name="connectivity" format="ascii">"#
+    )?;
+    write_values(&mut w, connectivity)?;
+    writeln!(w, "        </DataArray>")?;
+    writeln!(
+        w,
+        r#"        <DataArray type="Int64" Name="offsets" format="ascii">"#
+    )?;
+    write_values(&mut w, offsets)?;
+    writeln!(w, "        </DataArray>")?;
+    writeln!(w, "      </Lines>")?;
+    writeln!(w, "    </Piece>")?;
+    writeln!(w, "  </PolyData>")?;
+    writeln!(w, "</VTKFile>")?;
+    w.flush()
+        .with_context(|| format!("cannot write {path:?}"))?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod output_tests {
+    use super::*;
+    use crate::intravascular::io::input::{
+        dataarray_text, extract_section, parse_nums, read_centerline_vtp, split_cells,
+    };
+
+    #[test]
+    fn test_write_centerline_vtp_round_trip() -> anyhow::Result<()> {
+        let cl = read_centerline_vtp("examples/data/rca_cl.vtp")?;
+        let path = std::env::temp_dir().join("multimodars_test_write_centerline.vtp");
+        write_centerline_vtp(&cl, &path)?;
+        let back = read_centerline_vtp(&path);
+        let xml = std::fs::read_to_string(&path);
+        let _ = std::fs::remove_file(&path);
+        let (back, xml) = (back?, xml?);
+
+        // Branch ids come back unchanged because the reader already ordered them by length.
+        assert_eq!(back.branch_start_indices, cl.branch_start_indices);
+        assert_eq!(back.points.len(), cl.points.len());
+        for (a, b) in cl.points.iter().zip(&back.points) {
+            assert_eq!(a, b, "point must round-trip exactly");
+        }
+
+        // One VTK line per branch, covering all points in order.
+        let lines = extract_section(&xml, "Lines")?;
+        let connectivity: Vec<usize> = parse_nums(dataarray_text(lines, "connectivity")?)?;
+        let offsets: Vec<usize> = parse_nums(dataarray_text(lines, "offsets")?)?;
+        let cells = split_cells(&connectivity, &offsets)?;
+        assert_eq!(cells.len(), cl.branch_start_indices.len());
+        assert_eq!(connectivity, (0..cl.points.len()).collect::<Vec<_>>());
+        Ok(())
+    }
+
+    #[test]
+    fn test_write_centerline_vtp_skips_removed_branches() -> anyhow::Result<()> {
+        let mut cl = read_centerline_vtp("examples/data/rca_cl.vtp")?;
+        let removed = cl.remove_branches(&[1]).map_err(|e| anyhow!(e))?;
+        let path = std::env::temp_dir().join("multimodars_test_write_centerline_removed.vtp");
+        write_centerline_vtp(&cl, &path)?;
+        let back = read_centerline_vtp(&path);
+        let _ = std::fs::remove_file(&path);
+        let back = back?;
+
+        assert_eq!(
+            back.branch_start_indices.len(),
+            4 - removed.len(),
+            "removed branches must not be written"
+        );
+        assert_eq!(back.points.len(), cl.points.len());
+        Ok(())
+    }
+
+    #[test]
+    fn test_write_centerline_vtp_rejects_empty() {
+        let cl = Centerline {
+            points: Vec::new(),
+            branch_start_indices: Vec::new(),
+        };
+        let path = std::env::temp_dir().join("multimodars_test_write_centerline_empty.vtp");
+        assert!(write_centerline_vtp(&cl, &path).is_err());
+        assert!(!path.exists());
+    }
 }
