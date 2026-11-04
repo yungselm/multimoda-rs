@@ -69,17 +69,22 @@ impl Geometry {
     }
 
     /// Reorder frames based on order of Vec<Record>
+    ///
+    /// The pullback positions stay where they were, the k-th frame of the new order
+    /// takes the k-th smallest original z. An unchanged order keeps every z.
     pub fn reorder_frames(&mut self, records: &[Record], diastole: bool) {
         use std::mem;
 
         let filtered = Self::filter_records(records, diastole);
 
-        let mut orig_z_map: HashMap<u32, f64> = HashMap::new();
-        for fr in &self.frames {
-            let orig = fr.lumen.original_frame;
-            if let Some(p) = fr.lumen.points.first() {
-                orig_z_map.entry(orig).or_insert(p.z);
-            }
+        let mut z_slots: Vec<f64> = self
+            .frames
+            .iter()
+            .filter_map(|fr| fr.lumen.points.first().map(|p| p.z))
+            .collect();
+        z_slots.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        if z_slots.len() != self.frames.len() {
+            z_slots.clear();
         }
 
         // Move existing frames into a lookup by original_frame for reordering
@@ -106,8 +111,7 @@ impl Geometry {
         for (new_idx, frame) in new_frames.iter_mut().enumerate() {
             let new_id = new_idx as u32;
 
-            let orig = frame.lumen.original_frame;
-            let z_value = *orig_z_map.get(&orig).unwrap_or(&(new_id as f64));
+            let z_value = *z_slots.get(new_idx).unwrap_or(&(new_id as f64));
 
             frame.id = new_id;
 
@@ -728,6 +732,60 @@ mod geometry_tests {
             geom.frames[0].reference_point.as_ref().unwrap().frame_index,
             678
         );
+    }
+
+    #[test]
+    fn test_reorder_moves_z_with_the_order() {
+        use crate::types::native::record::Record;
+        let frame = |id: u32, original_frame: u32, z: f64| {
+            let points = (0..4)
+                .map(|i| ContourPoint {
+                    frame_index: original_frame,
+                    point_index: i,
+                    x: i as f64,
+                    y: 0.0,
+                    z,
+                    aortic: false,
+                })
+                .collect();
+            Frame {
+                id,
+                centroid: (0.0, 0.0, z),
+                lumen: Contour {
+                    id,
+                    original_frame,
+                    points,
+                    centroid: Some((0.0, 0.0, z)),
+                    aortic_thickness: None,
+                    pulmonary_thickness: None,
+                    kind: ContourType::Lumen,
+                },
+                extras: HashMap::new(),
+                reference_point: None,
+            }
+        };
+        let mut geom = Geometry {
+            frames: vec![frame(0, 10, 0.0), frame(1, 20, 0.5), frame(2, 30, 1.5)],
+            label: "test".to_string(),
+        };
+        let records: Vec<Record> = [30, 10, 20]
+            .iter()
+            .map(|&f| Record {
+                frame: f,
+                phase: "D".to_string(),
+                measurement_1: None,
+                measurement_2: None,
+            })
+            .collect();
+        geom.reorder_frames(&records, true);
+
+        let order: Vec<u32> = geom.frames.iter().map(|f| f.lumen.original_frame).collect();
+        assert_eq!(order, vec![30, 10, 20]);
+        for (frame, z) in geom.frames.iter().zip([0.0, 0.5, 1.5]) {
+            assert_eq!(frame.centroid.2, z);
+            assert_eq!(frame.lumen.centroid.unwrap().2, z);
+            assert!(frame.lumen.points.iter().all(|p| p.z == z));
+        }
     }
 
     #[test]
