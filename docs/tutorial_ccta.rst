@@ -407,7 +407,8 @@ the one ``centerline`` belongs to.
 
 Off-path branches are neither scaled nor cut by the following steps.  Scale them explicitly with
 :func:`multimodars.scale_region_centerline_morphing` on ``results["off_path_points"]`` (or one
-branch, ``results["rca_branches"][k]``) if needed.  A branch that leaves the removed segment stays
+branch, ``results["rca_branches"][k]``) if needed, and move the tree along with
+:func:`~multimodars.ccta.scaling.sync_tree_to_mesh` (see step 6).  A branch that leaves the removed segment stays
 in the mesh when the segment is cut out for stitching, and :func:`multimodars.stitch` and
 :func:`multimodars.remove_labeled_points_from_mesh` warn about it.
 
@@ -552,6 +553,26 @@ keep the coordinate lists in ``results`` consistent with the updated vertex posi
     :func:`~multimodars.sync_results_to_mesh` updates all point lists to reflect the current
     mesh state.  Always sync before passing ``results['mesh']`` to the next morphing call.
 
+.. note::
+
+    The discretized ``tree`` is not part of ``results``.  The stitch reads it to reconnect side
+    branches (step 7), so it must match the mesh being stitched.  When a morphing step reaches
+    vessels the tree describes - above all off-path side branches - move the tree with it,
+    before syncing the results (both need the mesh from before the step):
+
+    .. code-block:: python
+
+        scaled = mm.scale_region_centerline_morphing(
+            mesh=results['mesh'],
+            region_points=results['off_path_points'],
+            centerline=rca_cl,
+            radius_adjustment_mm=-0.5,
+        )
+        mm.sync_tree_to_mesh(tree, results['mesh'], scaled)  # in place
+        results = mm.sync_results_to_mesh(results, results['mesh'], scaled)
+
+    Each contour point follows its nearest mesh vertices, so one call covers any region.
+
 7. Remove intramural region and stitch geometries
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -657,8 +678,11 @@ T-junctions.
     straight intramural segments.  On an ostial proximal ring it also switches to the
     `Two-half ostium`_ conditioning.
 
-- ``proximal_is_ostium``: whether the proximal ring is the ostium on the aortic wall (default
-  ``True``).  Only then are the ostium corrections below applied.
+- ``proximal_is_ostium``: whether the proximal ring is the ostium on the aortic wall.  Only then
+  are the ostium corrections below applied.  The default ``None`` decides from the ring: it is
+  the ostium when at least a quarter of its points are ``"aorta_points"`` (the proximal region
+  was removed up to the aorta), and not when it lies inside the vessel (only
+  ``"anomalous_points"`` removed).  Pass ``True`` or ``False`` to override.
 - ``clamp_overshoot``: minimum distance in mm that every proximal boundary point must sit
   away from the IV plane (default 0.5).  Only active for anomalous ostia where the
   boundary-ring plane and the IV plane diverge by ≥ 45°.  Increase this value if stitching
@@ -687,19 +711,30 @@ kept out of the two rings of the opening.  Passing the discretized ``tree`` to t
 each such branch to the intravascular wall
 (:func:`multimodars.ccta.stitching.reconnect_side_branches`):
 
-1. The branch's first contour in the tree that lies fully outside the intravascular lumen is its
-   starting frame.
-2. The CCTA branch is cut at that contour's plane, and everything between it and the parent
-   vessel is removed.  The rest of the branch, including branches growing out of it, is kept.
-3. The contour is projected along the branch axis onto the intravascular wall facing it, the
-   wall inside that footprint is removed, and the hole's rim is snapped onto the footprint.
-4. The branch rim and the hole rim are joined by a straight triangle strip.
+1. The **hole** comes from the branch's most proximal contour in the tree (contour 0, where it
+   leaves the vessel the pullback was aligned to).  The contour is projected towards the
+   intravascular axis and wrapped onto the wall facing the branch, and the wall inside that
+   footprint is removed.  A branch wider than the intravascular vessel is narrowed to at most
+   half its circumference (``max_hole_fraction``).  Before cutting, rings are interpolated
+   between the intravascular frames (at most 0.25 mm apart, ``max_ring_spacing_mm``), so the
+   hole is not limited to the spacing of the frames; the end rings stay where they are.
+2. The **branch** is cut at the plane of its first contour that has the whole rim left by the
+   removal behind it and lies outside the intravascular lumen.  Everything between that plane
+   and the parent vessel is removed, so the branch ends in a clean, round rim.  The rest of the
+   branch, including branches growing out of it, is kept.
+3. The hole's rim is laid onto the projected outline in order, and the branch rim and the hole
+   rim are joined by a straight triangle strip.  Several branches each get their own hole.
 
-Without ``tree`` the branch stays loose.  The tree must describe the mesh the segment was cut
-from (compute it before scaling, or again after scaling off-path branches).  For a pullback that
-starts mid-vessel, as in the synthetic example (``SYNTHETIC_PULLBACK = True`` in
-``examples/fullworkflow.py``), remove only ``"anomalous_points"`` and stitch with
-``proximal_is_ostium=False``.
+A branch is left loose, with a warning, when it cannot be joined - e.g. when it leaves its parent
+before or after the intravascular segment (in a proximal region that was removed), or when its
+hole would reach an end of the intravascular segment or overlap another branch's hole.  Without
+``tree`` every such branch stays loose.
+
+The tree must describe the mesh being stitched: compute it before scaling, and move it with
+:func:`~multimodars.ccta.scaling.sync_tree_to_mesh` after any scaling that reaches side branches (step 6).
+For a pullback that starts mid-vessel, as in the synthetic example (``SYNTHETIC_PULLBACK = True``
+in ``examples/fullworkflow.py``), remove only ``"anomalous_points"``; the proximal ring is then
+recognised as lying inside the vessel.
 
 Export the raw stitched mesh before remeshing to allow inspection:
 
@@ -743,8 +778,8 @@ Two-half ostium
 
 A steep, intramural take-off can leave the aorta-facing half of the ring almost perpendicular to
 its coronary-facing half, so no single plane or circle fits it.  With
-``prox_start_mode="highest_z"`` (and the default ``proximal_is_ostium=True``) the proximal ring
-is therefore conditioned as two halves instead of by the corrections above:
+``prox_start_mode="highest_z"`` (and an ostial proximal ring, see ``proximal_is_ostium``) the
+proximal ring is therefore conditioned as two halves instead of by the corrections above:
 
 1. **Split** - the ring is split into the aorta-facing *Half A* and the coronary-facing
    *Half B*, using the ostial frame's own ``aortic`` point flags.
