@@ -60,6 +60,7 @@ from .ccta.scaling import (
     find_distal_and_proximal_scaling,
     scale_region_centerline_morphing,
     sync_results_to_mesh,
+    sync_tree_to_mesh,
 )
 from .ccta.stitching import (
     stitch_ccta_to_intravascular,
@@ -146,6 +147,7 @@ __all__ = [
     "stitch",
     "stitch_ccta_to_intravascular",
     "sync_results_to_mesh",
+    "sync_tree_to_mesh",
     "to_array",
     "to_obj",
     "write_centerline_vtp",

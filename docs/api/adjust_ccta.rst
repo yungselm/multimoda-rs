@@ -23,6 +23,7 @@ Scaling and morphing
 .. autofunction:: multimodars.ccta.scaling.find_aorta_scaling
 .. autofunction:: multimodars.ccta.scaling.find_aortic_wall_scaling
 .. autofunction:: multimodars.ccta.scaling.sync_results_to_mesh
+.. autofunction:: multimodars.ccta.scaling.sync_tree_to_mesh
 
 Trimming and stitching
 ----------------------

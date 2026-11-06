@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import numpy as np
 import trimesh
+from scipy.spatial import cKDTree
 
 from ..multimodars import (
     PyCenterline,
+    PyDiscretizedVesselTree,
     PyFrame,
     adjust_radius_centerline_morphing,
     find_aortic_scaling,
@@ -277,3 +279,77 @@ def sync_results_to_mesh(
     updated = map_point_lists(results, remap)
     updated["mesh"] = new_mesh
     return updated
+
+
+def sync_tree_to_mesh(
+    tree: PyDiscretizedVesselTree,
+    old_mesh: trimesh.Trimesh,
+    new_mesh: trimesh.Trimesh,
+    k: int = 4,
+) -> PyDiscretizedVesselTree:
+    """Move the contours of a discretized tree along with the mesh they were cut from.
+
+    The tree's contours lie on the mesh surface, but are not mesh vertices, so
+    unlike :func:`sync_results_to_mesh` they cannot be looked up by position.
+    Each contour point instead moves by the displacement of its *k* nearest
+    vertices of *old_mesh* (weighted by inverse distance), which follows any
+    region scaling - proximal, distal, aortic or the remaining vessels - without
+    knowing which region a contour belongs to.  Use it after every
+    :func:`scale_region_centerline_morphing`, next to
+    :func:`sync_results_to_mesh`, so the stitch (which reads the tree) sees the
+    scaled vessels.
+
+    Parameters
+    ----------
+    tree : PyDiscretizedVesselTree
+        Tree discretized on *old_mesh* (or on a mesh synced to it).  Updated in
+        place.
+    old_mesh, new_mesh : trimesh.Trimesh
+        The mesh before and after the vertices were moved, with the same vertex
+        count and ordering.
+    k : int, optional
+        Number of nearest vertices each contour point follows (default 4).
+
+    Returns
+    -------
+    PyDiscretizedVesselTree
+        *tree*, with every contour (aorta and branches) and its centroid and
+        the two ostium points moved, and the reference points recomputed.
+    """
+    old = np.asarray(old_mesh.vertices, dtype=np.float64)
+    new = np.asarray(new_mesh.vertices, dtype=np.float64)
+    if new.shape != old.shape:
+        raise ValueError(
+            "sync_tree_to_mesh needs meshes with the same vertices, only moved"
+        )
+    shift = new - old
+    if not np.any(shift):
+        return tree
+    lookup = cKDTree(old)
+
+    def follow(xyz: np.ndarray) -> np.ndarray:
+        dist, idx = lookup.query(xyz, k=k)
+        weight = 1.0 / np.maximum(dist, 1e-9)
+        weight /= weight.sum(axis=1, keepdims=True)
+        return xyz + (shift[idx] * weight[..., None]).sum(axis=1)
+
+    def moved(contours: list) -> list:
+        for contour in contours:
+            points = contour.points
+            xyz = follow(np.array([(p.x, p.y, p.z) for p in points], dtype=np.float64))
+            for p, (x, y, z) in zip(points, xyz):
+                p.x, p.y, p.z = float(x), float(y), float(z)
+            contour.points = points
+            contour.compute_centroid()
+        return contours
+
+    tree.discretized_aorta = moved(tree.discretized_aorta)
+    for vessel in ("rca", "lca"):
+        branches = getattr(tree, vessel)
+        for branch in branches.values():
+            branch.contours = moved(branch.contours)
+        setattr(tree, vessel, branches)
+    ostia = follow(np.array([tree.ao_rca, tree.ao_lca], dtype=np.float64))
+    tree.ao_rca, tree.ao_lca = ((float(x), float(y), float(z)) for x, y, z in ostia)
+    tree.calculate_ref_pts()
+    return tree
