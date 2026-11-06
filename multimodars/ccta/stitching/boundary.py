@@ -1447,12 +1447,28 @@ def _fix_ring_direction_by_winding(
     return boundary_pts
 
 
+def _ring_is_ostium(
+    ring: list[tuple], results: dict, min_fraction: float = 0.25
+) -> bool:
+    """Whether a boundary ring is the ostium on the aortic wall: at least
+    *min_fraction* of its points are ``"aorta_points"``.
+
+    A ring left by removing the vessel up to the aorta (the proximal region
+    included) runs partly over aortic vertices; one left inside the vessel
+    (only the overlap removed) has none.
+    """
+    aorta = set(map(tuple, results.get("aorta_points") or []))
+    if not ring or not aorta:
+        return False
+    return sum(tuple(p) in aorta for p in ring) >= min_fraction * len(ring)
+
+
 def _prepare_prox_dist_boundary_pts(
     mesh: trimesh.Trimesh,
     results: dict,
     prox_centroid: tuple[float, float, float],
     dist_centroid: tuple[float, float, float],
-    proximal_is_ostium: bool = True,
+    proximal_is_ostium: bool | None = None,
     proximal_iv_frame_pts=None,
     ostium_angle_threshold_deg: float = 45.0,
     clamp_overshoot: float = 1.0,
@@ -1479,6 +1495,9 @@ def _prepare_prox_dist_boundary_pts(
     observed on the ostial proximal ring - the distal ring always takes the
     plain path above.
 
+    *proximal_is_ostium* ``None`` decides by the proximal ring itself (see
+    :func:`_ring_is_ostium`).
+
     Returns
     -------
     (prox_pts, dist_pts, mesh, prox_half_a_weight)
@@ -1502,6 +1521,17 @@ def _prepare_prox_dist_boundary_pts(
             f"Warning: {len(leftover)} boundary ring(s) "
             f"{[len(rings[k]) for k in leftover]} are not adjacent to either IV "
             f"end and are left unstitched."
+        )
+
+    if proximal_is_ostium is None:
+        proximal_is_ostium = _ring_is_ostium(prox_ring, results)
+        print(
+            "Proximal ring is "
+            + (
+                "the ostium on the aorta."
+                if proximal_is_ostium
+                else "inside the vessel, not the ostium."
+            )
         )
 
     prox_half_a_weight = None

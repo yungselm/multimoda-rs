@@ -1761,6 +1761,8 @@ class TestStitchFilletPlacement:
             "boundary_points_2": [tuple(p) for p in _ostium_circle(1.5, -3.0)],
             "distal_points": [],
             "proximal_points": [],
+            # The ostium's rim runs over the aortic wall.
+            "aorta_points": [tuple(p) for p in _ostium_circle(2.0)],
         }
         stitching_core.stitch_ccta_to_intravascular(
             geometry,
@@ -2825,10 +2827,54 @@ class TestReconnectSideBranches:
         # Seen along the branch (x), the hole's rim follows the branch's circle.
         r = np.linalg.norm(rim[:, 1:] - [0.0, 5.0], axis=1)
         np.testing.assert_allclose(r, self.R_BRANCH, atol=0.05)
-        # The opposite wall is untouched.
-        assert (new_iv.vertices[:, 0] < -1.9).sum() == (
-            iv_mesh.vertices[:, 0] < -1.9
-        ).sum()
+        # The opposite wall is untouched: every ring of the densified tube (frames
+        # 1 mm apart -> rings 0.25 mm apart) keeps its points there.
+        per_ring = (iv_mesh.vertices[:100, 0] < -1.9).sum()
+        assert (new_iv.vertices[:, 0] < -1.9).sum() == 41 * per_ring
+
+    def test_tube_densified_with_its_end_rings_kept(self):
+        ccta, iv_mesh, frames, results, tree = self._setup()
+        _, new_iv, _ = reconnect_side_branches(ccta, iv_mesh, frames, results, tree)
+        kept = {tuple(v) for v in new_iv.vertices}
+        # The stitch's proximal and distal patches join these by coordinate.
+        for ring in (iv_mesh.vertices[:100], iv_mesh.vertices[-100:]):
+            assert all(tuple(v) in kept for v in ring)
+
+    def test_wide_branch_hole_capped_at_half_the_circumference(self):
+        ccta, iv_mesh, frames, results, tree = self._setup()
+        wide = 3.0  # wider than the tube (radius 2)
+        tree.rca[3].contours[0] = SimpleNamespace(
+            points_as_tuples=lambda: [
+                (1.5, wide * np.cos(t), 5.0 + wide * np.sin(t))
+                for t in np.linspace(0, 2 * np.pi, 40, endpoint=False)
+            ]
+        )
+        _, new_iv, patches = reconnect_side_branches(
+            ccta, iv_mesh, frames, results, tree
+        )
+        assert len(patches) == 1
+        # Nothing behind the tube's axis (x < 0) is cut away.
+        removed = {tuple(v) for v in iv_mesh.vertices} - {
+            tuple(v) for v in new_iv.vertices
+        }
+        assert all(x > -1e-9 for x, _, _ in removed)
+
+    def test_branch_leaving_before_the_segment_is_left_alone(self):
+        ccta, iv_mesh, frames, results, tree = self._setup()
+        contours = tree.rca[3].contours
+        tree.rca[3].contours = [
+            SimpleNamespace(
+                points_as_tuples=lambda c=c: [
+                    (x, y, z - 8.0) for x, y, z in c.points_as_tuples()
+                ]
+            )
+            for c in contours
+        ]
+        with pytest.warns(UserWarning, match="before the intravascular segment"):
+            _, _, patches = reconnect_side_branches(
+                ccta, iv_mesh, frames, results, tree
+            )
+        assert patches == []
 
     def test_pieces_of_the_pullback_vessel_are_left_alone(self):
         ccta, iv_mesh, frames, results, tree = self._setup()
@@ -2838,6 +2884,42 @@ class TestReconnectSideBranches:
         )
         assert patches == []
         assert len(new_ccta.vertices) == len(ccta.vertices)
+
+
+class TestSyncTreeToMesh:
+    def test_contours_follow_the_moved_vertices(
+        self, example_centerlines, example_labelled
+    ):
+        # A fresh tree: the sync moves it in place.
+        tree = _example_tree(example_centerlines, example_labelled)
+        before = np.asarray(tree.lca[0].contours[3].points_as_tuples())
+        mesh = example_labelled["mesh"]
+        moved = mesh.copy()
+        moved.vertices = mesh.vertices + [1.0, -2.0, 0.5]
+        out = mm.sync_tree_to_mesh(tree, mesh, moved)
+        assert out is tree
+        contour = tree.lca[0].contours[3]
+        np.testing.assert_allclose(
+            np.asarray(contour.points_as_tuples()), before + [1.0, -2.0, 0.5], atol=1e-9
+        )
+        np.testing.assert_allclose(
+            contour.centroid, before.mean(axis=0) + [1.0, -2.0, 0.5], atol=1e-6
+        )
+
+    def test_rejects_meshes_with_other_vertices(self, example_tree, example_labelled):
+        mesh = example_labelled["mesh"]
+        with pytest.raises(ValueError):
+            mm.sync_tree_to_mesh(example_tree, mesh, trimesh.creation.icosphere())
+
+
+class TestRingIsOstium:
+    def test_ring_over_the_aorta_is_the_ostium(self):
+        from multimodars.ccta.stitching.boundary import _ring_is_ostium
+
+        ring = [(float(i), 0.0, 0.0) for i in range(8)]
+        assert _ring_is_ostium(ring, {"aorta_points": ring[:3]})
+        assert not _ring_is_ostium(ring, {"aorta_points": ring[:1]})
+        assert not _ring_is_ostium(ring, {})
 
 
 @pytest.fixture(scope="module")

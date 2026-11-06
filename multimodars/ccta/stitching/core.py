@@ -27,7 +27,7 @@ def stitch_ccta_to_intravascular(
     n_points_iv_cont: int = 100,
     prox_start_mode: str = "nearest_iv",
     dist_start_mode: str = "nearest_iv",
-    proximal_is_ostium: bool = True,
+    proximal_is_ostium: bool | None = None,
     clamp_overshoot: float = 0.5,
     boundary_point_ratio: float = 1.0,
     fillet_bulge: float = 0.0,
@@ -48,7 +48,7 @@ def stitch_ccta_to_intravascular(
     intravascular plane - and the result is merged into one surface and
     hole-filled, but not remeshed.
 
-    With ``prox_start_mode="highest_z"`` and ``proximal_is_ostium=True`` the
+    With ``prox_start_mode="highest_z"`` and an ostial proximal ring the
     proximal ring is treated as a two-half ostium instead: its aorta-facing
     Half A is rebuilt from the ostial frame's own aorta-side contour, offset by
     the frame's ``aortic_thickness``, while its coronary-facing Half B keeps
@@ -79,8 +79,11 @@ def stitch_ccta_to_intravascular(
         z-coordinate.  On an ostial proximal ring, ``"highest_z"`` also
         selects the two-half ostium.
     proximal_is_ostium : bool, optional
-        Whether the proximal ring is the ostium on the aortic wall (default
-        ``True``); only then are the ostium corrections applied.
+        Whether the proximal ring is the ostium on the aortic wall; only then
+        are the ostium corrections applied.  ``None`` (default) decides from
+        the ring: it is the ostium when at least a quarter of its points are
+        ``"aorta_points"`` (the proximal region was removed up to the aorta),
+        not when it lies inside the vessel (only the overlap was removed).
     clamp_overshoot : float, optional
         Minimum distance in mm every proximal boundary point is kept from the
         intravascular plane (default 0.5), and the fallback Half A offset when
@@ -214,8 +217,8 @@ def stitch_ccta_to_intravascular(
     elif fillet_bulge > 0.0:
         print(
             "Warning: fillet_bulge only rounds the ostium's Half A, which needs "
-            "prox_start_mode='highest_z' and proximal_is_ostium=True (and a ring "
-            "that splits into two halves); stitching without it."
+            "prox_start_mode='highest_z' and an ostial proximal ring (one that "
+            "splits into two halves); stitching without it."
         )
     prox_patch = _stitch_rings(
         prox_boundary_pts,

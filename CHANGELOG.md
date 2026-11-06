@@ -10,6 +10,27 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   value. Renamed to say so: `adjust_diameter_centerline_morphing` → `adjust_radius_centerline_morphing`
   and the keyword `diameter_adjustment_mm` → `radius_adjustment_mm` (also in
   `scale_region_centerline_morphing`).
+- `stitch_ccta_to_intravascular(proximal_is_ostium=None)` is the new default: the proximal ring is
+  treated as the ostium only when at least a quarter of it runs over `aorta_points` (the proximal
+  region was removed up to the aorta). Before, it was always treated as the ostium, which moved a
+  ring inside the vessel (only the overlap removed) towards the aorta and broke the proximal stitch.
+  Pass `True`/`False` to force it.
+
+### Added
+- `sync_tree_to_mesh(tree, old_mesh, new_mesh)`: moves a discretized tree's contours with the mesh
+  after `scale_region_centerline_morphing`, next to `sync_results_to_mesh`. Without it the tree
+  stayed at the unscaled size and side branches were cut and holed at the wrong size.
+
+### Fixed
+- Reconnecting several side branches to the intravascular wall (`stitch_ccta_to_intravascular`
+  with `tree`). The hole now comes from each branch's most proximal contour, projected towards the
+  intravascular axis and wrapped onto the facing wall, capped at half the circumference
+  (`max_hole_fraction`) for branches wider than the intravascular vessel. The branch is cut at its
+  first contour with the whole removal rim behind it, so its rim is a clean ring. The
+  intravascular tube is densified to rings at most 0.25 mm apart before cutting (frames were often
+  1 mm or more apart, so a hole covered a single ring and its cleanup could eat the proximal end
+  ring, detaching the proximal patch). A branch leaving outside the intravascular segment is
+  reported as such.
 
 ## [0.9.1] - 2026-11-04
 
