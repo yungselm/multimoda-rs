@@ -279,7 +279,8 @@ class _Lumen:
         """Per frame, *direction* made normal to the frame's tangent, and the
         tangent crossed with that: the two in-plane axes of each frame."""
         d = direction[None] - (self.tangents @ direction)[:, None] * self.tangents
-        d /= np.linalg.norm(d, axis=1, keepdims=True)
+        # Zero only where *direction* runs along the vessel, far from the branch.
+        d /= np.maximum(np.linalg.norm(d, axis=1, keepdims=True), 1e-12)
         return d, np.cross(self.tangents, d)
 
     def nearest_frame(self, points: np.ndarray) -> np.ndarray:
@@ -304,22 +305,6 @@ class _Lumen:
         """Radial distance of each point outside the wall (negative inside)."""
         _, _, radial, wall = self._local(points)
         return np.linalg.norm(radial, axis=1) - wall
-
-    def hit_along(
-        self, starts: np.ndarray, direction: np.ndarray, iterations: int = 30
-    ) -> np.ndarray:
-        """Where the lines from *starts* (outside the lumen) along *direction*
-        first meet the wall, found by bisection down to the point where each
-        line passes closest to the lumen axis."""
-        frame = self.nearest_frame(starts)
-        deepest = ((self.centroids[frame] - starts) @ direction)[:, None]
-        lo, hi = deepest, np.zeros_like(deepest)
-        for _ in range(iterations):
-            mid = (lo + hi) / 2
-            outside = self.outside_by(starts + mid * direction) > 0
-            lo = np.where(outside[:, None], lo, mid)
-            hi = np.where(outside[:, None], mid, hi)
-        return starts + hi * direction
 
     def inside(self, points: np.ndarray, margin: float) -> np.ndarray:
         """Whether each point lies inside the lumen, or within *margin* of its wall."""
@@ -404,10 +389,10 @@ def _cut_piece(
     radius = np.linalg.norm(ring - center, axis=1).max()
     # Only the branch's own tube: a nested branch curving back stays.
     drop = piece[(along < 0.0) & (lateral < 3.0 * radius)]
-    faces = faces[~np.isin(faces, drop).any(axis=1)]
-
-    piece_set = set(piece.tolist())
-    rim = {int(v) for v in open_boundary_edges(faces).ravel() if int(v) in piece_set}
+    cut = np.isin(faces, drop).any(axis=1)
+    # Seeded from the cut faces only, so an open vessel end is not merged in.
+    rim = set(np.setdiff1d(faces[cut].ravel(), drop).tolist())
+    faces = faces[~cut]
     if not rim:
         return faces, None
     extra, rings = clean_open_boundary(faces, vertices, rim, target_n=1)
@@ -557,16 +542,35 @@ class _Footprint:
             out[m] = (1.0 - f[m]) * p0 + f[m] * p1
         return out
 
-    def snap(self, points: np.ndarray, frames: np.ndarray) -> np.ndarray:
-        """Wall *points* moved radially (in ``(s, a)``, from the footprint's
-        center) onto its outline."""
-        rel = self.wall_coords(points, frames) - self.center
-        angles = np.arctan2(rel[:, 1], rel[:, 0])
-        target = np.interp(angles, self._angles, self._radii, period=2 * np.pi)
-        sa = self.center + target[:, None] * np.column_stack(
-            [np.cos(angles), np.sin(angles)]
+    def snap(self, ring: np.ndarray, frames: np.ndarray) -> np.ndarray:
+        """The hole's rim, *ring* (ordered wall points), laid onto the outline.
+
+        The points keep their order and their share of the rim's length: they
+        are spread along the outline, the same way round, from where the first
+        one projects (radially from the footprint's center).  Projecting every
+        point radially instead can drop two of them onto one spot where the
+        grid's rim zig-zags, leaving a sliver in the bridge.
+        """
+        sa = self.wall_coords(ring, frames)
+        outline = self.outline
+        if np.sign(_area_2d(sa)) != np.sign(_area_2d(outline)):
+            outline = outline[::-1]
+        closed = np.vstack([outline, outline[:1]])
+        along = np.concatenate(
+            [[0.0], np.cumsum(np.linalg.norm(np.diff(closed, axis=0), axis=1))]
         )
-        return self.to_wall(sa)
+        steps = np.linalg.norm(np.diff(np.vstack([sa, sa[:1]]), axis=0), axis=1)
+        share = np.concatenate([[0.0], np.cumsum(steps)[:-1]]) / steps.sum()
+        rel = sa[0] - self.center
+        angle = np.arctan2(rel[1], rel[0])
+        reach = np.interp(angle, self._angles, self._radii, period=2 * np.pi)
+        first = self.center + reach * np.array([np.cos(angle), np.sin(angle)])
+        start = along[np.argmin(np.linalg.norm(outline - first, axis=1))]
+        at = (start + share * along[-1]) % along[-1]
+        target = np.column_stack(
+            [np.interp(at, along, closed[:, 0]), np.interp(at, along, closed[:, 1])]
+        )
+        return self.to_wall(target)
 
 
 def _cut_footprint(
@@ -609,10 +613,15 @@ def _cut_footprint(
     return kept, hole, rings[0]
 
 
+def _area_2d(xy: np.ndarray) -> float:
+    """Signed area (twice) of the closed polygon *xy*, positive anticlockwise."""
+    x, y = xy[:, 0], xy[:, 1]
+    return float(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1)))
+
+
 def _signed_area(pts: np.ndarray, axis: np.ndarray) -> float:
     e1, e2 = _plane_basis(axis)
-    x, y = pts @ e1, pts @ e2
-    return float(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1)))
+    return _area_2d(np.column_stack([pts @ e1, pts @ e2]))
 
 
 def _match_ring(

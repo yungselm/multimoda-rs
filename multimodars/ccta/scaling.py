@@ -313,27 +313,30 @@ def sync_tree_to_mesh(
     Returns
     -------
     PyDiscretizedVesselTree
-        *tree*, with every contour (aorta and branches) and its centroid moved,
-        and the reference points recomputed.
+        *tree*, with every contour (aorta and branches) and its centroid and
+        the two ostium points moved, and the reference points recomputed.
     """
     old = np.asarray(old_mesh.vertices, dtype=np.float64)
-    shift = np.asarray(new_mesh.vertices, dtype=np.float64) - old
-    if shift.shape != old.shape:
+    new = np.asarray(new_mesh.vertices, dtype=np.float64)
+    if new.shape != old.shape:
         raise ValueError(
             "sync_tree_to_mesh needs meshes with the same vertices, only moved"
         )
+    shift = new - old
     if not np.any(shift):
         return tree
     lookup = cKDTree(old)
 
+    def follow(xyz: np.ndarray) -> np.ndarray:
+        dist, idx = lookup.query(xyz, k=k)
+        weight = 1.0 / np.maximum(dist, 1e-9)
+        weight /= weight.sum(axis=1, keepdims=True)
+        return xyz + (shift[idx] * weight[..., None]).sum(axis=1)
+
     def moved(contours: list) -> list:
         for contour in contours:
             points = contour.points
-            xyz = np.array([(p.x, p.y, p.z) for p in points], dtype=np.float64)
-            dist, idx = lookup.query(xyz, k=k)
-            weight = 1.0 / np.maximum(dist, 1e-9)
-            weight /= weight.sum(axis=1, keepdims=True)
-            xyz += (shift[idx] * weight[..., None]).sum(axis=1)
+            xyz = follow(np.array([(p.x, p.y, p.z) for p in points], dtype=np.float64))
             for p, (x, y, z) in zip(points, xyz):
                 p.x, p.y, p.z = float(x), float(y), float(z)
             contour.points = points
@@ -346,5 +349,7 @@ def sync_tree_to_mesh(
         for branch in branches.values():
             branch.contours = moved(branch.contours)
         setattr(tree, vessel, branches)
+    ostia = follow(np.array([tree.ao_rca, tree.ao_lca], dtype=np.float64))
+    tree.ao_rca, tree.ao_lca = ((float(x), float(y), float(z)) for x, y, z in ostia)
     tree.calculate_ref_pts()
     return tree

@@ -17,8 +17,8 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   Pass `True`/`False` to force it.
 
 ### Added
-- `sync_tree_to_mesh(tree, old_mesh, new_mesh)`: moves a discretized tree's contours with the mesh
-  after `scale_region_centerline_morphing`, next to `sync_results_to_mesh`. Without it the tree
+- `sync_tree_to_mesh(tree, old_mesh, new_mesh)`: moves a discretized tree's contours and ostium
+  points with the mesh after `scale_region_centerline_morphing`, next to `sync_results_to_mesh`. Without it the tree
   stayed at the unscaled size and side branches were cut and holed at the wrong size.
 
 ### Fixed
@@ -29,8 +29,9 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   first contour with the whole removal rim behind it, so its rim is a clean ring. The
   intravascular tube is densified to rings at most 0.25 mm apart before cutting (frames were often
   1 mm or more apart, so a hole covered a single ring and its cleanup could eat the proximal end
-  ring, detaching the proximal patch). A branch leaving outside the intravascular segment is
-  reported as such.
+  ring, detaching the proximal patch). The hole's rim is laid onto the projected outline in order
+  (by its share of the rim's length), so no two rim points land on one spot and leave a sliver
+  hole in the bridge. A branch leaving outside the intravascular segment is reported as such.
 
 ## [0.9.1] - 2026-11-04
 
