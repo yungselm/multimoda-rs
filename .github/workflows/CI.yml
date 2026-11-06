@@ -219,11 +219,12 @@ jobs:
     strategy:
       matrix:
         platform:
-          - runner: macos-latest  # Intel runner
+          # macos-latest is Apple Silicon; the x86_64 wheel is cross-compiled
+          # there, so no (retiring) Intel image is needed.
+          - runner: macos-latest
             target: x86_64
-          - runner: macos-14  # Apple Silicon runner
+          - runner: macos-latest
             target: aarch64
-            arch: arm64
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
