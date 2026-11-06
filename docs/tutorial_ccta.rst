@@ -508,7 +508,7 @@ is used to minimize distance between the intravascular wall and the ``removed_rc
 
 Each region is morphed independently with :func:`multimodars.scale_region_centerline_morphing`.
 The function moves mesh vertices radially along the local centerline normal so that the
-region diameter changes by ``diameter_adjustment_mm``.  Because the mesh is modified in
+region radius changes by ``radius_adjustment_mm`` (diameter by twice that).  Because the mesh is modified in
 place, :func:`multimodars.sync_results_to_mesh` must be called after each morphing step to
 keep the coordinate lists in ``results`` consistent with the updated vertex positions:
 
@@ -519,7 +519,7 @@ keep the coordinate lists in ``results`` consistent with the updated vertex posi
         mesh=results['mesh'],
         region_points=results['distal_points'],
         centerline=rca_cl,
-        diameter_adjustment_mm=distal_scaling,
+        radius_adjustment_mm=distal_scaling,
     )
     results = mm.sync_results_to_mesh(results, results['mesh'], scaled_distal)
 
@@ -528,7 +528,7 @@ keep the coordinate lists in ``results`` consistent with the updated vertex posi
         mesh=results['mesh'],
         region_points=results['aorta_points'] + results['rca_removed_points'],
         centerline=aorta_cl,
-        diameter_adjustment_mm=aortic_scaling,
+        radius_adjustment_mm=aortic_scaling,
     )
     results = mm.sync_results_to_mesh(results, results['mesh'], scaled_aortic)
 
@@ -537,7 +537,7 @@ keep the coordinate lists in ``results`` consistent with the updated vertex posi
         mesh=results['mesh'],
         region_points=results['proximal_points'],
         centerline=rca_cl,
-        diameter_adjustment_mm=prox_scaling,
+        radius_adjustment_mm=prox_scaling,
     )
     results = mm.sync_results_to_mesh(results, results['mesh'], scaled_proximal)
 

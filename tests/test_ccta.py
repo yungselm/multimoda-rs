@@ -912,7 +912,7 @@ class TestScaleRegionCenterlineMorphing:
             grid_mesh,
             region_points=[(999.0, 999.0, 999.0)],
             centerline=None,  # never reached
-            diameter_adjustment_mm=1.0,
+            radius_adjustment_mm=1.0,
         )
         captured = capsys.readouterr()
         assert "Warning" in captured.out

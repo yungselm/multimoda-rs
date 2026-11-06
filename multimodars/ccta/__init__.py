@@ -248,7 +248,7 @@ def scale(
         mesh=results["mesh"],
         region_points=results["distal_points"],
         centerline=cl_vessel,
-        diameter_adjustment_mm=distal_scaling,
+        radius_adjustment_mm=distal_scaling,
     )
     results = scaling.sync_results_to_mesh(results, results["mesh"], scaled_distal)
 
@@ -256,7 +256,7 @@ def scale(
         mesh=results["mesh"],
         region_points=results["aorta_points"] + results["rca_removed_points"],
         centerline=cl_aorta,
-        diameter_adjustment_mm=aortic_scaling,
+        radius_adjustment_mm=aortic_scaling,
     )
     results = scaling.sync_results_to_mesh(
         results, results["mesh"], scaled_distal_aortic
@@ -266,7 +266,7 @@ def scale(
         mesh=results["mesh"],
         region_points=results["proximal_points"],
         centerline=cl_vessel,
-        diameter_adjustment_mm=prox_scaling,
+        radius_adjustment_mm=prox_scaling,
     )
     results = scaling.sync_results_to_mesh(results, results["mesh"], scaled_proximal)
 
@@ -401,7 +401,7 @@ def create_wall_mesh(
         mesh=sub_mesh_filled,
         region_points=filled_vertices,
         centerline=cl_aorta,
-        diameter_adjustment_mm=scaling_factor,
+        radius_adjustment_mm=scaling_factor,
     )
 
     # Extract and scale each coronary sub-mesh independently
@@ -410,7 +410,7 @@ def create_wall_mesh(
         mesh=rca_sub_dict["mesh"],
         region_points=rca_sub_dict["rca_points"],
         centerline=cl_rca,
-        diameter_adjustment_mm=coronary_scaling,
+        radius_adjustment_mm=coronary_scaling,
     )
 
     lca_sub_dict = mesh_regions.keep_labeled_points_from_mesh(results, ["lca_points"])
@@ -418,7 +418,7 @@ def create_wall_mesh(
         mesh=lca_sub_dict["mesh"],
         region_points=lca_sub_dict["lca_points"],
         centerline=cl_lca,
-        diameter_adjustment_mm=coronary_scaling,
+        radius_adjustment_mm=coronary_scaling,
     )
 
     results["mesh"] = trimesh.util.concatenate([scaled_aorta, scaled_rca, scaled_lca])

@@ -600,8 +600,8 @@ def cut_at_slice(
     # The centerline is cut on the side the mesh kept, ending on the slice centre.
     cx, cy, cz = contour.centroid
     centre = np.array([cx, cy, cz], dtype=np.float64)
-    radius = max(
-        np.linalg.norm(np.array([p.x, p.y, p.z]) - centre) for p in contour.points
+    radius = float(
+        max(np.linalg.norm(np.array([p.x, p.y, p.z]) - centre) for p in contour.points)
     )
     new_centerline = centerline.cut_branch(
         branch_id, (cx, cy, cz), keep=kept_side, tolerance=radius

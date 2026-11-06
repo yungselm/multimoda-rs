@@ -8,7 +8,7 @@ use pyo3::prelude::*;
 type Point3D = (f64, f64, f64);
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(adjust_diameter_centerline_morphing, m)?)?;
+    m.add_function(wrap_pyfunction!(adjust_radius_centerline_morphing, m)?)?;
     m.add_function(wrap_pyfunction!(find_proximal_distal_scaling, m)?)?;
     m.add_function(wrap_pyfunction!(find_aortic_scaling, m)?)?;
     m.add_function(wrap_pyfunction!(find_aortic_wall_scaling, m)?)?;
@@ -17,7 +17,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 
-/// Adjust the vessel diameter by morphing points outward or inward along the centerline.
+/// Adjust the vessel radius by morphing points outward or inward along the centerline.
 ///
 /// Parameters
 /// ----------
@@ -25,8 +25,8 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
 ///     Centerline of the vessel.
 /// points : list of tuple of float
 ///     Input ``(x, y, z)`` point coordinates.
-/// diameter_adjustment_mm : float
-///     Amount to adjust the diameter in mm.  Positive values expand the
+/// radius_adjustment_mm : float
+///     Amount to adjust the radius in mm (diameter changes by twice this).  Positive values expand the
 ///     vessel; negative values contract it.
 ///
 /// Returns
@@ -34,17 +34,17 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
 /// adjusted_points : list of tuple of float
 ///     Morphed ``(x, y, z)`` point coordinates.
 #[pyfunction]
-pub fn adjust_diameter_centerline_morphing(
+pub fn adjust_radius_centerline_morphing(
     centerline: PyCenterline,
     points: Vec<Point3D>,
-    diameter_adjustment_mm: f64,
+    radius_adjustment_mm: f64,
 ) -> PyResult<Vec<Point3D>> {
     let rust_centerline = centerline.to_rust_centerline();
 
     let result_points = scaling::centerline_based_diameter_morphing(
         &rust_centerline,
         &points,
-        diameter_adjustment_mm,
+        radius_adjustment_mm,
     );
 
     Ok(result_points)

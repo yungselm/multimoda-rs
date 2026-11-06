@@ -3,6 +3,14 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.10.0]
+
+### Changed (breaking)
+- The centerline morphing moves points radially, so the diameter changes by twice the given
+  value. Renamed to say so: `adjust_diameter_centerline_morphing` → `adjust_radius_centerline_morphing`
+  and the keyword `diameter_adjustment_mm` → `radius_adjustment_mm` (also in
+  `scale_region_centerline_morphing`).
+
 ## [0.9.1] - 2026-11-04
 
 - fix broken `reorder_frames`function. tests only passed because no points in the tests files.

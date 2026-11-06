@@ -218,7 +218,7 @@ fn symmetric_nn_distance(a: &[Coords3], b: &[Coords3]) -> f64 {
 pub fn centerline_based_diameter_morphing(
     centerline: &Centerline,
     points: &[Coords3],
-    diameter_adjustment_mm: f64,
+    radius_adjustment_mm: f64,
 ) -> Vec<Coords3> {
     points
         .par_iter()
@@ -233,7 +233,7 @@ pub fn centerline_based_diameter_morphing(
 
             match (p - cl_point).try_normalize(0.0) {
                 Some(unit) => {
-                    let moved = p + unit * diameter_adjustment_mm;
+                    let moved = p + unit * radius_adjustment_mm;
                     (moved.x, moved.y, moved.z)
                 }
                 None => *point,

@@ -979,10 +979,10 @@ def remove_occluded_points(
     step_size_mm: float = ...,
     tol: float = ...,
 ) -> tuple[list[tuple[float, float, float]], list[tuple[float, float, float]]]: ...
-def adjust_diameter_centerline_morphing(
+def adjust_radius_centerline_morphing(
     centerline: PyCenterline,
     points: list[tuple[float, float, float]],
-    diameter_adjustment_mm: float,
+    radius_adjustment_mm: float,
 ) -> list[tuple[float, float, float]]: ...
 def find_points_by_cl_region(
     centerline: PyCenterline,

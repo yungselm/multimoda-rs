@@ -6,7 +6,7 @@ import trimesh
 from ..multimodars import (
     PyCenterline,
     PyFrame,
-    adjust_diameter_centerline_morphing,
+    adjust_radius_centerline_morphing,
     find_aortic_scaling,
     find_proximal_distal_scaling,
 )
@@ -21,12 +21,12 @@ def scale_region_centerline_morphing(
     mesh: trimesh.Trimesh,
     region_points: list,
     centerline,
-    diameter_adjustment_mm: float,
+    radius_adjustment_mm: float,
 ) -> trimesh.Trimesh:
     """Scale a mesh region radially around its centerline.
 
     Each vertex in *region_points* is displaced along the direction from the
-    nearest centerline point outward (positive *diameter_adjustment_mm*) or
+    nearest centerline point outward (positive *radius_adjustment_mm*) or
     inward (negative).
 
     Parameters
@@ -38,9 +38,9 @@ def scale_region_centerline_morphing(
         present in this list are moved.
     centerline : PyCenterline
         Centerline of the vessel region used as the morphing axis.
-    diameter_adjustment_mm : float
-        Diameter change in millimetres.  Positive values expand the lumen;
-        negative values contract it.
+    radius_adjustment_mm : float
+        Radial change in millimetres (diameter changes by twice this).
+        Positive values expand the lumen; negative values contract it.
 
     Returns
     -------
@@ -68,15 +68,15 @@ def scale_region_centerline_morphing(
         return scaled_mesh
 
     print(f"\nScaling {len(region_vertex_indices)} vertices around {centerline}")
-    print(f"Diameter adjustment: {np.round(diameter_adjustment_mm, 2)} mm")
+    print(f"Radius adjustment: {np.round(radius_adjustment_mm, 2)} mm")
 
     region_vertices_list = [
         tuple(vertex) for vertex in scaled_mesh.vertices[region_vertex_indices]
     ]
-    adjusted_points = adjust_diameter_centerline_morphing(
+    adjusted_points = adjust_radius_centerline_morphing(
         centerline=centerline,
         points=region_vertices_list,
-        diameter_adjustment_mm=diameter_adjustment_mm,
+        radius_adjustment_mm=radius_adjustment_mm,
     )
 
     scaled_mesh.vertices[region_vertex_indices] = np.array(

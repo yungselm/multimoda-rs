@@ -157,7 +157,7 @@ scaled_distal = mm.scale_region_centerline_morphing(
     mesh=results["mesh"],
     region_points=results["distal_points"],
     centerline=rca_cl,
-    diameter_adjustment_mm=distal_scaling,
+    radius_adjustment_mm=distal_scaling,
 )
 results = mm.sync_results_to_mesh(results, results["mesh"], scaled_distal)
 
@@ -166,7 +166,7 @@ scaled_distal_aortic = mm.scale_region_centerline_morphing(
     mesh=results["mesh"],
     region_points=results["aorta_points"] + results["rca_removed_points"],
     centerline=aorta_cl,
-    diameter_adjustment_mm=aortic_scaling,
+    radius_adjustment_mm=aortic_scaling,
 )
 results = mm.sync_results_to_mesh(results, results["mesh"], scaled_distal_aortic)
 
@@ -175,7 +175,7 @@ scaled_proximal = mm.scale_region_centerline_morphing(
     mesh=results["mesh"],
     region_points=results["proximal_points"],
     centerline=rca_cl,
-    diameter_adjustment_mm=prox_scaling,
+    radius_adjustment_mm=prox_scaling,
 )
 results = mm.sync_results_to_mesh(results, results["mesh"], scaled_proximal)
 
