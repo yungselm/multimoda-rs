@@ -85,6 +85,7 @@ from multimodars.ccta.stitching.helpers import (
     _shift_plane_clear_of,
 )
 from multimodars.multimodars import (
+    adjust_radius_centerline_morphing,
     final_reclassification,
     find_aortic_points,
     keep_largest_connected_component,
@@ -919,6 +920,45 @@ class TestScaleRegionCenterlineMorphing:
         assert len(result.vertices) == len(grid_mesh.vertices)
         # Must be a copy, not the same object
         assert result is not grid_mesh
+
+    def test_branch_points_morph_around_the_labelled_branch(self, example_centerlines):
+        """A vertex next to branch 1 but labelled branch 0 moves away from branch 0."""
+        _, _, lca = example_centerlines
+        vertex = _vertex_beside_branch(lca, 1)
+        mesh = trimesh.Trimesh(
+            vertices=[vertex], faces=np.zeros((0, 3), dtype=int), process=False
+        )
+
+        result = scale_region_centerline_morphing(
+            mesh, [vertex], lca, 1.0, branch_points={0: [vertex]}
+        )
+
+        own_branch = adjust_radius_centerline_morphing(lca.get_branch(0), [vertex], 1.0)
+        nearest_branch = adjust_radius_centerline_morphing(lca, [vertex], 1.0)
+        assert not np.allclose(own_branch, nearest_branch)
+        assert np.allclose(result.vertices, own_branch)
+
+    def test_unlabelled_vertices_use_the_whole_centerline(self, example_centerlines):
+        _, _, lca = example_centerlines
+        vertex = _vertex_beside_branch(lca, 1)
+        mesh = trimesh.Trimesh(
+            vertices=[vertex], faces=np.zeros((0, 3), dtype=int), process=False
+        )
+
+        result = scale_region_centerline_morphing(
+            mesh, [vertex], lca, 1.0, branch_points={0: [], 99: [vertex]}
+        )
+
+        assert np.allclose(
+            result.vertices, adjust_radius_centerline_morphing(lca, [vertex], 1.0)
+        )
+
+
+def _vertex_beside_branch(centerline, branch_id: int) -> tuple[float, float, float]:
+    """A point 0.5 mm off the middle of one branch, so that branch is its nearest."""
+    points = centerline.get_branch(branch_id).points_as_tuples()
+    x, y, z = points[len(points) // 2]
+    return (x + 0.5, y, z)
 
 
 # ===========================================================================

@@ -10,6 +10,7 @@ from ..io.write_geometries import export_section_stl as export_section_stl
 from . import centerline_prep, labeling, mesh_regions, scaling, stitching
 from . import debug_plots as debug_plots
 from . import postprocessing as _postprocessing
+from ._results import branches_key, vessel_of_centerline
 
 if TYPE_CHECKING:
     from ..multimodars import (
@@ -195,7 +196,8 @@ def scale(
     3. Applies the scaling in sequence — distal, then aortic (``aorta_points``
        + ``rca_removed_points``), then proximal — using
        :func:`scaling.scale_region_centerline_morphing`, which displaces
-       each vertex radially around the nearest centerline point.
+       each vertex radially around its labelled branch of the centerline
+       (``"rca_branches"`` / ``"lca_branches"``, when present).
     4. After each aortic/proximal scaling step,
        :func:`scaling.sync_results_to_mesh` remaps all coordinate lists
        in *results* to the updated vertex positions.
@@ -244,11 +246,15 @@ def scale(
         results=results,
     )
 
+    # Read per call: every sync_results_to_mesh moves the labels with the mesh.
+    labels_key = branches_key(vessel_of_centerline(results, cl_vessel))
+
     scaled_distal = scaling.scale_region_centerline_morphing(
         mesh=results["mesh"],
         region_points=results["distal_points"],
         centerline=cl_vessel,
         radius_adjustment_mm=distal_scaling,
+        branch_points=results.get(labels_key),
     )
     results = scaling.sync_results_to_mesh(results, results["mesh"], scaled_distal)
 
@@ -267,6 +273,7 @@ def scale(
         region_points=results["proximal_points"],
         centerline=cl_vessel,
         radius_adjustment_mm=prox_scaling,
+        branch_points=results.get(labels_key),
     )
     results = scaling.sync_results_to_mesh(results, results["mesh"], scaled_proximal)
 

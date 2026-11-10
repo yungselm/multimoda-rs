@@ -22,14 +22,21 @@ from .scaling_helpers import _extract_wall_from_frames
 def scale_region_centerline_morphing(
     mesh: trimesh.Trimesh,
     region_points: list,
-    centerline,
+    centerline: PyCenterline,
     radius_adjustment_mm: float,
+    branch_points: dict[int, list] | None = None,
 ) -> trimesh.Trimesh:
     """Scale a mesh region radially around its centerline.
 
     Each vertex in *region_points* is displaced along the direction from the
     nearest centerline point outward (positive *radius_adjustment_mm*) or
     inward (negative).
+
+    Without *branch_points* the nearest point may lie on any branch, so a
+    vertex near a junction can be pushed away from the wrong branch.  With
+    *branch_points* (``results["rca_branches"]`` / ``results["lca_branches"]``
+    from :func:`label_branches`), each labelled vertex is morphed around its
+    own branch (``centerline.get_branch(branch_id)``) instead.
 
     Parameters
     ----------
@@ -43,6 +50,10 @@ def scale_region_centerline_morphing(
     radius_adjustment_mm : float
         Radial change in millimetres (diameter changes by twice this).
         Positive values expand the lumen; negative values contract it.
+    branch_points : dict of int to list of tuple, optional
+        Branch id -> vertices, as labelled by :func:`label_branches`.  Vertices
+        without a label, or labelled with a branch *centerline* does not have,
+        are morphed around the whole *centerline*.
 
     Returns
     -------
@@ -72,23 +83,51 @@ def scale_region_centerline_morphing(
     print(f"\nScaling {len(region_vertex_indices)} vertices around {centerline}")
     print(f"Radius adjustment: {np.round(radius_adjustment_mm, 2)} mm")
 
-    region_vertices_list = [
-        tuple(vertex) for vertex in scaled_mesh.vertices[region_vertex_indices]
-    ]
-    adjusted_points = adjust_radius_centerline_morphing(
-        centerline=centerline,
-        points=region_vertices_list,
-        radius_adjustment_mm=radius_adjustment_mm,
-    )
+    vertices = np.array(scaled_mesh.vertices, dtype=np.float64)
+    for indices, axis in _morph_axes(
+        vertices, region_vertex_indices, centerline, branch_points
+    ):
+        adjusted_points = adjust_radius_centerline_morphing(
+            centerline=axis,
+            points=[tuple(v) for v in vertices[indices]],
+            radius_adjustment_mm=radius_adjustment_mm,
+        )
+        vertices[indices] = np.array(adjusted_points, dtype=np.float64)
 
-    scaled_mesh.vertices[region_vertex_indices] = np.array(
-        adjusted_points, dtype=np.float64
-    )
-
-    # Clear mesh cache since we modified vertices directly
-    scaled_mesh.vertices.flags["WRITEABLE"] = False
+    # Assigning the array clears the mesh cache
+    scaled_mesh.vertices = vertices
 
     return scaled_mesh
+
+
+def _morph_axes(
+    vertices: np.ndarray,
+    region_indices: np.ndarray,
+    centerline: PyCenterline,
+    branch_points: dict[int, list] | None,
+) -> list[tuple[np.ndarray, PyCenterline]]:
+    """Region vertex indices grouped by the centerline they are morphed around.
+
+    Every labelled branch gets its own branch of *centerline*.  Vertices without
+    a usable label keep the whole *centerline*.
+    """
+    if not branch_points:
+        return [(region_indices, centerline)]
+    branch_of: dict[tuple, int] = {}
+    present = set(centerline.branch_ids())
+    for branch_id, points in branch_points.items():
+        if branch_id in present:
+            branch_of.update((tuple(p), branch_id) for p in points)
+    labels = np.array([branch_of.get(tuple(vertices[i]), -1) for i in region_indices])
+    groups = [
+        (region_indices[labels == b], centerline.get_branch(int(b)))
+        for b in np.unique(labels)
+        if b >= 0
+    ]
+    rest = region_indices[labels < 0]
+    if len(rest):
+        groups.append((rest, centerline))
+    return groups
 
 
 def find_distal_and_proximal_scaling(

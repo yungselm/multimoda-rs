@@ -3,6 +3,18 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.10.1] - 2026-11-10
+
+### Added
+- `scale_region_centerline_morphing(branch_points=...)`: with a vessel's branch labels
+  (`results["rca_branches"]` / `results["lca_branches"]`), each labelled vertex is morphed around its
+  own branch (`centerline.get_branch(id)`). Without it every vertex follows the nearest point of any
+  branch, so vertices near a junction or with edited labels were pushed away from the wrong branch.
+  Unlabelled vertices keep the whole centerline.
+
+### Changed
+- `scale()` passes the vessel's branch labels to the distal and proximal morphing.
+
 ## [0.10.0]
 
 ### Changed (breaking)
