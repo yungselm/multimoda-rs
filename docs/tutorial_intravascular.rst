@@ -218,7 +218,9 @@ To call :func:`multimodars.from_array_full`, :func:`multimodars.from_array_doubl
 contours and reference point must be packed into a :class:`multimodars.PyInputData` object
 first using :func:`multimodars.numpy_to_inputdata`. We assume that ``before_arr``,
 ``after_arr``, ``before_ref`` and ``after_ref`` are all numpy arrays of shape ``(N, 4)``
-(same column order as the CSV files: frame index, x in mm, y in mm, z in mm):
+(same column order as the CSV files: frame index, x in mm, y in mm, z in mm). The reference
+arrays may hold several rows, optionally with a fifth ``auto`` column, exactly like the
+reference-point files; pick the anchor with ``reference_frame=``:
 
 .. code-block:: python
 
@@ -331,6 +333,8 @@ This section provides an in-depth discussion of each parameter, using :func:`mul
 - ``smooth``: applies a 3-point moving average to each contour after alignment to reduce discretisation artefacts. Recommended for all datasets.
 
 - ``postprocessing``: equalises the axial frame spacing within and between pullbacks after alignment. Recommended whenever the two pullbacks were acquired at different heart rates, as this causes differing inter-frame distances along the vessel axis.
+
+- ``reference_frames``: when a reference-point file holds several references, the frame whose reference anchors each geometry, ``(a, b, c, d)`` (``(dia, sys)`` for the pair functions, ``reference_frame=`` for the single ones). ``None`` keeps the default anchor, the first reference placed by hand, else the first row. An unknown frame raises an error naming the frames that have references.
 
 4. Alignment with a centerline
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -451,7 +455,8 @@ input type:
   ``"annotations"``.  Each contour value is a ``(M, 4)`` array of
   ``(frame_index, x, y, z)`` rows.  The ``"reference"`` entry is ``(1, 4)`` when a
   reference point exists, or ``(0, 4)`` when absent.  ``"annotations"`` is a
-  ``dict[(kind, role), np.ndarray]`` with ``(frame_index, group, x, y, z)`` rows.
+  ``dict[(kind, role), np.ndarray]`` with ``(frame_index, group, x, y, z)`` rows; every
+  reference appears there under ``("reference", "point")`` (group 1 if set automatically).
   The deprecated keys ``"calcification"`` and ``"sidebranch"`` are still filled from the
   ``region`` annotations of those kinds.
 
@@ -460,7 +465,9 @@ input type:
   for :class:`multimodars.PyGeometry` above.
 
 - :class:`multimodars.PyInputData` → ``dict`` with the same layer keys as
-  :class:`multimodars.PyGeometry`, plus ``"diastole"`` (bool) and ``"label"`` (str).
+  :class:`multimodars.PyGeometry`, plus ``"diastole"`` (bool), ``"label"`` (str) and
+  ``"references"``, every reference as ``(frame_index, x, y, z, auto)`` rows (the layout
+  :func:`multimodars.numpy_to_inputdata` reads back).
   When records were supplied, a ``"records"`` key is added containing a ``(M, 4)``
   object array of ``(frame, phase, measurement_1, measurement_2)`` rows.
 

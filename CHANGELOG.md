@@ -3,6 +3,45 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.12.0] - 2026-11-11
+
+### Added
+- Several references per phase. `{phase}_reference_points.csv` rows are `frame, x, y, z[, auto]`,
+  `auto` 1 if set automatically (e.g. at a side branch) and 0 (default, also when the column is
+  missing) if placed by hand. Same delimiter detection as the other files, a header row is
+  skipped. All rows are read, single-row files behave as before.
+- Every reference becomes a `Reference` / `Point` annotation of its frame (group = `auto`),
+  attached like file annotations and dropped with the usual warning when its frame has no lumen.
+  One reference is the anchor, `Frame.reference_point` as before: it orients the frames, pairs
+  diastole with systole (z alignment, trimming around the reference frame) and is placed on the
+  centerline. By default the first hand-placed row, else the first row.
+- Choosing the anchor at load: `from_file_single(reference_frame=None)`,
+  `from_file_singlepair(reference_frames=(None, None))` (dia, sys),
+  `from_file_full` / `from_file_doublepair(reference_frames=(None, None, None, None))` (a, b, c, d),
+  the same for `from_array_*` (frame of the inputs' references, `None` keeps the input's
+  `ref_point`). An unknown frame is an error naming the frames that have references.
+- `numpy_to_inputdata(ref_point=...)` takes several rows `[frame, x, y, z(, auto)]` and
+  `reference_frame=None`. `PyInputData.references` holds every `(point, auto)` and
+  `to_array(input_data)["references"]` returns them as `(frame, x, y, z, auto)` rows.
+- `PyGeometry.references()` (`(original_frame, auto, (x, y, z))` per reference annotation, in
+  frame order), `PyGeometry.anchor_frame()` and `PyGeometry.set_reference_frame(frame)`, which
+  moves `reference_point` to that frame's first reference annotation (current coordinates) and
+  clears it elsewhere. `PyGeometryPair.set_reference_frame(frame)` re-anchors `geom_a` only,
+  `geom_b` follows `geom_a`'s per-frame transforms in centerline alignment. Native:
+  `Geometry::{references, anchor_frame, set_reference_frame}`, `GeometryPair::set_reference_frame`,
+  `InputData::{references, set_reference_frame, process_directory_with_reference}`,
+  `build_geometry_from_path`.
+- `align_three_point`, `align_manual` and `align_combined` take `reference_frame=None`: when given,
+  the primary geometry is re-anchored first, so that frame lands on the centerline reference point.
+
+### Changed
+- A re-anchored reference gets the index of its nearest lumen point as `point_index`, which the
+  three-point rotation takes as the reference's lumen point. References read from a file still
+  have `point_index` 0 (the lumen point at index 0), so aligning on the load anchor without
+  `reference_frame` is unchanged.
+- `to_array(geometry)["annotations"]` now also holds `("reference", "point")` rows.
+- `prepare_n_geometries` (Rust) takes the anchor frames of its geometries.
+
 ## [0.11.0] - 2026-11-11
 
 ### Added
