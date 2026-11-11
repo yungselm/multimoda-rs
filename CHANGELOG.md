@@ -33,7 +33,8 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ### Deprecated (removed in the next release)
 - `branch_*` / `sidebranch_*` and `calcium_*` / `calcification_*` contour files are still read,
   as `Sidebranch` / `Calcification` `Region` annotations (one per frame, group 0), with a
-  deprecation message.
+  deprecation message. Only when the directory has no `{phase}_annotations.csv`, which
+  otherwise already holds those regions.
 - `numpy_to_inputdata(sidebranch=..., calcification=...)` and `array_to_pyinputdata(...)` with
   those layers map them the same way and raise a `DeprecationWarning`. The same holds for the
   `PyInputData` constructor arguments `calcification` and `sidebranch` and for `PyFrame.extras`

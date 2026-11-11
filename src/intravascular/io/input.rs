@@ -101,7 +101,7 @@ impl InputData {
             match name.as_str() {
                 "" | "lumen" => {}
 
-                // deprecated, always read below as annotations
+                // deprecated, read below as annotations when there is no annotations file
                 "branch" | "sidebranch" | "calcium" | "calcification" => {}
 
                 "eem" | "e_e_m" => {
@@ -126,19 +126,22 @@ impl InputData {
             record = read_optional_records(&resolve_record_path(path))?;
         }
 
+        // The deprecated side-branch and calcium files are only a fallback. A directory with an
+        // annotations file already holds those regions there, reading both would double them.
         let annotations_path = path.join(format!("{phase}_annotations.csv"));
-        let mut annotations = if annotations_path.exists() {
+        let annotations = if annotations_path.exists() {
             read_annotations(&annotations_path)
                 .with_context(|| format!("reading {}", annotations_path.display()))?
         } else {
-            Vec::new()
+            let mut legacy = Vec::new();
+            for (prefixes, kind) in [
+                (["branch", "sidebranch"], AnnotationKind::Sidebranch),
+                (["calcium", "calcification"], AnnotationKind::Calcification),
+            ] {
+                legacy.extend(read_legacy_region_file(path, &prefixes, phase, kind)?);
+            }
+            legacy
         };
-        for (prefixes, kind) in [
-            (["branch", "sidebranch"], AnnotationKind::Sidebranch),
-            (["calcium", "calcification"], AnnotationKind::Calcification),
-        ] {
-            annotations.extend(read_legacy_region_file(path, &prefixes, phase, kind)?);
-        }
 
         Ok(InputData {
             lumen,
@@ -748,6 +751,45 @@ mod input_tests {
             && a.kind == AnnotationKind::Custom("eem".to_string())
             && a.role == AnnotationRole::Point
             && a.points.len() == 1));
+        Ok(())
+    }
+
+    #[test]
+    fn test_legacy_region_files_are_ignored_next_to_an_annotations_file() -> anyhow::Result<()> {
+        let src = Path::new("./data/fixtures/ivus_rest");
+        let dir = temp_dir("legacy_next_to_annotations");
+        for f in ["diastolic_contours.csv", "diastolic_reference_points.csv"] {
+            std::fs::copy(src.join(f), dir.join(f))?;
+        }
+        // HolOrama writes both, the annotations file already holds the branch region
+        std::fs::write(
+            dir.join("diastolic_annotations.csv"),
+            "385	sidebranch	region	1	3.0	3.0	24.5
+385	sidebranch	region	1	4.0	4.0	24.5
+",
+        )?;
+        std::fs::write(
+            dir.join("branch_diastolic_contours.csv"),
+            "385	3.0	3.0	24.5
+385	4.0	4.0	24.5
+",
+        )?;
+        std::fs::write(
+            dir.join("calcium_diastolic_contours.csv"),
+            "385	5.0	5.0	24.5
+385	6.0	6.0	24.5
+",
+        )?;
+        let input = InputData::process_directory(&dir, HashMap::new(), true, "")?;
+        std::fs::remove_dir_all(&dir).ok();
+
+        assert_eq!(input.annotations.len(), 1);
+        let (frame, annotation) = &input.annotations[0];
+        assert_eq!(*frame, 385);
+        assert_eq!(
+            (&annotation.kind, annotation.role, annotation.group),
+            (&AnnotationKind::Sidebranch, AnnotationRole::Region, 1)
+        );
         Ok(())
     }
 
