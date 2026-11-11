@@ -1,8 +1,9 @@
 use super::py_contour_point::PyContourPoint;
-use crate::types::native::{Annotation, ContourPoint, Transform};
+use crate::types::native::{Annotation, AnnotationKind, AnnotationRole, ContourPoint, Transform};
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-/// Python representation of free-form per-frame annotation points.
+/// Python representation of non-pipe per-frame annotation points.
 ///
 /// Annotations (side-branch outlines, plaque regions, landmarks) follow
 /// every rigid transform of their frame. They are never sorted, smoothed,
@@ -10,43 +11,104 @@ use pyo3::prelude::*;
 ///
 /// Attributes
 /// ----------
-/// label : str
-///     Free-form kind, e.g. ``"sidebranch"`` or ``"calcium"``.
+/// kind : str
+///     ``"sidebranch"``, ``"calcification"``, ``"lipid"``, ``"macrophage"``,
+///     ``"reference"``, or any other name for a custom kind (e.g. ``"fibrous_cap"``).
+/// role : str
+///     ``"region"``, ``"landmark"``, ``"axis_tip"``, ``"diameter_end"`` or ``"point"``.
 /// group : int
-///     Distinguishes several annotations with the same label in one frame.
+///     Distinguishes several annotations of the same kind and role in one frame.
 /// points : list of PyContourPoint
 ///     Points in input order.
 ///
 /// Examples
 /// --------
-/// >>> ann = PyAnnotation(label="sidebranch", group=0, points=[p1, p2, p3])
+/// >>> ann = PyAnnotation("sidebranch", "region", group=0, points=[p1, p2, p3])
 #[pyclass(from_py_object)]
 #[derive(Debug, Clone)]
 pub struct PyAnnotation {
-    #[pyo3(get, set)]
-    pub label: String,
+    pub kind: AnnotationKind,
+    pub role: AnnotationRole,
     #[pyo3(get, set)]
     pub group: u32,
     #[pyo3(get, set)]
     pub points: Vec<PyContourPoint>,
 }
 
+fn parse_role(role: &str) -> PyResult<AnnotationRole> {
+    AnnotationRole::from_name(role).ok_or_else(|| {
+        PyValueError::new_err(format!(
+            "Unknown annotation role: '{role}'. Valid roles are: {}",
+            AnnotationRole::ALL.map(|r| r.name()).join(", ")
+        ))
+    })
+}
+
 #[pymethods]
 impl PyAnnotation {
     #[new]
-    #[pyo3(signature = (label, group=0, points=Vec::new()))]
-    fn new(label: String, group: u32, points: Vec<PyContourPoint>) -> Self {
-        Self {
-            label,
+    #[pyo3(signature = (kind, role, group=0, points=Vec::new()))]
+    fn new(kind: &str, role: &str, group: u32, points: Vec<PyContourPoint>) -> PyResult<Self> {
+        Ok(Self {
+            kind: AnnotationKind::from_name(kind),
+            role: parse_role(role)?,
             group,
             points,
-        }
+        })
+    }
+
+    /// Kind name, unknown names are kept as custom kinds.
+    #[getter(kind)]
+    fn get_kind(&self) -> String {
+        self.kind.name().to_string()
+    }
+
+    #[setter(kind)]
+    fn set_kind(&mut self, kind: &str) {
+        self.kind = AnnotationKind::from_name(kind);
+    }
+
+    /// Role name, unknown names raise ``ValueError``.
+    #[getter(role)]
+    fn get_role(&self) -> &'static str {
+        self.role.name()
+    }
+
+    #[setter(role)]
+    fn set_role(&mut self, role: &str) -> PyResult<()> {
+        self.role = parse_role(role)?;
+        Ok(())
+    }
+
+    /// ``True`` when the kind is not one of the built-in kinds.
+    #[getter]
+    fn is_custom(&self) -> bool {
+        matches!(self.kind, AnnotationKind::Custom(_))
+    }
+
+    /// Built-in kind names.
+    #[staticmethod]
+    fn known_kinds() -> Vec<&'static str> {
+        vec![
+            "sidebranch",
+            "calcification",
+            "lipid",
+            "macrophage",
+            "reference",
+        ]
+    }
+
+    /// Valid role names.
+    #[staticmethod]
+    fn roles() -> Vec<&'static str> {
+        AnnotationRole::ALL.map(|r| r.name()).to_vec()
     }
 
     pub fn __repr__(&self) -> String {
         format!(
-            "Annotation(label='{}', group={}, points={})",
-            self.label,
+            "Annotation(kind='{}', role='{}', group={}, points={})",
+            self.kind.name(),
+            self.role.name(),
             self.group,
             self.points.len()
         )
@@ -99,7 +161,8 @@ impl PyAnnotation {
 impl PyAnnotation {
     pub fn to_rust_annotation(&self) -> Annotation {
         Annotation {
-            label: self.label.clone(),
+            kind: self.kind.clone(),
+            role: self.role,
             group: self.group,
             points: self.points.iter().map(ContourPoint::from).collect(),
         }
@@ -109,7 +172,8 @@ impl PyAnnotation {
 impl From<&Annotation> for PyAnnotation {
     fn from(annotation: &Annotation) -> Self {
         PyAnnotation {
-            label: annotation.label.clone(),
+            kind: annotation.kind.clone(),
+            role: annotation.role,
             group: annotation.group,
             points: annotation.points.iter().map(PyContourPoint::from).collect(),
         }

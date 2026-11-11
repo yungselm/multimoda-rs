@@ -1,7 +1,9 @@
 use super::py_annotation::PyAnnotation;
 use super::py_contour::PyContour;
 use super::py_contour_point::PyContourPoint;
-use crate::types::native::{ContourPoint, ContourType, Frame, Transform};
+use crate::types::native::{
+    Annotation, AnnotationKind, AnnotationRole, ContourPoint, ContourType, Frame, Transform,
+};
 use pyo3::prelude::*;
 use std::collections::HashMap;
 
@@ -17,7 +19,7 @@ use std::collections::HashMap;
 ///     Lumen contour for this frame.
 /// extras : dict of str to PyContour
 ///     Additional contour types keyed by name: ``"Eem"``,
-///     ``"Calcification"``, ``"Sidebranch"``, ``"Catheter"``, ``"Wall"``.
+///     ``"Catheter"``, ``"Wall"``.
 /// reference_point : PyContourPoint or None
 ///     Reference position used for alignment, if available.
 /// annotations : list of PyAnnotation
@@ -160,8 +162,6 @@ impl From<&Frame> for PyFrame {
         for (contour_type, contour) in &frame.extras {
             let type_str = match contour_type {
                 ContourType::Eem => "Eem",
-                ContourType::Calcification => "Calcification",
-                ContourType::Sidebranch => "Sidebranch",
                 ContourType::Catheter => "Catheter",
                 ContourType::Wall => "Wall",
                 _ => continue,
@@ -184,14 +184,28 @@ impl PyFrame {
     pub fn to_rust_frame(&self) -> PyResult<Frame> {
         let lumen = self.lumen.to_rust_contour()?;
 
+        let mut annotations: Vec<Annotation> = self
+            .annotations
+            .iter()
+            .map(PyAnnotation::to_rust_annotation)
+            .collect();
+
         let mut extras = HashMap::new();
         for (key, py_contour) in &self.extras {
             let contour_type = match key.as_str() {
                 "Eem" => ContourType::Eem,
-                "Calcification" => ContourType::Calcification,
-                "Sidebranch" => ContourType::Sidebranch,
                 "Catheter" => ContourType::Catheter,
                 "Wall" => ContourType::Wall,
+                // deprecated extras keys, kept as region annotations
+                "Sidebranch" | "Calcification" => {
+                    annotations.push(Annotation::new(
+                        AnnotationKind::from_name(key),
+                        AnnotationRole::Region,
+                        0,
+                        py_contour.points.iter().map(ContourPoint::from).collect(),
+                    ));
+                    continue;
+                }
                 _ => continue, // Skip unknown types
             };
             let mut contour = py_contour.to_rust_contour()?;
@@ -207,11 +221,7 @@ impl PyFrame {
             lumen,
             extras,
             reference_point,
-            annotations: self
-                .annotations
-                .iter()
-                .map(PyAnnotation::to_rust_annotation)
-                .collect(),
+            annotations,
         })
     }
 }

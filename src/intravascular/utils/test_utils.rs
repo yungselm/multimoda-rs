@@ -2,7 +2,7 @@ use crate::types::native::contour::{Contour, ContourType};
 use crate::types::native::frame::Frame;
 use crate::types::native::geometry::Geometry;
 use crate::types::native::Transform;
-use crate::types::native::{Annotation, ContourPoint, Point3D};
+use crate::types::native::{Annotation, AnnotationKind, AnnotationRole, ContourPoint, Point3D};
 use std::collections::HashMap;
 
 pub fn dummy_geometry_custom(z_spacing: f64, n_frames: usize) -> Geometry {
@@ -428,8 +428,18 @@ pub fn add_annotations_on_lumen(geometry: &mut Geometry) {
         let outline = vec![pts[0], pts[2 % pts.len()]];
         let landmark = vec![pts[1 % pts.len()]];
         frame.annotations = vec![
-            Annotation::new("sidebranch", 0, outline),
-            Annotation::new("landmark", 1, landmark),
+            Annotation::new(
+                AnnotationKind::Sidebranch,
+                AnnotationRole::Region,
+                0,
+                outline,
+            ),
+            Annotation::new(
+                AnnotationKind::Sidebranch,
+                AnnotationRole::Landmark,
+                1,
+                landmark,
+            ),
         ];
     }
 }

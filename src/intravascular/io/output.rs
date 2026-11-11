@@ -215,18 +215,6 @@ impl ContourType {
                 .filter_map(|frame| frame.extras.get(&ContourType::Eem))
                 .cloned()
                 .collect(),
-            ContourType::Calcification => geometry
-                .frames
-                .iter()
-                .filter_map(|frame| frame.extras.get(&ContourType::Calcification))
-                .cloned()
-                .collect(),
-            ContourType::Sidebranch => geometry
-                .frames
-                .iter()
-                .filter_map(|frame| frame.extras.get(&ContourType::Sidebranch))
-                .cloned()
-                .collect(),
         }
     }
 
@@ -237,8 +225,6 @@ impl ContourType {
             ContourType::Catheter => "catheter",
             ContourType::Wall => "wall",
             ContourType::Eem => "eem",
-            ContourType::Calcification => "calcification",
-            ContourType::Sidebranch => "sidebranch",
         }
     }
 }

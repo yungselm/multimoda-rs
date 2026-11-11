@@ -799,15 +799,15 @@ pub fn create_mtl_for_contour_type(
                 "newmtl material\nKa 1.0 1.0 1.0\nKd 1.0 1.0 1.0\nKs 0.0 0.0 0.0"
             )?;
         }
-        ContourType::Catheter | ContourType::Calcification => {
-            // For catheter and calcification: black material
+        ContourType::Catheter => {
+            // For catheter: black material
             writeln!(
                 mtl_file,
                 "newmtl material\nKa 0.0 0.0 0.0\nKd 0.0 0.0 0.0\nKs 0.0 0.0 0.0"
             )?;
         }
-        ContourType::Wall | ContourType::Sidebranch => {
-            // For wall and sidebranch: semi-transparent material
+        ContourType::Wall => {
+            // For wall: semi-transparent material
             writeln!(
                 mtl_file,
                 "newmtl material\nKa 0.5 0.5 0.5\nKd 0.5 0.5 0.5\nKs 0.0 0.0 0.0\nd 0.7"

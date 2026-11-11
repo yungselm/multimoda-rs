@@ -223,8 +223,6 @@ mod preprocessing_tests {
                 aortic: false,
             }],
             eem: None,
-            calcification: None,
-            sidebranch: None,
             record: None,
             ref_point: ContourPoint {
                 frame_index: 0,

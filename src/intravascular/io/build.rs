@@ -23,8 +23,6 @@ pub fn build_geometry_from_inputdata(
         let mut names = HashMap::new();
         names.insert(ContourType::Lumen, "lumen");
         names.insert(ContourType::Eem, "eem");
-        names.insert(ContourType::Calcification, "calcium");
-        names.insert(ContourType::Sidebranch, "branch");
         names.insert(ContourType::Catheter, "catheter");
 
         InputData::process_directory(path, names, diastole, label)?
@@ -44,18 +42,6 @@ pub fn build_geometry_from_inputdata(
 
     if let Some(eem_points) = &input_data.eem {
         for point in eem_points {
-            all_original_frames.insert(point.frame_index);
-        }
-    }
-
-    if let Some(calc_points) = &input_data.calcification {
-        for point in calc_points {
-            all_original_frames.insert(point.frame_index);
-        }
-    }
-
-    if let Some(side_points) = &input_data.sidebranch {
-        for point in side_points {
             all_original_frames.insert(point.frame_index);
         }
     }
@@ -81,28 +67,6 @@ pub fn build_geometry_from_inputdata(
 
     let eem_contours = if let Some(eem_points) = input_data.eem {
         Contour::build_contour_with_mapping(eem_points, None, ContourType::Eem, &frame_mapping)?
-    } else {
-        Vec::new()
-    };
-
-    let calcification_contours = if let Some(calc_points) = input_data.calcification {
-        Contour::build_contour_with_mapping(
-            calc_points,
-            None,
-            ContourType::Calcification,
-            &frame_mapping,
-        )?
-    } else {
-        Vec::new()
-    };
-
-    let sidebranch_contours = if let Some(side_points) = input_data.sidebranch {
-        Contour::build_contour_with_mapping(
-            side_points,
-            None,
-            ContourType::Sidebranch,
-            &frame_mapping,
-        )?
     } else {
         Vec::new()
     };
@@ -134,20 +98,6 @@ pub fn build_geometry_from_inputdata(
         contour.compute_centroid();
         if let Some(frame) = frame_map.get_mut(&contour.id) {
             frame.extras.insert(ContourType::Eem, contour);
-        }
-    }
-
-    for mut contour in calcification_contours {
-        contour.compute_centroid();
-        if let Some(frame) = frame_map.get_mut(&contour.id) {
-            frame.extras.insert(ContourType::Calcification, contour);
-        }
-    }
-
-    for mut contour in sidebranch_contours {
-        contour.compute_centroid();
-        if let Some(frame) = frame_map.get_mut(&contour.id) {
-            frame.extras.insert(ContourType::Sidebranch, contour);
         }
     }
 
@@ -244,13 +194,12 @@ fn print_success_message(input_data: InputData, from_path: bool) {
     println!("-----------------------------------------");
     println!("{} {}", check(!input_data.lumen.is_empty()), Lumen);
     println!("{} {}", check(input_data.eem.is_some()), Eem);
-    println!(
-        "{} {}",
-        check(input_data.calcification.is_some()),
-        Calcification
-    );
-    println!("{} {}", check(input_data.sidebranch.is_some()), Sidebranch);
     println!("{} {}", check(true), Catheter);
+    println!(
+        "{} Annotations ({})",
+        check(!input_data.annotations.is_empty()),
+        input_data.annotations.len()
+    );
     println!("-----------------------------------------");
     println!("Label: {}", input_data.label);
     println!(
@@ -398,6 +347,8 @@ mod io_tests {
 
     #[test]
     fn test_build_attaches_annotations_by_original_frame() -> anyhow::Result<()> {
+        use crate::types::native::{AnnotationKind, AnnotationRole};
+
         let mut input = InputData::process_directory(
             "data/fixtures/ivus_rest",
             HashMap::from([(ContourType::Lumen, "lumen")]),
@@ -415,11 +366,40 @@ mod io_tests {
         input.annotations = vec![
             (
                 385,
-                Annotation::new("sidebranch", 0, vec![point(385), point(385)]),
+                Annotation::new(
+                    AnnotationKind::Sidebranch,
+                    AnnotationRole::Region,
+                    0,
+                    vec![point(385), point(385)],
+                ),
             ),
-            (385, Annotation::new("sidebranch", 1, vec![point(385)])),
-            (347, Annotation::new("calcium", 0, vec![point(347)])),
-            (99_999, Annotation::new("lost", 0, vec![point(99_999)])),
+            (
+                385,
+                Annotation::new(
+                    AnnotationKind::Sidebranch,
+                    AnnotationRole::Region,
+                    1,
+                    vec![point(385)],
+                ),
+            ),
+            (
+                347,
+                Annotation::new(
+                    AnnotationKind::Calcification,
+                    AnnotationRole::Region,
+                    0,
+                    vec![point(347)],
+                ),
+            ),
+            (
+                99_999,
+                Annotation::new(
+                    AnnotationKind::Lipid,
+                    AnnotationRole::Point,
+                    0,
+                    vec![point(99_999)],
+                ),
+            ),
         ];
 
         let geometry =
@@ -486,8 +466,6 @@ mod io_tests {
         let input_data = InputData {
             lumen: test_points.clone(),
             eem: Some(test_points.clone()),
-            calcification: None,
-            sidebranch: None,
             record: None,
             ref_point: ContourPoint {
                 frame_index: 0,

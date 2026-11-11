@@ -743,7 +743,7 @@ mod frame_tests {
 
     #[test]
     fn test_frame_transforms_move_annotations_with_lumen() {
-        use crate::types::native::Point3D;
+        use crate::types::native::{AnnotationKind, AnnotationRole, Point3D};
 
         let xs = [0.0, 2.0, 2.0, 0.0];
         let ys = [0.0, 0.0, 2.0, 2.0];
@@ -772,8 +772,18 @@ mod frame_tests {
             extras: HashMap::new(),
             reference_point: None,
             annotations: vec![
-                Annotation::new("sidebranch", 0, vec![lumen_points[1], lumen_points[2]]),
-                Annotation::new("landmark", 3, vec![lumen_points[3]]),
+                Annotation::new(
+                    AnnotationKind::Sidebranch,
+                    AnnotationRole::Region,
+                    0,
+                    vec![lumen_points[1], lumen_points[2]],
+                ),
+                Annotation::new(
+                    AnnotationKind::Custom("fibrous_cap".into()),
+                    AnnotationRole::Landmark,
+                    3,
+                    vec![lumen_points[3]],
+                ),
             ],
         };
 
@@ -792,7 +802,8 @@ mod frame_tests {
         frame.set_value(None, None, None, Some(9.0));
         assert!(frame.annotations[0].points.iter().all(|p| p.z == 9.0));
         assert!(frame.lumen.points[1].distance_to(&frame.annotations[0].points[0]) < 1e-12);
-        assert_eq!(frame.annotations[1].label, "landmark");
+        assert_eq!(frame.annotations[1].kind.name(), "fibrous_cap");
+        assert_eq!(frame.annotations[1].role, AnnotationRole::Landmark);
         assert_eq!(frame.annotations[1].group, 3);
     }
 

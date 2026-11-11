@@ -70,6 +70,7 @@ from .io import read_geometrical, write_geometries
 # import os
 # from importlib.metadata import version
 from .multimodars import (
+    PyAnnotation,
     PyCenterline,
     PyCenterlinePoint,
     PyContour,
@@ -85,6 +86,7 @@ from .multimodars import (
 )
 
 __all__ = [
+    "PyAnnotation",
     "PyCenterline",
     "PyCenterlinePoint",
     "PyContour",
