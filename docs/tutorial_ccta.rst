@@ -24,7 +24,7 @@ This step-by-step tutorial demonstrates how to:
 
 The goal of this module is to replace a section on the CCTA geometry with an intravascular geometry.
 
-.. image:: ./figures/concept.jpg
+.. image:: ./figures/concept.webp
    :alt: Concept
    :align: center
    :width: 600px
@@ -70,7 +70,7 @@ return or modify them.
 
 In the first step, a rolling sphere is propagated along the coronary centerlines. For anatomically normal coronary arteries, this approach reliably assigns all mesh vertices within the predefined radius to either the RCA or LCA label. In anomalous coronary arteries with an intramural course, however, the rolling sphere systematically mislabels a subset of aortic-wall vertices as coronary, owing to the compressed elliptic cross-section of the vessel and its proximity to the aortic wall (see :numref:`fig-rolling`).
 
-.. figure:: ./figures/rolling_sphere.jpg
+.. figure:: ./figures/rolling_sphere.webp
    :name: fig-rolling
    :alt: Rolling sphere labeling
    :align: center
@@ -87,7 +87,7 @@ To address this limitation, a ray-casting algorithm is employed. A ray is cast f
    * - .. image:: ./figures/ray_casting.gif
           :width: 100%
           :alt: Ray casting animation
-     - .. image:: ./figures/ray_casting.jpg
+     - .. image:: ./figures/ray_casting.webp
           :width: 100%
           :alt: Ray casting diagram
 
@@ -118,7 +118,7 @@ on the mesh surface.
   ``True`` when tuning ``bounding_sphere_radius_mm`` or ``range_mm_takeoff_rca`` /
   ``range_mm_takeoff_lca``.
 
-.. image:: ./figures/initial_labeling.jpg
+.. image:: ./figures/initial_labeling.webp
    :alt: Example initial labeling figure
    :align: center
    :width: 400px
@@ -254,7 +254,7 @@ bifurcation.  They are later used to initialize the three-point alignment in ste
     # Inspect the result interactively
     mm.plot_vessel_tree(tree)
 
-.. figure:: ./figures/discretization.jpg
+.. figure:: ./figures/discretization.webp
    :name: fig-discretization
    :alt: Discretization Tree
    :align: center
@@ -426,7 +426,7 @@ For the side-branch alignment above, pass the whole ``lca_cl`` and ``branch_id=1
 Set ``debug_plot=True`` to open an interactive scene that shows how the three sub-regions
 are assigned - useful when the boundary appears misplaced.
 
-.. image:: ./figures/anomalous_labeling.jpg
+.. image:: ./figures/anomalous_labeling.webp
    :alt: Example anomalous labeling figure
    :align: center
    :width: 400px
@@ -496,7 +496,7 @@ to round free-segment lumen:
 Here the created wall in the alignment module (based of measurement_1 in record data from :class:`PyInputData`)
 is used to minimize distance between the intravascular wall and the ``removed_rca_points`` on the ccta mesh (see :numref:`fig-wall`).
 
-.. figure:: ./figures/aortic_wall_adj.jpg
+.. figure:: ./figures/aortic_wall_adj.webp
    :name: fig-wall
    :alt: Aortic wall scaling
    :align: center
@@ -542,7 +542,7 @@ keep the coordinate lists in ``results`` consistent with the updated vertex posi
     )
     results = mm.sync_results_to_mesh(results, results['mesh'], scaled_proximal)
 
-.. image:: ./figures/scaling.jpg
+.. image:: ./figures/scaling.webp
    :alt: Morphed distal region example
    :align: center
    :width: 400px

@@ -1,7 +1,7 @@
 <p align="center">
   <a href="https://github.com/yungselm/multimoda-rs">
     <img
-      src="https://raw.githubusercontent.com/yungselm/multimoda-rs/main/media/multimoda-rs.jpg"
+      src="https://raw.githubusercontent.com/yungselm/multimoda-rs/main/media/multimoda-rs.webp"
       alt="multimoda-rs logo"
     >
   </a>
@@ -98,15 +98,15 @@ aligned_pair, spacing_mm, total_rotation_deg = mm.align_three_point(
 
 **3. CCTA labeling** — the CCTA-derived geometry is automatically segmented by vessel region (aorta, RCA, LCA, intramural) to prepare it for fusion:
 
-![Initial CCTA labeling](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/docs/figures/initial_labeling.jpg)
+![Initial CCTA labeling](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/docs/figures/initial_labeling.webp)
 
 **4. CCTA–morphing** — the labeled CCTA geometry is morphed along the centerline to match the high-resolution intravascular geometry:
 
-![CCTA scaling](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/docs/figures/scaling.jpg)
+![CCTA scaling](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/docs/figures/scaling.webp)
 
 **5. CCTA/intravascular fusio** — the morphed CCTA geometry is stitched to the intravascular geometry, replacing a section with a high resolution verison:
 
-![CCTA fusion](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/docs/figures/concept.jpg)
+![CCTA fusion](https://raw.githubusercontent.com/yungselm/multimoda-rs/main/docs/figures/concept.webp)
 
 ## Documentation
 

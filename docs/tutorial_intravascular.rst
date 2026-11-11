@@ -25,7 +25,7 @@ The package was developed with coronary artery anomalies in mind, and specifical
 with an intramural course, in which part of the vessel traverses the aortic wall. In all cases, 
 it is essential to define a correct anatomical reference point to enable subsequent co-registration with the CCTA geometry (see :numref:`fig-dataprep`).
 
-.. figure:: ./figures/dataprep.jpg
+.. figure:: ./figures/dataprep.webp
    :name: fig-dataprep
    :alt: Reference point placement for intravascular segmentation
    :align: center
