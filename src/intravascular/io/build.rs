@@ -1,4 +1,5 @@
 use super::input::InputData;
+use crate::types::native::annotation::Annotation;
 use crate::types::native::contour::{Contour, ContourType};
 use crate::types::native::contour_point::ContourPoint;
 use crate::types::native::frame::Frame;
@@ -117,6 +118,7 @@ pub fn build_geometry_from_inputdata(
             lumen: contour,
             extras: HashMap::new(),
             reference_point: None,
+            annotations: Vec::new(),
         };
 
         if let Some(&mapped_frame_id) = frame_mapping.get(&input_data.ref_point.frame_index) {
@@ -148,6 +150,8 @@ pub fn build_geometry_from_inputdata(
             frame.extras.insert(ContourType::Sidebranch, contour);
         }
     }
+
+    attach_annotations(&mut frame_map, input_data.annotations, &frame_mapping);
 
     if n_points > 0 {
         let all_points: Vec<ContourPoint> = frame_map
@@ -202,6 +206,29 @@ pub fn build_geometry_from_inputdata(
     print_success_message(print_input_data, from_path);
 
     Ok(geometry)
+}
+
+/// Attaches each annotation to the frame whose lumen has the same original frame.
+/// Annotations without such a frame are dropped with one warning.
+fn attach_annotations(
+    frame_map: &mut HashMap<u32, Frame>,
+    annotations: Vec<(u32, Annotation)>,
+    frame_mapping: &HashMap<u32, u32>,
+) {
+    let mut dropped = 0usize;
+    for (original_frame, annotation) in annotations {
+        let frame = frame_mapping
+            .get(&original_frame)
+            .and_then(|id| frame_map.get_mut(id))
+            .filter(|f| f.lumen.original_frame == original_frame);
+        match frame {
+            Some(frame) => frame.annotations.push(annotation),
+            None => dropped += 1,
+        }
+    }
+    if dropped > 0 {
+        eprintln!("Warning: dropped {dropped} annotation(s) whose frame has no lumen contour");
+    }
 }
 
 fn print_success_message(input_data: InputData, from_path: bool) {
@@ -370,6 +397,52 @@ mod io_tests {
     }
 
     #[test]
+    fn test_build_attaches_annotations_by_original_frame() -> anyhow::Result<()> {
+        let mut input = InputData::process_directory(
+            "data/fixtures/ivus_rest",
+            HashMap::from([(ContourType::Lumen, "lumen")]),
+            true,
+            "rest",
+        )?;
+        let point = |frame: u32| ContourPoint {
+            frame_index: frame,
+            point_index: 0,
+            x: 1.0,
+            y: 2.0,
+            z: -5.0,
+            aortic: false,
+        };
+        input.annotations = vec![
+            (
+                385,
+                Annotation::new("sidebranch", 0, vec![point(385), point(385)]),
+            ),
+            (385, Annotation::new("sidebranch", 1, vec![point(385)])),
+            (347, Annotation::new("calcium", 0, vec![point(347)])),
+            (99_999, Annotation::new("lost", 0, vec![point(99_999)])),
+        ];
+
+        let geometry =
+            build_geometry_from_inputdata(Some(input), None, "rest", true, (4.5, 4.5), 0.5, 20)?;
+
+        let total: usize = geometry.frames.iter().map(|f| f.annotations.len()).sum();
+        assert_eq!(total, 3, "annotation without lumen frame must be dropped");
+        for frame in &geometry.frames {
+            let expected = match frame.lumen.original_frame {
+                385 => 2,
+                347 => 1,
+                _ => 0,
+            };
+            assert_eq!(frame.annotations.len(), expected);
+            for p in frame.annotations.iter().flat_map(|a| a.points.iter()) {
+                assert_eq!(p.z, frame.lumen.points[0].z);
+                assert_eq!(p.frame_index, frame.lumen.points[0].frame_index);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
     fn test_catheter_contour_properties() {
         let geometry = build_geometry_from_inputdata(
             None,
@@ -426,6 +499,7 @@ mod io_tests {
             },
             label: "test".to_string(),
             diastole: true,
+            annotations: Vec::new(),
         };
 
         let geometry = build_geometry_from_inputdata(

@@ -1,3 +1,4 @@
+use super::py_annotation::PyAnnotation;
 use super::py_contour::PyContour;
 use super::py_contour_point::PyContourPoint;
 use super::py_record::PyRecord;
@@ -27,6 +28,9 @@ use std::convert::TryFrom;
 ///     ``True`` when the data corresponds to the diastolic phase.
 /// label : str
 ///     Human-readable label for this input dataset.
+/// annotations : list of tuple of (int, PyAnnotation)
+///     ``(frame, annotation)`` pairs, frame numbered like the lumen
+///     ``original_frame``. Attached to that frame when building the geometry.
 ///
 /// Examples
 /// --------
@@ -58,11 +62,14 @@ pub struct PyInputData {
     pub diastole: bool,
     #[pyo3(get, set)]
     pub label: String,
+    #[pyo3(get, set)]
+    pub annotations: Vec<(u32, PyAnnotation)>,
 }
 
 #[pymethods]
 impl PyInputData {
     #[new]
+    #[pyo3(signature = (lumen, eem, calcification, sidebranch, record, ref_point, diastole, label, annotations=Vec::new()))]
     fn new(
         lumen: Vec<PyContour>,
         eem: Option<Vec<PyContour>>,
@@ -72,6 +79,7 @@ impl PyInputData {
         ref_point: PyContourPoint,
         diastole: bool,
         label: String,
+        annotations: Vec<(u32, PyAnnotation)>,
     ) -> Self {
         Self {
             lumen,
@@ -82,12 +90,13 @@ impl PyInputData {
             ref_point,
             diastole,
             label,
+            annotations,
         }
     }
 
     fn __repr__(&self) -> String {
         format!(
-            "InputData(lumen={}, eem={}, calcification={}, sidebranch={}, record={}, ref_point={}, diastole={}, label='{}')",
+            "InputData(lumen={}, eem={}, calcification={}, sidebranch={}, record={}, ref_point={}, diastole={}, label='{}', annotations={})",
             self.lumen.len(),
             self.eem.as_ref().map_or(0, |v| v.len()),
             self.calcification.as_ref().map_or(0, |v| v.len()),
@@ -96,6 +105,7 @@ impl PyInputData {
             self.ref_point.__repr__(),
             self.diastole,
             self.label,
+            self.annotations.len(),
         )
     }
 }
@@ -167,6 +177,11 @@ impl TryFrom<&PyInputData> for InputData {
             ref_point_rust,
             py_in.diastole,
             py_in.label.clone(),
+            py_in
+                .annotations
+                .iter()
+                .map(|(frame, a)| (*frame, a.to_rust_annotation()))
+                .collect(),
         )
         .map_err(|e| anyhow!("InputData::new failed: {e:?}"))
     }
@@ -248,6 +263,11 @@ impl From<&InputData> for PyInputData {
             ref_point: ref_point_py,
             diastole: input.diastole,
             label: input.label.clone(),
+            annotations: input
+                .annotations
+                .iter()
+                .map(|(frame, a)| (*frame, PyAnnotation::from(a)))
+                .collect(),
         }
     }
 }

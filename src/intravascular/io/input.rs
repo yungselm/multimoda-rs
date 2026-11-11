@@ -1,3 +1,4 @@
+use crate::types::native::annotation::Annotation;
 use crate::types::native::centerline::Centerline;
 use crate::types::native::contour::ContourType;
 use crate::types::native::contour_point::ContourPoint;
@@ -35,6 +36,8 @@ pub struct InputData {
     pub ref_point: ContourPoint,
     pub diastole: bool,
     pub label: String,
+    /// `(original frame, annotation)` pairs, frame numbered like `lumen`.
+    pub annotations: Vec<(u32, Annotation)>,
 }
 
 impl InputData {
@@ -47,6 +50,7 @@ impl InputData {
         ref_point: ContourPoint,
         diastole: bool,
         label: String,
+        annotations: Vec<(u32, Annotation)>,
     ) -> anyhow::Result<InputData> {
         Ok(InputData {
             lumen,
@@ -57,6 +61,7 @@ impl InputData {
             ref_point,
             diastole,
             label,
+            annotations,
         })
     }
 
@@ -134,6 +139,14 @@ impl InputData {
             record = read_optional_records(&resolve_record_path(path))?;
         }
 
+        let annotations_path = path.join(format!("{phase}_annotations.csv"));
+        let annotations = if annotations_path.exists() {
+            read_annotations(&annotations_path)
+                .with_context(|| format!("reading {}", annotations_path.display()))?
+        } else {
+            Vec::new()
+        };
+
         Ok(InputData {
             lumen,
             eem,
@@ -143,6 +156,7 @@ impl InputData {
             ref_point,
             diastole,
             label: label_string,
+            annotations,
         })
     }
 }
@@ -231,6 +245,68 @@ pub fn read_reference_point<P: AsRef<Path>>(path: P) -> Result<ContourPoint> {
     let point: ContourPoint =
         first.with_context(|| "failed to deserialize first reference-point record")?;
     Ok(point)
+}
+
+/// Reads `frame, label, group, x, y, z` rows without header (a leading header row is skipped).
+///
+/// Consecutive rows with the same `(frame, label, group)` form one annotation in file order.
+pub fn read_annotations<P: AsRef<Path>>(path: P) -> anyhow::Result<Vec<(u32, Annotation)>> {
+    let delim = detect_delimiter(&path)?;
+    let file = File::open(&path)?;
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(false)
+        .delimiter(delim)
+        .flexible(true)
+        .from_reader(file);
+
+    let mut out: Vec<(u32, Annotation)> = Vec::new();
+    for (row, result) in rdr.records().enumerate() {
+        let record = match result {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("Skipping invalid annotation row: {e:?}");
+                continue;
+            }
+        };
+        let parsed = parse_annotation_row(&record);
+        let (frame, label, group, x, y, z) = match parsed {
+            Some(v) => v,
+            None if row == 0 => continue, // header
+            None => {
+                eprintln!("Skipping invalid annotation row {}: {record:?}", row + 1);
+                continue;
+            }
+        };
+
+        let same = matches!(out.last(), Some((f, a)) if *f == frame && a.label == label && a.group == group);
+        if !same {
+            out.push((frame, Annotation::new(label, group, Vec::new())));
+        }
+        let annotation = &mut out.last_mut().expect("pushed above").1;
+        annotation.points.push(ContourPoint {
+            frame_index: frame,
+            point_index: annotation.points.len() as u32,
+            x,
+            y,
+            z,
+            aortic: false,
+        });
+    }
+    Ok(out)
+}
+
+fn parse_annotation_row(record: &csv::StringRecord) -> Option<(u32, String, u32, f64, f64, f64)> {
+    if record.len() < 6 {
+        return None;
+    }
+    let field = |i: usize| record.get(i).map(str::trim);
+    let frame = field(0)?.parse::<u32>().ok()?;
+    let label = field(1)?.to_string();
+    let group = field(2)?.parse::<u32>().ok()?;
+    let x = field(3)?.parse::<f64>().ok()?;
+    let y = field(4)?.parse::<f64>().ok()?;
+    let z = field(5)?.parse::<f64>().ok()?;
+    Some((frame, label, group, x, y, z))
 }
 
 pub fn read_records<P: AsRef<Path>>(path: P) -> anyhow::Result<Vec<Record>> {
@@ -512,7 +588,76 @@ mod input_tests {
         );
         assert!(input.record.is_none(), "record vector should be empty");
         assert!(input.ref_point.x > 0.0, "ref_point should not be empty");
+        assert!(input.annotations.is_empty(), "no annotations file present");
 
+        Ok(())
+    }
+
+    fn temp_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("multimodars_{name}_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn test_read_annotations_groups_consecutive_rows() -> anyhow::Result<()> {
+        let dir = temp_dir("read_annotations");
+        let p = dir.join("diastolic_annotations.csv");
+        std::fs::write(
+            &p,
+            "frame	label	group	x	y	z
+             3	branch	0	1.0	2.0	0.5
+             3	branch	0	1.5	2.5	0.5
+             3	branch	1	4.0	4.0	0.5
+             3	calcium	0	0.0	0.0	0.5
+             4	branch	0	1.0	1.0	1.0
+             3	branch	0	9.0	9.0	0.5
+",
+        )?;
+        let annotations = read_annotations(&p)?;
+        std::fs::remove_dir_all(&dir).ok();
+
+        let summary: Vec<(u32, &str, u32, usize)> = annotations
+            .iter()
+            .map(|(f, a)| (*f, a.label.as_str(), a.group, a.points.len()))
+            .collect();
+        assert_eq!(
+            summary,
+            vec![
+                (3, "branch", 0, 2),
+                (3, "branch", 1, 1),
+                (3, "calcium", 0, 1),
+                (4, "branch", 0, 1),
+                (3, "branch", 0, 1),
+            ]
+        );
+        let first = &annotations[0].1.points;
+        assert_eq!((first[1].x, first[1].y, first[1].z), (1.5, 2.5, 0.5));
+        assert_eq!((first[1].frame_index, first[1].point_index), (3, 1));
+        Ok(())
+    }
+
+    #[test]
+    fn test_process_directory_reads_annotations_file() -> anyhow::Result<()> {
+        let src = Path::new("./data/fixtures/ivus_rest");
+        let dir = temp_dir("process_annotations");
+        for f in ["diastolic_contours.csv", "diastolic_reference_points.csv"] {
+            std::fs::copy(src.join(f), dir.join(f))?;
+        }
+        std::fs::write(
+            dir.join("diastolic_annotations.csv"),
+            "385,eem_point,0,3.0,3.0,24.5
+385,eem_point,1,4.0,4.0,24.5
+",
+        )?;
+        let input = InputData::process_directory(&dir, HashMap::new(), true, "")?;
+        std::fs::remove_dir_all(&dir).ok();
+
+        assert_eq!(input.annotations.len(), 2);
+        assert!(input
+            .annotations
+            .iter()
+            .all(|(f, a)| *f == 385 && a.label == "eem_point" && a.points.len() == 1));
         Ok(())
     }
 

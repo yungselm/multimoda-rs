@@ -141,6 +141,16 @@ fn rotate_geometry_around_point(geometry: &mut Geometry, angle_rad: f64, center:
             rp.x = new_x;
             rp.y = new_y;
         }
+
+        for point in frame
+            .annotations
+            .iter_mut()
+            .flat_map(|a| a.points.iter_mut())
+        {
+            let (new_x, new_y) = rotate_point(point.x, point.y);
+            point.x = new_x;
+            point.y = new_y;
+        }
     }
 }
 
@@ -275,7 +285,23 @@ mod align_between_tests {
     use approx::assert_relative_eq;
 
     use super::*;
-    use crate::intravascular::utils::test_utils::dummy_geometry_aligned_long;
+    use crate::intravascular::utils::test_utils::{
+        add_annotations_on_lumen, assert_annotations_on_lumen, dummy_geometry_aligned_long,
+    };
+
+    #[test]
+    fn test_align_between_moves_annotations_with_lumen() -> anyhow::Result<()> {
+        let mut geom_a = dummy_geometry_aligned_long();
+        let mut geom_b = dummy_geometry_aligned_long();
+        geom_b.rotate_geometry(15f64.to_radians());
+        geom_b.translate_geometry((0.4, -0.3, 0.2));
+        add_annotations_on_lumen(&mut geom_b);
+
+        let geom_pair = align_between_geometries(&mut geom_a, &mut geom_b, 30.0, 0.01, 6)?;
+
+        assert_annotations_on_lumen(&geom_pair.geom_b, 2);
+        Ok(())
+    }
 
     #[test]
     fn test_align_between_simple_geometries() -> anyhow::Result<()> {

@@ -1,3 +1,4 @@
+use super::py_annotation::PyAnnotation;
 use super::py_contour::PyContour;
 use super::py_contour_point::PyContourPoint;
 use crate::types::native::{ContourPoint, ContourType, Frame, Transform};
@@ -19,6 +20,8 @@ use std::collections::HashMap;
 ///     ``"Calcification"``, ``"Sidebranch"``, ``"Catheter"``, ``"Wall"``.
 /// reference_point : PyContourPoint or None
 ///     Reference position used for alignment, if available.
+/// annotations : list of PyAnnotation
+///     Free-form points that follow the frame's rigid transforms only.
 ///
 /// Examples
 /// --------
@@ -42,17 +45,21 @@ pub struct PyFrame {
     pub extras: HashMap<String, PyContour>, // String keys for ContourType
     #[pyo3(get, set)]
     pub reference_point: Option<PyContourPoint>,
+    #[pyo3(get, set)]
+    pub annotations: Vec<PyAnnotation>,
 }
 
 #[pymethods]
 impl PyFrame {
     #[new]
+    #[pyo3(signature = (id, centroid, lumen, extras, reference_point, annotations=Vec::new()))]
     fn new(
         id: u32,
         centroid: (f64, f64, f64),
         lumen: PyContour,
         extras: HashMap<String, PyContour>,
         reference_point: Option<PyContourPoint>,
+        annotations: Vec<PyAnnotation>,
     ) -> Self {
         Self {
             id,
@@ -60,18 +67,20 @@ impl PyFrame {
             lumen,
             extras,
             reference_point,
+            annotations,
         }
     }
 
     fn __repr__(&self) -> String {
         format!(
-            "Frame(id={}, centroid=({:.2}, {:.2}, {:.2}), lumen={}, extras={})",
+            "Frame(id={}, centroid=({:.2}, {:.2}, {:.2}), lumen={}, extras={}, annotations={})",
             self.id,
             self.centroid.0,
             self.centroid.1,
             self.centroid.2,
             self.lumen.__repr__(),
-            self.extras.len()
+            self.extras.len(),
+            self.annotations.len()
         )
     }
 
@@ -140,6 +149,7 @@ impl From<Frame> for PyFrame {
                 .map(|(key, value)| (key.to_string(), PyContour::from(&value)))
                 .collect(),
             reference_point: frame.reference_point.map(|p| PyContourPoint::from(&p)),
+            annotations: frame.annotations.iter().map(PyAnnotation::from).collect(),
         }
     }
 }
@@ -165,6 +175,7 @@ impl From<&Frame> for PyFrame {
             lumen: PyContour::from(&frame.lumen),
             extras,
             reference_point: frame.reference_point.as_ref().map(PyContourPoint::from),
+            annotations: frame.annotations.iter().map(PyAnnotation::from).collect(),
         }
     }
 }
@@ -196,6 +207,11 @@ impl PyFrame {
             lumen,
             extras,
             reference_point,
+            annotations: self
+                .annotations
+                .iter()
+                .map(PyAnnotation::to_rust_annotation)
+                .collect(),
         })
     }
 }

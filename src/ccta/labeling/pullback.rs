@@ -262,6 +262,7 @@ mod tests {
                 },
                 extras: std::collections::HashMap::new(),
                 reference_point: None,
+                annotations: Vec::new(),
             })
             .collect()
     }

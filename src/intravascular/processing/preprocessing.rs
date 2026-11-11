@@ -236,6 +236,7 @@ mod preprocessing_tests {
             },
             diastole,
             label: label.to_string(),
+            annotations: Vec::new(),
         }
     }
 

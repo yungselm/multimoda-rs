@@ -134,6 +134,7 @@ mod cl_preprocessing_tests {
                 },
                 extras: HashMap::new(),
                 reference_point: None,
+                annotations: Vec::new(),
             })
             .collect();
         Geometry {
