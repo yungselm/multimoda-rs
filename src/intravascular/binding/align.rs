@@ -42,6 +42,14 @@ use pyo3::prelude::*;
 ///     When ``True``, rotate the Wall contour in every frame (from frame 2 onward)
 ///     so its aortic straight portion aligns to the plane defined by frames 0 and 1.
 ///     Only meaningful for anomalous vessels.  Default is ``False``.
+/// reference_frame : int or None, optional
+///     Original frame whose reference anchors the alignment.  When given, the
+///     geometry is re-anchored first (:meth:`PyGeometry.set_reference_frame`), so
+///     this frame lands on the centerline reference point and its
+///     reference sets the three-point rotation.  For a
+///     ``PyGeometryPair`` only ``geom_a`` is re-anchored, ``geom_b`` follows
+///     ``geom_a``'s per-frame transforms.  ``None`` keeps the current anchor.
+///     Default is ``None``.
 ///
 /// Returns
 /// -------
@@ -81,6 +89,7 @@ use pyo3::prelude::*;
         contour_types=vec![PyContourType::Lumen, PyContourType::Catheter, PyContourType::Wall],
         case_name="None",
         align_wall_anomalous=false,
+        reference_frame=None,
     )
 )]
 pub fn align_three_point(
@@ -98,6 +107,7 @@ pub fn align_three_point(
     contour_types: Vec<PyContourType>,
     case_name: &str,
     align_wall_anomalous: bool,
+    reference_frame: Option<u32>,
 ) -> PyResult<(Py<PyAny>, f64, f64)> {
     let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
@@ -119,6 +129,7 @@ pub fn align_three_point(
             rust_contour_types,
             case_name,
             align_wall_anomalous,
+            reference_frame,
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         let py_result: PyGeometryPair = result_rs.into();
@@ -142,6 +153,7 @@ pub fn align_three_point(
             rust_contour_types,
             case_name,
             align_wall_anomalous,
+            reference_frame,
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         let py_result: PyGeometry = result_rs.into();
@@ -191,6 +203,13 @@ pub fn align_three_point(
 ///     When ``True``, rotate the Wall contour in every frame (from frame 2 onward)
 ///     so its aortic straight portion aligns to the plane defined by frames 0 and 1.
 ///     Only meaningful for anomalous vessels.  Default is ``False``.
+/// reference_frame : int or None, optional
+///     Original frame whose reference anchors the alignment.  When given, the
+///     geometry is re-anchored first (:meth:`PyGeometry.set_reference_frame`), so
+///     this frame lands on the centerline reference point.  For a
+///     ``PyGeometryPair`` only ``geom_a`` is re-anchored, ``geom_b`` follows
+///     ``geom_a``'s per-frame transforms.  ``None`` keeps the current anchor.
+///     Default is ``None``.
 ///
 /// Returns
 /// -------
@@ -225,6 +244,7 @@ pub fn align_three_point(
         contour_types=vec![PyContourType::Lumen, PyContourType::Catheter, PyContourType::Wall],
         case_name="None",
         align_wall_anomalous=false,
+        reference_frame=None,
     )
 )]
 pub fn align_manual(
@@ -240,6 +260,7 @@ pub fn align_manual(
     contour_types: Vec<PyContourType>,
     case_name: &str,
     align_wall_anomalous: bool,
+    reference_frame: Option<u32>,
 ) -> PyResult<(Py<PyAny>, f64, f64)> {
     let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
@@ -258,6 +279,7 @@ pub fn align_manual(
             rust_contour_types,
             case_name,
             align_wall_anomalous,
+            reference_frame,
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         let py_result: PyGeometryPair = result_rs.into();
@@ -279,6 +301,7 @@ pub fn align_manual(
             rust_contour_types,
             case_name,
             align_wall_anomalous,
+            reference_frame,
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         let py_result: PyGeometry = result_rs.into();
@@ -347,6 +370,14 @@ pub fn align_manual(
 ///     When ``True``, rotate the Wall contour in every frame (from frame 2 onward)
 ///     so its aortic straight portion aligns to the plane defined by frames 0 and 1.
 ///     Only meaningful for anomalous vessels.  Default is ``False``.
+/// reference_frame : int or None, optional
+///     Original frame whose reference anchors the alignment.  When given, the
+///     geometry is re-anchored first (:meth:`PyGeometry.set_reference_frame`), so
+///     this frame lands on the centerline reference point and its
+///     reference sets the initial three-point rotation.  For a
+///     ``PyGeometryPair`` only ``geom_a`` is re-anchored, ``geom_b`` follows
+///     ``geom_a``'s per-frame transforms.  ``None`` keeps the current anchor.
+///     Default is ``None``.
 ///
 /// Returns
 /// -------
@@ -392,6 +423,7 @@ pub fn align_manual(
         contour_types=vec![PyContourType::Lumen, PyContourType::Catheter, PyContourType::Wall],
         case_name="None",
         align_wall_anomalous=false,
+        reference_frame=None,
     )
 )]
 pub fn align_combined(
@@ -412,6 +444,7 @@ pub fn align_combined(
     contour_types: Vec<PyContourType>,
     case_name: &str,
     align_wall_anomalous: bool,
+    reference_frame: Option<u32>,
 ) -> PyResult<(Py<PyAny>, f64, f64)> {
     let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
@@ -437,6 +470,7 @@ pub fn align_combined(
             rust_contour_types,
             case_name,
             align_wall_anomalous,
+            reference_frame,
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         let py_result: PyGeometryPair = result_rs.into();
@@ -463,6 +497,7 @@ pub fn align_combined(
             rust_contour_types,
             case_name,
             align_wall_anomalous,
+            reference_frame,
         )
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         let py_result: PyGeometry = result_rs.into();

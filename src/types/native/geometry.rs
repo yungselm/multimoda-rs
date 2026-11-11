@@ -1,8 +1,9 @@
+use super::annotation::AnnotationKind;
 use super::contour::{Contour, ContourType};
 use super::contour_point::ContourPoint;
 use super::frame::Frame;
 use super::record::Record;
-use super::Transform;
+use super::{Point3D, Transform};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
@@ -66,6 +67,77 @@ impl Geometry {
             .iter()
             .position(|f| f.reference_point.is_some())
             .ok_or_else(|| anyhow::anyhow!("No reference point found in any frame"))
+    }
+
+    /// `(original frame, auto, point)` of every `Reference` annotation, in frame order.
+    /// `auto` is a group other than 0.
+    pub fn references(&self) -> Vec<(u32, bool, ContourPoint)> {
+        self.frames
+            .iter()
+            .flat_map(|f| {
+                f.annotations
+                    .iter()
+                    .filter(|a| a.kind == AnnotationKind::Reference)
+                    .filter_map(move |a| {
+                        a.points
+                            .first()
+                            .map(|p| (f.lumen.original_frame, a.group != 0, *p))
+                    })
+            })
+            .collect()
+    }
+
+    /// Original frame of the anchor (the first frame with a reference point), if any.
+    pub fn anchor_frame(&self) -> Option<u32> {
+        self.find_ref_frame_idx()
+            .ok()
+            .map(|i| self.frames[i].lumen.original_frame)
+    }
+
+    /// Makes the first `Reference` annotation of the frame whose lumen `original_frame` is
+    /// `frame` the anchor, at its current coordinates. No other frame keeps a reference point.
+    ///
+    /// The anchor's `point_index` is set to the lumen point nearest to it, the three-point
+    /// centerline alignment takes that lumen point as the reference.
+    pub fn set_reference_frame(&mut self, frame: u32) -> anyhow::Result<()> {
+        let found = self.frames.iter().enumerate().find_map(|(i, f)| {
+            if f.lumen.original_frame != frame {
+                return None;
+            }
+            f.annotations
+                .iter()
+                .filter(|a| a.kind == AnnotationKind::Reference)
+                .find_map(|a| a.points.first())
+                .map(|p| (i, *p))
+        });
+        let Some((idx, point)) = found else {
+            let frames: Vec<u32> = self.references().iter().map(|r| r.0).collect();
+            if self.frames.iter().any(|f| f.lumen.original_frame == frame) {
+                anyhow::bail!(
+                    "frame {frame} has no reference annotation, references are on frames {frames:?}"
+                );
+            }
+            anyhow::bail!(
+                "no frame with original frame {frame}, references are on frames {frames:?}"
+            );
+        };
+
+        let point_index = self.frames[idx]
+            .lumen
+            .points
+            .iter()
+            .min_by(|a, b| a.distance_to(&point).total_cmp(&b.distance_to(&point)))
+            .map_or(0, |p| p.point_index);
+        for f in &mut self.frames {
+            f.reference_point = None;
+        }
+        self.frames[idx].reference_point = Some(ContourPoint {
+            frame_index: frame,
+            point_index,
+            aortic: false,
+            ..point
+        });
+        Ok(())
     }
 
     /// Reorder frames based on order of Vec<Record>

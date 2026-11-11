@@ -61,6 +61,13 @@ impl Processable for Geometry {
     }
 }
 
+/// Places the reference frame on the centerline point nearest `main_ref_pt` and rotates the
+/// frames so the reference and the lumen points at index 0 and n/2 come closest to the three
+/// reference points.
+///
+/// With `reference_frame` the primary geometry is re-anchored on that frame's reference first
+/// ([`AlignTarget::set_reference_frame`]), so that frame lands on the centerline and its
+/// reference drives the rotation.
 pub fn align_three_point_rs<T: Processable>(
     centerline: Centerline,
     mut target: T,
@@ -75,7 +82,13 @@ pub fn align_three_point_rs<T: Processable>(
     contour_types: Vec<ContourType>,
     case_name: &str,
     align_wall_anomalous: bool,
+    reference_frame: Option<u32>,
 ) -> anyhow::Result<(T, f64, f64)> {
+    if let Some(frame) = reference_frame {
+        target
+            .set_reference_frame(frame)
+            .map_err(|e| anyhow!("Couldn't re-anchor on frame {frame}: {e}"))?;
+    }
     let (resampled_centerline, cl_ref_idx, spacing_mm) =
         super::preprocessing::preprocess_centerline(
             centerline,
@@ -127,6 +140,8 @@ pub fn align_three_point_rs<T: Processable>(
     Ok((target, spacing_mm, total_rotation))
 }
 
+/// Rotates the frames by `rotation_angle_deg` and places the reference frame on the centerline
+/// point nearest `ref_pt`. With `reference_frame` the primary geometry is re-anchored first.
 pub fn align_manual_rs<T: Processable>(
     centerline: Centerline,
     mut target: T,
@@ -139,7 +154,13 @@ pub fn align_manual_rs<T: Processable>(
     contour_types: Vec<ContourType>,
     case_name: &str,
     align_wall_anomalous: bool,
+    reference_frame: Option<u32>,
 ) -> anyhow::Result<(T, f64, f64)> {
+    if let Some(frame) = reference_frame {
+        target
+            .set_reference_frame(frame)
+            .map_err(|e| anyhow!("Couldn't re-anchor on frame {frame}: {e}"))?;
+    }
     let (resampled_centerline, cl_ref_idx, spacing_mm) =
         super::preprocessing::preprocess_centerline(centerline, target.primary_geometry(), &ref_pt)
             .map_err(|e| anyhow!("Couldn't resample the centerline: {e}"))?;
@@ -171,12 +192,15 @@ pub fn align_manual_rs<T: Processable>(
 
 /// Combined alignment with three-point initialization and point-cloud refinement.
 ///
+/// With `reference_frame` the primary geometry is re-anchored on that frame's reference first
+/// ([`AlignTarget::set_reference_frame`]), as in [`align_three_point_rs`] and [`align_manual_rs`].
+///
 /// `refine_index_range` counts points of the input `centerline` (branch 0): the refinement
 /// tries every input point within that many points of the initial reference as the ostium
 /// position, with the frames resampled to the frame spacing around it.
 pub fn align_combined_rs<T: Processable>(
     centerline: Centerline,
-    target: T,
+    mut target: T,
     main_ref_pt: (f64, f64, f64),
     counterclockwise_ref_pt: (f64, f64, f64),
     clockwise_ref_pt: (f64, f64, f64),
@@ -191,7 +215,13 @@ pub fn align_combined_rs<T: Processable>(
     contour_types: Vec<ContourType>,
     case_name: &str,
     align_wall_anomalous: bool,
+    reference_frame: Option<u32>,
 ) -> anyhow::Result<(T, f64, f64)> {
+    if let Some(frame) = reference_frame {
+        target
+            .set_reference_frame(frame)
+            .map_err(|e| anyhow!("Couldn't re-anchor on frame {frame}: {e}"))?;
+    }
     let original = target.clone();
 
     println!("\nStep 1: Finding initial rotation via three-point method");
@@ -516,4 +546,254 @@ fn transfrom_tuples_to_contourpoints(points: &[(f64, f64, f64)]) -> Vec<ContourP
         contour_points.push(contour_point);
     }
     contour_points
+}
+
+#[cfg(test)]
+mod reference_frame_tests {
+    use super::*;
+    use crate::types::native::{Annotation, AnnotationKind, AnnotationRole, CenterlinePoint};
+    use crate::types::native::{Point3D, Transform};
+    use std::collections::HashMap;
+    use std::f64::consts::{FRAC_PI_2, PI, TAU};
+
+    const N_POINTS: u32 = 8;
+
+    fn reference(frame: u32, x: f64, y: f64, z: f64, auto: bool) -> Annotation {
+        let point = ContourPoint {
+            frame_index: frame,
+            point_index: 0,
+            x,
+            y,
+            z,
+            aortic: false,
+        };
+        Annotation::new(
+            AnnotationKind::Reference,
+            AnnotationRole::Point,
+            auto as u32,
+            vec![point],
+        )
+    }
+
+    /// Five unit circles 1 mm apart, original frames 10..=14. Anchor on frame 10 at lumen
+    /// point 0, an automatic reference on frame 13 at lumen point 2 (90 degrees).
+    fn circle_geometry() -> Geometry {
+        let frames = (0..5u32)
+            .map(|i| {
+                let original = 10 + i;
+                let z = i as f64;
+                let points = (0..N_POINTS)
+                    .map(|p| {
+                        let theta = p as f64 * TAU / N_POINTS as f64;
+                        ContourPoint {
+                            frame_index: original,
+                            point_index: p,
+                            x: theta.cos(),
+                            y: theta.sin(),
+                            z,
+                            aortic: false,
+                        }
+                    })
+                    .collect();
+                let mut lumen = Contour {
+                    id: i,
+                    original_frame: original,
+                    points,
+                    centroid: None,
+                    aortic_thickness: None,
+                    pulmonary_thickness: None,
+                    kind: ContourType::Lumen,
+                };
+                lumen.compute_centroid();
+                let mut annotations = Vec::new();
+                if original == 10 {
+                    annotations.push(reference(original, 1.0, 0.0, z, false));
+                }
+                if original == 13 {
+                    annotations.push(reference(original, 0.0, 1.0, z, true));
+                }
+                Frame {
+                    id: i,
+                    centroid: lumen.centroid.unwrap(),
+                    lumen,
+                    extras: HashMap::new(),
+                    reference_point: (original == 10).then_some(ContourPoint {
+                        frame_index: original,
+                        point_index: 0,
+                        x: 1.0,
+                        y: 0.0,
+                        z,
+                        aortic: false,
+                    }),
+                    annotations,
+                }
+            })
+            .collect();
+        Geometry {
+            frames,
+            label: "circles".to_string(),
+        }
+    }
+
+    /// Straight centerline on the z axis from z = 30 down to 0, 0.1 mm apart.
+    fn z_axis_centerline() -> Centerline {
+        let points = (0..=300u32)
+            .map(|k| CenterlinePoint {
+                contour_point: ContourPoint {
+                    frame_index: k,
+                    point_index: k,
+                    x: 0.0,
+                    y: 0.0,
+                    z: 30.0 - 0.1 * k as f64,
+                    aortic: false,
+                },
+                tangent: Vector3::new(0.0, 0.0, 1.0),
+                radius: 0.0,
+                branch_id: 0,
+            })
+            .collect();
+        Centerline {
+            points,
+            branch_start_indices: vec![0],
+        }
+    }
+
+    fn frame_of(geometry: &Geometry, original: u32) -> &Frame {
+        geometry
+            .frames
+            .iter()
+            .find(|f| f.lumen.original_frame == original)
+            .unwrap()
+    }
+
+    fn close(a: (f64, f64, f64), b: (f64, f64, f64)) -> bool {
+        a.distance_to(&b) < 1e-6
+    }
+
+    #[test]
+    fn test_set_reference_frame_moves_the_anchor_with_its_frame() -> anyhow::Result<()> {
+        // transform first, the anchor takes the moved annotation coordinates
+        let mut geometry = circle_geometry().rotate(FRAC_PI_2, (0.0, 0.0));
+        geometry = geometry.translate(1.0, 2.0, 3.0);
+        assert_eq!(geometry.anchor_frame(), Some(10));
+        assert_eq!(
+            geometry
+                .references()
+                .iter()
+                .map(|(f, auto, _)| (*f, *auto))
+                .collect::<Vec<_>>(),
+            vec![(10, false), (13, true)]
+        );
+
+        geometry.set_reference_frame(13)?;
+        assert_eq!(geometry.anchor_frame(), Some(13));
+        let anchored: Vec<u32> = geometry
+            .frames
+            .iter()
+            .filter(|f| f.reference_point.is_some())
+            .map(|f| f.lumen.original_frame)
+            .collect();
+        assert_eq!(anchored, vec![13]);
+
+        // (0, 1, 3) rotated by 90 degrees and translated
+        let rp = frame_of(&geometry, 13).reference_point.unwrap();
+        assert!(close((rp.x, rp.y, rp.z), (0.0, 2.0, 6.0)), "{rp:?}");
+        assert_eq!(rp.frame_index, 13);
+        // the lumen point it sits on, the one three-point alignment takes as reference
+        assert_eq!(rp.point_index, 2);
+
+        let err = geometry.set_reference_frame(12).unwrap_err().to_string();
+        assert!(
+            err.contains("frame 12 has no reference annotation"),
+            "{err}"
+        );
+        let err = geometry.set_reference_frame(99).unwrap_err().to_string();
+        assert!(err.contains("no frame with original frame 99"), "{err}");
+        assert_eq!(
+            geometry.anchor_frame(),
+            Some(13),
+            "a failed call keeps the anchor"
+        );
+
+        let mut pair = GeometryPair::new(circle_geometry(), circle_geometry())?;
+        pair.set_reference_frame(13)?;
+        assert_eq!(pair.geom_a.anchor_frame(), Some(13));
+        assert_eq!(pair.geom_b.anchor_frame(), Some(10));
+        Ok(())
+    }
+
+    #[test]
+    fn test_align_manual_reference_frame_places_the_chosen_frame() -> anyhow::Result<()> {
+        let align = |reference_frame: Option<u32>| {
+            align_manual_rs(
+                z_axis_centerline(),
+                circle_geometry(),
+                0.0,
+                (0.0, 0.0, 15.0),
+                false,
+                true,
+                0,
+                "",
+                vec![ContourType::Lumen],
+                "",
+                false,
+                reference_frame,
+            )
+            .map(|(g, ..)| g)
+        };
+        let default = align(None)?;
+        let chosen = align(Some(13))?;
+
+        assert!(close(frame_of(&default, 10).centroid, (0.0, 0.0, 15.0)));
+        assert!(close(frame_of(&chosen, 13).centroid, (0.0, 0.0, 15.0)));
+        // frame 10 now sits three frames (3 mm) further along the centerline
+        assert!(close(frame_of(&chosen, 10).centroid, (0.0, 0.0, 18.0)));
+        assert_eq!(chosen.anchor_frame(), Some(13));
+        assert!(align(Some(12)).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn test_align_three_point_rotates_with_the_chosen_reference() -> anyhow::Result<()> {
+        // ccw and cw targets on the axis are equally far from every lumen point, so only the
+        // main target decides the rotation: the reference must turn towards +x.
+        let align = |reference_frame: Option<u32>| {
+            align_three_point_rs(
+                z_axis_centerline(),
+                circle_geometry(),
+                (1.0, 0.0, 15.0),
+                (0.0, 0.0, 15.0),
+                (0.0, 0.0, 15.0),
+                1f64.to_radians(),
+                false,
+                true,
+                0,
+                "",
+                vec![ContourType::Lumen],
+                "",
+                false,
+                reference_frame,
+            )
+        };
+        let step = 1f64.to_radians();
+
+        let (default, _, rotation) = align(None)?;
+        assert!(rotation.abs() < step, "{}", rotation.to_degrees());
+        assert!(close(frame_of(&default, 10).centroid, (0.0, 0.0, 15.0)));
+
+        // the reference on frame 13 sits at 90 degrees, a 270 degree turn brings it to +x
+        let (chosen, _, rotation) = align(Some(13))?;
+        assert!(
+            (rotation - 1.5 * PI).abs() < step,
+            "{}",
+            rotation.to_degrees()
+        );
+        let frame = frame_of(&chosen, 13);
+        assert!(close(frame.centroid, (0.0, 0.0, 15.0)));
+        let rp = frame.reference_point.unwrap();
+        assert!(rp.distance_to(&(1.0, 0.0, 15.0)) < 0.05, "{rp:?}");
+        let annotated = frame.annotations[0].points[0];
+        assert!(rp.distance_to(&annotated) < 1e-9);
+        Ok(())
+    }
 }

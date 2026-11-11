@@ -118,6 +118,11 @@ fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<AlignLogTuple> {
 /// postprocessing : bool, optional
 ///     Whether to adjust spacing within/between geometries to equal
 ///     offsets.  Default is ``True``.
+/// reference_frames : tuple of (int or None), optional
+///     Frame (numbered as in the reference-point files) whose reference anchors each
+///     geometry, ``(a, b, c, d)`` in the order of the inputs above. ``None`` keeps the
+///     default anchor, the first reference placed by hand (``auto = 0``), else the first
+///     one. Default is ``(None, None, None, None)``.
 ///
 /// Returns
 /// -------
@@ -163,6 +168,7 @@ fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<AlignLogTuple> {
         bruteforce = false,
         smooth = true,
         postprocessing = true,
+        reference_frames = (None, None, None, None),
     )
 )]
 pub fn from_file_full(
@@ -186,6 +192,7 @@ pub fn from_file_full(
     bruteforce: bool,
     smooth: bool,
     postprocessing: bool,
+    reference_frames: (Option<u32>, Option<u32>, Option<u32>, Option<u32>),
 ) -> PyResult<FullResult> {
     let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
@@ -224,6 +231,12 @@ pub fn from_file_full(
         bruteforce,
         sample_size,
         postprocessing,
+        vec![
+            reference_frames.0,
+            reference_frames.1,
+            reference_frames.2,
+            reference_frames.3,
+        ],
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))?;
 
@@ -311,6 +324,11 @@ pub fn from_file_full(
 /// postprocessing : bool, optional
 ///     Whether to equalise spacing within/between geometries.  Default is
 ///     ``True``.
+/// reference_frames : tuple of (int or None), optional
+///     Frame (numbered as in the reference-point files) whose reference anchors each
+///     geometry, ``(a, b, c, d)`` in the order of the inputs above. ``None`` keeps the
+///     default anchor, the first reference placed by hand (``auto = 0``), else the first
+///     one. Default is ``(None, None, None, None)``.
 ///
 /// Returns
 /// -------
@@ -349,6 +367,7 @@ pub fn from_file_full(
     bruteforce = false,
     smooth = true,
     postprocessing = true,
+    reference_frames = (None, None, None, None),
 ))]
 pub fn from_file_doublepair(
     input_path_ab: &str,
@@ -369,6 +388,7 @@ pub fn from_file_doublepair(
     bruteforce: bool,
     smooth: bool,
     postprocessing: bool,
+    reference_frames: (Option<u32>, Option<u32>, Option<u32>, Option<u32>),
 ) -> PyResult<DoublePairResult> {
     let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
@@ -396,6 +416,12 @@ pub fn from_file_doublepair(
         bruteforce,
         sample_size,
         postprocessing,
+        vec![
+            reference_frames.0,
+            reference_frames.1,
+            reference_frames.2,
+            reference_frames.3,
+        ],
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))?;
 
@@ -474,6 +500,12 @@ pub fn from_file_doublepair(
 /// postprocessing : bool, optional
 ///     Whether to equalise spacing within/between geometries.  Default is
 ///     ``True``.
+/// reference_frames : tuple of (int or None), optional
+///     Frame (numbered as in the reference-point files) whose reference anchors the
+///     ``(diastole, systole)`` geometry. ``None`` keeps the default anchor, the first
+///     reference placed by hand (``auto = 0``), else the first one. Choose frames that
+///     show the same anatomy in both phases, the pair is aligned and trimmed around them.
+///     Default is ``(None, None)``.
 ///
 /// Returns
 /// -------
@@ -513,6 +545,7 @@ pub fn from_file_doublepair(
     bruteforce = false,
     smooth = true,
     postprocessing = true,
+    reference_frames = (None, None),
 ))]
 pub fn from_file_singlepair(
     input_path: &str,
@@ -531,6 +564,7 @@ pub fn from_file_singlepair(
     bruteforce: bool,
     smooth: bool,
     postprocessing: bool,
+    reference_frames: (Option<u32>, Option<u32>),
 ) -> PyResult<PairResult> {
     let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
@@ -554,6 +588,7 @@ pub fn from_file_singlepair(
         bruteforce,
         sample_size,
         postprocessing,
+        vec![reference_frames.0, reference_frames.1],
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))?;
 
@@ -610,6 +645,10 @@ pub fn from_file_singlepair(
 ///     Whether to use brute-force alignment.  Default is ``False``.
 /// smooth : bool, optional
 ///     Whether to smooth frames after alignment.  Default is ``True``.
+/// reference_frame : int or None, optional
+///     Frame (numbered as in the reference-point file) whose reference anchors the
+///     geometry. ``None`` keeps the default anchor, the first reference placed by hand
+///     (``auto = 0``), else the first one. Default is ``None``.
 ///
 /// Returns
 /// -------
@@ -652,6 +691,7 @@ pub fn from_file_singlepair(
     output_path = "output/single",
     bruteforce = false,
     smooth = true,
+    reference_frame = None,
 ))]
 pub fn from_file_single(
     input_path: &str,
@@ -669,6 +709,7 @@ pub fn from_file_single(
     output_path: &str,
     bruteforce: bool,
     smooth: bool,
+    reference_frame: Option<u32>,
 ) -> PyResult<(PyGeometry, Vec<AlignLogTuple>)> {
     let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
@@ -690,6 +731,7 @@ pub fn from_file_single(
         smooth,
         bruteforce,
         sample_size,
+        vec![reference_frame],
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))?;
 
@@ -762,6 +804,10 @@ pub fn from_file_single(
 /// postprocessing : bool, optional
 ///     Whether to equalise spacing within/between geometries.  Default is
 ///     ``True``.
+/// reference_frames : tuple of (int or None), optional
+///     Frame (``frame_index`` of the inputs' references) whose reference anchors
+///     each geometry, ``(a, b, c, d)`` in the order of the inputs. ``None`` keeps
+///     the input's ``ref_point``. Default is ``(None, None, None, None)``.
 ///
 /// Returns
 /// -------
@@ -822,6 +868,7 @@ pub fn from_file_single(
         bruteforce = false,
         smooth = true,
         postprocessing = true,
+        reference_frames = (None, None, None, None),
     )
 )]
 pub fn from_array_full(
@@ -846,6 +893,7 @@ pub fn from_array_full(
     bruteforce: bool,
     smooth: bool,
     postprocessing: bool,
+    reference_frames: (Option<u32>, Option<u32>, Option<u32>, Option<u32>),
 ) -> PyResult<FullResult> {
     let labels: Vec<String> = vec![]; // InputData carries its own labels
 
@@ -899,6 +947,12 @@ pub fn from_array_full(
         bruteforce,
         sample_size,
         postprocessing,
+        vec![
+            reference_frames.0,
+            reference_frames.1,
+            reference_frames.2,
+            reference_frames.3,
+        ],
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))?;
 
@@ -977,6 +1031,10 @@ pub fn from_array_full(
 /// postprocessing : bool, optional
 ///     Whether to equalise spacing within/between geometries.  Default is
 ///     ``True``.
+/// reference_frames : tuple of (int or None), optional
+///     Frame (``frame_index`` of the inputs' references) whose reference anchors
+///     each geometry, ``(a, b, c, d)`` in the order of the inputs. ``None`` keeps
+///     the input's ``ref_point``. Default is ``(None, None, None, None)``.
 ///
 /// Returns
 /// -------
@@ -1031,6 +1089,7 @@ pub fn from_array_full(
         bruteforce = false,
         smooth = true,
         postprocessing = true,
+        reference_frames = (None, None, None, None),
     )
 )]
 pub fn from_array_doublepair(
@@ -1053,6 +1112,7 @@ pub fn from_array_doublepair(
     bruteforce: bool,
     smooth: bool,
     postprocessing: bool,
+    reference_frames: (Option<u32>, Option<u32>, Option<u32>, Option<u32>),
 ) -> PyResult<DoublePairResult> {
     let labels: Vec<String> = vec![]; // InputData carries its own labels
 
@@ -1095,6 +1155,12 @@ pub fn from_array_doublepair(
         bruteforce,
         sample_size,
         postprocessing,
+        vec![
+            reference_frames.0,
+            reference_frames.1,
+            reference_frames.2,
+            reference_frames.3,
+        ],
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))?;
 
@@ -1159,6 +1225,11 @@ pub fn from_array_doublepair(
 /// postprocessing : bool, optional
 ///     Whether to equalise spacing within/between geometries.  Default is
 ///     ``True``.
+/// reference_frames : tuple of (int or None), optional
+///     Frame (``frame_index`` of the inputs' references) whose reference anchors
+///     the ``(diastole, systole)`` geometry. ``None`` keeps the input's ``ref_point``.
+///     Choose frames that show the same anatomy in both phases, the pair is aligned
+///     and trimmed around them. Default is ``(None, None)``.
 ///
 /// Returns
 /// -------
@@ -1205,6 +1276,7 @@ pub fn from_array_doublepair(
         bruteforce = false,
         smooth = true,
         postprocessing = true,
+        reference_frames = (None, None),
     )
 )]
 pub fn from_array_singlepair(
@@ -1224,6 +1296,7 @@ pub fn from_array_singlepair(
     bruteforce: bool,
     smooth: bool,
     postprocessing: bool,
+    reference_frames: (Option<u32>, Option<u32>),
 ) -> PyResult<PairResult> {
     let labels: Vec<String> = vec![]; // InputData carries its own labels
 
@@ -1256,6 +1329,7 @@ pub fn from_array_singlepair(
         bruteforce,
         sample_size,
         postprocessing,
+        vec![reference_frames.0, reference_frames.1],
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))?;
 
@@ -1306,6 +1380,9 @@ pub fn from_array_singlepair(
 ///     Whether to use brute-force alignment.  Default is ``False``.
 /// smooth : bool, optional
 ///     Whether to smooth frames after alignment.  Default is ``True``.
+/// reference_frame : int or None, optional
+///     Frame (``frame_index`` of the input's references) whose reference anchors
+///     the geometry. ``None`` keeps the input's ``ref_point``. Default is ``None``.
 ///
 /// Returns
 /// -------
@@ -1346,6 +1423,7 @@ pub fn from_array_singlepair(
     output_path="output/single",
     bruteforce = false,
     smooth = true,
+    reference_frame = None,
 ))]
 pub fn from_array_single(
     input_data: PyInputData,
@@ -1361,6 +1439,7 @@ pub fn from_array_single(
     output_path: &str,
     bruteforce: bool,
     smooth: bool,
+    reference_frame: Option<u32>,
 ) -> PyResult<(PyGeometry, Vec<AlignLogTuple>)> {
     let labels: Vec<String> = vec![]; // InputData carries its own labels
 
@@ -1388,6 +1467,7 @@ pub fn from_array_single(
         smooth,
         bruteforce,
         sample_size,
+        vec![reference_frame],
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))?;
 
@@ -1630,6 +1710,7 @@ mod tests {
             false,
             20,
             false,
+            vec![],
         )?;
         Ok((ab.label, cd.label, ac.label, bd.label))
     }
@@ -1696,5 +1777,71 @@ mod tests {
         assert_eq!(file_cd, arr_cd);
         assert_eq!(file_ac, arr_ac);
         assert_eq!(file_bd, arr_bd);
+    }
+
+    #[test]
+    fn test_pair_reference_frames_keep_the_overlap() -> anyhow::Result<()> {
+        use crate::intravascular::binding::entry::pair_processing_rs;
+
+        // the diastolic file starts with a hand-placed reference on frame 2, so the default
+        // pairs dia frame 2 with sys frame 10 and trims the pair to the frames around them
+        let src = std::path::Path::new("data/fixtures/idealized_geometry");
+        let dir = std::env::temp_dir().join(format!(
+            "multimodars_pair_references_{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir)?;
+        for f in [
+            "diastolic_contours.csv",
+            "systolic_contours.csv",
+            "systolic_reference_points.csv",
+        ] {
+            std::fs::copy(src.join(f), dir.join(f))?;
+        }
+        std::fs::write(
+            dir.join("diastolic_reference_points.csv"),
+            "2,6,4.5,2,0\n10,6,4.5,10,0\n",
+        )?;
+        let run = |reference_frames: Vec<Option<u32>>| {
+            pair_processing_rs(
+                vec![],
+                (4.5, 4.5),
+                0.5,
+                20,
+                dir.to_str(),
+                None,
+                None,
+                false,
+                0,
+                lumen_only(),
+                true,
+                "",
+                90.0,
+                90.0,
+                false,
+                false,
+                20,
+                true,
+                reference_frames,
+            )
+            .map(|(pair, ..)| pair)
+        };
+        let mismatched = run(vec![]);
+        let matched = run(vec![Some(10), None]);
+        std::fs::remove_dir_all(&dir).ok();
+        let (mismatched, matched) = (mismatched?, matched?);
+
+        assert_eq!(matched.geom_a.frames.len(), 11);
+        assert_eq!(matched.geom_b.frames.len(), 11);
+        assert!(
+            mismatched.geom_a.frames.len() < 11,
+            "{}",
+            mismatched.geom_a.frames.len()
+        );
+        assert_eq!(matched.geom_a.anchor_frame(), Some(10));
+        assert_eq!(mismatched.geom_a.anchor_frame(), Some(2));
+        // the unused reference still travels with its frame
+        assert_eq!(matched.geom_a.references().len(), 2);
+        Ok(())
     }
 }

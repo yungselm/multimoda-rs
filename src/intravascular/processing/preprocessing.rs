@@ -24,164 +24,50 @@ fn path_basename(path: &Path) -> String {
 /// `labels` is only used for path-based processing (InputData carries its own
 /// labels).  Pass 1 label for `Single`, 2 for `Pair`, 4 for `Full`.  If the
 /// count does not match, the last component of each path is used instead.
+///
+/// `reference_frames[i]` chooses the anchor of geometry `i` (file frame numbering, `None`
+/// keeps the default anchor of a path or the `ref_point` of an InputData, missing entries
+/// count as `None`).
+///
+/// Geometries are numbered in the order they are returned: `Single` 0, `Pair` diastole 0 and
+/// systole 1, `Full` diastole and systole of `path_a` (0, 1) then of `path_b` (2, 3). With
+/// `InputData` the i-th input is geometry i.
 pub fn prepare_n_geometries(
     labels: &[String],
     image_center: (f64, f64),
     radius: f64,
     n_points: u32,
     mut input_data: Option<Vec<InputData>>,
-    _diastole: bool,
+    diastole: bool,
     path_a: Option<&Path>,
     path_b: Option<&Path>,
     processing: ProcessingOptions,
+    reference_frames: &[Option<u32>],
 ) -> anyhow::Result<Vec<Geometry>> {
-    match processing {
-        ProcessingOptions::Single => {
-            // Option 1: Use InputData if available
-            if let Some(ref mut inputs) = input_data {
-                if !inputs.is_empty() {
-                    let input = inputs.remove(0);
+    let n = match processing {
+        ProcessingOptions::Single => 1,
+        ProcessingOptions::Pair => 2,
+        ProcessingOptions::Full => 4,
+    };
+    let reference_frame = |i: usize| reference_frames.get(i).copied().flatten();
+
+    // Option 1: use InputData if there are enough
+    if let Some(ref mut inputs) = input_data {
+        if inputs.len() >= n {
+            return inputs
+                .drain(..n)
+                .enumerate()
+                .map(|(i, mut input)| {
+                    if let Some(frame) = reference_frame(i) {
+                        input
+                            .set_reference_frame(frame)
+                            .with_context(|| format!("choosing the anchor of {}", input.label))?;
+                    }
                     let diastole = input.diastole;
-                    let label_str = input.label.as_str().to_string();
-                    let geom = io::build_geometry_from_inputdata(
+                    let label = input.label.clone();
+                    io::build_geometry_from_inputdata(
                         Some(input),
                         None,
-                        &label_str,
-                        diastole,
-                        image_center,
-                        radius,
-                        n_points,
-                    )
-                    .context("Failed to build geometry from provided InputData (Single)")?;
-                    return Ok(vec![geom]);
-                }
-            }
-
-            // Option 2: Use path
-            let path = path_a.or(path_b).ok_or_else(|| {
-                anyhow::anyhow!("Single processing requires at least one InputData or one path (path_a or path_b)")
-            })?;
-
-            let label = if labels.len() == 1 {
-                labels[0].clone()
-            } else {
-                path_basename(path)
-            };
-
-            let geom = io::build_geometry_from_inputdata(
-                None,
-                Some(path),
-                &label,
-                _diastole,
-                image_center,
-                radius,
-                n_points,
-            )
-            .context("Failed to build geometry from path (Single)")?;
-            Ok(vec![geom])
-        }
-
-        ProcessingOptions::Pair => {
-            // Option 1: Use InputData if available (need 2)
-            if let Some(ref mut inputs) = input_data {
-                if inputs.len() >= 2 {
-                    let mut geometries = Vec::with_capacity(2);
-                    for _ in 0..2 {
-                        let input = inputs.remove(0);
-                        let diastole = input.diastole;
-                        let label_str = input.label.as_str().to_string();
-                        let geom = io::build_geometry_from_inputdata(
-                            Some(input),
-                            None,
-                            &label_str,
-                            diastole,
-                            image_center,
-                            radius,
-                            n_points,
-                        )
-                        .context("Failed to build geometry for Pair from InputData")?;
-                        geometries.push(geom);
-                    }
-                    return Ok(geometries);
-                }
-            }
-
-            // Option 2: Use path (create 2 geometries with different diastole values)
-            let path = path_a.or(path_b).ok_or_else(|| {
-                anyhow::anyhow!("Pair processing requires at least two InputData or one path (path_a or path_b)")
-            })?;
-
-            let use_labels = labels.len() == 2;
-            let basename = path_basename(path);
-            let mut geometries = Vec::with_capacity(2);
-            for (idx, &diastole) in [true, false].iter().enumerate() {
-                let label = if use_labels {
-                    labels[idx].clone()
-                } else {
-                    basename.clone()
-                };
-                let geom = io::build_geometry_from_inputdata(
-                    None,
-                    Some(path),
-                    &label,
-                    diastole,
-                    image_center,
-                    radius,
-                    n_points,
-                )
-                .with_context(|| {
-                    format!("Failed to build geometry for Pair with diastole={diastole}")
-                })?;
-                geometries.push(geom);
-            }
-            Ok(geometries)
-        }
-
-        ProcessingOptions::Full => {
-            // Option 1: Use InputData if available (need 4)
-            if let Some(ref mut inputs) = input_data {
-                if inputs.len() >= 4 {
-                    let mut geometries = Vec::with_capacity(4);
-                    for _ in 0..4 {
-                        let input = inputs.remove(0);
-                        let diastole = input.diastole;
-                        let label_str = input.label.as_str().to_string();
-                        let geom = io::build_geometry_from_inputdata(
-                            Some(input),
-                            None,
-                            &label_str,
-                            diastole,
-                            image_center,
-                            radius,
-                            n_points,
-                        )
-                        .context("Failed to build geometry for Full from InputData")?;
-                        geometries.push(geom);
-                    }
-                    return Ok(geometries);
-                }
-            }
-
-            // Option 2: Use paths (need 2 paths)
-            let (path_a, path_b) = match (path_a, path_b) {
-                (Some(a), Some(b)) => (a, b),
-                _ => anyhow::bail!("Full processing requires either at least 4 InputData or both path_a and path_b"),
-            };
-
-            let use_labels = labels.len() == 4;
-            let mut geometries = Vec::with_capacity(4);
-            let mut idx = 0usize;
-            for &path in &[path_a, path_b] {
-                let basename = path_basename(path);
-                for &diastole in &[true, false] {
-                    let label = if use_labels {
-                        labels[idx].clone()
-                    } else {
-                        basename.clone()
-                    };
-                    let geom = io::build_geometry_from_inputdata(
-                        None,
-                        Some(path),
                         &label,
                         diastole,
                         image_center,
@@ -189,17 +75,60 @@ pub fn prepare_n_geometries(
                         n_points,
                     )
                     .with_context(|| {
-                        format!(
-                            "Failed to build geometry for Full from path with diastole={diastole}"
-                        )
-                    })?;
-                    geometries.push(geom);
-                    idx += 1;
-                }
-            }
-            Ok(geometries)
+                        format!("Failed to build geometry from provided InputData ({processing:?})")
+                    })
+                })
+                .collect();
         }
     }
+
+    // Option 2: use the paths
+    let jobs: Vec<(&Path, bool)> = match processing {
+        ProcessingOptions::Single => {
+            let path = path_a.or(path_b).ok_or_else(|| {
+                anyhow::anyhow!("Single processing requires at least one InputData or one path (path_a or path_b)")
+            })?;
+            vec![(path, diastole)]
+        }
+        ProcessingOptions::Pair => {
+            let path = path_a.or(path_b).ok_or_else(|| {
+                anyhow::anyhow!("Pair processing requires at least two InputData or one path (path_a or path_b)")
+            })?;
+            vec![(path, true), (path, false)]
+        }
+        ProcessingOptions::Full => match (path_a, path_b) {
+            (Some(a), Some(b)) => vec![(a, true), (a, false), (b, true), (b, false)],
+            _ => anyhow::bail!(
+                "Full processing requires either at least 4 InputData or both path_a and path_b"
+            ),
+        },
+    };
+
+    let use_labels = labels.len() == n;
+    jobs.into_iter()
+        .enumerate()
+        .map(|(i, (path, diastole))| {
+            let label = if use_labels {
+                labels[i].clone()
+            } else {
+                path_basename(path)
+            };
+            io::build_geometry_from_path(
+                path,
+                reference_frame(i),
+                &label,
+                diastole,
+                image_center,
+                radius,
+                n_points,
+            )
+            .with_context(|| {
+                format!(
+                    "Failed to build geometry ({processing:?}) from path with diastole={diastole}"
+                )
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -232,10 +161,88 @@ mod preprocessing_tests {
                 z: 0.0,
                 aortic: false,
             },
+            references: Vec::new(),
             diastole,
             label: label.to_string(),
             annotations: Vec::new(),
         }
+    }
+
+    #[test]
+    fn test_reference_frames_choose_each_anchor() -> anyhow::Result<()> {
+        let src = Path::new("data/fixtures/ivus_stress");
+        let dir = std::env::temp_dir().join(format!(
+            "multimodars_prepare_references_{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir)?;
+        for f in ["diastolic_contours.csv", "systolic_contours.csv"] {
+            std::fs::copy(src.join(f), dir.join(f))?;
+        }
+        std::fs::write(
+            dir.join("diastolic_reference_points.csv"),
+            "288\t4.0\t3.0\t1.0\t1\n314\t4.4\t3.4\t20.6\t0\n",
+        )?;
+        std::fs::write(
+            dir.join("systolic_reference_points.csv"),
+            "255\t4.0\t3.0\t1.0\t1\n281\t4.5\t3.5\t18.0\t0\n",
+        )?;
+        let prepare = |frames: &[Option<u32>]| {
+            prepare_n_geometries(
+                &[],
+                (4.5, 4.5),
+                0.5,
+                20,
+                None,
+                true,
+                Some(&dir),
+                None,
+                ProcessingOptions::Pair,
+                frames,
+            )
+        };
+        let anchors = |geoms: &[Geometry]| -> Vec<u32> {
+            geoms
+                .iter()
+                .map(|g| {
+                    g.frames[g.find_ref_frame_idx().unwrap()]
+                        .lumen
+                        .original_frame
+                })
+                .collect()
+        };
+        let default = prepare(&[])?;
+        let chosen = prepare(&[Some(288), None])?;
+        let both = prepare(&[Some(288), Some(255)])?;
+        let unknown = prepare(&[None, Some(1)]);
+        std::fs::remove_dir_all(&dir).ok();
+
+        assert_eq!(anchors(&default), vec![314, 281]);
+        assert_eq!(anchors(&chosen), vec![288, 281]);
+        assert_eq!(anchors(&both), vec![288, 255]);
+        let err = format!("{:#}", unknown.unwrap_err());
+        assert!(err.contains("no reference point on frame 1"), "{err}");
+
+        // with InputData the i-th input is geometry i
+        let inputs = vec![
+            create_mock_input_data("a", true),
+            create_mock_input_data("b", false),
+        ];
+        let err = prepare_n_geometries(
+            &[],
+            (4.5, 4.5),
+            0.5,
+            20,
+            Some(inputs),
+            true,
+            None,
+            None,
+            ProcessingOptions::Pair,
+            &[None, Some(7)],
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("anchor of b"), "{err:#}");
+        Ok(())
     }
 
     #[test]
@@ -250,6 +257,7 @@ mod preprocessing_tests {
             Some(Path::new("data/fixtures/ivus_stress")),
             None,
             ProcessingOptions::Single,
+            &[],
         )?;
         let geom = &geometry[0];
 
@@ -271,6 +279,7 @@ mod preprocessing_tests {
             Some(Path::new("data/fixtures/ivus_stress")),
             None,
             ProcessingOptions::Pair,
+            &[],
         )?;
         let geom = &geometry[0];
 
@@ -294,6 +303,7 @@ mod preprocessing_tests {
             None,
             None,
             ProcessingOptions::Single,
+            &[],
         )?;
 
         assert_eq!(geometry.len(), 1);
@@ -314,6 +324,7 @@ mod preprocessing_tests {
             Some(Path::new("data/fixtures/ivus_stress")),
             None,
             ProcessingOptions::Single,
+            &[],
         )?;
 
         assert_eq!(geometry.len(), 1);
@@ -337,6 +348,7 @@ mod preprocessing_tests {
             None,
             None,
             ProcessingOptions::Pair,
+            &[],
         )?;
 
         assert_eq!(geometry.len(), 2);
@@ -357,6 +369,7 @@ mod preprocessing_tests {
             Some(Path::new("data/fixtures/ivus_stress")),
             None,
             ProcessingOptions::Pair,
+            &[],
         )?;
 
         assert_eq!(geometry.len(), 2);
@@ -385,6 +398,7 @@ mod preprocessing_tests {
             None,
             None,
             ProcessingOptions::Full,
+            &[],
         )?;
 
         assert_eq!(geometry.len(), 4);
@@ -413,6 +427,7 @@ mod preprocessing_tests {
             Some(Path::new("data/fixtures/ivus_stress")),
             Some(Path::new("data/fixtures/ivus_rest")),
             ProcessingOptions::Full,
+            &[],
         )?;
 
         assert_eq!(geometry.len(), 4);
@@ -435,6 +450,7 @@ mod preprocessing_tests {
             Some(Path::new("data/ivus_stress")),
             Some(Path::new("data/ivus_rest")),
             ProcessingOptions::Single,
+            &[],
         )?;
 
         assert_eq!(geometry.len(), 1);
@@ -457,6 +473,7 @@ mod preprocessing_tests {
             Some(Path::new("data/fixtures/ivus_stress")),
             None,
             ProcessingOptions::Pair,
+            &[],
         )?;
 
         assert_eq!(geometry.len(), 2);
@@ -477,6 +494,7 @@ mod preprocessing_tests {
             None,
             None,
             ProcessingOptions::Single,
+            &[],
         );
 
         assert!(result.is_err());
@@ -495,6 +513,7 @@ mod preprocessing_tests {
             None,
             None,
             ProcessingOptions::Pair,
+            &[],
         );
 
         assert!(result.is_err());
@@ -519,6 +538,7 @@ mod preprocessing_tests {
             Some(Path::new("data/ivus_stress")),
             None,
             ProcessingOptions::Full,
+            &[],
         );
 
         assert!(result.is_err());

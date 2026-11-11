@@ -32,7 +32,11 @@ pub struct InputData {
     pub lumen: Vec<ContourPoint>,
     pub eem: Option<Vec<ContourPoint>>,
     pub record: Option<Vec<Record>>,
+    /// The anchor: in-pullback orientation, pairing and centerline placement use it.
     pub ref_point: ContourPoint,
+    /// Every reference `(point, auto)`, the anchor among them. Each becomes a
+    /// `Reference` / `Point` annotation of its frame (group 1 if automatic, 0 if by hand).
+    pub references: Vec<(ContourPoint, bool)>,
     pub diastole: bool,
     pub label: String,
     /// `(original frame, annotation)` pairs, frame numbered like `lumen`.
@@ -45,6 +49,7 @@ impl InputData {
         eem: Option<Vec<ContourPoint>>,
         record: Option<Vec<Record>>,
         ref_point: ContourPoint,
+        references: Vec<(ContourPoint, bool)>,
         diastole: bool,
         label: String,
         annotations: Vec<(u32, Annotation)>,
@@ -53,6 +58,7 @@ impl InputData {
             lumen,
             eem,
             record,
+            references: with_anchor(references, ref_point),
             ref_point,
             diastole,
             label,
@@ -60,11 +66,31 @@ impl InputData {
         })
     }
 
+    /// Makes the reference on `frame` (file frame numbering) the anchor.
+    pub fn set_reference_frame(&mut self, frame: u32) -> anyhow::Result<()> {
+        self.references = with_anchor(std::mem::take(&mut self.references), self.ref_point);
+        let idx = anchor_index(&self.references, Some(frame))?;
+        self.ref_point = self.references[idx].0;
+        Ok(())
+    }
+
     pub fn process_directory<P: AsRef<Path>>(
         path: P,
         names: HashMap<ContourType, &str>,
         diastole: bool,
         label: &str,
+    ) -> anyhow::Result<InputData> {
+        Self::process_directory_with_reference(path, names, diastole, label, None)
+    }
+
+    /// Like [`InputData::process_directory`], with the reference on `reference_frame` as the
+    /// anchor if given (see [`anchor_index`]).
+    pub fn process_directory_with_reference<P: AsRef<Path>>(
+        path: P,
+        names: HashMap<ContourType, &str>,
+        diastole: bool,
+        label: &str,
+        reference_frame: Option<u32>,
     ) -> anyhow::Result<InputData> {
         let path = path.as_ref();
         let label_string = label.to_string();
@@ -87,14 +113,17 @@ impl InputData {
 
         let ref_fname = format!("{phase}_reference_points.csv");
         let ref_path = path.join(&ref_fname);
-        let ref_point = if ref_path.exists() {
-            read_reference_point(&ref_path)
+        let references = if ref_path.exists() {
+            read_reference_points(&ref_path)
                 .with_context(|| format!("reading {}", ref_path.display()))?
         } else {
             return Err(anyhow::anyhow!(
                 "required reference-point file missing: {ref_path:?}"
             ));
         };
+        let anchor = anchor_index(&references, reference_frame)
+            .with_context(|| format!("choosing the anchor in {}", ref_path.display()))?;
+        let ref_point = references[anchor].0;
 
         for raw_name in names.values() {
             let name = raw_name.trim().to_lowercase();
@@ -148,10 +177,48 @@ impl InputData {
             eem,
             record,
             ref_point,
+            references,
             diastole,
             label: label_string,
             annotations,
         })
+    }
+}
+
+/// `references` with `anchor` in front if no reference is on its frame.
+pub(crate) fn with_anchor(
+    mut references: Vec<(ContourPoint, bool)>,
+    anchor: ContourPoint,
+) -> Vec<(ContourPoint, bool)> {
+    if !references
+        .iter()
+        .any(|(p, _)| p.frame_index == anchor.frame_index)
+    {
+        references.insert(0, (anchor, false));
+    }
+    references
+}
+
+/// Index of the anchor among `references`.
+///
+/// The first reference on `reference_frame` if given (an error if there is none), else the
+/// first one placed by hand, else the first one.
+pub fn anchor_index(
+    references: &[(ContourPoint, bool)],
+    reference_frame: Option<u32>,
+) -> anyhow::Result<usize> {
+    if references.is_empty() {
+        anyhow::bail!("no reference point given, at least one is required");
+    }
+    match reference_frame {
+        Some(frame) => references
+            .iter()
+            .position(|(p, _)| p.frame_index == frame)
+            .ok_or_else(|| {
+                let frames: Vec<u32> = references.iter().map(|(p, _)| p.frame_index).collect();
+                anyhow!("no reference point on frame {frame}, references are on frames {frames:?}")
+            }),
+        None => Ok(references.iter().position(|(_, auto)| !auto).unwrap_or(0)),
     }
 }
 
@@ -269,7 +336,9 @@ fn read_optional_contour_file(
     Ok(Some(points))
 }
 
-pub fn read_reference_point<P: AsRef<Path>>(path: P) -> Result<ContourPoint> {
+/// Reads `frame, x, y, z[, auto]` rows (a leading header row is skipped), `auto` 0 or 1,
+/// default 0. At least one row is required.
+pub fn read_reference_points<P: AsRef<Path>>(path: P) -> Result<Vec<(ContourPoint, bool)>> {
     let delim = detect_delimiter(&path)?;
     let file = File::open(&path)
         .with_context(|| format!("failed to open reference-point file {:?}", path.as_ref()))?;
@@ -277,18 +346,55 @@ pub fn read_reference_point<P: AsRef<Path>>(path: P) -> Result<ContourPoint> {
     let mut rdr = ReaderBuilder::new()
         .has_headers(false)
         .delimiter(delim)
+        .flexible(true)
         .from_reader(file);
 
-    let first = rdr.deserialize().next().ok_or_else(|| {
-        anyhow!(
-            "reference-point file {:?} was empty — this data is required",
+    let mut out = Vec::new();
+    for (row, result) in rdr.records().enumerate() {
+        let record = match result {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("Skipping invalid reference-point row: {e:?}");
+                continue;
+            }
+        };
+        match parse_reference_row(&record) {
+            Some(reference) => out.push(reference),
+            None if row == 0 => continue, // header
+            None => eprintln!(
+                "Skipping invalid reference-point row {}: {record:?}",
+                row + 1
+            ),
+        }
+    }
+    if out.is_empty() {
+        anyhow::bail!(
+            "reference-point file {:?} has no reference point, at least one is required",
             path.as_ref()
-        )
-    })?;
+        );
+    }
+    Ok(out)
+}
 
-    let point: ContourPoint =
-        first.with_context(|| "failed to deserialize first reference-point record")?;
-    Ok(point)
+fn parse_reference_row(record: &csv::StringRecord) -> Option<(ContourPoint, bool)> {
+    if record.len() < 4 {
+        return None;
+    }
+    let field = |i: usize| record.get(i).map(str::trim);
+    let point = ContourPoint {
+        frame_index: field(0)?.parse::<u32>().ok()?,
+        point_index: 0,
+        x: field(1)?.parse::<f64>().ok()?,
+        y: field(2)?.parse::<f64>().ok()?,
+        z: field(3)?.parse::<f64>().ok()?,
+        aortic: false,
+    };
+    let auto = match field(4).map(str::to_lowercase).as_deref() {
+        None | Some("") | Some("0") | Some("false") => false,
+        Some("1") | Some("true") => true,
+        Some(_) => return None,
+    };
+    Some((point, auto))
 }
 
 /// Reads `frame, kind, role, group, x, y, z` rows (a leading header row is skipped).
@@ -639,6 +745,7 @@ mod input_tests {
         );
         assert!(input.record.is_none(), "record vector should be empty");
         assert!(input.ref_point.x > 0.0, "ref_point should not be empty");
+        assert_eq!(input.references, vec![(input.ref_point, false)]);
 
         // deprecated branch_/calcium_ files become one Region annotation per frame
         let lumen_frames: std::collections::HashSet<u32> =
@@ -790,6 +897,90 @@ mod input_tests {
             (&annotation.kind, annotation.role, annotation.group),
             (&AnnotationKind::Sidebranch, AnnotationRole::Region, 1)
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_read_reference_points_reads_all_rows_with_auto_flag() -> anyhow::Result<()> {
+        let dir = temp_dir("read_references");
+        let p = dir.join("diastolic_reference_points.csv");
+        std::fs::write(
+            &p,
+            "frame\tx\ty\tz\tauto\n\
+             10\t1.0\t2.0\t3.0\t1\n\
+             20\t4.0\t5.0\t6.0\n\
+             30\t7.0\t8.0\t9.0\t0\n",
+        )?;
+        let references = read_reference_points(&p)?;
+        let summary: Vec<(u32, bool, f64)> = references
+            .iter()
+            .map(|(pt, auto)| (pt.frame_index, *auto, pt.x))
+            .collect();
+        assert_eq!(
+            summary,
+            vec![(10, true, 1.0), (20, false, 4.0), (30, false, 7.0)]
+        );
+        assert!(references.iter().all(|(pt, _)| pt.point_index == 0));
+
+        // first hand-placed row, a chosen frame, an unknown frame
+        assert_eq!(anchor_index(&references, None)?, 1);
+        assert_eq!(anchor_index(&references, Some(30))?, 2);
+        assert_eq!(anchor_index(&references, Some(10))?, 0);
+        let err = anchor_index(&references, Some(99)).unwrap_err().to_string();
+        assert!(
+            err.contains("frame 99") && err.contains("[10, 20, 30]"),
+            "{err}"
+        );
+
+        // only automatic rows: the first one
+        let all_auto: Vec<_> = references.iter().map(|(pt, _)| (*pt, true)).collect();
+        assert_eq!(anchor_index(&all_auto, None)?, 0);
+
+        // comma separated single row, no flag, no header
+        std::fs::write(&p, "385,3.5,3.6,24.5\n")?;
+        let single = read_reference_points(&p)?;
+        assert_eq!(single.len(), 1);
+        assert_eq!(
+            (single[0].0.frame_index, single[0].0.z, single[0].1),
+            (385, 24.5, false)
+        );
+
+        std::fs::write(&p, "frame,x,y,z\n")?;
+        assert!(read_reference_points(&p).is_err(), "no rows must fail");
+        std::fs::remove_dir_all(&dir).ok();
+        Ok(())
+    }
+
+    #[test]
+    fn test_process_directory_reference_frame_selects_anchor() -> anyhow::Result<()> {
+        let src = Path::new("./data/fixtures/ivus_rest");
+        let dir = temp_dir("process_reference_frame");
+        std::fs::copy(
+            src.join("diastolic_contours.csv"),
+            dir.join("diastolic_contours.csv"),
+        )?;
+        std::fs::write(
+            dir.join("diastolic_reference_points.csv"),
+            "380\t1.0\t1.0\t20.0\t1\n385\t3.5\t3.6\t24.5\t0\n390\t2.0\t2.0\t26.0\t1\n",
+        )?;
+        let default = InputData::process_directory(&dir, HashMap::new(), true, "")?;
+        let chosen =
+            InputData::process_directory_with_reference(&dir, HashMap::new(), true, "", Some(390))?;
+        let unknown =
+            InputData::process_directory_with_reference(&dir, HashMap::new(), true, "", Some(1));
+        std::fs::remove_dir_all(&dir).ok();
+
+        assert_eq!(default.references.len(), 3);
+        assert_eq!(default.ref_point.frame_index, 385);
+        assert_eq!(chosen.ref_point.frame_index, 390);
+        assert_eq!(chosen.references, default.references);
+        let err = format!("{:#}", unknown.unwrap_err());
+        assert!(err.contains("no reference point on frame 1"), "{err}");
+
+        let mut moved = default.clone();
+        moved.set_reference_frame(380)?;
+        assert_eq!((moved.ref_point.frame_index, moved.ref_point.x), (380, 1.0));
+        assert!(moved.set_reference_frame(1).is_err());
         Ok(())
     }
 

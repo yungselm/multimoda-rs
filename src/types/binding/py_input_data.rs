@@ -26,7 +26,9 @@ use std::convert::TryFrom;
 /// record : list of PyRecord or None
 ///     Metadata records about the input data.
 /// ref_point : PyContourPoint
-///     Reference point used for alignment.
+///     The anchor: orients the frames, pairs diastole and systole and is placed on
+///     the centerline. Usually one of ``references``, added to them if no reference
+///     is on its frame.
 /// diastole : bool
 ///     ``True`` when the data corresponds to the diastolic phase.
 /// label : str
@@ -34,6 +36,10 @@ use std::convert::TryFrom;
 /// annotations : list of tuple of (int, PyAnnotation)
 ///     ``(frame, annotation)`` pairs, frame numbered like the lumen
 ///     ``original_frame``. Attached to that frame when building the geometry.
+/// references : list of tuple of (PyContourPoint, bool)
+///     Every reference ``(point, auto)``, ``auto`` ``True`` if set automatically.
+///     Each becomes a ``("reference", "point")`` annotation of its frame (group 1
+///     if automatic, 0 if by hand). Empty means just ``ref_point``.
 ///
 /// Examples
 /// --------
@@ -69,12 +75,14 @@ pub struct PyInputData {
     pub label: String,
     #[pyo3(get, set)]
     pub annotations: Vec<(u32, PyAnnotation)>,
+    #[pyo3(get, set)]
+    pub references: Vec<(PyContourPoint, bool)>,
 }
 
 #[pymethods]
 impl PyInputData {
     #[new]
-    #[pyo3(signature = (lumen, eem, calcification, sidebranch, record, ref_point, diastole, label, annotations=Vec::new()))]
+    #[pyo3(signature = (lumen, eem, calcification, sidebranch, record, ref_point, diastole, label, annotations=Vec::new(), references=Vec::new()))]
     fn new(
         py: Python<'_>,
         lumen: Vec<PyContour>,
@@ -86,6 +94,7 @@ impl PyInputData {
         diastole: bool,
         label: String,
         annotations: Vec<(u32, PyAnnotation)>,
+        references: Vec<(PyContourPoint, bool)>,
     ) -> PyResult<Self> {
         if calcification.is_some() || sidebranch.is_some() {
             PyErr::warn(
@@ -106,12 +115,13 @@ impl PyInputData {
             diastole,
             label,
             annotations,
+            references,
         })
     }
 
     fn __repr__(&self) -> String {
         format!(
-            "InputData(lumen={}, eem={}, calcification={}, sidebranch={}, record={}, ref_point={}, diastole={}, label='{}', annotations={})",
+            "InputData(lumen={}, eem={}, calcification={}, sidebranch={}, record={}, ref_point={}, diastole={}, label='{}', annotations={}, references={})",
             self.lumen.len(),
             self.eem.as_ref().map_or(0, |v| v.len()),
             self.calcification.as_ref().map_or(0, |v| v.len()),
@@ -121,6 +131,7 @@ impl PyInputData {
             self.diastole,
             self.label,
             self.annotations.len(),
+            self.references.len(),
         )
     }
 }
@@ -204,6 +215,11 @@ impl TryFrom<&PyInputData> for InputData {
             eem_points,
             records_rust,
             ref_point_rust,
+            py_in
+                .references
+                .iter()
+                .map(|(p, auto)| (ContourPoint::from(p), *auto))
+                .collect(),
             py_in.diastole,
             py_in.label.clone(),
             annotations,
@@ -290,6 +306,11 @@ impl From<&InputData> for PyInputData {
                 .annotations
                 .iter()
                 .map(|(frame, a)| (*frame, PyAnnotation::from(a)))
+                .collect(),
+            references: input
+                .references
+                .iter()
+                .map(|(p, auto)| (PyContourPoint::from(p), *auto))
                 .collect(),
         }
     }

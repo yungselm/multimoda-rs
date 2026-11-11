@@ -54,6 +54,9 @@ def to_array(generic) -> np.ndarray | dict | tuple[dict, dict]:
     dict[str, np.ndarray | list[str] | bool]
         For PyInputData:
         A dictionary containing arrays for each contour type and metadata.
+        ``"reference"`` holds the anchor ``(frame_index, x, y, z)``,
+        ``"references"`` every reference as ``(frame_index, x, y, z, auto)``
+        rows, the layout ``numpy_to_inputdata(ref_point=...)`` reads.
 
     Raises
     ------
@@ -235,6 +238,12 @@ def _input_data_to_numpy(input_data) -> dict[str, np.ndarray | list[str] | bool]
     result["reference"] = np.array(
         [[ref.frame_index, ref.x, ref.y, ref.z]], dtype=float
     )
+    # every reference as (frame_index, x, y, z, auto), the layout numpy_to_inputdata reads
+    references = input_data.references or [(ref, False)]
+    result["references"] = np.array(
+        [[p.frame_index, p.x, p.y, p.z, float(auto)] for p, auto in references],
+        dtype=float,
+    )
 
     # Process records if available
     if input_data.record:
@@ -270,6 +279,7 @@ def numpy_to_inputdata(
     sidebranch: np.ndarray | None = None,
     label: str = "",
     annotations: dict[tuple[str, str], np.ndarray] | None = None,
+    reference_frame: int | None = None,
 ) -> PyInputData:
     """
     Build a ``PyInputData`` from numpy arrays, grouping by frame index into frames.
@@ -283,7 +293,12 @@ def numpy_to_inputdata(
     record : np.ndarray, optional
         ``(M, 4)`` array of records ``[frame, phase, measurement_1, measurement_2]``.
     ref_point : np.ndarray
-        ``(1, 4)`` or ``(4,)`` array ``[frame_index, x, y, z]`` for the reference point.
+        References, ``(4,)`` or ``(K, 4)`` / ``(K, 5)`` rows
+        ``[frame_index, x, y, z(, auto)]``, ``auto`` 1 if set automatically and
+        0 (default) if placed by hand. All rows are kept and become
+        ``("reference", "point")`` annotations of their frame (group = auto).
+        One of them is the anchor (``PyInputData.ref_point``), see
+        ``reference_frame``.
     diastole : bool
         ``True`` if the data corresponds to the diastolic phase.
     eem_arr : np.ndarray, optional
@@ -308,6 +323,9 @@ def numpy_to_inputdata(
         ``(frame_index, group)`` form one ``PyAnnotation``. Annotations only
         follow the rigid transforms of their frame and are dropped (with a
         warning) when their frame has no lumen.  Default is ``None``.
+    reference_frame : int, optional
+        Frame of the reference that becomes the anchor. ``None`` takes the
+        first row placed by hand, else the first row.  Default is ``None``.
 
     Returns
     -------
@@ -317,7 +335,7 @@ def numpy_to_inputdata(
     Raises
     ------
     ValueError
-        If ``lumen_arr`` is empty.
+        If ``lumen_arr`` is empty or no reference is on ``reference_frame``.
     """
 
     def _to_numeric_array(arr: np.ndarray | None, name: str) -> np.ndarray:
@@ -435,27 +453,14 @@ def numpy_to_inputdata(
     calcification_arr = _to_numeric_array(calcification, "calcification")
     sidebranch_arr = _to_numeric_array(sidebranch, "sidebranch")
 
-    # Reference point: prefer provided ref_point, otherwise a default
-    global_ref = None
-    if ref_point is not None:
-        try:
-            ref_arr = np.asarray(ref_point)
-            if ref_arr.ndim == 1:
-                fr, x, y, z = ref_arr[:4]
-            else:
-                fr, x, y, z = ref_arr[0, :4]
-            global_ref = PyContourPoint(
-                frame_index=int(fr),
-                point_index=0,
-                x=float(x),
-                y=float(y),
-                z=float(z),
-                aortic=False,
+    references = _references_from_array(ref_point)
+    if references:
+        global_ref = references[_anchor_index(references, reference_frame)][0]
+    else:
+        if reference_frame is not None:
+            raise ValueError(
+                f"no reference point on frame {reference_frame}, ref_point has no rows"
             )
-        except (TypeError, ValueError, IndexError):
-            global_ref = None
-
-    if global_ref is None:
         # default fallback (required by PyInputData ctor)
         global_ref = PyContourPoint(
             frame_index=0, point_index=0, x=0.0, y=0.0, z=0.0, aortic=False
@@ -504,7 +509,48 @@ def numpy_to_inputdata(
         diastole=bool(diastole),
         label=label or "",
         annotations=annotation_list,
+        references=references,
     )
+
+
+def _references_from_array(ref_point) -> list[tuple[PyContourPoint, bool]]:
+    """``(point, auto)`` per row ``[frame, x, y, z(, auto)]``, empty if unreadable."""
+    if ref_point is None:
+        return []
+    try:
+        arr = np.atleast_2d(np.asarray(ref_point, dtype=float))
+    except (TypeError, ValueError):
+        return []
+    references = []
+    for row in arr:
+        if row.shape[0] < 4:
+            continue
+        auto = row.shape[0] > 4 and bool(np.nan_to_num(row[4]) != 0)
+        point = PyContourPoint(
+            frame_index=int(row[0]),
+            point_index=0,
+            x=float(row[1]),
+            y=float(row[2]),
+            z=float(row[3]),
+            aortic=False,
+        )
+        references.append((point, auto))
+    return references
+
+
+def _anchor_index(
+    references: list[tuple[PyContourPoint, bool]], reference_frame: int | None
+) -> int:
+    """The reference on ``reference_frame``, else the first placed by hand, else the first."""
+    if reference_frame is not None:
+        for i, (point, _) in enumerate(references):
+            if point.frame_index == reference_frame:
+                return i
+        frames = [point.frame_index for point, _ in references]
+        raise ValueError(
+            f"no reference point on frame {reference_frame}, references are on frames {frames}"
+        )
+    return next((i for i, (_, auto) in enumerate(references) if not auto), 0)
 
 
 def _annotations_from_arrays(

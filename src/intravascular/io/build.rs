@@ -1,5 +1,5 @@
-use super::input::InputData;
-use crate::types::native::annotation::Annotation;
+use super::input::{with_anchor, InputData};
+use crate::types::native::annotation::{Annotation, AnnotationKind, AnnotationRole};
 use crate::types::native::contour::{Contour, ContourType};
 use crate::types::native::contour_point::ContourPoint;
 use crate::types::native::frame::Frame;
@@ -16,21 +16,64 @@ pub fn build_geometry_from_inputdata(
     radius: f64,
     n_points: u32,
 ) -> anyhow::Result<Geometry> {
-    let input_data = if let Some(input_data) = input_data {
-        input_data
+    if let Some(input_data) = input_data {
+        build_geometry(
+            input_data,
+            false,
+            label,
+            diastole,
+            image_center,
+            radius,
+            n_points,
+        )
     } else if let Some(path) = path {
-        // Default mapping for typical AIVUS-CAA structure
-        let mut names = HashMap::new();
-        names.insert(ContourType::Lumen, "lumen");
-        names.insert(ContourType::Eem, "eem");
-        names.insert(ContourType::Catheter, "catheter");
-
-        InputData::process_directory(path, names, diastole, label)?
+        build_geometry_from_path(path, None, label, diastole, image_center, radius, n_points)
     } else {
-        return Err(anyhow::anyhow!(
+        Err(anyhow::anyhow!(
             "Either input_data or path must be provided"
-        ));
-    };
+        ))
+    }
+}
+
+/// Builds the geometry of one phase from a directory, anchored on the reference on
+/// `reference_frame` if given (file frame numbering), else on the default anchor.
+pub fn build_geometry_from_path(
+    path: &Path,
+    reference_frame: Option<u32>,
+    label: &str,
+    diastole: bool,
+    image_center: (f64, f64),
+    radius: f64,
+    n_points: u32,
+) -> anyhow::Result<Geometry> {
+    // Default mapping for typical AIVUS-CAA structure
+    let mut names = HashMap::new();
+    names.insert(ContourType::Lumen, "lumen");
+    names.insert(ContourType::Eem, "eem");
+    names.insert(ContourType::Catheter, "catheter");
+
+    let input_data =
+        InputData::process_directory_with_reference(path, names, diastole, label, reference_frame)?;
+    build_geometry(
+        input_data,
+        true,
+        label,
+        diastole,
+        image_center,
+        radius,
+        n_points,
+    )
+}
+
+fn build_geometry(
+    input_data: InputData,
+    from_path: bool,
+    label: &str,
+    diastole: bool,
+    image_center: (f64, f64),
+    radius: f64,
+    n_points: u32,
+) -> anyhow::Result<Geometry> {
     let print_input_data = input_data.clone();
 
     // First, collect all unique original frame IDs from ALL contour types
@@ -101,7 +144,11 @@ pub fn build_geometry_from_inputdata(
         }
     }
 
-    attach_annotations(&mut frame_map, input_data.annotations, &frame_mapping);
+    let mut annotations = input_data.annotations;
+    let all_references = with_anchor(input_data.references, input_data.ref_point);
+    let references = reference_annotations(&all_references, &annotations);
+    annotations.extend(references);
+    attach_annotations(&mut frame_map, annotations, &frame_mapping);
 
     if n_points > 0 {
         let all_points: Vec<ContourPoint> = frame_map
@@ -152,10 +199,41 @@ pub fn build_geometry_from_inputdata(
 
     super::integrity_check::check_geometry_integrity(&geometry)?;
 
-    let from_path = path.is_some();
     print_success_message(print_input_data, from_path);
 
     Ok(geometry)
+}
+
+/// One `Reference` / `Point` annotation per reference, group 1 if automatic, 0 if by hand.
+/// References already in `existing` (same frame and point) are skipped.
+fn reference_annotations(
+    references: &[(ContourPoint, bool)],
+    existing: &[(u32, Annotation)],
+) -> Vec<(u32, Annotation)> {
+    let same_point = |a: &ContourPoint, b: &ContourPoint| (a.x, a.y, a.z) == (b.x, b.y, b.z);
+    references
+        .iter()
+        .filter(|(p, _)| {
+            !existing.iter().any(|(f, a)| {
+                *f == p.frame_index
+                    && a.kind == AnnotationKind::Reference
+                    && matches!(a.points.as_slice(), [q] if same_point(p, q))
+            })
+        })
+        .map(|(p, auto)| {
+            let point = ContourPoint {
+                point_index: 0,
+                ..*p
+            };
+            let annotation = Annotation::new(
+                AnnotationKind::Reference,
+                AnnotationRole::Point,
+                *auto as u32,
+                vec![point],
+            );
+            (p.frame_index, annotation)
+        })
+        .collect()
 }
 
 /// Attaches each annotation to the frame whose lumen has the same original frame.
@@ -199,6 +277,12 @@ fn print_success_message(input_data: InputData, from_path: bool) {
         "{} Annotations ({})",
         check(!input_data.annotations.is_empty()),
         input_data.annotations.len()
+    );
+    println!(
+        "{} References ({}, anchor on frame {})",
+        check(true),
+        input_data.references.len().max(1),
+        input_data.ref_point.frame_index
     );
     println!("-----------------------------------------");
     println!("Label: {}", input_data.label);
@@ -405,11 +489,12 @@ mod io_tests {
         let geometry =
             build_geometry_from_inputdata(Some(input), None, "rest", true, (4.5, 4.5), 0.5, 20)?;
 
+        // the file's single reference on 385 becomes one more annotation there
         let total: usize = geometry.frames.iter().map(|f| f.annotations.len()).sum();
-        assert_eq!(total, 3, "annotation without lumen frame must be dropped");
+        assert_eq!(total, 4, "annotation without lumen frame must be dropped");
         for frame in &geometry.frames {
             let expected = match frame.lumen.original_frame {
-                385 => 2,
+                385 => 3,
                 347 => 1,
                 _ => 0,
             };
@@ -418,6 +503,111 @@ mod io_tests {
                 assert_eq!(p.z, frame.lumen.points[0].z);
                 assert_eq!(p.frame_index, frame.lumen.points[0].frame_index);
             }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_build_turns_every_reference_into_an_annotation() -> anyhow::Result<()> {
+        use crate::types::native::{AnnotationKind, AnnotationRole};
+
+        let mut input = InputData::process_directory(
+            "data/fixtures/ivus_rest",
+            HashMap::from([(ContourType::Lumen, "lumen")]),
+            true,
+            "rest",
+        )?;
+        let point = |frame: u32, x: f64| ContourPoint {
+            frame_index: frame,
+            point_index: 0,
+            x,
+            y: 2.0,
+            z: 0.0,
+            aortic: false,
+        };
+        let anchor = input.ref_point;
+        input.references = vec![
+            (point(347, 1.0), true),
+            (anchor, false),
+            (point(367, 3.0), false),
+            (point(99_999, 4.0), true),
+        ];
+
+        let geometry =
+            build_geometry_from_inputdata(Some(input), None, "rest", true, (4.5, 4.5), 0.5, 20)?;
+
+        let refs: Vec<(u32, u32, f64)> = geometry
+            .frames
+            .iter()
+            .flat_map(|f| {
+                f.annotations
+                    .iter()
+                    .filter(|a| a.kind == AnnotationKind::Reference)
+                    .map(move |a| {
+                        assert_eq!(a.role, AnnotationRole::Point);
+                        assert_eq!(a.points.len(), 1);
+                        (f.lumen.original_frame, a.group, a.points[0].x)
+                    })
+            })
+            .collect();
+        let mut sorted = refs.clone();
+        sorted.sort_by_key(|r| r.0);
+        assert_eq!(
+            sorted,
+            vec![(347, 1, 1.0), (367, 0, 3.0), (385, 0, anchor.x)],
+            "the reference without lumen frame must be dropped"
+        );
+
+        let anchored: Vec<&Frame> = geometry
+            .frames
+            .iter()
+            .filter(|f| f.reference_point.is_some())
+            .collect();
+        assert_eq!(anchored.len(), 1);
+        assert_eq!(anchored[0].lumen.original_frame, 385);
+        let rp = anchored[0].reference_point.unwrap();
+        let ann = anchored[0].annotations[0].points[0];
+        assert_eq!((rp.x, rp.y, rp.z), (ann.x, ann.y, ann.z));
+        Ok(())
+    }
+
+    #[test]
+    fn test_build_from_path_reference_frame_moves_the_anchor() -> anyhow::Result<()> {
+        let dir = std::env::temp_dir().join(format!(
+            "multimodars_build_reference_frame_{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir)?;
+        let src = Path::new("data/fixtures/ivus_rest");
+        std::fs::copy(
+            src.join("diastolic_contours.csv"),
+            dir.join("diastolic_contours.csv"),
+        )?;
+        std::fs::write(
+            dir.join("diastolic_reference_points.csv"),
+            "347\t3.0\t3.0\t2.0\t1\n385\t3.5\t3.6\t24.5\t0\n",
+        )?;
+        let build = |frame: Option<u32>| {
+            build_geometry_from_path(&dir, frame, "rest", true, (4.5, 4.5), 0.5, 20)
+        };
+        let default = build(None)?;
+        let chosen = build(Some(347))?;
+        let unknown = build(Some(1));
+        std::fs::remove_dir_all(&dir).ok();
+
+        let anchor = |g: &Geometry| {
+            g.frames[g.find_ref_frame_idx().unwrap()]
+                .lumen
+                .original_frame
+        };
+        assert_eq!(anchor(&default), 385);
+        assert_eq!(anchor(&chosen), 347);
+        assert!(unknown.is_err());
+        for g in [&default, &chosen] {
+            assert_eq!(
+                g.frames.iter().map(|f| f.annotations.len()).sum::<usize>(),
+                2
+            );
         }
         Ok(())
     }
@@ -475,6 +665,7 @@ mod io_tests {
                 z: 3.0,
                 aortic: false,
             },
+            references: Vec::new(),
             label: "test".to_string(),
             diastole: true,
             annotations: Vec::new(),

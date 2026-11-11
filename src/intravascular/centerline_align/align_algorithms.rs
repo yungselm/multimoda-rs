@@ -20,6 +20,8 @@ pub trait AlignTarget: Sized + Clone {
     fn apply_frame_transforms(self, transformations: &[FrameTransformation]) -> Self;
     /// Rotates all contained geometries by `angle` radians around each frame's normal.
     fn rotate_all(self, angle: f64) -> Self;
+    /// Re-anchors the primary geometry on the reference of `frame` (original frame).
+    fn set_reference_frame(&mut self, frame: u32) -> anyhow::Result<()>;
 }
 
 impl AlignTarget for Geometry {
@@ -39,6 +41,10 @@ impl AlignTarget for Geometry {
     fn rotate_all(mut self, angle: f64) -> Self {
         self.rotate_geometry(angle);
         self
+    }
+
+    fn set_reference_frame(&mut self, frame: u32) -> anyhow::Result<()> {
+        Geometry::set_reference_frame(self, frame)
     }
 }
 
@@ -62,6 +68,10 @@ impl AlignTarget for GeometryPair {
         self.geom_a.rotate_geometry(angle);
         self.geom_b.rotate_geometry(angle);
         self
+    }
+
+    fn set_reference_frame(&mut self, frame: u32) -> anyhow::Result<()> {
+        GeometryPair::set_reference_frame(self, frame)
     }
 }
 

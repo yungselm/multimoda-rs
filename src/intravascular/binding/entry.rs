@@ -93,6 +93,7 @@ pub fn full_processing_rs(
     bruteforce: bool,
     sample_size: usize,
     postprocessing: bool,
+    reference_frames: Vec<Option<u32>>,
 ) -> Result<FullProcessResult> {
     let mut geometries = preprocessing::prepare_n_geometries(
         &labels,
@@ -109,6 +110,7 @@ pub fn full_processing_rs(
         input_path_a.map(Path::new),
         input_path_b.map(Path::new),
         ProcessingOptions::Full,
+        &reference_frames,
     )
     .context("Failed to prepare geometries for full processing")?;
 
@@ -383,6 +385,7 @@ pub fn double_pair_processing_rs(
     bruteforce: bool,
     sample_size: usize,
     postprocessing: bool,
+    reference_frames: Vec<Option<u32>>,
 ) -> Result<DoublePairProcessResult> {
     let mut geometries = preprocessing::prepare_n_geometries(
         &labels,
@@ -399,6 +402,7 @@ pub fn double_pair_processing_rs(
         input_path_a.map(Path::new),
         input_path_b.map(Path::new),
         ProcessingOptions::Full,
+        &reference_frames,
     )
     .context("Failed to prepare geometries for full processing")?;
 
@@ -588,6 +592,7 @@ pub fn pair_processing_rs(
     bruteforce: bool,
     sample_size: usize,
     postprocessing: bool,
+    reference_frames: Vec<Option<u32>>,
 ) -> Result<(GeometryPair, Vec<AlignLog>, Vec<AlignLog>)> {
     let mut geometries = preprocessing::prepare_n_geometries(
         &labels,
@@ -604,6 +609,7 @@ pub fn pair_processing_rs(
         input_path_a.map(Path::new),
         None,
         ProcessingOptions::Pair,
+        &reference_frames,
     )
     .context("Failed to prepare geometries for pair processing")?;
 
@@ -705,6 +711,7 @@ pub fn single_processing_rs(
     smooth: bool,
     bruteforce: bool,
     sample_size: usize,
+    reference_frames: Vec<Option<u32>>,
 ) -> Result<(Geometry, Vec<AlignLog>)> {
     let mut geom = preprocessing::prepare_n_geometries(
         &labels,
@@ -716,6 +723,7 @@ pub fn single_processing_rs(
         input_path_a.map(Path::new),
         None,
         ProcessingOptions::Single,
+        &reference_frames,
     )
     .context("Failed to prepare geometry for single processing")?;
 

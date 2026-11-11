@@ -97,6 +97,12 @@ def from_file_full(
     bruteforce: bool = False,
     smooth: bool = True,
     postprocessing: bool = True,
+    reference_frames: tuple[int | None, int | None, int | None, int | None] = (
+        None,
+        None,
+        None,
+        None,
+    ),
 ) -> tuple[
     PyGeometryPair,
     PyGeometryPair,
@@ -186,6 +192,11 @@ def from_file_full(
     postprocessing : bool, optional
         Whether to adjust spacing within/between geometries to equal
         offsets.  Default is ``True``.
+    reference_frames : tuple of (int or None), optional
+        Frame (numbered as in the reference-point files) whose reference anchors
+        each geometry, ``(a, b, c, d)``. ``None`` keeps the default anchor, the
+        first reference placed by hand (``auto = 0``), else the first one.
+        Default is ``(None, None, None, None)``.
 
     Returns
     -------
@@ -232,6 +243,7 @@ def from_file_full(
         bruteforce,
         smooth,
         postprocessing,
+        reference_frames,
     )
 
 
@@ -254,6 +266,12 @@ def from_file_doublepair(
     bruteforce: bool = False,
     smooth: bool = True,
     postprocessing: bool = True,
+    reference_frames: tuple[int | None, int | None, int | None, int | None] = (
+        None,
+        None,
+        None,
+        None,
+    ),
 ) -> tuple[
     PyGeometryPair,
     PyGeometryPair,
@@ -324,6 +342,11 @@ def from_file_doublepair(
     postprocessing : bool, optional
         Whether to equalise spacing within/between geometries.  Default is
         ``True``.
+    reference_frames : tuple of (int or None), optional
+        Frame (numbered as in the reference-point files) whose reference anchors
+        each geometry, ``(a, b, c, d)``. ``None`` keeps the default anchor, the
+        first reference placed by hand (``auto = 0``), else the first one.
+        Default is ``(None, None, None, None)``.
 
     Returns
     -------
@@ -364,6 +387,7 @@ def from_file_doublepair(
         bruteforce,
         smooth,
         postprocessing,
+        reference_frames,
     )
 
 
@@ -384,6 +408,7 @@ def from_file_singlepair(
     bruteforce: bool = False,
     smooth: bool = True,
     postprocessing: bool = True,
+    reference_frames: tuple[int | None, int | None] = (None, None),
 ) -> tuple[PyGeometryPair, tuple[_AlignLog, _AlignLog]]:
     """Process a single diastole/systole pair from an input CSV folder.
 
@@ -447,6 +472,12 @@ def from_file_singlepair(
     postprocessing : bool, optional
         Whether to equalise spacing within/between geometries.  Default is
         ``True``.
+    reference_frames : tuple of (int or None), optional
+        Frame (numbered as in the reference-point files) whose reference anchors
+        the ``(diastole, systole)`` geometry. ``None`` keeps the default anchor,
+        the first reference placed by hand (``auto = 0``), else the first one.
+        Choose frames that show the same anatomy in both phases, the pair is
+        aligned and trimmed around them.  Default is ``(None, None)``.
 
     Returns
     -------
@@ -480,6 +511,7 @@ def from_file_singlepair(
         bruteforce,
         smooth,
         postprocessing,
+        reference_frames,
     )
 
 
@@ -499,6 +531,7 @@ def from_file_single(
     output_path: str = "output/single",
     bruteforce: bool = False,
     smooth: bool = True,
+    reference_frame: int | None = None,
 ) -> tuple[PyGeometry, _AlignLog]:
     """Process a single intravascular imaging geometry from a CSV file.
 
@@ -547,6 +580,10 @@ def from_file_single(
         Whether to use brute-force alignment.  Default is ``False``.
     smooth : bool, optional
         Whether to smooth frames after alignment.  Default is ``True``.
+    reference_frame : int, optional
+        Frame (numbered as in the reference-point file) whose reference anchors
+        the geometry. ``None`` keeps the default anchor, the first reference
+        placed by hand (``auto = 0``), else the first one.  Default is ``None``.
 
     Returns
     -------
@@ -579,6 +616,7 @@ def from_file_single(
         output_path,
         bruteforce,
         smooth,
+        reference_frame,
     )
 
 
@@ -609,6 +647,12 @@ def from_array_full(
     bruteforce: bool = False,
     smooth: bool = True,
     postprocessing: bool = True,
+    reference_frames: tuple[int | None, int | None, int | None, int | None] = (
+        None,
+        None,
+        None,
+        None,
+    ),
 ) -> tuple[
     PyGeometryPair,
     PyGeometryPair,
@@ -682,6 +726,10 @@ def from_array_full(
     postprocessing : bool, optional
         Whether to equalise spacing within/between geometries.  Default is
         ``True``.
+    reference_frames : tuple of (int or None), optional
+        Frame (``frame_index`` of the inputs' references) whose reference anchors
+        each geometry, ``(a, b, c, d)``. ``None`` keeps the input's
+        ``ref_point``.  Default is ``(None, None, None, None)``.
 
     Returns
     -------
@@ -729,6 +777,7 @@ def from_array_full(
         bruteforce,
         smooth,
         postprocessing,
+        reference_frames,
     )
 
 
@@ -752,6 +801,12 @@ def from_array_doublepair(
     bruteforce: bool = False,
     smooth: bool = True,
     postprocessing: bool = True,
+    reference_frames: tuple[int | None, int | None, int | None, int | None] = (
+        None,
+        None,
+        None,
+        None,
+    ),
 ) -> tuple[
     PyGeometryPair,
     PyGeometryPair,
@@ -812,6 +867,10 @@ def from_array_doublepair(
     postprocessing : bool, optional
         Whether to equalise spacing within/between geometries.  Default is
         ``True``.
+    reference_frames : tuple of (int or None), optional
+        Frame (``frame_index`` of the inputs' references) whose reference anchors
+        each geometry, ``(a, b, c, d)``. ``None`` keeps the input's
+        ``ref_point``.  Default is ``(None, None, None, None)``.
 
     Returns
     -------
@@ -853,6 +912,7 @@ def from_array_doublepair(
         bruteforce,
         smooth,
         postprocessing,
+        reference_frames,
     )
 
 
@@ -873,6 +933,7 @@ def from_array_singlepair(
     bruteforce: bool = False,
     smooth: bool = True,
     postprocessing: bool = True,
+    reference_frames: tuple[int | None, int | None] = (None, None),
 ) -> tuple[PyGeometryPair, tuple[_AlignLog, _AlignLog]]:
     """Align and interpolate between two ``PyInputData`` objects (diastole and systole).
 
@@ -920,6 +981,11 @@ def from_array_singlepair(
     postprocessing : bool, optional
         Whether to equalise spacing within/between geometries.  Default is
         ``True``.
+    reference_frames : tuple of (int or None), optional
+        Frame (``frame_index`` of the inputs' references) whose reference anchors
+        the ``(diastole, systole)`` geometry. ``None`` keeps the input's
+        ``ref_point``. Choose frames that show the same anatomy in both phases,
+        the pair is aligned and trimmed around them.  Default is ``(None, None)``.
 
     Returns
     -------
@@ -953,6 +1019,7 @@ def from_array_singlepair(
         bruteforce,
         smooth,
         postprocessing,
+        reference_frames,
     )
 
 
@@ -970,6 +1037,7 @@ def from_array_single(
     output_path: str = "output/single",
     bruteforce: bool = False,
     smooth: bool = True,
+    reference_frame: int | None = None,
 ) -> tuple[PyGeometry, _AlignLog]:
     """Process a single geometry phase from a ``PyInputData`` object.
 
@@ -1006,6 +1074,9 @@ def from_array_single(
         Whether to use brute-force alignment.  Default is ``False``.
     smooth : bool, optional
         Whether to smooth frames after alignment.  Default is ``True``.
+    reference_frame : int, optional
+        Frame (``frame_index`` of the input's references) whose reference anchors
+        the geometry. ``None`` keeps the input's ``ref_point``.  Default is ``None``.
 
     Returns
     -------
@@ -1036,6 +1107,7 @@ def from_array_single(
         output_path,
         bruteforce,
         smooth,
+        reference_frame,
     )
 
 
@@ -1058,6 +1130,7 @@ def align_three_point(
     contour_types: list[PyContourType] | None = None,
     case_name: str = "None",
     align_wall_anomalous: bool = False,
+    reference_frame: int | None = None,
 ) -> tuple[PyGeometryPair | PyGeometry, float, float]:
     """Align a geometry (or geometry pair) to the centerline using three reference points.
 
@@ -1100,6 +1173,14 @@ def align_three_point(
         When ``True``, rotate the Wall contour in every frame (from frame 2 onward)
         so its aortic straight portion aligns to the plane defined by frames 0 and 1.
         Only meaningful for anomalous vessels.  Default is ``False``.
+    reference_frame : int, optional
+        Original frame whose reference anchors the alignment.  When given, the
+        geometry is re-anchored first (``PyGeometry.set_reference_frame``), so
+        this frame lands on the centerline reference point and its
+        reference sets the three-point rotation.  For a
+        ``PyGeometryPair`` only ``geom_a`` is re-anchored, ``geom_b`` follows
+        ``geom_a``'s per-frame transforms.  ``None`` keeps the current anchor.
+        Default is ``None``.
 
     Returns
     -------
@@ -1140,6 +1221,7 @@ def align_three_point(
         contour_types,
         case_name,
         align_wall_anomalous,
+        reference_frame,
     )
 
 
@@ -1155,6 +1237,7 @@ def align_manual(
     contour_types: list[PyContourType] | None = None,
     case_name: str = "None",
     align_wall_anomalous: bool = False,
+    reference_frame: int | None = None,
 ) -> tuple[PyGeometryPair | PyGeometry, float, float]:
     """Align a geometry (or geometry pair) to the centerline using a manual rotation angle.
 
@@ -1193,6 +1276,13 @@ def align_manual(
         When ``True``, rotate the Wall contour in every frame (from frame 2 onward)
         so its aortic straight portion aligns to the plane defined by frames 0 and 1.
         Only meaningful for anomalous vessels.  Default is ``False``.
+    reference_frame : int, optional
+        Original frame whose reference anchors the alignment.  When given, the
+        geometry is re-anchored first (``PyGeometry.set_reference_frame``), so
+        this frame lands on the centerline reference point.  For a
+        ``PyGeometryPair`` only ``geom_a`` is re-anchored, ``geom_b`` follows
+        ``geom_a``'s per-frame transforms.  ``None`` keeps the current anchor.
+        Default is ``None``.
 
     Returns
     -------
@@ -1228,6 +1318,7 @@ def align_manual(
         contour_types,
         case_name,
         align_wall_anomalous,
+        reference_frame,
     )
 
 
@@ -1248,6 +1339,7 @@ def align_combined(
     contour_types: list[PyContourType] | None = None,
     case_name: str = "None",
     align_wall_anomalous: bool = False,
+    reference_frame: int | None = None,
 ) -> tuple[PyGeometryPair | PyGeometry, float, float]:
     """Align a geometry (or geometry pair) using three reference points and point-cloud refinement.
 
@@ -1305,6 +1397,14 @@ def align_combined(
         When ``True``, rotate the Wall contour in every frame (from frame 2 onward)
         so its aortic straight portion aligns to the plane defined by frames 0 and 1.
         Only meaningful for anomalous vessels.  Default is ``False``.
+    reference_frame : int, optional
+        Original frame whose reference anchors the alignment.  When given, the
+        geometry is re-anchored first (``PyGeometry.set_reference_frame``), so
+        this frame lands on the centerline reference point and its
+        reference sets the initial three-point rotation.  For a
+        ``PyGeometryPair`` only ``geom_a`` is re-anchored, ``geom_b`` follows
+        ``geom_a``'s per-frame transforms.  ``None`` keeps the current anchor.
+        Default is ``None``.
 
     Returns
     -------
@@ -1350,6 +1450,7 @@ def align_combined(
         contour_types,
         case_name,
         align_wall_anomalous,
+        reference_frame,
     )
 
 

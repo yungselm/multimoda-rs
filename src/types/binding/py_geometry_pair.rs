@@ -54,6 +54,36 @@ impl PyGeometryPair {
         )
     }
 
+    /// Re-anchor ``geom_a`` on the reference of another frame.
+    ///
+    /// Same as :meth:`PyGeometry.set_reference_frame` on ``geom_a``, ``geom_b`` is
+    /// returned unchanged. Centerline alignment places ``geom_a`` and moves
+    /// ``geom_b`` with ``geom_a``'s per-frame transforms, so only the anchor of
+    /// ``geom_a`` decides where the pair lands.
+    ///
+    /// Parameters
+    /// ----------
+    /// frame : int
+    ///     Original frame of ``geom_a``'s new anchor.
+    ///
+    /// Returns
+    /// -------
+    /// PyGeometryPair
+    ///     New pair with ``geom_a`` anchored on *frame*.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If ``geom_a`` has no reference annotation on that frame.
+    #[pyo3(signature = (frame))]
+    pub fn set_reference_frame(&self, frame: u32) -> PyResult<PyGeometryPair> {
+        Ok(PyGeometryPair {
+            geom_a: self.geom_a.set_reference_frame(frame)?,
+            geom_b: self.geom_b.clone(),
+            label: self.label.clone(),
+        })
+    }
+
     /// Get summaries for both geometries and a per-frame deformation table.
     ///
     /// Calls :meth:`PyGeometry.get_summary` on each contained geometry and

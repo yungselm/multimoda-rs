@@ -289,6 +289,12 @@ class PyGeometry:
     def replace_frame(self, index: int, frame: PyFrame) -> PyGeometry: ...
     def downsample(self, n_points: int) -> PyGeometry: ...
     def sort_frame_points(self) -> PyGeometry: ...
+    # (original_frame, auto, (x, y, z)) of every reference annotation, in frame order
+    def references(self) -> list[tuple[int, bool, tuple[float, float, float]]]: ...
+    # original frame of the frame that holds reference_point, None without one
+    def anchor_frame(self) -> int | None: ...
+    # moves reference_point to that frame's reference annotation, ValueError without one
+    def set_reference_frame(self, frame: int) -> PyGeometry: ...
 
 class PyGeometryPair:
     """A diastolic/systolic geometry pair.
@@ -309,6 +315,8 @@ class PyGeometryPair:
 
     def __init__(self, geom_a: PyGeometry, geom_b: PyGeometry, label: str) -> None: ...
     def __repr__(self) -> str: ...
+    # re-anchors geom_a only, geom_b follows it in centerline alignment
+    def set_reference_frame(self, frame: int) -> PyGeometryPair: ...
     def get_summary(
         self,
     ) -> tuple[
@@ -646,7 +654,8 @@ class PyInputData:
     record : list of PyRecord or None
         Metadata records.
     ref_point : PyContourPoint
-        Reference point used for alignment.
+        The anchor: orients the frames, pairs diastole and systole and is placed
+        on the centerline.
     diastole : bool
         ``True`` when the data corresponds to the diastolic phase.
     label : str
@@ -654,6 +663,9 @@ class PyInputData:
     annotations : list of tuple of (int, PyAnnotation)
         ``(frame, annotation)`` pairs, frame numbered like the lumen
         ``original_frame``. Attached to that frame when building the geometry.
+    references : list of tuple of (PyContourPoint, bool)
+        Every reference ``(point, auto)``, each becomes a ``("reference", "point")``
+        annotation of its frame (group 1 if automatic). Empty means just ``ref_point``.
     """
 
     lumen: list[PyContour]
@@ -665,6 +677,7 @@ class PyInputData:
     diastole: bool
     label: str
     annotations: list[tuple[int, PyAnnotation]]
+    references: list[tuple[PyContourPoint, bool]]
 
     def __init__(
         self,
@@ -677,6 +690,7 @@ class PyInputData:
         diastole: bool,
         label: str,
         annotations: list[tuple[int, PyAnnotation]] = ...,
+        references: list[tuple[PyContourPoint, bool]] = ...,
     ) -> None: ...
     def __repr__(self) -> str: ...
 
@@ -709,6 +723,7 @@ def from_file_full(
     bruteforce: bool = ...,
     smooth: bool = ...,
     postprocessing: bool = ...,
+    reference_frames: tuple[int | None, int | None, int | None, int | None] = ...,
 ) -> tuple[
     PyGeometryPair,
     PyGeometryPair,
@@ -735,6 +750,7 @@ def from_file_doublepair(
     bruteforce: bool = ...,
     smooth: bool = ...,
     postprocessing: bool = ...,
+    reference_frames: tuple[int | None, int | None, int | None, int | None] = ...,
 ) -> tuple[
     PyGeometryPair,
     PyGeometryPair,
@@ -757,6 +773,7 @@ def from_file_singlepair(
     bruteforce: bool = ...,
     smooth: bool = ...,
     postprocessing: bool = ...,
+    reference_frames: tuple[int | None, int | None] = ...,
 ) -> tuple[PyGeometryPair, tuple[_AlignLog, _AlignLog]]: ...
 def from_file_single(
     input_path: str,
@@ -774,6 +791,7 @@ def from_file_single(
     output_path: str = ...,
     bruteforce: bool = ...,
     smooth: bool = ...,
+    reference_frame: int | None = ...,
 ) -> tuple[PyGeometry, _AlignLog]: ...
 
 # ---------------------------------------------------------------------------
@@ -802,6 +820,7 @@ def from_array_full(
     bruteforce: bool = ...,
     smooth: bool = ...,
     postprocessing: bool = ...,
+    reference_frames: tuple[int | None, int | None, int | None, int | None] = ...,
 ) -> tuple[
     PyGeometryPair,
     PyGeometryPair,
@@ -829,6 +848,7 @@ def from_array_doublepair(
     bruteforce: bool = ...,
     smooth: bool = ...,
     postprocessing: bool = ...,
+    reference_frames: tuple[int | None, int | None, int | None, int | None] = ...,
 ) -> tuple[
     PyGeometryPair,
     PyGeometryPair,
@@ -851,6 +871,7 @@ def from_array_singlepair(
     bruteforce: bool = ...,
     smooth: bool = ...,
     postprocessing: bool = ...,
+    reference_frames: tuple[int | None, int | None] = ...,
 ) -> tuple[PyGeometryPair, tuple[_AlignLog, _AlignLog]]: ...
 def from_array_single(
     input_data: PyInputData,
@@ -866,6 +887,7 @@ def from_array_single(
     output_path: str = ...,
     bruteforce: bool = ...,
     smooth: bool = ...,
+    reference_frame: int | None = ...,
 ) -> tuple[PyGeometry, _AlignLog]: ...
 
 # ---------------------------------------------------------------------------
@@ -886,6 +908,7 @@ def align_three_point(
     contour_types: list[PyContourType] | None = ...,
     case_name: str = ...,
     align_wall_anomalous: bool = ...,
+    reference_frame: int | None = ...,
 ) -> tuple[PyGeometryPair | PyGeometry, float, float]: ...
 def align_manual(
     centerline: PyCenterline,
@@ -899,6 +922,7 @@ def align_manual(
     contour_types: list[PyContourType] | None = ...,
     case_name: str = ...,
     align_wall_anomalous: bool = ...,
+    reference_frame: int | None = ...,
 ) -> tuple[PyGeometryPair | PyGeometry, float, float]: ...
 def align_combined(
     centerline: PyCenterline,
@@ -917,6 +941,7 @@ def align_combined(
     contour_types: list[PyContourType] | None = ...,
     case_name: str = ...,
     align_wall_anomalous: bool = ...,
+    reference_frame: int | None = ...,
 ) -> tuple[PyGeometryPair | PyGeometry, float, float]: ...
 
 # ---------------------------------------------------------------------------

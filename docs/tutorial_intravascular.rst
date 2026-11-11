@@ -131,6 +131,16 @@ follow every rigid transform of their frame (alignment within and between pullba
 alignment), but are never sorted, smoothed, interpolated, meshed or used for alignment scoring.
 Annotations whose frame has no lumen contour are dropped with a warning.
 
+A reference-point file may hold several references, one per row ``frame, x, y, z[, auto]``
+(same delimiter and frame numbering, header optional). ``auto`` is ``1`` for a reference set
+automatically (e.g. at a side branch) and ``0`` (the default when the column is missing) for one
+placed by hand. All of them are kept: each becomes a ``("reference", "point")`` annotation of its
+frame (group = ``auto``), see :meth:`PyGeometry.references`. One of them is the *anchor*, which
+orients the frames, pairs diastole with systole and is placed on the centerline. By default that
+is the first hand-placed row, else the first row. Choose another one with ``reference_frame=``
+(``from_file_single``) or ``reference_frames=(dia, sys)`` (pair loaders); for a pair pick frames
+that show the same anatomy in both phases, the pair is aligned and trimmed around them.
+
 .. note::
 
     The old ``branch_*`` / ``sidebranch_*`` and ``calcium_*`` / ``calcification_*`` contour files
@@ -359,6 +369,11 @@ with a reference point, not necessarily frame 0) is placed on the centerline poi
 and rotated to best match all three points. The other frames follow along the centerline in both directions; frames
 that do not fit on the centerline are left unaligned and reported in a warning, which usually means the reference point
 is misplaced.
+
+Pass ``reference_frame=`` to :func:`multimodars.align_three_point`, :func:`multimodars.align_manual`
+or :func:`multimodars.align_combined` to place another reference's frame on the centerline (see
+:meth:`PyGeometry.set_reference_frame`). For a :class:`PyGeometryPair` only ``geom_a`` decides,
+``geom_b`` follows ``geom_a``'s per-frame transforms.
 
 .. code-block:: python
 

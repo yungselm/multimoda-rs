@@ -5,6 +5,7 @@ use crate::types::native::{self as native, ContourPoint, ContourType, Geometry};
 use pyo3::prelude::*;
 
 type GeomSummary = (f64, f64, f64);
+type ReferenceRow = (u32, bool, (f64, f64, f64));
 
 /// Python representation of a full intravascular imaging geometry (sequence of frames).
 ///
@@ -369,6 +370,79 @@ impl PyGeometry {
             frames: new_frames,
             label: self.label.clone(),
         })
+    }
+
+    /// All references of the geometry, one per ``reference`` annotation, in frame order.
+    ///
+    /// Every row of the reference-point file (or of ``ref_point`` in
+    /// ``numpy_to_inputdata``) becomes a ``("reference", "point")`` annotation of its
+    /// frame, group 1 if set automatically and 0 if placed by hand. The coordinates
+    /// follow every transform of the frame. :meth:`anchor_frame` tells which one is
+    /// the anchor.
+    ///
+    /// Returns
+    /// -------
+    /// list of tuple of (int, bool, tuple of float)
+    ///     ``(original_frame, auto, (x, y, z))``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> [frame for frame, auto, _ in geom.references() if not auto]
+    pub fn references(&self) -> PyResult<Vec<ReferenceRow>> {
+        let geometry = self.to_rust_geometry()?;
+        Ok(geometry
+            .references()
+            .into_iter()
+            .map(|(frame, auto, p)| (frame, auto, (p.x, p.y, p.z)))
+            .collect())
+    }
+
+    /// Original frame of the anchor, the frame that holds ``reference_point``.
+    ///
+    /// The anchor oriented the frames at load, paired diastole and systole and is
+    /// the frame that centerline alignment places on the centerline reference point.
+    ///
+    /// Returns
+    /// -------
+    /// int or None
+    ///     ``lumen.original_frame`` of the first frame with a reference point,
+    ///     ``None`` if no frame has one.
+    pub fn anchor_frame(&self) -> PyResult<Option<u32>> {
+        Ok(self.to_rust_geometry()?.anchor_frame())
+    }
+
+    /// Re-anchor the geometry on the reference of another frame.
+    ///
+    /// Moves ``reference_point`` to the frame whose ``lumen.original_frame`` is
+    /// *frame*, at the current (already transformed) coordinates of that frame's
+    /// first ``reference`` annotation, and clears it on every other frame. Its
+    /// ``point_index`` becomes the index of the nearest lumen point, which the
+    /// three-point centerline alignment uses as the reference.
+    ///
+    /// Only the anchor moves, frames are not re-oriented or re-paired. Use it before
+    /// centerline alignment, or pass ``reference_frame`` to the ``align_*`` functions.
+    ///
+    /// Parameters
+    /// ----------
+    /// frame : int
+    ///     Original frame of the new anchor, see :meth:`references`.
+    ///
+    /// Returns
+    /// -------
+    /// PyGeometry
+    ///     New geometry anchored on *frame*.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If no frame has that original frame or it has no reference annotation.
+    #[pyo3(signature = (frame))]
+    pub fn set_reference_frame(&self, frame: u32) -> PyResult<PyGeometry> {
+        let mut geometry = self.to_rust_geometry()?;
+        geometry
+            .set_reference_frame(frame)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+        Ok(PyGeometry::from(&geometry))
     }
 
     /// Return a new geometry with ``n_points`` per ContourType.

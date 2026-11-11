@@ -142,7 +142,8 @@ def test_annotations_survive_pipeline_rigidly():
             smooth=smooth,
         )
         out = to_array(geom)["annotations"]
-        assert set(out) == set(annotations)
+        # the reference point becomes a reference annotation of its frame
+        assert set(out) == set(annotations) | {("reference", "point")}
         for key, rows in annotations.items():
             assert out[key].shape == rows.shape
             assert sorted(out[key][:, 1]) == sorted(rows[:, 1])
@@ -153,6 +154,8 @@ def test_annotations_survive_pipeline_rigidly():
             c = np.array(frame.centroid)
             lumen_xyz = np.array([(p.x, p.y, p.z) for p in frame.lumen.points])
             for ann in frame.annotations:
+                if ann.kind == "reference":
+                    continue
                 for p in ann.points:
                     xyz = np.array([p.x, p.y, p.z])
                     d = np.linalg.norm(xyz - c)
@@ -164,7 +167,7 @@ def test_annotations_survive_pipeline_rigidly():
         for k, expected in before.items():
             np.testing.assert_allclose(after[k], expected, atol=1e-6)
         assert len(by_original[11].annotations) == 3
-        assert len(by_original[10].annotations) == 0
+        assert [a.kind for a in by_original[10].annotations] == ["reference"]
 
 
 def test_custom_kind_round_trips_through_numpy_geometry():
@@ -179,7 +182,7 @@ def test_custom_kind_round_trips_through_numpy_geometry():
     kinds = sorted(
         {(a.kind, a.is_custom) for f in rebuilt.frames for a in f.annotations}
     )
-    assert kinds == [("fibrous_cap", True), ("sidebranch", False)]
+    assert kinds == [("fibrous_cap", True), ("reference", False), ("sidebranch", False)]
     again = to_array(rebuilt)["annotations"]
 
     def _sorted(a):
