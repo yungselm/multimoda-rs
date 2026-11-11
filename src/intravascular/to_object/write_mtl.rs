@@ -14,8 +14,8 @@ use std::path::Path;
 
 /// Creates UV-maps and textures for different contour types based on their requirements:
 /// - Lumen and EEM: displacement texture
-/// - Catheter and Calcification: black texture  
-/// - Wall and Sidebranch: transparent texture
+/// - Catheter: black texture
+/// - Wall: transparent texture
 pub fn write_mtl_geometry(
     geometries_to_process: &[Geometry],
     output_dir: &str,
@@ -45,12 +45,12 @@ fn write_mtl_for_contour_type(
             // For lumen and EEM: displacement texture
             write_displacement_texture(geometries_to_process, output_dir, case_name, contour_type)
         }
-        ContourType::Catheter | ContourType::Calcification => {
-            // For catheter and calcification: black texture
+        ContourType::Catheter => {
+            // For catheter: black texture
             write_black_texture(geometries_to_process, output_dir, case_name, contour_type)
         }
-        ContourType::Wall | ContourType::Sidebranch => {
-            // For wall and sidebranch: transparent texture
+        ContourType::Wall => {
+            // For wall: transparent texture
             write_transparent_texture(geometries_to_process, output_dir, case_name, contour_type)
         }
     }

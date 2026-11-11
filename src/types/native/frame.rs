@@ -1,3 +1,4 @@
+use super::annotation::Annotation;
 use super::contour::{Contour, ContourType};
 use super::contour_point::ContourPoint;
 use super::Transform;
@@ -12,6 +13,8 @@ pub struct Frame {
     pub lumen: Contour,
     pub extras: HashMap<ContourType, Contour>,
     pub reference_point: Option<ContourPoint>,
+    // free-form points, only moved rigidly with the frame
+    pub annotations: Vec<Annotation>,
 }
 
 impl Transform for Frame {
@@ -30,6 +33,11 @@ impl Transform for Frame {
             .collect();
 
         self.reference_point = self.reference_point.map(|p| p.translate(dx, dy, dz));
+        self.annotations = self
+            .annotations
+            .into_iter()
+            .map(|a| a.translate(dx, dy, dz))
+            .collect();
 
         self.centroid.0 += dx;
         self.centroid.1 += dy;
@@ -51,6 +59,11 @@ impl Transform for Frame {
             .collect();
 
         self.reference_point = self.reference_point.map(|p| p.rotate(angle, center));
+        self.annotations = self
+            .annotations
+            .into_iter()
+            .map(|a| a.rotate(angle, center))
+            .collect();
 
         let (cx, cy) = center;
         let x = self.centroid.0 - cx;
@@ -116,7 +129,31 @@ impl Frame {
                 point.z = z_value;
             }
 
+            self.set_annotation_z(z_value);
+
             self.centroid.2 = z_value;
+        }
+    }
+
+    /// Sets z of every annotation point, used when the frame moves along the pullback.
+    pub fn set_annotation_z(&mut self, z: f64) {
+        for p in self
+            .annotations
+            .iter_mut()
+            .flat_map(|a| a.points.iter_mut())
+        {
+            p.z = z;
+        }
+    }
+
+    /// Sets frame_index of every annotation point, used when frames are renumbered.
+    pub fn set_annotation_frame_index(&mut self, frame_index: u32) {
+        for p in self
+            .annotations
+            .iter_mut()
+            .flat_map(|a| a.points.iter_mut())
+        {
+            p.frame_index = frame_index;
         }
     }
 
@@ -148,15 +185,22 @@ impl Frame {
         self.centroid.0 = center.0 + translated_cx * cos_angle - translated_cy * sin_angle;
         self.centroid.1 = center.1 + translated_cx * sin_angle + translated_cy * cos_angle;
 
-        // Rotate extras if needed
-        for contour in self.extras.values_mut() {
-            for point in &mut contour.points {
-                let translated_x = point.x - center.0;
-                let translated_y = point.y - center.1;
+        // Rotate extras and annotations
+        let annotation_points = self
+            .annotations
+            .iter_mut()
+            .flat_map(|a| a.points.iter_mut());
+        for point in self
+            .extras
+            .values_mut()
+            .flat_map(|c| c.points.iter_mut())
+            .chain(annotation_points)
+        {
+            let translated_x = point.x - center.0;
+            let translated_y = point.y - center.1;
 
-                point.x = center.0 + translated_x * cos_angle - translated_y * sin_angle;
-                point.y = center.1 + translated_x * sin_angle + translated_y * cos_angle;
-            }
+            point.x = center.0 + translated_x * cos_angle - translated_y * sin_angle;
+            point.y = center.1 + translated_x * sin_angle + translated_y * cos_angle;
         }
     }
 
@@ -314,6 +358,7 @@ mod frame_tests {
                 z: 0.0,
                 aortic: false,
             }),
+            annotations: Vec::new(),
         };
 
         // --- store originals before any rotation ---
@@ -493,6 +538,7 @@ mod frame_tests {
             },
             extras: HashMap::new(),
             reference_point: None,
+            annotations: Vec::new(),
         };
 
         // Rotate 180 degrees (PI) around point (1, 1)
@@ -653,6 +699,7 @@ mod frame_tests {
                 z: 0.0,
                 aortic: false,
             }),
+            annotations: Vec::new(),
         };
 
         frame = frame.translate(1.0, 2.0, 3.0);
@@ -692,6 +739,72 @@ mod frame_tests {
         } else {
             panic!("reference_point expected but missing");
         }
+    }
+
+    #[test]
+    fn test_frame_transforms_move_annotations_with_lumen() {
+        use crate::types::native::{AnnotationKind, AnnotationRole, Point3D};
+
+        let xs = [0.0, 2.0, 2.0, 0.0];
+        let ys = [0.0, 0.0, 2.0, 2.0];
+        let lumen_points: Vec<ContourPoint> = (0..4)
+            .map(|i| ContourPoint {
+                frame_index: 1,
+                point_index: i as u32,
+                x: xs[i],
+                y: ys[i],
+                z: 0.5,
+                aortic: false,
+            })
+            .collect();
+        let mut frame = Frame {
+            id: 1,
+            centroid: (1.0, 1.0, 0.5),
+            lumen: Contour {
+                id: 1,
+                original_frame: 1,
+                points: lumen_points.clone(),
+                centroid: Some((1.0, 1.0, 0.5)),
+                aortic_thickness: None,
+                pulmonary_thickness: None,
+                kind: ContourType::Lumen,
+            },
+            extras: HashMap::new(),
+            reference_point: None,
+            annotations: vec![
+                Annotation::new(
+                    AnnotationKind::Sidebranch,
+                    AnnotationRole::Region,
+                    0,
+                    vec![lumen_points[1], lumen_points[2]],
+                ),
+                Annotation::new(
+                    AnnotationKind::Custom("fibrous_cap".into()),
+                    AnnotationRole::Landmark,
+                    3,
+                    vec![lumen_points[3]],
+                ),
+            ],
+        };
+
+        let check = |frame: &Frame| {
+            assert_eq!(frame.lumen.points[1], frame.annotations[0].points[0]);
+            assert_eq!(frame.lumen.points[2], frame.annotations[0].points[1]);
+            assert_eq!(frame.lumen.points[3], frame.annotations[1].points[0]);
+        };
+
+        frame = frame.rotate(0.7, (3.0, -1.0));
+        check(&frame);
+        frame = frame.translate(1.5, -2.0, 4.0);
+        check(&frame);
+        frame.rotate_frame_around_point(-1.1, (0.3, 0.2, 0.0));
+        check(&frame);
+        frame.set_value(None, None, None, Some(9.0));
+        assert!(frame.annotations[0].points.iter().all(|p| p.z == 9.0));
+        assert!(frame.lumen.points[1].distance_to(&frame.annotations[0].points[0]) < 1e-12);
+        assert_eq!(frame.annotations[1].kind.name(), "fibrous_cap");
+        assert_eq!(frame.annotations[1].role, AnnotationRole::Landmark);
+        assert_eq!(frame.annotations[1].group, 3);
     }
 
     #[test]
@@ -767,6 +880,7 @@ mod frame_tests {
                 z: 5.0,
                 aortic: false,
             }),
+            annotations: Vec::new(),
         };
 
         // New values to set

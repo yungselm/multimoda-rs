@@ -9,6 +9,7 @@ Classes
    PyContour
    PyContourType
    PyFrame
+   PyAnnotation
    PyGeometry
    PyGeometryPair
    PyRecord

@@ -538,6 +538,7 @@ fn fix_one_frame_hole(frame_1: &Frame, frame_2: &Frame) -> Frame {
         lumen,
         extras,
         reference_point,
+        annotations: Vec::new(),
     }
 }
 
@@ -641,6 +642,7 @@ fn create_interpolated_frame(frame_1: &Frame, frame_2: &Frame, t: f64) -> Frame 
         lumen,
         extras,
         reference_point,
+        annotations: Vec::new(),
     }
 }
 
@@ -785,8 +787,52 @@ mod align_within_tests {
 
     use super::*;
     use crate::intravascular::utils::test_utils::{
-        dummy_geometry, dummy_geometry_aligned_long, dummy_geometry_center_reference,
+        add_annotations_on_lumen, assert_annotations_on_lumen, dummy_geometry,
+        dummy_geometry_aligned_long, dummy_geometry_center_reference,
     };
+
+    #[test]
+    fn test_align_within_moves_annotations_with_lumen() -> anyhow::Result<()> {
+        let mut dummy = dummy_geometry();
+        add_annotations_on_lumen(&mut dummy);
+
+        let (geom, _, _) = align_frames_in_geometry(&mut dummy, 0.01, 30.0, false, false, 6)?;
+
+        assert_annotations_on_lumen(&geom, 2);
+        Ok(())
+    }
+
+    #[test]
+    fn test_fill_holes_inserted_frames_have_no_annotations() -> anyhow::Result<()> {
+        let mut geometry = dummy_geometry_aligned_long();
+        geometry.frames[5].translate_mut(0.0, 0.0, 2.0);
+        add_annotations_on_lumen(&mut geometry);
+
+        let new_geom = fill_holes(&mut geometry)?;
+
+        assert_eq!(new_geom.frames.len(), 8);
+        for (i, frame) in new_geom.frames.iter().enumerate() {
+            let expected = if i == 5 || i == 6 { 0 } else { 2 };
+            assert_eq!(frame.annotations.len(), expected, "frame {i}");
+            for p in frame.annotations.iter().flat_map(|a| a.points.iter()) {
+                assert_eq!(p.frame_index, frame.lumen.points[0].frame_index);
+                assert_eq!(p.z, frame.centroid.2);
+            }
+        }
+        let kept: Vec<Frame> = new_geom
+            .frames
+            .into_iter()
+            .filter(|f| !f.annotations.is_empty())
+            .collect();
+        assert_annotations_on_lumen(
+            &Geometry {
+                frames: kept,
+                label: String::new(),
+            },
+            2,
+        );
+        Ok(())
+    }
 
     #[test]
     fn test_simple_geometry() -> anyhow::Result<()> {

@@ -9,8 +9,6 @@ use std::fmt;
 pub enum ContourType {
     Lumen,
     Eem,
-    Calcification,
-    Sidebranch,
     Catheter,
     Wall,
 }
@@ -23,8 +21,6 @@ impl fmt::Display for ContourType {
             match self {
                 ContourType::Lumen => "Lumen",
                 ContourType::Eem => "Eem",
-                ContourType::Calcification => "Calcification",
-                ContourType::Sidebranch => "Sidebranch",
                 ContourType::Catheter => "Catheter",
                 ContourType::Wall => "Wall",
             }

@@ -1,9 +1,11 @@
+use super::py_annotation::PyAnnotation;
 use super::py_contour::PyContour;
 use super::py_contour_point::PyContourPoint;
 use super::py_record::PyRecord;
-use crate::intravascular::io::input::InputData;
-use crate::types::native::{ContourPoint, Record};
+use crate::intravascular::io::input::{region_annotations_from_points, InputData};
+use crate::types::native::{AnnotationKind, ContourPoint, Record};
 use anyhow::{anyhow, Result};
+use pyo3::exceptions::PyDeprecationWarning;
 use pyo3::prelude::*;
 use std::convert::TryFrom;
 
@@ -16,9 +18,11 @@ use std::convert::TryFrom;
 /// eem : list of PyContour or None
 ///     Vessel EEM (external elastic membrane) contours.
 /// calcification : list of PyContour or None
-///     Vessel calcification contours.
+///     Deprecated, converted to ``calcification`` region annotations
+///     (one per frame) when the geometry is built. Use ``annotations``.
 /// sidebranch : list of PyContour or None
-///     Vessel sidebranch contours.
+///     Deprecated, converted to ``sidebranch`` region annotations
+///     (one per frame) when the geometry is built. Use ``annotations``.
 /// record : list of PyRecord or None
 ///     Metadata records about the input data.
 /// ref_point : PyContourPoint
@@ -27,17 +31,22 @@ use std::convert::TryFrom;
 ///     ``True`` when the data corresponds to the diastolic phase.
 /// label : str
 ///     Human-readable label for this input dataset.
+/// annotations : list of tuple of (int, PyAnnotation)
+///     ``(frame, annotation)`` pairs, frame numbered like the lumen
+///     ``original_frame``. Attached to that frame when building the geometry.
 ///
 /// Examples
 /// --------
 /// >>> input_data = PyInputData(
 /// ...     lumen=[lumen_contour1, lumen_contour2, ...],
 /// ...     eem=[eem_contour1, eem_contour2, ...],
-/// ...     calcification=[],
-/// ...     sidebranch=[],
+/// ...     calcification=None,
+/// ...     sidebranch=None,
 /// ...     record=record,
+/// ...     ref_point=ref_point,
 /// ...     diastole=True,
-/// ...     lablel="Pat00_diastole_rest"
+/// ...     label="Pat00_diastole_rest",
+/// ...     annotations=[(385, PyAnnotation("sidebranch", "region", 0, points))],
 /// ... )
 #[pyclass(from_py_object)]
 #[derive(Debug, Clone)]
@@ -58,12 +67,16 @@ pub struct PyInputData {
     pub diastole: bool,
     #[pyo3(get, set)]
     pub label: String,
+    #[pyo3(get, set)]
+    pub annotations: Vec<(u32, PyAnnotation)>,
 }
 
 #[pymethods]
 impl PyInputData {
     #[new]
+    #[pyo3(signature = (lumen, eem, calcification, sidebranch, record, ref_point, diastole, label, annotations=Vec::new()))]
     fn new(
+        py: Python<'_>,
         lumen: Vec<PyContour>,
         eem: Option<Vec<PyContour>>,
         calcification: Option<Vec<PyContour>>,
@@ -72,8 +85,18 @@ impl PyInputData {
         ref_point: PyContourPoint,
         diastole: bool,
         label: String,
-    ) -> Self {
-        Self {
+        annotations: Vec<(u32, PyAnnotation)>,
+    ) -> PyResult<Self> {
+        if calcification.is_some() || sidebranch.is_some() {
+            PyErr::warn(
+                py,
+                &py.get_type::<PyDeprecationWarning>(),
+                c"PyInputData calcification and sidebranch are deprecated, pass them as \
+                  region annotations instead",
+                1,
+            )?;
+        }
+        Ok(Self {
             lumen,
             eem,
             calcification,
@@ -82,12 +105,13 @@ impl PyInputData {
             ref_point,
             diastole,
             label,
-        }
+            annotations,
+        })
     }
 
     fn __repr__(&self) -> String {
         format!(
-            "InputData(lumen={}, eem={}, calcification={}, sidebranch={}, record={}, ref_point={}, diastole={}, label='{}')",
+            "InputData(lumen={}, eem={}, calcification={}, sidebranch={}, record={}, ref_point={}, diastole={}, label='{}', annotations={})",
             self.lumen.len(),
             self.eem.as_ref().map_or(0, |v| v.len()),
             self.calcification.as_ref().map_or(0, |v| v.len()),
@@ -96,6 +120,7 @@ impl PyInputData {
             self.ref_point.__repr__(),
             self.diastole,
             self.label,
+            self.annotations.len(),
         )
     }
 }
@@ -139,8 +164,24 @@ impl TryFrom<&PyInputData> for InputData {
         }
 
         let eem_points = flatten(&py_in.eem)?;
-        let calc_points = flatten(&py_in.calcification)?;
-        let sidebranch_points = flatten(&py_in.sidebranch)?;
+
+        // deprecated contour lists become one region annotation per frame
+        let mut annotations: Vec<_> = py_in
+            .annotations
+            .iter()
+            .map(|(frame, a)| (*frame, a.to_rust_annotation()))
+            .collect();
+        for (contours, kind) in [
+            (&py_in.sidebranch, AnnotationKind::Sidebranch),
+            (&py_in.calcification, AnnotationKind::Calcification),
+        ] {
+            let points: Vec<ContourPoint> = contours
+                .iter()
+                .flatten()
+                .flat_map(|c| c.points.iter().map(ContourPoint::from))
+                .collect();
+            annotations.extend(region_annotations_from_points(points, kind));
+        }
 
         // Records: Option<Vec<PyRecord>> -> Option<Vec<Record>>
         let records_rust: Option<Vec<Record>> = match &py_in.record {
@@ -161,12 +202,11 @@ impl TryFrom<&PyInputData> for InputData {
         InputData::new(
             lumen_points,
             eem_points,
-            calc_points,
-            sidebranch_points,
             records_rust,
             ref_point_rust,
             py_in.diastole,
             py_in.label.clone(),
+            annotations,
         )
         .map_err(|e| anyhow!("InputData::new failed: {e:?}"))
     }
@@ -228,8 +268,6 @@ impl From<&InputData> for PyInputData {
             };
 
         let eem_py = wrap_opt(&input.eem, 0);
-        let calc_py = wrap_opt(&input.calcification, 0);
-        let sb_py = wrap_opt(&input.sidebranch, 0);
 
         // Records
         let record_py: Option<Vec<PyRecord>> = input
@@ -242,12 +280,17 @@ impl From<&InputData> for PyInputData {
         PyInputData {
             lumen: lumen_vec,
             eem: eem_py,
-            calcification: calc_py,
-            sidebranch: sb_py,
+            calcification: None,
+            sidebranch: None,
             record: record_py,
             ref_point: ref_point_py,
             diastole: input.diastole,
             label: input.label.clone(),
+            annotations: input
+                .annotations
+                .iter()
+                .map(|(frame, a)| (*frame, PyAnnotation::from(a)))
+                .collect(),
         }
     }
 }

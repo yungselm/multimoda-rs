@@ -1,18 +1,22 @@
 from __future__ import annotations
 
+import warnings
+from collections.abc import Iterable
 from typing import cast
 
 import numpy as np
 import trimesh
+
 from .multimodars import (
-    PyContour,
+    PyAnnotation,
     PyCenterline,
-    PyGeometry,
-    PyFrame,
-    PyInputData,
+    PyContour,
     PyContourPoint,
-    PyRecord,
     PyContourType,
+    PyFrame,
+    PyGeometry,
+    PyInputData,
+    PyRecord,
 )
 
 
@@ -35,6 +39,12 @@ def to_array(generic) -> np.ndarray | dict | tuple[dict, dict]:
         For PyGeometry:
         A dictionary with keys for each contour type and "reference",
         each containing a 2D array of shape (M, 4), where M is the number of points in that layer.
+        Key ``"annotations"`` holds a ``dict[tuple[str, str], np.ndarray]``
+        mapping ``(kind, role)`` to rows ``(frame_index, group, x, y, z)``,
+        frame_index as in the other layers. PyFrame and PyInputData carry
+        the same key. The keys ``"sidebranch"`` and ``"calcification"`` are
+        deprecated: they hold the region annotations of that kind as
+        ``(frame_index, x, y, z)`` rows and will be removed in the next release.
 
     tuple[dict[str, np.ndarray], dict[str, np.ndarray]]
         For PyGeometryPair:
@@ -51,11 +61,11 @@ def to_array(generic) -> np.ndarray | dict | tuple[dict, dict]:
         If the input type is not one of the supported multimodars types.
     """
     from . import (
-        PyContour,
         PyCenterline,
+        PyContour,
+        PyFrame,
         PyGeometry,
         PyGeometryPair,
-        PyFrame,
         PyInputData,
     )
 
@@ -118,7 +128,46 @@ def _frame_to_numpy(frame) -> dict[str, np.ndarray]:
     else:
         result["reference"] = np.zeros((0, 4), dtype=float)
 
+    annotations = _annotations_to_numpy(
+        (p.frame_index, ann, p) for ann in frame.annotations for p in ann.points
+    )
+    for kind, arr in _legacy_region_arrays(annotations).items():
+        result[kind] = arr
+    result["annotations"] = annotations  # type: ignore[assignment]
+
     return result
+
+
+_LEGACY_REGION_KINDS = ("sidebranch", "calcification")
+
+
+def _annotations_to_numpy(rows: Iterable) -> dict[tuple[str, str], np.ndarray]:
+    """Map ``(kind, role)`` to ``[frame, group, x, y, z]`` rows from ``(frame, annotation, point)``."""
+    out: dict[tuple[str, str], list[tuple[float, ...]]] = {}
+    for frame, ann, p in rows:
+        out.setdefault((ann.kind, ann.role), []).append(
+            (frame, ann.group, p.x, p.y, p.z)
+        )
+    return {k: np.array(v, dtype=float).reshape(-1, 5) for k, v in out.items()}
+
+
+def _legacy_region_arrays(
+    annotations: dict[tuple[str, str], np.ndarray],
+) -> dict[str, np.ndarray]:
+    """Deprecated ``[frame, x, y, z]`` layers from sidebranch / calcification regions."""
+    return {
+        kind: annotations[(kind, "region")][:, [0, 2, 3, 4]]
+        for kind in _LEGACY_REGION_KINDS
+        if (kind, "region") in annotations
+    }
+
+
+def _merge_annotation_arrays(
+    target: dict[tuple[str, str], np.ndarray],
+    other: dict[tuple[str, str], np.ndarray],
+) -> None:
+    for key, arr in other.items():
+        target[key] = np.vstack([target[key], arr]) if key in target else arr
 
 
 def _geometry_to_numpy(geom) -> dict[str, np.ndarray]:
@@ -132,19 +181,22 @@ def _geometry_to_numpy(geom) -> dict[str, np.ndarray]:
         "wall": np.zeros((0, 4), dtype=float),
         "reference": np.zeros((0, 4), dtype=float),
     }
+    annotations: dict[tuple[str, str], np.ndarray] = {}
 
     # Collect all points from all frames
     for frame in geom.frames:
         frame_data = _frame_to_numpy(frame)
-        for key in result:
+        _merge_annotation_arrays(annotations, frame_data.pop("annotations"))  # type: ignore[arg-type]
+        for key, current in result.items():
             if key in frame_data and len(frame_data[key]) > 0:
-                if len(result[key]) == 0:
+                if len(current) == 0:
                     result[key] = frame_data[key]
                 else:
                     result[key] = cast(
-                        np.ndarray, np.vstack([result[key], frame_data[key]])
+                        np.ndarray, np.vstack([current, frame_data[key]])
                     )
 
+    result["annotations"] = annotations  # type: ignore[assignment]
     return result
 
 
@@ -198,6 +250,13 @@ def _input_data_to_numpy(input_data) -> dict[str, np.ndarray | list[str] | bool]
             record_data.append(row)
         result["records"] = np.array(record_data, dtype=object)
 
+    annotations = _annotations_to_numpy(
+        (frame, ann, p) for frame, ann in input_data.annotations for p in ann.points
+    )
+    for kind, arr in _legacy_region_arrays(annotations).items():
+        result[kind] = arr if len(result[kind]) == 0 else np.vstack([result[kind], arr])  # type: ignore[list-item]
+    result["annotations"] = annotations  # type: ignore[assignment]
+
     return result
 
 
@@ -210,6 +269,7 @@ def numpy_to_inputdata(
     calcification: np.ndarray | None = None,
     sidebranch: np.ndarray | None = None,
     label: str = "",
+    annotations: dict[tuple[str, str], np.ndarray] | None = None,
 ) -> PyInputData:
     """
     Build a ``PyInputData`` from numpy arrays, grouping by frame index into frames.
@@ -229,11 +289,25 @@ def numpy_to_inputdata(
     eem_arr : np.ndarray, optional
         ``(N, 4)`` array of EEM points ``[frame_index, x, y, z]``.  Default is ``None``.
     calcification : np.ndarray, optional
-        ``(N, 4)`` array of calcification points.  Default is ``None``.
+        Deprecated. ``(N, 4)`` array of calcification points, converted to
+        one ``("calcification", "region")`` annotation per frame.
+        Default is ``None``.
     sidebranch : np.ndarray, optional
-        ``(N, 4)`` array of side-branch points.  Default is ``None``.
+        Deprecated. ``(N, 4)`` array of side-branch points, converted to
+        one ``("sidebranch", "region")`` annotation per frame.
+        Default is ``None``.
     label : str, optional
         Label string for the input data.  Default is ``""``.
+    annotations : dict of (str, str) to np.ndarray, optional
+        Non-pipe per-frame points keyed by ``(kind, role)``, e.g.
+        ``("sidebranch", "region")`` or ``("fibrous_cap", "point")``, each an
+        ``(N, 5)`` array of rows ``[frame_index, group, x, y, z]`` with
+        frame_index numbered as in ``lumen_arr``. Kinds outside
+        ``PyAnnotation.known_kinds()`` are kept as custom kinds, roles must
+        be one of ``PyAnnotation.roles()``. Consecutive rows with the same
+        ``(frame_index, group)`` form one ``PyAnnotation``. Annotations only
+        follow the rigid transforms of their frame and are dropped (with a
+        warning) when their frame has no lumen.  Default is ``None``.
 
     Returns
     -------
@@ -253,8 +327,10 @@ def numpy_to_inputdata(
         if arr.ndim == 1 and arr.dtype.names:
             try:
                 arr = np.vstack([arr[n] for n in arr.dtype.names]).T
-            except Exception:
-                raise ValueError(f"Could not convert structured array for {name}")
+            except (ValueError, TypeError) as e:
+                raise ValueError(
+                    f"Could not convert structured array for {name}"
+                ) from e
         arr = np.asarray(arr, dtype=float)
         if arr.ndim == 1:
             # Single row -> make it 2D
@@ -306,7 +382,7 @@ def numpy_to_inputdata(
             # Try to create a 2D array with numeric fields where appropriate
             try:
                 arr = np.vstack([arr[n] for n in arr.dtype.names]).T
-            except Exception:
+            except (ValueError, TypeError):
                 # fallback to treating each element as a row-like object
                 arr = np.asarray(arr)
         arr = np.asarray(arr)
@@ -326,7 +402,7 @@ def numpy_to_inputdata(
             if isinstance(phase_val, (bytes, bytearray)):
                 try:
                     phase = phase_val.decode("utf-8")
-                except Exception:
+                except UnicodeDecodeError:
                     phase = str(phase_val)
             else:
                 # numeric -> map 0 -> "D", 1 -> "S", otherwise string-ify
@@ -341,7 +417,7 @@ def numpy_to_inputdata(
                     if np.isnan(fv):
                         return None
                     return fv
-                except Exception:
+                except (TypeError, ValueError):
                     return None
 
             m1 = _to_optional_float(row[2]) if row.shape[0] > 2 else None
@@ -376,7 +452,7 @@ def numpy_to_inputdata(
                 z=float(z),
                 aortic=False,
             )
-        except Exception:
+        except (TypeError, ValueError, IndexError):
             global_ref = None
 
     if global_ref is None:
@@ -393,8 +469,6 @@ def numpy_to_inputdata(
 
     lumen_list = []
     eem_list = []
-    calc_list = []
-    sidebranch_list = []
 
     for frame_id in all_lumen_frames:
         lumen_contour = build_contour_from_array(lumen_arr, frame_id, "Lumen")
@@ -407,34 +481,92 @@ def numpy_to_inputdata(
         if eem_contour is not None:
             eem_list.append(eem_contour)
 
-        calc_contour = build_contour_from_array(
-            calcification_arr, frame_id, "Calcification"
-        )
-        if calc_contour is not None:
-            calc_list.append(calc_contour)
-
-        sb_contour = build_contour_from_array(sidebranch_arr, frame_id, "Sidebranch")
-        if sb_contour is not None:
-            sidebranch_list.append(sb_contour)
-
     # Convert records (if any)
     record_list = _records_from_array(record)
 
-    # Convert empty lists to None for optional fields like eem/calcification/sidebranch/record
+    # Convert empty lists to None for optional fields like eem/record
     eem_final = eem_list if len(eem_list) > 0 else None
-    calc_final = calc_list if len(calc_list) > 0 else None
-    sidebranch_final = sidebranch_list if len(sidebranch_list) > 0 else None
+
+    annotation_list = _annotations_from_arrays(annotations)
+    for kind, arr in (
+        ("sidebranch", sidebranch_arr),
+        ("calcification", calcification_arr),
+    ):
+        annotation_list.extend(_legacy_regions_from_array(kind, arr))
 
     return PyInputData(
         lumen=lumen_list,
         eem=eem_final,
-        calcification=calc_final,
-        sidebranch=sidebranch_final,
+        calcification=None,
+        sidebranch=None,
         record=record_list,
         ref_point=global_ref,
         diastole=bool(diastole),
         label=label or "",
+        annotations=annotation_list,
     )
+
+
+def _annotations_from_arrays(
+    annotations: dict[tuple[str, str], np.ndarray] | None,
+) -> list[tuple[int, PyAnnotation]]:
+    """Group consecutive ``[frame, group, x, y, z]`` rows per ``(kind, role)``."""
+    out: list[tuple[int, PyAnnotation]] = []
+    for key, arr in (annotations or {}).items():
+        if not (isinstance(key, tuple) and len(key) == 2):
+            raise ValueError(
+                f"annotations keys must be (kind, role) tuples, got {key!r}"
+            )
+        kind, role = key
+        arr = np.asarray(arr, dtype=float)
+        if arr.size == 0:
+            continue
+        arr = arr.reshape(1, -1) if arr.ndim == 1 else arr
+        if arr.ndim != 2 or arr.shape[1] != 5:
+            raise ValueError(
+                f"annotations[{key!r}] must have rows [frame, group, x, y, z], "
+                f"got shape {arr.shape}"
+            )
+        current = None
+        points: list[PyContourPoint] = []
+        for fr, grp, x, y, z in arr:
+            frame, group = int(fr), int(grp)
+            if (frame, group) != current:
+                if current is not None:
+                    out.append(
+                        (current[0], PyAnnotation(kind, role, current[1], points))
+                    )
+                current, points = (frame, group), []
+            points.append(
+                PyContourPoint(
+                    frame_index=frame,
+                    point_index=len(points),
+                    x=float(x),
+                    y=float(y),
+                    z=float(z),
+                    aortic=False,
+                )
+            )
+        if current is not None:
+            out.append((current[0], PyAnnotation(kind, role, current[1], points)))
+    return out
+
+
+def _legacy_regions_from_array(
+    kind: str, arr: np.ndarray
+) -> list[tuple[int, PyAnnotation]]:
+    """One region annotation per frame from a deprecated ``[frame, x, y, z]`` layer."""
+    if arr.size == 0:
+        return []
+    warnings.warn(
+        f"numpy_to_inputdata({kind}=...) is deprecated, pass "
+        f"annotations={{('{kind}', 'region'): rows}} instead",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+    order = np.argsort(arr[:, 0].astype(int), kind="stable")
+    rows = np.column_stack([arr[order, 0], np.zeros(len(order)), arr[order, 1:4]])
+    return _annotations_from_arrays({(kind, "region"): rows})
 
 
 def numpy_to_geometry(
@@ -444,6 +576,7 @@ def numpy_to_geometry(
     wall_arr: np.ndarray | None = None,
     reference_arr: np.ndarray | None = None,
     label: str = "",
+    annotations: dict[tuple[str, str], np.ndarray] | None = None,
 ) -> PyGeometry:
     """
     Build a ``PyGeometry`` from numpy arrays, grouping by frame index into frames.
@@ -465,6 +598,11 @@ def numpy_to_geometry(
         Default is ``None``.
     label : str, optional
         Label string for the geometry.  Default is ``""``.
+    annotations : dict of (str, str) to np.ndarray, optional
+        ``(kind, role)`` to ``[frame_index, group, x, y, z]`` rows, as returned
+        by ``to_array(geometry)["annotations"]``. Each annotation goes to the
+        frame whose lumen rows have the same frame_index, others are dropped
+        with a warning.  Default is ``None``.
 
     Returns
     -------
@@ -484,8 +622,10 @@ def numpy_to_geometry(
         if arr.ndim == 1 and arr.dtype.names:
             try:
                 arr = np.vstack([arr[name] for name in arr.dtype.names]).T
-            except Exception:
-                raise ValueError(f"Could not convert structured array for {layer_name}")
+            except (ValueError, TypeError) as e:
+                raise ValueError(
+                    f"Could not convert structured array for {layer_name}"
+                ) from e
         arr = np.asarray(arr, dtype=float)
         return arr
 
@@ -566,6 +706,10 @@ def numpy_to_geometry(
         if arr.size > 0:
             all_frames.update(arr[:, 0].astype(int))
 
+    frame_annotations: dict[int, list[PyAnnotation]] = {}
+    for fr, ann in _annotations_from_arrays(annotations):
+        frame_annotations.setdefault(fr, []).append(ann)
+
     frames = []
     for frame_id in sorted(all_frames):
         # Build lumen contour (required)
@@ -596,8 +740,13 @@ def numpy_to_geometry(
             lumen=lumen_contour,
             extras=extras,
             reference_point=frame_reference,
+            annotations=frame_annotations.pop(frame_id, []),
         )
         frames.append(frame)
+
+    if frame_annotations:
+        n = sum(len(v) for v in frame_annotations.values())
+        warnings.warn(f"dropped {n} annotation(s) whose frame has no lumen rows")
 
     return PyGeometry(frames=frames, label=label)
 
@@ -711,9 +860,11 @@ def array_to_pyinputdata(
     eem : list of PyContour or np.ndarray, optional
         EEM contours or ``(N, 4)`` array.  Default is ``None``.
     calcification : list of PyContour or np.ndarray, optional
-        Calcification contours or ``(N, 4)`` array.  Default is ``None``.
+        Deprecated. Calcification contours or ``(N, 4)`` array, converted to
+        region annotations.  Default is ``None``.
     sidebranch : list of PyContour or np.ndarray, optional
-        Side-branch contours or ``(N, 4)`` array.  Default is ``None``.
+        Deprecated. Side-branch contours or ``(N, 4)`` array, converted to
+        region annotations.  Default is ``None``.
     records : list of PyRecord or np.ndarray, optional
         Records or ``(M, 4)`` array of ``(frame, phase, m1, m2)`` rows.
         Default is ``None``.
@@ -745,10 +896,10 @@ def array_to_pyinputdata(
         if isinstance(arr, np.ndarray) and arr.dtype.names:
             try:
                 arr = np.vstack([arr[name] for name in arr.dtype.names]).T
-            except Exception as e:
+            except (ValueError, TypeError) as e:
                 raise ValueError(
                     f"Could not convert structured array for {layer_name}: {e}"
-                )
+                ) from e
         arr = np.asarray(arr)
         if arr.size == 0:
             return np.zeros((0, 4), dtype=float)
@@ -824,8 +975,14 @@ def array_to_pyinputdata(
 
     lumen_contours = ensure_contours(lumen, "Lumen")
     eem_contours = ensure_contours(eem, "Eem")
-    calc_contours = ensure_contours(calcification, "Calcification")
-    sidebranch_contours = ensure_contours(sidebranch, "Sidebranch")
+    legacy_annotations: list[tuple[int, PyAnnotation]] = []
+    for kind, layer in (("sidebranch", sidebranch), ("calcification", calcification)):
+        contours = ensure_contours(layer, "Lumen")
+        rows = [(p.frame_index, p.x, p.y, p.z) for c in contours for p in c.points]
+        if rows:
+            legacy_annotations.extend(
+                _legacy_regions_from_array(kind, np.array(rows, dtype=float))
+            )
 
     def parse_records(recs):
         if recs is None:
@@ -953,12 +1110,13 @@ def array_to_pyinputdata(
     pyinput = PyInputData(
         lumen=lumen_contours,
         eem=none_if_empty(eem_contours),
-        calcification=none_if_empty(calc_contours),
-        sidebranch=none_if_empty(sidebranch_contours),
+        calcification=None,
+        sidebranch=None,
         record=parsed_records,
         ref_point=ref_point,
         diastole=bool(diastole),
         label=str(label),
+        annotations=legacy_annotations,
     )
 
     return pyinput

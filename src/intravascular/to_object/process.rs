@@ -93,13 +93,13 @@ pub fn write_single_geometry(
                     "newmtl material\nKa 1.0 1.0 1.0\nKd 1.0 1.0 1.0\nKs 0.0 0.0 0.0"
                 )?;
             }
-            ContourType::Catheter | ContourType::Calcification => {
+            ContourType::Catheter => {
                 writeln!(
                     mtl_file,
                     "newmtl material\nKa 0.0 0.0 0.0\nKd 0.0 0.0 0.0\nKs 0.0 0.0 0.0"
                 )?;
             }
-            ContourType::Wall | ContourType::Sidebranch => {
+            ContourType::Wall => {
                 writeln!(
                     mtl_file,
                     "newmtl material\nKa 0.5 0.5 0.5\nKd 0.5 0.5 0.5\nKs 0.0 0.0 0.0\nd 0.7"

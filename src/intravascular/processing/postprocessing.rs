@@ -232,15 +232,7 @@ fn new_frames_by_sample_rate(geometry: &Geometry, mut z_coords: Vec<f64>) -> Geo
 
         // Interpolate extra contours
         let mut new_extras = HashMap::new();
-        for kind in [
-            ContourType::Eem,
-            ContourType::Calcification,
-            ContourType::Sidebranch,
-            ContourType::Catheter,
-            ContourType::Wall,
-        ]
-        .iter()
-        {
+        for kind in [ContourType::Eem, ContourType::Catheter, ContourType::Wall].iter() {
             if let (Some(l_extra), Some(u_extra)) = (lower.extras.get(kind), upper.extras.get(kind))
             {
                 new_extras.insert(*kind, blend_contour(l_extra, u_extra, t));
@@ -258,6 +250,7 @@ fn new_frames_by_sample_rate(geometry: &Geometry, mut z_coords: Vec<f64>) -> Geo
             lumen: new_lumen,
             extras: new_extras,
             reference_point: None,
+            annotations: Vec::new(),
         });
     }
 
@@ -291,6 +284,8 @@ fn new_frames_by_sample_rate(geometry: &Geometry, mut z_coords: Vec<f64>) -> Geo
         if let Some(ref mut rp) = frame.reference_point {
             rp.z = frame.centroid.2;
         }
+        let z = frame.centroid.2;
+        frame.set_annotation_z(z);
     }
 
     Geometry {
@@ -534,6 +529,7 @@ mod tests {
             lumen,
             extras,
             reference_point,
+            annotations: Vec::new(),
         }
     }
 

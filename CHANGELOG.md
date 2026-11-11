@@ -3,6 +3,45 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.11.0] - 2026-11-11
+
+### Added
+- Per-frame annotations for everything that is not a pipe: `Frame.annotations` (Rust) /
+  `PyFrame.annotations` (Python), a list of `Annotation { kind, role, group, points }`.
+  `AnnotationKind` is `Sidebranch`, `Calcification`, `Lipid`, `Macrophage`, `Reference` or
+  `Custom(name)`, `AnnotationRole` is `Region`, `Landmark`, `AxisTip`, `DiameterEnd` or `Point`.
+  Several annotations of one kind and role per frame are allowed (`group`).
+  Annotations follow every rigid transform of their frame (in-pullback alignment, diastole/systole
+  alignment, centerline alignment) but are never sorted, smoothed, interpolated, meshed, checked for
+  point counts or used for alignment scoring. Frames inserted by hole filling or resampling get none.
+- `PyAnnotation(kind, role, group=0, points=[])` with string kind/role names (unknown kinds are
+  kept as custom kinds, unknown roles raise `ValueError`), `rotate`, `translate`.
+- Optional `{phase}_annotations.csv` next to `{phase}_contours.csv`, columns
+  `frame, kind, role, group, x, y, z` (same delimiter, units and frame numbering as the contours,
+  optional header). Consecutive rows with the same `(frame, kind, role, group)` form one annotation.
+  Annotations whose frame has no lumen are dropped with one warning.
+- `numpy_to_inputdata(annotations=...)` and `numpy_to_geometry(annotations=...)`:
+  `dict[(kind, role), ndarray]` with rows `[frame_index, group, x, y, z]`.
+  `to_array(...)["annotations"]` returns the same layout. `PyInputData.annotations` holds
+  `(frame, PyAnnotation)` pairs.
+
+### Changed (breaking)
+- `ContourType` / `PyContourType` only hold pipe-like structures: `Lumen`, `Eem`, `Catheter`, `Wall`.
+  `Sidebranch` and `Calcification` are removed, they are annotations now.
+- OBJ export no longer writes side-branch or calcification meshes (annotations are not pipes).
+
+### Deprecated (removed in the next release)
+- `branch_*` / `sidebranch_*` and `calcium_*` / `calcification_*` contour files are still read,
+  as `Sidebranch` / `Calcification` `Region` annotations (one per frame, group 0), with a
+  deprecation message. Only when the directory has no `{phase}_annotations.csv`, which
+  otherwise already holds those regions.
+- `numpy_to_inputdata(sidebranch=..., calcification=...)` and `array_to_pyinputdata(...)` with
+  those layers map them the same way and raise a `DeprecationWarning`. The same holds for the
+  `PyInputData` constructor arguments `calcification` and `sidebranch` and for `PyFrame.extras`
+  keys `"Sidebranch"` / `"Calcification"`.
+- `to_array(...)["sidebranch"]` and `["calcification"]` are filled from the region annotations of
+  those kinds, rows `(frame_index, x, y, z)` as before.
+
 ## [0.10.1] - 2026-11-10
 
 ### Added

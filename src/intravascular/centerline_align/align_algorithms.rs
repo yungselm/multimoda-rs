@@ -600,6 +600,13 @@ fn apply_transforms_to_geometry(geometry: &mut Geometry, transformations: &[Fram
             if let Some(ref mut reference_pt) = frame.reference_point {
                 *reference_pt = tr.apply_to_point(reference_pt);
             }
+            for point in frame
+                .annotations
+                .iter_mut()
+                .flat_map(|a| a.points.iter_mut())
+            {
+                *point = tr.apply_to_point(point);
+            }
             frame.centroid = frame.lumen.centroid.unwrap_or((0.0, 0.0, 0.0));
         }
     }
@@ -926,6 +933,7 @@ mod align_algorithms_tests {
             lumen,
             extras: HashMap::new(),
             reference_point: None,
+            annotations: Vec::new(),
         };
 
         let geometry = Geometry {
@@ -977,6 +985,7 @@ mod align_algorithms_tests {
                         z: 0.0,
                         aortic: false,
                     }),
+                    annotations: Vec::new(),
                 }
             })
             .collect();
@@ -1086,6 +1095,7 @@ mod align_algorithms_tests {
                         z: i as f64,
                         aortic: false,
                     }),
+                    annotations: Vec::new(),
                 }
             })
             .collect();
@@ -1112,6 +1122,40 @@ mod align_algorithms_tests {
             .iter()
             .flat_map(|f| f.lumen.points.iter().cloned())
             .collect()
+    }
+
+    #[test]
+    fn test_centerline_alignment_moves_annotations_with_lumen() {
+        use crate::intravascular::utils::test_utils::{
+            add_annotations_on_lumen, assert_annotations_on_lumen,
+        };
+
+        let mut geometry = create_elliptical_geometry();
+        add_annotations_on_lumen(&mut geometry);
+
+        // Tilted, curved centerline so every frame gets a real 3D rotation.
+        let points = (0..8)
+            .map(|k| {
+                let t = k as f64 * 0.2;
+                let mut p = create_test_centerline_point(10.0 + t.sin(), 2.0, 5.0 + t.cos(), k);
+                p.tangent = Vector3::new(t.cos(), 0.3, -t.sin()).normalize();
+                p
+            })
+            .collect();
+        let centerline = Centerline {
+            points,
+            branch_start_indices: vec![0],
+        };
+
+        let rotated = rotate_by_best_rotation(geometry, 0.4);
+        let placed = apply_transformations(rotated, &centerline, 2);
+
+        assert_annotations_on_lumen(&placed, 2);
+        let moved = placed.frames[1].annotations[0].points[0];
+        assert!(
+            (moved.x - 2.0).abs() > 1.0,
+            "annotation was not transformed"
+        );
     }
 
     #[test]

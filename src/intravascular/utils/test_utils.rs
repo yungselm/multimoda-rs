@@ -1,8 +1,8 @@
 use crate::types::native::contour::{Contour, ContourType};
 use crate::types::native::frame::Frame;
 use crate::types::native::geometry::Geometry;
-use crate::types::native::ContourPoint;
 use crate::types::native::Transform;
+use crate::types::native::{Annotation, AnnotationKind, AnnotationRole, ContourPoint, Point3D};
 use std::collections::HashMap;
 
 pub fn dummy_geometry_custom(z_spacing: f64, n_frames: usize) -> Geometry {
@@ -105,6 +105,7 @@ fn new_frame(frame_index: u32, z_coord: f64, has_ref_pt: bool) -> Frame {
         lumen: contour,
         extras: HashMap::new(),
         reference_point: ref_point,
+        annotations: Vec::new(),
     }
 }
 
@@ -312,6 +313,7 @@ pub fn dummy_geometry() -> Geometry {
         lumen: contour_a,
         extras: HashMap::new(),
         reference_point: Some(ref_point),
+        annotations: Vec::new(),
     };
     let frame_b = Frame {
         id: contour_b.id,
@@ -319,6 +321,7 @@ pub fn dummy_geometry() -> Geometry {
         lumen: contour_b,
         extras: HashMap::new(),
         reference_point: None,
+        annotations: Vec::new(),
     };
     let frame_c = Frame {
         id: contour_c.id,
@@ -326,6 +329,7 @@ pub fn dummy_geometry() -> Geometry {
         lumen: contour_c,
         extras: HashMap::new(),
         reference_point: None,
+        annotations: Vec::new(),
     };
 
     Geometry {
@@ -414,6 +418,54 @@ pub fn dummy_geometry_center_reference() -> Geometry {
     Geometry {
         frames,
         label: "dummy_geometry_center_reference".to_string(),
+    }
+}
+
+/// Adds to every frame one annotation on lumen points 0 and 2 and one on point 1.
+pub fn add_annotations_on_lumen(geometry: &mut Geometry) {
+    for frame in geometry.frames.iter_mut() {
+        let pts = &frame.lumen.points;
+        let outline = vec![pts[0], pts[2 % pts.len()]];
+        let landmark = vec![pts[1 % pts.len()]];
+        frame.annotations = vec![
+            Annotation::new(
+                AnnotationKind::Sidebranch,
+                AnnotationRole::Region,
+                0,
+                outline,
+            ),
+            Annotation::new(
+                AnnotationKind::Sidebranch,
+                AnnotationRole::Landmark,
+                1,
+                landmark,
+            ),
+        ];
+    }
+}
+
+/// Asserts every annotation point lies on a lumen point of its own frame.
+pub fn assert_annotations_on_lumen(geometry: &Geometry, expected_per_frame: usize) {
+    for frame in &geometry.frames {
+        assert_eq!(
+            frame.annotations.len(),
+            expected_per_frame,
+            "frame {}",
+            frame.id
+        );
+        for p in frame.annotations.iter().flat_map(|a| a.points.iter()) {
+            let d = frame
+                .lumen
+                .points
+                .iter()
+                .map(|l| l.distance_to(p))
+                .fold(f64::INFINITY, f64::min);
+            assert!(
+                d < 1e-9,
+                "frame {}: annotation point {d} mm off lumen",
+                frame.id
+            );
+        }
     }
 }
 

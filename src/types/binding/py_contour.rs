@@ -275,8 +275,6 @@ impl PyContour {
         let kind = match self.kind.as_str() {
             "Lumen" => ContourType::Lumen,
             "Eem" => ContourType::Eem,
-            "Calcification" => ContourType::Calcification,
-            "Sidebranch" => ContourType::Sidebranch,
             "Catheter" => ContourType::Catheter,
             "Wall" => ContourType::Wall,
             _ => {
@@ -312,8 +310,6 @@ impl PyContour {
 pub enum PyContourType {
     Lumen,
     Eem,
-    Calcification,
-    Sidebranch,
     Catheter,
     Wall,
 }
@@ -331,12 +327,10 @@ impl PyContourType {
         match name.to_lowercase().as_str() {
             "lumen" => Ok(PyContourType::Lumen),
             "eem" => Ok(PyContourType::Eem),
-            "calcification" => Ok(PyContourType::Calcification),
-            "sidebranch" => Ok(PyContourType::Sidebranch),
             "catheter" => Ok(PyContourType::Catheter),
             "wall" => Ok(PyContourType::Wall),
             _ => Err(pyo3::exceptions::PyValueError::new_err(format!(
-                "Unknown contour type: '{name}'. Valid types are: lumen, eem, calcification, sidebranch, catheter, wall"
+                "Unknown contour type: '{name}'. Valid types are: lumen, eem, catheter, wall"
             ))),
         }
     }
@@ -347,8 +341,6 @@ impl PyContourType {
         match self {
             PyContourType::Lumen => "Lumen",
             PyContourType::Eem => "Eem",
-            PyContourType::Calcification => "Calcification",
-            PyContourType::Sidebranch => "Sidebranch",
             PyContourType::Catheter => "Catheter",
             PyContourType::Wall => "Wall",
         }
@@ -368,8 +360,6 @@ impl PyContourType {
         vec![
             PyContourType::Lumen,
             PyContourType::Eem,
-            PyContourType::Calcification,
-            PyContourType::Sidebranch,
             PyContourType::Catheter,
             PyContourType::Wall,
         ]
@@ -381,8 +371,6 @@ impl From<ContourType> for PyContourType {
         match contour_type {
             ContourType::Lumen => PyContourType::Lumen,
             ContourType::Eem => PyContourType::Eem,
-            ContourType::Calcification => PyContourType::Calcification,
-            ContourType::Sidebranch => PyContourType::Sidebranch,
             ContourType::Catheter => PyContourType::Catheter,
             ContourType::Wall => PyContourType::Wall,
         }
@@ -394,8 +382,6 @@ impl From<PyContourType> for ContourType {
         match py_contour_type {
             PyContourType::Lumen => ContourType::Lumen,
             PyContourType::Eem => ContourType::Eem,
-            PyContourType::Calcification => ContourType::Calcification,
-            PyContourType::Sidebranch => ContourType::Sidebranch,
             PyContourType::Catheter => ContourType::Catheter,
             PyContourType::Wall => ContourType::Wall,
         }
@@ -413,8 +399,6 @@ impl From<&Contour> for PyContour {
         let kind_str = match contour.kind {
             ContourType::Lumen => "Lumen",
             ContourType::Eem => "Eem",
-            ContourType::Calcification => "Calcification",
-            ContourType::Sidebranch => "Sidebranch",
             ContourType::Catheter => "Catheter",
             ContourType::Wall => "Wall",
         }

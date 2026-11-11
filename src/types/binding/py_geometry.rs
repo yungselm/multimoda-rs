@@ -62,8 +62,6 @@ impl PyGeometry {
         let target_type = match contour_type {
             "Lumen" => ContourType::Lumen,
             "Eem" => ContourType::Eem,
-            "Calcification" => ContourType::Calcification,
-            "Sidebranch" => ContourType::Sidebranch,
             "Catheter" => ContourType::Catheter,
             "Wall" => ContourType::Wall,
             _ => return Vec::new(),
@@ -77,8 +75,6 @@ impl PyGeometry {
                 } else {
                     let type_str = match target_type {
                         ContourType::Eem => "Eem",
-                        ContourType::Calcification => "Calcification",
-                        ContourType::Sidebranch => "Sidebranch",
                         ContourType::Catheter => "Catheter",
                         ContourType::Wall => "Wall",
                         _ => return None,

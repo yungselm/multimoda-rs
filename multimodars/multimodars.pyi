@@ -25,16 +25,12 @@ class PyContourType:
     Members:
         Lumen: The vessel lumen.
         Eem: External elastic membrane.
-        Calcification: Calcifications.
-        Sidebranch: Side branch lumen.
         Catheter: Imaging catheter artifact.
         Wall: Vessel wall (not visible on images, but created).
     """
 
     Lumen: PyContourType
     Eem: PyContourType
-    Calcification: PyContourType
-    Sidebranch: PyContourType
     Catheter: PyContourType
     Wall: PyContourType
 
@@ -174,6 +170,53 @@ class PyRecord:
     ) -> None: ...
     def __repr__(self) -> str: ...
 
+class PyAnnotation:
+    """Non-pipe per-frame points (side-branch outline, plaque region, landmark).
+
+    Annotations follow every rigid transform of their frame. They are never
+    sorted, smoothed, interpolated, meshed or used for alignment.
+
+    Attributes
+    ----------
+    kind : str
+        ``"sidebranch"``, ``"calcification"``, ``"lipid"``, ``"macrophage"``,
+        ``"reference"``, or any other name for a custom kind (e.g. ``"fibrous_cap"``).
+    role : str
+        ``"region"``, ``"landmark"``, ``"axis_tip"``, ``"diameter_end"`` or
+        ``"point"``. Other names raise ``ValueError``.
+    group : int
+        Distinguishes several annotations of the same kind and role in one frame.
+    points : list of PyContourPoint
+        Points in input order.
+    is_custom : bool
+        ``True`` when ``kind`` is not a built-in kind.
+    """
+
+    kind: str
+    role: str
+    group: int
+    points: list[PyContourPoint]
+
+    def __init__(
+        self,
+        kind: str,
+        role: str,
+        group: int = 0,
+        points: list[PyContourPoint] = ...,
+    ) -> None: ...
+    @property
+    def is_custom(self) -> bool: ...
+    @staticmethod
+    def known_kinds() -> list[str]: ...
+    @staticmethod
+    def roles() -> list[str]: ...
+    def __repr__(self) -> str: ...
+    def __len__(self) -> int: ...
+    def rotate(
+        self, angle_deg: float, center: tuple[float, float] | None = None
+    ) -> PyAnnotation: ...
+    def translate(self, dx: float, dy: float, dz: float) -> PyAnnotation: ...
+
 class PyFrame:
     """A single intravascular imaging frame.
 
@@ -189,6 +232,10 @@ class PyFrame:
         Additional contour types keyed by name (e.g. ``"Eem"``, ``"Wall"``).
     reference_point : PyContourPoint or None
         Reference position used for alignment, if available.
+    annotations : list of PyAnnotation
+        Non-pipe points that follow the frame's rigid transforms only.
+        Deprecated ``"Sidebranch"`` / ``"Calcification"`` extras keys are
+        turned into region annotations when the frame goes to Rust.
     """
 
     id: int
@@ -196,6 +243,7 @@ class PyFrame:
     lumen: PyContour
     extras: dict[str, PyContour]
     reference_point: PyContourPoint | None
+    annotations: list[PyAnnotation]
 
     def __init__(
         self,
@@ -204,6 +252,7 @@ class PyFrame:
         lumen: PyContour,
         extras: dict[str, PyContour],
         reference_point: PyContourPoint | None,
+        annotations: list[PyAnnotation] = ...,
     ) -> None: ...
     def __repr__(self) -> str: ...
     def rotate(self, angle_deg: float) -> PyFrame: ...
@@ -591,9 +640,9 @@ class PyInputData:
     eem : list of PyContour or None
         EEM (external elastic membrane) contours.
     calcification : list of PyContour or None
-        Calcification contours.
+        Deprecated, converted to ``calcification`` region annotations.
     sidebranch : list of PyContour or None
-        Sidebranch contours.
+        Deprecated, converted to ``sidebranch`` region annotations.
     record : list of PyRecord or None
         Metadata records.
     ref_point : PyContourPoint
@@ -602,6 +651,9 @@ class PyInputData:
         ``True`` when the data corresponds to the diastolic phase.
     label : str
         Human-readable label for this dataset.
+    annotations : list of tuple of (int, PyAnnotation)
+        ``(frame, annotation)`` pairs, frame numbered like the lumen
+        ``original_frame``. Attached to that frame when building the geometry.
     """
 
     lumen: list[PyContour]
@@ -612,6 +664,7 @@ class PyInputData:
     ref_point: PyContourPoint
     diastole: bool
     label: str
+    annotations: list[tuple[int, PyAnnotation]]
 
     def __init__(
         self,
@@ -623,6 +676,7 @@ class PyInputData:
         ref_point: PyContourPoint,
         diastole: bool,
         label: str,
+        annotations: list[tuple[int, PyAnnotation]] = ...,
     ) -> None: ...
     def __repr__(self) -> str: ...
 

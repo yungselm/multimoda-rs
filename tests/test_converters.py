@@ -3,15 +3,15 @@ import numpy as np
 import pytest
 
 from multimodars import (
-    PyContourPoint,
-    PyContour,
     PyCenterline,
+    PyContour,
+    PyContourPoint,
 )
 from multimodars._converters import (
-    to_array,
-    numpy_to_geometry,
     numpy_to_centerline,
+    numpy_to_geometry,
     numpy_to_inputdata,
+    to_array,
 )
 
 
@@ -177,26 +177,30 @@ def test_numpy_to_inputdata_roundtrip():
     # Reference point (global)
     reference_arr = np.array([[0, 100.0, 101.0, 102.0]])
 
-    # Call converter
-    inp = numpy_to_inputdata(
-        lumen_arr=lumen_arr,
-        eem_arr=eem_arr,
-        calcification=calc_arr,
-        sidebranch=sidebranch_arr,
-        record=records,
-        ref_point=reference_arr,
-        diastole=True,
-        label="test_label",
-    )
+    # Call converter, sidebranch= is deprecated and becomes a region annotation
+    with pytest.warns(DeprecationWarning):
+        inp = numpy_to_inputdata(
+            lumen_arr=lumen_arr,
+            eem_arr=eem_arr,
+            calcification=calc_arr,
+            sidebranch=sidebranch_arr,
+            record=records,
+            ref_point=reference_arr,
+            diastole=True,
+            label="test_label",
+        )
 
     # Basic structure checks
     assert hasattr(inp, "lumen")
     assert len(inp.lumen) == 2  # two frames from lumen
 
-    # Check optional lists: eem present (1), calcification empty -> None, sidebranch present (1)
+    # eem present (1), calcification empty -> nothing, sidebranch -> one region annotation
     assert inp.eem is not None and len(inp.eem) == 1
-    assert inp.calcification is None or len(inp.calcification) == 0
-    assert inp.sidebranch is not None and len(inp.sidebranch) == 1
+    assert inp.calcification is None
+    assert inp.sidebranch is None
+    assert [(f, a.kind, a.role, len(a)) for f, a in inp.annotations] == [
+        (1, "sidebranch", "region", 3)
+    ]
 
     # Records parsed
     assert inp.record is not None

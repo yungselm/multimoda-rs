@@ -1,3 +1,4 @@
+pub mod annotation;
 pub mod centerline;
 pub mod centerline_point;
 pub mod contour;
@@ -8,6 +9,7 @@ pub mod geometry;
 pub mod geometry_pair;
 pub mod record;
 
+pub use annotation::{Annotation, AnnotationKind, AnnotationRole};
 pub use centerline::Centerline;
 pub use centerline_point::CenterlinePoint;
 pub use contour::{downsample_contour_points, Contour, ContourType};

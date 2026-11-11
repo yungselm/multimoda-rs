@@ -23,8 +23,6 @@ pub fn get_contour_type_name(contour_type: ContourType) -> &'static str {
     match contour_type {
         ContourType::Lumen => "lumen",
         ContourType::Eem => "eem",
-        ContourType::Calcification => "calcification",
-        ContourType::Sidebranch => "sidebranch",
         ContourType::Catheter => "catheter",
         ContourType::Wall => "wall",
     }

@@ -343,6 +343,7 @@ mod tests {
             } else {
                 None
             },
+            annotations: Vec::new(),
         }
     }
 
@@ -357,6 +358,44 @@ mod tests {
             label: "test".to_string(),
         };
         geometry.ensure_proximal_at_position_zero();
+
+        assert!(check_geometry_integrity(&geometry).is_ok());
+    }
+
+    #[test]
+    fn test_annotations_do_not_affect_integrity() {
+        use crate::types::native::{Annotation, AnnotationKind, AnnotationRole};
+
+        let mut geometry = Geometry {
+            frames: vec![
+                create_test_frame(0, 10, false, 0.0),
+                create_test_frame(1, 11, true, 1.0),
+                create_test_frame(2, 12, false, 2.0),
+            ],
+            label: "test".to_string(),
+        };
+        geometry.ensure_proximal_at_position_zero();
+        let pts = |n: usize, frame: u32| create_test_contour_points(n, frame, 0.0);
+        geometry.frames[0].annotations = vec![
+            Annotation::new(
+                AnnotationKind::Sidebranch,
+                AnnotationRole::Region,
+                0,
+                pts(7, 10),
+            ),
+            Annotation::new(
+                AnnotationKind::Sidebranch,
+                AnnotationRole::Region,
+                1,
+                pts(3, 10),
+            ),
+        ];
+        geometry.frames[2].annotations = vec![Annotation::new(
+            AnnotationKind::Custom("eem".into()),
+            AnnotationRole::Point,
+            0,
+            pts(1, 99),
+        )];
 
         assert!(check_geometry_integrity(&geometry).is_ok());
     }
