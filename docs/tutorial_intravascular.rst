@@ -106,6 +106,37 @@ Column descriptions:
   plus the pullback depth z). Providing pixel values instead of physical coordinates will
   produce incorrect area and distance measurements downstream.
 
+Optionally, structures that are not pipes (side branches, calcifications, lipid, macrophages,
+landmarks, ...) can be provided as *annotations* in ``diastolic_annotations.csv`` /
+``systolic_annotations.csv`` next to the contour files. They use the same delimiter, units and
+frame numbering as the contours, a header is optional:
+
++-------+--------------+----------+-------+--------+--------+---------+
+| frame | kind         | role     | group | x (mm) | y (mm) | z (mm)  |
++=======+==============+==========+=======+========+========+=========+
+| 771   | sidebranch   | region   | 0     | 2.4862 | 6.7096 | 24.5370 |
++-------+--------------+----------+-------+--------+--------+---------+
+| 771   | sidebranch   | region   | 0     | 2.5118 | 6.7017 | 24.5370 |
++-------+--------------+----------+-------+--------+--------+---------+
+| 771   | calcification| landmark | 0     | 3.1020 | 5.9001 | 24.5370 |
++-------+--------------+----------+-------+--------+--------+---------+
+
+- **kind** — ``sidebranch``, ``calcification``, ``lipid``, ``macrophage``, ``reference`` or any
+  other name (kept as a custom kind).
+- **role** — ``region``, ``landmark``, ``axis_tip``, ``diameter_end`` or ``point``.
+- **group** — distinguishes several annotations of the same kind and role in one frame.
+
+Consecutive rows with the same ``(frame, kind, role, group)`` form one annotation. Annotations
+follow every rigid transform of their frame (alignment within and between pullbacks, centerline
+alignment), but are never sorted, smoothed, interpolated, meshed or used for alignment scoring.
+Annotations whose frame has no lumen contour are dropped with a warning.
+
+.. note::
+
+    The old ``branch_*`` / ``sidebranch_*`` and ``calcium_*`` / ``calcification_*`` contour files
+    are still read as ``region`` annotations of the matching kind, but are deprecated and will be
+    removed in the next release.
+
 Optionally a record file can be provided `combined_sorted_manual.csv`, which should have the following structure, here the first column should contain the desired frame order and "measurement_1"
 represent the thickness of the wall between aorta and coronary and "measurement_2" for the thickness between pulmonary artery and coronary (position just for demonstration) (see :numref:`fig-dataprep`). This is based on the
 output of the `AIVUS-CAA software <https://github.com/AI-in-Cardiovascular-Medicine/AIVUS-CAA/>`_:
@@ -401,10 +432,13 @@ input type:
   of shape ``(N, 4)``, where each row is ``(frame_index, x, y, z)``.
 
 - :class:`multimodars.PyFrame` or :class:`multimodars.PyGeometry` → ``dict[str, np.ndarray]``
-  with keys ``"lumen"``, ``"eem"``, ``"calcification"``, ``"sidebranch"``, ``"catheter"``,
-  ``"wall"``, and ``"reference"``.  Each value is a ``(M, 4)`` array of
+  with keys ``"lumen"``, ``"eem"``, ``"catheter"``, ``"wall"``, ``"reference"`` and
+  ``"annotations"``.  Each contour value is a ``(M, 4)`` array of
   ``(frame_index, x, y, z)`` rows.  The ``"reference"`` entry is ``(1, 4)`` when a
-  reference point exists, or ``(0, 4)`` when absent.
+  reference point exists, or ``(0, 4)`` when absent.  ``"annotations"`` is a
+  ``dict[(kind, role), np.ndarray]`` with ``(frame_index, group, x, y, z)`` rows.
+  The deprecated keys ``"calcification"`` and ``"sidebranch"`` are still filled from the
+  ``region`` annotations of those kinds.
 
 - :class:`multimodars.PyGeometryPair` → ``tuple[dict, dict]``, one dictionary per
   geometry (``geom_a`` first, ``geom_b`` second), each in the same format as described
@@ -429,12 +463,17 @@ When you already have aligned contour data as numpy arrays and want to construct
         catheter_arr=catheter_np,    # (N, 4) optional
         wall_arr=wall_np,            # (N, 4) optional
         reference_arr=ref_np,        # (1, 4) or (4,) optional
+        annotations={                # optional, rows: frame_index, group, x, y, z
+            ("sidebranch", "region"): sidebranch_np,
+            ("calcification", "landmark"): calc_tips_np,
+        },
         label="my_geometry",
     )
 
 Rows with the same ``frame_index`` are grouped into a single :class:`PyFrame`.
 The only required argument is ``lumen_arr``; all other layers are optional and
 default to ``None`` (i.e. omitted from the resulting frames).
+:func:`multimodars.numpy_to_inputdata` takes the same ``annotations`` argument.
 
 7. Class methods
 ^^^^^^^^^^^^^^^^^
@@ -496,13 +535,15 @@ To write a modified contour back into a geometry, construct a new :class:`PyFram
         lumen=new_lumen,
         extras=old_frame.extras,
         reference_point=old_frame.reference_point,
+        annotations=old_frame.annotations,
     )
     geometry = geometry.replace_frame(2, new_frame)
 
 PyFrame
 """""""
-:class:`PyFrame` aggregates the lumen contour, optional extra layers, and the reference
-point for a single imaging position.  Its transformation methods mirror those of
+:class:`PyFrame` aggregates the lumen contour, optional extra layers, the reference
+point and the annotations (:class:`PyAnnotation`) for a single imaging position.
+Rotations and translations also move the annotations; sorting leaves them untouched.  Its transformation methods mirror those of
 :class:`PyContour` and all return a **new** frame:
 
 .. code-block:: python
