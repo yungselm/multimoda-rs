@@ -167,7 +167,7 @@ fn align_frame(frame: &Contour, cl_point: &CenterlinePoint) -> FrameTransformati
         cl_point.contour_point.z - centroid.2,
     );
 
-    let current_normal = calculate_normal(&frame.points, &centroid);
+    let current_normal = frame.normal();
     let desired_normal = cl_point.tangent;
     let angle = current_normal.angle(&desired_normal);
     let rotation: Rotation3<f64> = if angle.abs() < 1e-6 {
@@ -225,37 +225,6 @@ pub fn apply_transformation_to_contour(
     }
 }
 
-/// Calculates the normal vector using a stable cross product method.
-/// Calculates the normal vector using a more robust method
-fn calculate_normal(points: &[ContourPoint], centroid: &(f64, f64, f64)) -> Vector3<f64> {
-    if points.len() < 3 {
-        return Vector3::new(0.0, 0.0, 1.0); // Default to Z-axis for degenerate cases
-    }
-
-    let mut normal = Vector3::zeros();
-
-    for i in 0..points.len() {
-        let current = &points[i];
-        let next = &points[(i + 1) % points.len()];
-
-        normal.x += (current.y - centroid.1) * (next.z - centroid.2)
-            - (current.z - centroid.2) * (next.y - centroid.1);
-        normal.y += (current.z - centroid.2) * (next.x - centroid.0)
-            - (current.x - centroid.0) * (next.z - centroid.2);
-        normal.z += (current.x - centroid.0) * (next.y - centroid.1)
-            - (current.y - centroid.1) * (next.x - centroid.0);
-    }
-
-    let norm = normal.norm();
-    if norm > 1e-12 {
-        normal /= norm;
-    } else {
-        normal = Vector3::new(0.0, 0.0, 1.0);
-    }
-
-    normal
-}
-
 /// Rotates a contour around its centroid (for use in best_rotation_three_point)
 fn rotate_contour_around_centroid(contour: &mut Contour, angle: f64) {
     let centroid = contour.centroid.unwrap_or_else(|| {
@@ -265,7 +234,7 @@ fn rotate_contour_around_centroid(contour: &mut Contour, angle: f64) {
         (x_avg, y_avg, z_avg)
     });
 
-    let rotation_axis = calculate_normal(&contour.points, &centroid);
+    let rotation_axis = contour.normal();
     let rotation = Rotation3::from_axis_angle(&Unit::new_normalize(rotation_axis), angle);
     let pivot = Point3::new(centroid.0, centroid.1, centroid.2);
 
@@ -819,48 +788,6 @@ mod align_algorithms_tests {
         assert!((centroid.0 - 2.5).abs() < 1e-12);
         assert!((centroid.1 - 3.0).abs() < 1e-12);
         assert!((centroid.2 - 4.0).abs() < 1e-12);
-    }
-
-    #[test]
-    fn test_calculate_normal() {
-        // Create points in XY plane (normal should be +Z or -Z)
-        let points = vec![
-            ContourPoint {
-                frame_index: 0,
-                point_index: 0,
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-                aortic: false,
-            },
-            ContourPoint {
-                frame_index: 0,
-                point_index: 1,
-                x: 1.0,
-                y: 0.0,
-                z: 0.0,
-                aortic: false,
-            },
-            ContourPoint {
-                frame_index: 0,
-                point_index: 2,
-                x: 0.0,
-                y: 1.0,
-                z: 0.0,
-                aortic: false,
-            },
-        ];
-
-        let centroid = (0.0, 0.0, 0.0);
-        let normal = calculate_normal(&points, &centroid);
-
-        // Normal should be approximately in Z direction (up or down)
-        // The function takes negative of the computed normal, so we need to check magnitude
-        assert!(normal.norm() > 0.0);
-
-        // The cross product of (1,0,0) and (0,1,0) is (0,0,1) or (0,0,-1)
-        // After normalization and negation, it should be unit length
-        assert!((normal.norm() - 1.0).abs() < 1e-12);
     }
 
     #[test]

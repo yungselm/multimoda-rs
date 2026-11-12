@@ -46,8 +46,8 @@ impl Spacing for Geometry {
             .windows(2)
             .map(|w| {
                 let (a, b) = (w[0].centroid, w[1].centroid);
-                let n = w[0].lumen.normal();
-                ((b.0 - a.0) * n.0 + (b.1 - a.1) * n.1 + (b.2 - a.2) * n.2).abs()
+                let step = nalgebra::Vector3::new(b.0 - a.0, b.1 - a.1, b.2 - a.2);
+                step.dot(&w[0].lumen.normal()).abs()
             })
             .collect()
     }
