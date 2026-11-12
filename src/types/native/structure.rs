@@ -131,8 +131,10 @@ pub fn revolve_arc(
     }
     let (ux, uy) = (ux / len, uy / len);
 
+    // step 0 is the drawn arc itself, kept exactly
     let mut out = Vec::with_capacity(arc.len() * steps);
-    for k in 0..steps {
+    out.extend_from_slice(arc);
+    for k in 1..steps {
         let (sin, cos) = (k as f64 * std::f64::consts::PI / steps as f64).sin_cos();
         for p in arc {
             // split into the part along the axis and the in-plane offset to it, turn the
