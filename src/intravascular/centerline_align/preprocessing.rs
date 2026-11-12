@@ -140,6 +140,7 @@ mod cl_preprocessing_tests {
         Geometry {
             frames,
             label: "test".to_string(),
+            master_reference: None,
         }
     }
 

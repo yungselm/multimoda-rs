@@ -185,7 +185,7 @@ impl Frame {
         self.centroid.0 = center.0 + translated_cx * cos_angle - translated_cy * sin_angle;
         self.centroid.1 = center.1 + translated_cx * sin_angle + translated_cy * cos_angle;
 
-        // Rotate extras and annotations
+        // Rotate extras, the reference and annotations
         let annotation_points = self
             .annotations
             .iter_mut()
@@ -194,6 +194,7 @@ impl Frame {
             .extras
             .values_mut()
             .flat_map(|c| c.points.iter_mut())
+            .chain(self.reference_point.iter_mut())
             .chain(annotation_points)
         {
             let translated_x = point.x - center.0;
@@ -537,12 +538,23 @@ mod frame_tests {
                 kind: ContourType::Lumen,
             },
             extras: HashMap::new(),
-            reference_point: None,
+            reference_point: Some(ContourPoint {
+                frame_index: 1,
+                point_index: 0,
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            }),
             annotations: Vec::new(),
         };
 
         // Rotate 180 degrees (PI) around point (1, 1)
         frame.rotate_frame_around_point(PI, (1.0, 1.0, 0.0));
+
+        // the reference turns with the lumen point it sat on
+        let rp = frame.reference_point.expect("reference kept");
+        assert!((rp.x - 1.0).abs() < 1e-6 && (rp.y - 2.0).abs() < 1e-6);
 
         let expected_points = [
             ContourPoint {

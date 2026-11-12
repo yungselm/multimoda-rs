@@ -78,13 +78,14 @@ def test_to_array_and_back_contour():
         lumen_arr=arr,
         catheter_arr=np.zeros((0, 4)),
         wall_arr=np.zeros((0, 4)),
-        reference_arr=np.array([[0.0, 0.0, 0.0, 0.0]]),
+        reference_arr=np.array([[7.0, 0.0, 0.0, 0.0]]),
     )
 
     # Check we have frames with contours
     assert len(rebuilt.frames) > 0
     frame = rebuilt.frames[0]
     assert len(frame.lumen.points) == 3
+    assert frame.reference_point is not None
 
     pts = frame.lumen.points
     for orig, new in zip(c.points, pts):
@@ -185,7 +186,7 @@ def test_numpy_to_inputdata_roundtrip():
             calcification=calc_arr,
             sidebranch=sidebranch_arr,
             record=records,
-            ref_point=reference_arr,
+            reference_points=reference_arr,
             diastole=True,
             label="test_label",
         )
@@ -211,9 +212,9 @@ def test_numpy_to_inputdata_roundtrip():
     assert r0.phase in ("D", "d", "0", "D")  # accept 'D' (string) mapping variants
 
     # Reference point, diastole and label
-    assert pytest.approx(inp.ref_point.x) == 100.0
-    assert pytest.approx(inp.ref_point.y) == 101.0
-    assert pytest.approx(inp.ref_point.z) == 102.0
+    assert len(inp.reference_points) == 1
+    ref = inp.reference_points[0]
+    assert (ref.x, ref.y, ref.z) == pytest.approx((100.0, 101.0, 102.0))
     assert inp.diastole is True
     assert inp.label == "test_label"
 

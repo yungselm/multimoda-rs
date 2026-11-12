@@ -9,6 +9,9 @@ use std::collections::{HashMap, HashSet};
 pub struct Geometry {
     pub frames: Vec<Frame>,
     pub label: String,
+    /// Original frame of the reference that aligns this geometry to others.
+    /// `None` uses the most proximal reference.
+    pub master_reference: Option<u32>,
 }
 
 impl Transform for Geometry {
@@ -59,13 +62,50 @@ impl Geometry {
         proximal_idx as usize
     }
 
-    /// Position in `frames` of the first frame carrying a reference point (an index into
-    /// `frames`, not the frame's `id`, which can differ).
-    pub fn find_ref_frame_idx(&self) -> anyhow::Result<usize> {
+    /// Position in `frames` of the master reference (an index into `frames`, not a frame `id`).
+    ///
+    /// A reference is identified by its original frame (`reference_point.frame_index`), which
+    /// survives reordering, renumbering and resampling. Without a master set, the most proximal
+    /// (first) reference is used.
+    pub fn master_frame_idx(&self) -> anyhow::Result<usize> {
+        match self.master_reference {
+            Some(m) => self
+                .frames
+                .iter()
+                .position(|f| f.reference_point.is_some_and(|p| p.frame_index == m))
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "No reference point on original frame {m} in '{}'",
+                        self.label
+                    )
+                }),
+            None => self
+                .frames
+                .iter()
+                .position(|f| f.reference_point.is_some())
+                .ok_or_else(|| anyhow::anyhow!("No reference point in '{}'", self.label)),
+        }
+    }
+
+    /// Original frames of all reference points, in frame order.
+    pub fn reference_frames(&self) -> Vec<u32> {
         self.frames
             .iter()
-            .position(|f| f.reference_point.is_some())
-            .ok_or_else(|| anyhow::anyhow!("No reference point found in any frame"))
+            .filter_map(|f| f.reference_point.map(|p| p.frame_index))
+            .collect()
+    }
+
+    /// Makes the reference on original frame `frame` the master, errors if there is none.
+    pub fn set_master_reference(&mut self, frame: u32) -> anyhow::Result<()> {
+        if !self.reference_frames().contains(&frame) {
+            anyhow::bail!(
+                "No reference point on original frame {frame} in '{}', references are on {:?}",
+                self.label,
+                self.reference_frames()
+            );
+        }
+        self.master_reference = Some(frame);
+        Ok(())
     }
 
     /// Reorder frames based on order of Vec<Record>
@@ -319,9 +359,6 @@ impl Geometry {
                     point.frame_index = new_id;
                 }
             }
-            if let Some(ref mut rp) = frame.reference_point {
-                rp.frame_index = new_id;
-            }
             frame.set_annotation_frame_index(new_id);
         }
     }
@@ -574,9 +611,10 @@ mod geometry_tests {
         let mut geom = Geometry {
             frames,
             label: "test".to_string(),
+            master_reference: None,
         };
         let prox_idx = geom.find_proximal_end_idx();
-        let ref_idx = geom.find_ref_frame_idx().unwrap();
+        let ref_idx = geom.master_frame_idx().unwrap();
 
         assert_eq!(prox_idx, 2);
         assert_eq!(geom.frames[prox_idx].lumen.original_frame, 717);
@@ -587,7 +625,7 @@ mod geometry_tests {
 
         geom.ensure_proximal_at_position_zero();
         let prox_idx = geom.find_proximal_end_idx();
-        let ref_idx = geom.find_ref_frame_idx().unwrap();
+        let ref_idx = geom.master_frame_idx().unwrap();
         assert_eq!(prox_idx, 0);
         assert_eq!(geom.frames[prox_idx].lumen.original_frame, 717);
         assert_eq!(geom.frames[prox_idx].centroid.2, 0.0);
@@ -597,7 +635,7 @@ mod geometry_tests {
     }
 
     #[test]
-    fn test_find_ref_frame_idx_returns_position_not_id() {
+    fn test_master_frame_idx_returns_position_not_id() {
         let frame = |id: u32, has_ref: bool| Frame {
             id,
             centroid: (0.0, 0.0, 0.0),
@@ -621,12 +659,28 @@ mod geometry_tests {
             }),
             annotations: Vec::new(),
         };
-        let geom = Geometry {
-            frames: vec![frame(7, false), frame(3, true), frame(5, false)],
+        let mut geom = Geometry {
+            frames: vec![
+                frame(7, false),
+                frame(3, true),
+                frame(5, false),
+                frame(9, true),
+            ],
             label: "test".to_string(),
+            master_reference: None,
         };
 
-        assert_eq!(geom.find_ref_frame_idx().unwrap(), 1);
+        // without a master the first reference is used
+        assert_eq!(geom.master_frame_idx().unwrap(), 1);
+        assert_eq!(geom.reference_frames(), vec![3, 9]);
+        geom.set_master_reference(9).unwrap();
+        assert_eq!(geom.master_frame_idx().unwrap(), 3);
+        assert!(geom.set_master_reference(5).is_err());
+        assert_eq!(
+            geom.master_reference,
+            Some(9),
+            "a failed set keeps the master"
+        );
     }
 
     #[test]
@@ -692,6 +746,7 @@ mod geometry_tests {
         let mut geom = Geometry {
             frames,
             label: "test".to_string(),
+            master_reference: None,
         };
 
         let records = vec![
@@ -780,6 +835,7 @@ mod geometry_tests {
         let mut geom = Geometry {
             frames: vec![frame(0, 10, 0.0), frame(1, 20, 0.5), frame(2, 30, 1.5)],
             label: "test".to_string(),
+            master_reference: None,
         };
         let records: Vec<Record> = [30, 10, 20]
             .iter()
@@ -983,6 +1039,7 @@ mod geometry_tests {
         let geometry = Geometry {
             frames,
             label: "test_smoothing".to_string(),
+            master_reference: None,
         };
 
         // Apply smoothing
@@ -1354,6 +1411,7 @@ mod geometry_tests {
         let geometry = Geometry {
             frames,
             label: "test_smoothing_with_extras".to_string(),
+            master_reference: None,
         };
 
         let smoothed_geometry = geometry.smooth_frames();

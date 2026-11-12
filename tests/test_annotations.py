@@ -58,7 +58,7 @@ def _make_input():
     ref = np.array([10, 6.5, 4.5, 0.0])
     inp = numpy_to_inputdata(
         lumen_arr=lumen,
-        ref_point=ref,
+        reference_points=ref,
         diastole=True,
         label="ann",
         annotations=annotations,
@@ -196,7 +196,7 @@ def test_deprecated_sidebranch_param_maps_to_region_annotations():
     with pytest.warns(DeprecationWarning):
         inp = numpy_to_inputdata(
             lumen_arr=lumen,
-            ref_point=np.array([10, 6.5, 4.5, 0.0]),
+            reference_points=np.array([10, 6.5, 4.5, 0.0]),
             diastole=True,
             sidebranch=legacy,
         )
@@ -252,7 +252,7 @@ def test_deprecated_pyframe_extras_and_pyinputdata_layers():
     assert moved.annotations[0].points[0].x == pytest.approx(pts[0].x + 1.0)
 
     with pytest.warns(DeprecationWarning):
-        inp = PyInputData([lumen], None, [branch], None, None, pts[0], True, "x")
+        inp = PyInputData([lumen], None, [branch], None, None, [pts[0]], True, "x")
     assert inp.calcification is not None and inp.annotations == []
 
     # the deprecated layer reaches the geometry as region annotations

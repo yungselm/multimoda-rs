@@ -15,12 +15,12 @@ pub fn align_between_geometries(
     step_rot_deg: f64,
     sample_size: usize,
 ) -> Result<GeometryPair> {
-    // Find reference frames
+    // Master reference frames
     let ref_frame_a_idx = geom_a
-        .find_ref_frame_idx()
+        .master_frame_idx()
         .unwrap_or(geom_a.find_proximal_end_idx());
     let ref_frame_b_idx = geom_b
-        .find_ref_frame_idx()
+        .master_frame_idx()
         .unwrap_or(geom_b.find_proximal_end_idx());
 
     let ref_frame_a = &geom_a.frames[ref_frame_a_idx];
@@ -49,14 +49,7 @@ pub fn align_between_geometries(
     // Apply the rotation to the ENTIRE geometry around the reference frame A centroid
     rotate_geometry_around_point(geom_b, best_rotation, ref_frame_a_centroid);
 
-    // After rotation, recalculate and apply final translation to ensure perfect alignment
-    let ref_frame_a_idx = geom_a
-        .find_ref_frame_idx()
-        .unwrap_or(geom_a.find_proximal_end_idx());
-    let ref_frame_b_idx = geom_b
-        .find_ref_frame_idx()
-        .unwrap_or(geom_b.find_proximal_end_idx());
-
+    // After rotation, apply a final translation to ensure perfect alignment
     let final_ref_frame_b_centroid = geom_b.frames[ref_frame_b_idx].centroid;
     let final_ref_frame_a_centroid = geom_a.frames[ref_frame_a_idx].centroid;
     let final_translation = (
@@ -287,6 +280,7 @@ mod align_between_tests {
     use super::*;
     use crate::intravascular::utils::test_utils::{
         add_annotations_on_lumen, assert_annotations_on_lumen, dummy_geometry_aligned_long,
+        dummy_geometry_custom,
     };
 
     #[test]
@@ -300,6 +294,38 @@ mod align_between_tests {
         let geom_pair = align_between_geometries(&mut geom_a, &mut geom_b, 30.0, 0.01, 6)?;
 
         assert_annotations_on_lumen(&geom_pair.geom_b, 2);
+        Ok(())
+    }
+
+    #[test]
+    fn test_align_between_matches_the_masters() -> anyhow::Result<()> {
+        // A's master on its frame 1, B's on its frame 3: B moves so they coincide
+        let mut geom_a = dummy_geometry_custom(1.0, 6);
+        let mut geom_b = dummy_geometry_custom(1.0, 6);
+        for geom in [&mut geom_a, &mut geom_b] {
+            for (i, frame) in geom.frames.iter_mut().enumerate() {
+                frame.reference_point = Some(ContourPoint {
+                    frame_index: i as u32,
+                    point_index: 0,
+                    x: 3.0,
+                    y: 1.0,
+                    z: frame.centroid.2,
+                    aortic: false,
+                });
+            }
+        }
+        geom_a.set_master_reference(1)?;
+        geom_b.set_master_reference(3)?;
+        geom_b.translate_geometry((0.5, -0.5, 0.0));
+
+        let pair = align_between_geometries(&mut geom_a, &mut geom_b, 30.0, 1.0, 6)?;
+
+        let ca = pair.geom_a.frames[1].centroid;
+        let cb = pair.geom_b.frames[3].centroid;
+        assert_relative_eq!(ca.0, cb.0, epsilon = 1e-6);
+        assert_relative_eq!(ca.1, cb.1, epsilon = 1e-6);
+        assert_relative_eq!(ca.2, cb.2, epsilon = 1e-6);
+        assert_eq!(pair.overlap()?, (0..4, 2..6));
         Ok(())
     }
 

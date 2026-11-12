@@ -230,11 +230,9 @@ def _input_data_to_numpy(input_data) -> dict[str, np.ndarray | list[str] | bool]
             if pts:
                 result[contour_type] = np.array(pts, dtype=float)
 
-    # Process reference point
-    ref = input_data.ref_point
-    result["reference"] = np.array(
-        [[ref.frame_index, ref.x, ref.y, ref.z]], dtype=float
-    )
+    refs = [(p.frame_index, p.x, p.y, p.z) for p in input_data.reference_points]
+    if refs:
+        result["reference"] = np.array(refs, dtype=float)
 
     # Process records if available
     if input_data.record:
@@ -260,9 +258,41 @@ def _input_data_to_numpy(input_data) -> dict[str, np.ndarray | list[str] | bool]
     return result
 
 
+def _reference_points_from_array(arr) -> list[PyContourPoint]:
+    """Reference points from ``(4,)``, ``(N, 4)`` or ``(N, 5)`` rows ``[frame, x, y, z(, auto)]``.
+
+    The optional fifth column (HolOrama's auto flag) is ignored. Two rows on one
+    frame raise ``ValueError``.
+    """
+    if arr is None:
+        return []
+    arr = np.asarray(arr, dtype=float)
+    if arr.size == 0:
+        return []
+    arr = np.atleast_2d(arr)
+    if arr.shape[1] < 4:
+        raise ValueError(
+            f"reference rows must be [frame_index, x, y, z], got shape {arr.shape}"
+        )
+    frames = arr[:, 0].astype(int)
+    if len(set(frames)) != len(frames):
+        raise ValueError("at most one reference point per frame")
+    return [
+        PyContourPoint(
+            frame_index=int(fr),
+            point_index=0,
+            x=float(x),
+            y=float(y),
+            z=float(z),
+            aortic=False,
+        )
+        for fr, x, y, z in arr[:, :4]
+    ]
+
+
 def numpy_to_inputdata(
     lumen_arr: np.ndarray,
-    ref_point: np.ndarray,
+    reference_points: np.ndarray,
     diastole: bool,
     record: np.ndarray | None = None,
     eem_arr: np.ndarray | None = None,
@@ -270,6 +300,7 @@ def numpy_to_inputdata(
     sidebranch: np.ndarray | None = None,
     label: str = "",
     annotations: dict[tuple[str, str], np.ndarray] | None = None,
+    master_reference: int | None = None,
 ) -> PyInputData:
     """
     Build a ``PyInputData`` from numpy arrays, grouping by frame index into frames.
@@ -282,8 +313,10 @@ def numpy_to_inputdata(
         ``(N, 4)`` array of lumen points ``[frame_index, x, y, z]``.
     record : np.ndarray, optional
         ``(M, 4)`` array of records ``[frame, phase, measurement_1, measurement_2]``.
-    ref_point : np.ndarray
-        ``(1, 4)`` or ``(4,)`` array ``[frame_index, x, y, z]`` for the reference point.
+    reference_points : np.ndarray
+        ``(N, 4)`` or ``(N, 5)`` array of rows ``[frame_index, x, y, z(, auto)]``,
+        at most one per frame, frame_index numbered as in ``lumen_arr``. A
+        ``(4,)`` array is one reference. The ``auto`` column is ignored.
     diastole : bool
         ``True`` if the data corresponds to the diastolic phase.
     eem_arr : np.ndarray, optional
@@ -308,6 +341,10 @@ def numpy_to_inputdata(
         ``(frame_index, group)`` form one ``PyAnnotation``. Annotations only
         follow the rigid transforms of their frame and are dropped (with a
         warning) when their frame has no lumen.  Default is ``None``.
+    master_reference : int, optional
+        Frame index of the reference that aligns this geometry to other
+        geometries and to the CCTA centerline. Default ``None`` uses the most
+        proximal reference.
 
     Returns
     -------
@@ -435,31 +472,7 @@ def numpy_to_inputdata(
     calcification_arr = _to_numeric_array(calcification, "calcification")
     sidebranch_arr = _to_numeric_array(sidebranch, "sidebranch")
 
-    # Reference point: prefer provided ref_point, otherwise a default
-    global_ref = None
-    if ref_point is not None:
-        try:
-            ref_arr = np.asarray(ref_point)
-            if ref_arr.ndim == 1:
-                fr, x, y, z = ref_arr[:4]
-            else:
-                fr, x, y, z = ref_arr[0, :4]
-            global_ref = PyContourPoint(
-                frame_index=int(fr),
-                point_index=0,
-                x=float(x),
-                y=float(y),
-                z=float(z),
-                aortic=False,
-            )
-        except (TypeError, ValueError, IndexError):
-            global_ref = None
-
-    if global_ref is None:
-        # default fallback (required by PyInputData ctor)
-        global_ref = PyContourPoint(
-            frame_index=0, point_index=0, x=0.0, y=0.0, z=0.0, aortic=False
-        )
+    refs = _reference_points_from_array(reference_points)
 
     # Build lists of contours
     if lumen_arr.size == 0:
@@ -500,10 +513,11 @@ def numpy_to_inputdata(
         calcification=None,
         sidebranch=None,
         record=record_list,
-        ref_point=global_ref,
+        reference_points=refs,
         diastole=bool(diastole),
         label=label or "",
         annotations=annotation_list,
+        master_reference=master_reference,
     )
 
 
@@ -577,6 +591,7 @@ def numpy_to_geometry(
     reference_arr: np.ndarray | None = None,
     label: str = "",
     annotations: dict[tuple[str, str], np.ndarray] | None = None,
+    master_reference: int | None = None,
 ) -> PyGeometry:
     """
     Build a ``PyGeometry`` from numpy arrays, grouping by frame index into frames.
@@ -594,8 +609,10 @@ def numpy_to_geometry(
     wall_arr : np.ndarray, optional
         ``(L, 4)`` array of wall points ``[frame_index, x, y, z]``.  Default is ``None``.
     reference_arr : np.ndarray, optional
-        ``(1, 4)`` or ``(4,)`` array ``[frame_index, x, y, z]`` for the reference point.
-        Default is ``None``.
+        ``(N, 4)`` or ``(N, 5)`` array of rows ``[frame_index, x, y, z(, auto)]``,
+        at most one per frame. Each goes to the frame whose lumen rows have the
+        same frame_index, others are dropped with a warning. A ``(4,)`` array is
+        one reference.  Default is ``None``.
     label : str, optional
         Label string for the geometry.  Default is ``""``.
     annotations : dict of (str, str) to np.ndarray, optional
@@ -603,6 +620,9 @@ def numpy_to_geometry(
         by ``to_array(geometry)["annotations"]``. Each annotation goes to the
         frame whose lumen rows have the same frame_index, others are dropped
         with a warning.  Default is ``None``.
+    master_reference : int, optional
+        Frame index of the master reference. Default ``None`` uses the most
+        proximal (first) reference.
 
     Returns
     -------
@@ -676,29 +696,13 @@ def numpy_to_geometry(
     eem_arr = _to_numeric_array(eem_arr, "eem_arr")
     catheter_arr = _to_numeric_array(catheter_arr, "catheter_arr")
     wall_arr = _to_numeric_array(wall_arr, "wall_arr")
-    reference_arr = _to_numeric_array(reference_arr, "reference_arr")
 
     if lumen_arr.size == 0:
         raise ValueError("lumen_arr cannot be empty")
 
-    # Handle reference array - always take the first valid reference point
-    global_reference = None
-    if reference_arr.size > 0:
-        # If 1D array, use it directly
-        if reference_arr.ndim == 1:
-            fr, x, y, z = reference_arr[:4]
-        else:
-            # If 2D array, take the first row
-            fr, x, y, z = reference_arr[0, :4]
-
-        global_reference = PyContourPoint(
-            frame_index=int(fr),
-            point_index=0,
-            x=float(x),
-            y=float(y),
-            z=float(z),
-            aortic=False,
-        )
+    frame_references = {
+        p.frame_index: p for p in _reference_points_from_array(reference_arr)
+    }
 
     # Get all unique frame indices from all arrays
     all_frames: set[int] = set()
@@ -731,15 +735,12 @@ def numpy_to_geometry(
         if wall_contour:
             extras["Wall"] = wall_contour
 
-        # Use the global reference point for all frames
-        frame_reference = global_reference
-
         frame = PyFrame(
             id=frame_id,
             centroid=lumen_contour.centroid,
             lumen=lumen_contour,
             extras=extras,
-            reference_point=frame_reference,
+            reference_point=frame_references.pop(frame_id, None),
             annotations=frame_annotations.pop(frame_id, []),
         )
         frames.append(frame)
@@ -747,8 +748,13 @@ def numpy_to_geometry(
     if frame_annotations:
         n = sum(len(v) for v in frame_annotations.values())
         warnings.warn(f"dropped {n} annotation(s) whose frame has no lumen rows")
+    if frame_references:
+        warnings.warn(
+            f"dropped reference point(s) on frame(s) {sorted(frame_references)} "
+            "without lumen rows"
+        )
 
-    return PyGeometry(frames=frames, label=label)
+    return PyGeometry(frames=frames, label=label, master_reference=master_reference)
 
 
 def numpy_to_centerline(
@@ -869,8 +875,9 @@ def array_to_pyinputdata(
         Records or ``(M, 4)`` array of ``(frame, phase, m1, m2)`` rows.
         Default is ``None``.
     reference : np.ndarray, optional
-        ``(1, 4)`` or ``(4,)`` array ``[frame_index, x, y, z]`` for the
-        reference point.  Default is ``None``.
+        ``(N, 4)`` or ``(N, 5)`` array of rows ``[frame_index, x, y, z(, auto)]``,
+        at most one per frame. A ``(4,)`` array is one reference.
+        Default is ``None``.
     diastole : bool, optional
         ``True`` if the data corresponds to the diastolic phase.
         Default is ``True``.
@@ -1073,36 +1080,7 @@ def array_to_pyinputdata(
 
     parsed_records = parse_records(records)
 
-    def parse_reference(ref):
-        if ref is None:
-            return PyContourPoint(
-                frame_index=0, point_index=0, x=0.0, y=0.0, z=0.0, aortic=False
-            )
-        arr = np.asarray(ref)
-        if arr.ndim == 1:
-            if arr.shape[0] >= 4:
-                fr, x, y, z = arr[:4]
-            else:
-                raise ValueError("reference must be length 4 or shape (1,4)")
-        else:
-            if arr.shape[1] < 4:
-                raise ValueError("reference must be (N,4)-like")
-            nonzero = np.any(arr != 0, axis=1)
-            if np.any(nonzero):
-                row = arr[nonzero][0]
-            else:
-                row = arr[0]
-            fr, x, y, z = row[:4]
-        return PyContourPoint(
-            frame_index=int(fr),
-            point_index=0,
-            x=float(x),
-            y=float(y),
-            z=float(z),
-            aortic=False,
-        )
-
-    ref_point = parse_reference(reference)
+    refs = _reference_points_from_array(reference)
 
     def none_if_empty(lst):
         return None if not lst else lst
@@ -1113,7 +1091,7 @@ def array_to_pyinputdata(
         calcification=None,
         sidebranch=None,
         record=parsed_records,
-        ref_point=ref_point,
+        reference_points=refs,
         diastole=bool(diastole),
         label=str(label),
         annotations=legacy_annotations,

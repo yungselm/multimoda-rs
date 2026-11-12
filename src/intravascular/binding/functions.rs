@@ -118,6 +118,13 @@ fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<AlignLogTuple> {
 /// postprocessing : bool, optional
 ///     Whether to adjust spacing within/between geometries to equal
 ///     offsets.  Default is ``True``.
+/// master_references : list of int or None, optional
+///     Original frame of the master reference per geometry, in the order
+///     ``[rest diastole, rest systole, stress diastole, stress systole]``
+///     (the order of ``labels``).
+///     The master aligns the geometries of a pair and the CCTA centerline.
+///     ``None`` (or a ``None`` entry) uses the most proximal reference.
+///     Default is ``None``.
 ///
 /// Returns
 /// -------
@@ -163,6 +170,7 @@ fn logs_to_tuples(logs: Vec<AlignLog>) -> Vec<AlignLogTuple> {
         bruteforce = false,
         smooth = true,
         postprocessing = true,
+        master_references = None,
     )
 )]
 pub fn from_file_full(
@@ -186,6 +194,7 @@ pub fn from_file_full(
     bruteforce: bool,
     smooth: bool,
     postprocessing: bool,
+    master_references: Option<Vec<Option<u32>>>,
 ) -> PyResult<FullResult> {
     let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
@@ -224,6 +233,7 @@ pub fn from_file_full(
         bruteforce,
         sample_size,
         postprocessing,
+        master_references.unwrap_or_default(),
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))?;
 
@@ -311,6 +321,13 @@ pub fn from_file_full(
 /// postprocessing : bool, optional
 ///     Whether to equalise spacing within/between geometries.  Default is
 ///     ``True``.
+/// master_references : list of int or None, optional
+///     Original frame of the master reference per geometry, in the order
+///     ``[rest diastole, rest systole, stress diastole, stress systole]``
+///     (the order of ``labels``).
+///     The master aligns the geometries of a pair and the CCTA centerline.
+///     ``None`` (or a ``None`` entry) uses the most proximal reference.
+///     Default is ``None``.
 ///
 /// Returns
 /// -------
@@ -349,6 +366,7 @@ pub fn from_file_full(
     bruteforce = false,
     smooth = true,
     postprocessing = true,
+    master_references = None,
 ))]
 pub fn from_file_doublepair(
     input_path_ab: &str,
@@ -369,6 +387,7 @@ pub fn from_file_doublepair(
     bruteforce: bool,
     smooth: bool,
     postprocessing: bool,
+    master_references: Option<Vec<Option<u32>>>,
 ) -> PyResult<DoublePairResult> {
     let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
@@ -396,6 +415,7 @@ pub fn from_file_doublepair(
         bruteforce,
         sample_size,
         postprocessing,
+        master_references.unwrap_or_default(),
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))?;
 
@@ -474,6 +494,12 @@ pub fn from_file_doublepair(
 /// postprocessing : bool, optional
 ///     Whether to equalise spacing within/between geometries.  Default is
 ///     ``True``.
+/// master_references : list of int or None, optional
+///     Original frame of the master reference per geometry, in the order
+///     ``[diastole, systole]``.
+///     The master aligns the geometries of a pair and the CCTA centerline.
+///     ``None`` (or a ``None`` entry) uses the most proximal reference.
+///     Default is ``None``.
 ///
 /// Returns
 /// -------
@@ -513,6 +539,7 @@ pub fn from_file_doublepair(
     bruteforce = false,
     smooth = true,
     postprocessing = true,
+    master_references = None,
 ))]
 pub fn from_file_singlepair(
     input_path: &str,
@@ -531,6 +558,7 @@ pub fn from_file_singlepair(
     bruteforce: bool,
     smooth: bool,
     postprocessing: bool,
+    master_references: Option<Vec<Option<u32>>>,
 ) -> PyResult<PairResult> {
     let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
@@ -554,6 +582,7 @@ pub fn from_file_singlepair(
         bruteforce,
         sample_size,
         postprocessing,
+        master_references.unwrap_or_default(),
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))?;
 
@@ -610,6 +639,12 @@ pub fn from_file_singlepair(
 ///     Whether to use brute-force alignment.  Default is ``False``.
 /// smooth : bool, optional
 ///     Whether to smooth frames after alignment.  Default is ``True``.
+/// master_references : list of int or None, optional
+///     Original frame of the master reference per geometry, in the order
+///     one entry for the single geometry.
+///     The master aligns the geometries of a pair and the CCTA centerline.
+///     ``None`` (or a ``None`` entry) uses the most proximal reference.
+///     Default is ``None``.
 ///
 /// Returns
 /// -------
@@ -652,6 +687,7 @@ pub fn from_file_singlepair(
     output_path = "output/single",
     bruteforce = false,
     smooth = true,
+    master_references = None,
 ))]
 pub fn from_file_single(
     input_path: &str,
@@ -669,6 +705,7 @@ pub fn from_file_single(
     output_path: &str,
     bruteforce: bool,
     smooth: bool,
+    master_references: Option<Vec<Option<u32>>>,
 ) -> PyResult<(PyGeometry, Vec<AlignLogTuple>)> {
     let rust_contour_types: Vec<crate::types::native::contour::ContourType> =
         contour_types.iter().map(|ct| ct.into()).collect();
@@ -690,6 +727,7 @@ pub fn from_file_single(
         smooth,
         bruteforce,
         sample_size,
+        master_references.unwrap_or_default(),
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))?;
 
@@ -762,6 +800,12 @@ pub fn from_file_single(
 /// postprocessing : bool, optional
 ///     Whether to equalise spacing within/between geometries.  Default is
 ///     ``True``.
+/// master_references : list of int or None, optional
+///     Original frame of the master reference per geometry, in the order
+///     ``[input_data_a, input_data_b, input_data_c, input_data_d]``.
+///     The master aligns the geometries of a pair and the CCTA centerline.
+///     ``None`` (or a ``None`` entry) uses the most proximal reference.
+///     Default is ``None``.
 ///
 /// Returns
 /// -------
@@ -822,6 +866,7 @@ pub fn from_file_single(
         bruteforce = false,
         smooth = true,
         postprocessing = true,
+        master_references = None,
     )
 )]
 pub fn from_array_full(
@@ -846,6 +891,7 @@ pub fn from_array_full(
     bruteforce: bool,
     smooth: bool,
     postprocessing: bool,
+    master_references: Option<Vec<Option<u32>>>,
 ) -> PyResult<FullResult> {
     let labels: Vec<String> = vec![]; // InputData carries its own labels
 
@@ -899,6 +945,7 @@ pub fn from_array_full(
         bruteforce,
         sample_size,
         postprocessing,
+        master_references.unwrap_or_default(),
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))?;
 
@@ -977,6 +1024,12 @@ pub fn from_array_full(
 /// postprocessing : bool, optional
 ///     Whether to equalise spacing within/between geometries.  Default is
 ///     ``True``.
+/// master_references : list of int or None, optional
+///     Original frame of the master reference per geometry, in the order
+///     ``[input_data_a, input_data_b, input_data_c, input_data_d]``.
+///     The master aligns the geometries of a pair and the CCTA centerline.
+///     ``None`` (or a ``None`` entry) uses the most proximal reference.
+///     Default is ``None``.
 ///
 /// Returns
 /// -------
@@ -1031,6 +1084,7 @@ pub fn from_array_full(
         bruteforce = false,
         smooth = true,
         postprocessing = true,
+        master_references = None,
     )
 )]
 pub fn from_array_doublepair(
@@ -1053,6 +1107,7 @@ pub fn from_array_doublepair(
     bruteforce: bool,
     smooth: bool,
     postprocessing: bool,
+    master_references: Option<Vec<Option<u32>>>,
 ) -> PyResult<DoublePairResult> {
     let labels: Vec<String> = vec![]; // InputData carries its own labels
 
@@ -1095,6 +1150,7 @@ pub fn from_array_doublepair(
         bruteforce,
         sample_size,
         postprocessing,
+        master_references.unwrap_or_default(),
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))?;
 
@@ -1159,6 +1215,12 @@ pub fn from_array_doublepair(
 /// postprocessing : bool, optional
 ///     Whether to equalise spacing within/between geometries.  Default is
 ///     ``True``.
+/// master_references : list of int or None, optional
+///     Original frame of the master reference per geometry, in the order
+///     ``[input_data_a, input_data_b]``.
+///     The master aligns the geometries of a pair and the CCTA centerline.
+///     ``None`` (or a ``None`` entry) uses the most proximal reference.
+///     Default is ``None``.
 ///
 /// Returns
 /// -------
@@ -1205,6 +1267,7 @@ pub fn from_array_doublepair(
         bruteforce = false,
         smooth = true,
         postprocessing = true,
+        master_references = None,
     )
 )]
 pub fn from_array_singlepair(
@@ -1224,6 +1287,7 @@ pub fn from_array_singlepair(
     bruteforce: bool,
     smooth: bool,
     postprocessing: bool,
+    master_references: Option<Vec<Option<u32>>>,
 ) -> PyResult<PairResult> {
     let labels: Vec<String> = vec![]; // InputData carries its own labels
 
@@ -1256,6 +1320,7 @@ pub fn from_array_singlepair(
         bruteforce,
         sample_size,
         postprocessing,
+        master_references.unwrap_or_default(),
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))?;
 
@@ -1306,6 +1371,12 @@ pub fn from_array_singlepair(
 ///     Whether to use brute-force alignment.  Default is ``False``.
 /// smooth : bool, optional
 ///     Whether to smooth frames after alignment.  Default is ``True``.
+/// master_references : list of int or None, optional
+///     Original frame of the master reference per geometry, in the order
+///     one entry for ``input_data``.
+///     The master aligns the geometries of a pair and the CCTA centerline.
+///     ``None`` (or a ``None`` entry) uses the most proximal reference.
+///     Default is ``None``.
 ///
 /// Returns
 /// -------
@@ -1346,6 +1417,7 @@ pub fn from_array_singlepair(
     output_path="output/single",
     bruteforce = false,
     smooth = true,
+    master_references = None,
 ))]
 pub fn from_array_single(
     input_data: PyInputData,
@@ -1361,6 +1433,7 @@ pub fn from_array_single(
     output_path: &str,
     bruteforce: bool,
     smooth: bool,
+    master_references: Option<Vec<Option<u32>>>,
 ) -> PyResult<(PyGeometry, Vec<AlignLogTuple>)> {
     let labels: Vec<String> = vec![]; // InputData carries its own labels
 
@@ -1388,6 +1461,7 @@ pub fn from_array_single(
         smooth,
         bruteforce,
         sample_size,
+        master_references.unwrap_or_default(),
     )
     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:#}")))?;
 
@@ -1630,6 +1704,7 @@ mod tests {
             false,
             20,
             false,
+            Vec::new(),
         )?;
         Ok((ab.label, cd.label, ac.label, bd.label))
     }

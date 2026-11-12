@@ -14,6 +14,11 @@ type GeomSummary = (f64, f64, f64);
 ///     Ordered list of imaging frames constituting the geometry.
 /// label : str
 ///     Human-readable label for this geometry.
+/// master_reference : int or None
+///     Original frame of the reference point that aligns this geometry to
+///     other geometries and to the CCTA centerline. ``None`` uses the most
+///     proximal reference. Setting a frame without a reference point raises
+///     ``ValueError``.
 ///
 /// Examples
 /// --------
@@ -28,6 +33,8 @@ pub struct PyGeometry {
     pub frames: Vec<PyFrame>,
     #[pyo3(get, set)]
     pub label: String,
+    #[pyo3(get)]
+    pub master_reference: Option<u32>,
 }
 
 #[pymethods]
@@ -40,16 +47,56 @@ impl PyGeometry {
     ///     Ordered list of imaging frames.
     /// label : str
     ///     Human-readable label for this geometry.
+    /// master_reference : int or None, optional
+    ///     Original frame of the master reference point. Default ``None``
+    ///     uses the most proximal reference.
     #[new]
-    fn new(frames: Vec<PyFrame>, label: String) -> Self {
-        Self { frames, label }
+    #[pyo3(signature = (frames, label, master_reference=None))]
+    fn new(frames: Vec<PyFrame>, label: String, master_reference: Option<u32>) -> PyResult<Self> {
+        let mut geom = Self {
+            frames,
+            label,
+            master_reference: None,
+        };
+        geom.set_master_reference(master_reference)?;
+        Ok(geom)
+    }
+
+    #[setter]
+    fn set_master_reference(&mut self, frame: Option<u32>) -> PyResult<()> {
+        if let Some(frame) = frame {
+            let refs = self.reference_frames();
+            if !refs.contains(&frame) {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "no reference point on original frame {frame} in '{}', references are on {refs:?}",
+                    self.label
+                )));
+            }
+        }
+        self.master_reference = frame;
+        Ok(())
+    }
+
+    /// Original frames of all reference points, in frame order.
+    ///
+    /// Returns
+    /// -------
+    /// list of int
+    ///     ``frame_index`` of every frame's reference point.
+    pub fn reference_frames(&self) -> Vec<u32> {
+        self.frames
+            .iter()
+            .filter_map(|f| f.reference_point.as_ref().map(|p| p.frame_index))
+            .collect()
     }
 
     fn __repr__(&self) -> String {
         format!(
-            "Geometry({} frames, label='{}')",
+            "Geometry({} frames, label='{}', master_reference={})",
             self.frames.len(),
-            self.label
+            self.label,
+            self.master_reference
+                .map_or_else(|| "None".to_string(), |m| m.to_string())
         )
     }
 
@@ -368,6 +415,7 @@ impl PyGeometry {
         Ok(PyGeometry {
             frames: new_frames,
             label: self.label.clone(),
+            master_reference: self.master_reference,
         })
     }
 
@@ -425,6 +473,7 @@ impl PyGeometry {
         Ok(PyGeometry {
             frames: new_frames,
             label: self.label.clone(),
+            master_reference: self.master_reference,
         })
     }
 }
@@ -439,6 +488,7 @@ impl PyGeometry {
         Ok(Geometry {
             frames,
             label: self.label.clone(),
+            master_reference: self.master_reference,
         })
     }
 }
@@ -448,6 +498,7 @@ impl From<&Geometry> for PyGeometry {
         PyGeometry {
             frames: geometry.frames.iter().map(PyFrame::from).collect(),
             label: geometry.label.clone(),
+            master_reference: geometry.master_reference,
         }
     }
 }

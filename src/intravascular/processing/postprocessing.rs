@@ -16,8 +16,8 @@ pub fn postprocess_geom_pair(
 ) -> anyhow::Result<GeometryPair> {
     let (same_sample_rate, avg_diff_a, avg_diff_b) =
         check_same_sample_rate_geompair(geom_pair, tol);
-    let ref_idx_a = geom_pair.geom_a.find_ref_frame_idx()?;
-    let ref_idx_b = geom_pair.geom_b.find_ref_frame_idx()?;
+    let ref_idx_a = geom_pair.geom_a.master_frame_idx()?;
+    let ref_idx_b = geom_pair.geom_b.master_frame_idx()?;
     let ref_z_a = geom_pair.geom_a.frames[ref_idx_a].centroid.2;
     let ref_z_b = geom_pair.geom_b.frames[ref_idx_b].centroid.2;
 
@@ -68,22 +68,25 @@ pub fn postprocess_geom_pair(
             label: geom_pair.label.clone(),
         }
     };
-    // ensure again that ref points are on same position before trimming
-    let ref_idx_a_resample = geom_pair_resampled.geom_a.find_ref_frame_idx()?;
-    let ref_idx_b_resample = geom_pair_resampled.geom_b.find_ref_frame_idx()?;
-    let translation = geom_pair.geom_a.frames[ref_idx_a_resample].centroid.2
-        - geom_pair.geom_b.frames[ref_idx_b_resample].centroid.2;
+    // resampling moves z, put B's master back on A's
+    let ref_idx_a_resample = geom_pair_resampled.geom_a.master_frame_idx()?;
+    let ref_idx_b_resample = geom_pair_resampled.geom_b.master_frame_idx()?;
+    let translation = geom_pair_resampled.geom_a.frames[ref_idx_a_resample]
+        .centroid
+        .2
+        - geom_pair_resampled.geom_b.frames[ref_idx_b_resample]
+            .centroid
+            .2;
     geom_pair_resampled
-        .geom_a
+        .geom_b
         .translate_geometry((0.0, 0.0, translation));
 
-    let mut trimmed_geom_pair = trim_geom_pair(&geom_pair_resampled);
-    trimmed_geom_pair = if anomalous {
-        adjust_walls_anomalous_geom_pair(&trimmed_geom_pair)
+    // No trimming, both geometries keep every frame. Analyses use `GeometryPair::overlap`.
+    if anomalous {
+        adjust_walls_anomalous_geom_pair(&geom_pair_resampled)
     } else {
-        trimmed_geom_pair
-    };
-    Ok(trimmed_geom_pair)
+        Ok(geom_pair_resampled)
+    }
 }
 
 fn check_same_sample_rate_geompair(geom_pair: &GeometryPair, tol: f64) -> (bool, f64, f64) {
@@ -260,6 +263,7 @@ fn new_frames_by_sample_rate(geometry: &Geometry, mut z_coords: Vec<f64>) -> Geo
             .partial_cmp(&b.centroid.2)
             .unwrap_or(Ordering::Equal)
     });
+    carry_over_references(geometry, &mut new_frames);
 
     for (new_id, frame) in new_frames.iter_mut().enumerate() {
         let id_u32 = new_id as u32;
@@ -291,6 +295,7 @@ fn new_frames_by_sample_rate(geometry: &Geometry, mut z_coords: Vec<f64>) -> Geo
     Geometry {
         frames: new_frames,
         label: geometry.label.clone(),
+        master_reference: geometry.master_reference,
     }
 }
 
@@ -334,131 +339,84 @@ fn blend_contour(c1: &Contour, c2: &Contour, t: f64) -> Contour {
     }
 }
 
-fn trim_geom_pair(geom_pair: &GeometryPair) -> GeometryPair {
-    let geom_a = &geom_pair.geom_a;
-    let geom_b = &geom_pair.geom_b;
-
-    let ref_idx_a = geom_a.find_ref_frame_idx().unwrap_or_default();
-    let ref_idx_b = geom_b.find_ref_frame_idx().unwrap_or_default();
-
-    let frames_after_ref_a = geom_a.frames.len() - ref_idx_a;
-    let frames_after_ref_b = geom_b.frames.len() - ref_idx_b;
-    let frames_before_ref_a = ref_idx_a;
-    let frames_before_ref_b = ref_idx_b;
-    let frames_before_ref = frames_before_ref_a.min(frames_before_ref_b);
-    let frames_after_ref = frames_after_ref_a.min(frames_after_ref_b);
-
-    let start_a = ref_idx_a - frames_before_ref;
-    let end_a = ref_idx_a + frames_after_ref;
-    let start_b = ref_idx_b - frames_before_ref;
-    let end_b = ref_idx_b + frames_after_ref;
-
-    // Extract the overlapping frames
-    let trimmed_frames_a = if start_a < end_a && end_a <= geom_a.frames.len() {
-        geom_a.frames[start_a..end_a].to_vec()
-    } else {
-        geom_a.frames.clone()
-    };
-
-    let trimmed_frames_b = if start_b < end_b && end_b <= geom_b.frames.len() {
-        geom_b.frames[start_b..end_b].to_vec()
-    } else {
-        geom_b.frames.clone()
-    };
-
-    let mut updated_frames_a = Vec::with_capacity(trimmed_frames_a.len());
-    for (new_id, mut frame) in trimmed_frames_a.into_iter().enumerate() {
-        frame.id = new_id as u32;
-        frame.lumen.id = new_id as u32;
-
-        for contour in frame.extras.values_mut() {
-            contour.id = new_id as u32;
+/// Puts the references of frames dropped by resampling on the frame nearest in z.
+///
+/// A frame holds at most one reference, a reference whose nearest frame already has one is
+/// dropped with a warning.
+fn carry_over_references(source: &Geometry, frames: &mut [Frame]) {
+    for frame in &source.frames {
+        let Some(rp) = frame.reference_point else {
+            continue;
+        };
+        let kept = frames.iter().any(|f| {
+            f.reference_point
+                .is_some_and(|p| p.frame_index == rp.frame_index)
+        });
+        if kept {
+            continue;
         }
-
-        updated_frames_a.push(frame);
-    }
-
-    let mut updated_frames_b = Vec::with_capacity(trimmed_frames_b.len());
-    for (new_id, mut frame) in trimmed_frames_b.into_iter().enumerate() {
-        frame.id = new_id as u32;
-        frame.lumen.id = new_id as u32;
-
-        for contour in frame.extras.values_mut() {
-            contour.id = new_id as u32;
+        let z = frame.centroid.2;
+        let Some(target) = frames.iter_mut().min_by(|a, b| {
+            (a.centroid.2 - z)
+                .abs()
+                .partial_cmp(&(b.centroid.2 - z).abs())
+                .unwrap_or(Ordering::Equal)
+        }) else {
+            continue;
+        };
+        if target.reference_point.is_some() {
+            eprintln!(
+                "Warning: dropped the reference of original frame {} in '{}', its nearest \
+                 resampled frame already holds one",
+                rp.frame_index, source.label
+            );
+            continue;
         }
-
-        updated_frames_b.push(frame);
-    }
-
-    GeometryPair {
-        geom_a: Geometry {
-            frames: updated_frames_a,
-            label: geom_a.label.clone(),
-        },
-        geom_b: Geometry {
-            frames: updated_frames_b,
-            label: geom_b.label.clone(),
-        },
-        label: geom_pair.label.clone(),
+        target.reference_point = Some(ContourPoint {
+            z: target.centroid.2,
+            ..rp
+        });
     }
 }
 
-fn adjust_walls_anomalous_geom_pair(geom_pair: &GeometryPair) -> GeometryPair {
-    let mut adjusted_frames_a = Vec::with_capacity(geom_pair.geom_a.frames.len());
-    let mut adjusted_frames_b = Vec::with_capacity(geom_pair.geom_b.frames.len());
+/// Facing frames (see `GeometryPair::overlap`) share their mean aortic wall thickness,
+/// then both geometries get walls.
+fn adjust_walls_anomalous_geom_pair(geom_pair: &GeometryPair) -> anyhow::Result<GeometryPair> {
+    let (range_a, range_b) = geom_pair.overlap()?;
+    let mut frames_a = geom_pair.geom_a.frames.clone();
+    let mut frames_b = geom_pair.geom_b.frames.clone();
 
-    // Iterate through both geometries in parallel
-    for (frame_a, frame_b) in geom_pair
-        .geom_a
-        .frames
-        .iter()
-        .zip(geom_pair.geom_b.frames.iter())
-    {
-        let adjusted_thickness = match (
-            frame_a.lumen.aortic_thickness,
-            frame_b.lumen.aortic_thickness,
+    for (ia, ib) in range_a.zip(range_b) {
+        let thickness = match (
+            frames_a[ia].lumen.aortic_thickness,
+            frames_b[ib].lumen.aortic_thickness,
         ) {
-            (Some(thickness_a), Some(thickness_b)) => (thickness_a + thickness_b) / 2.0,
-            (Some(thickness_a), None) => thickness_a,
-            (None, Some(thickness_b)) => thickness_b,
-            (None, None) => {
-                adjusted_frames_a.push(frame_a.clone());
-                adjusted_frames_b.push(frame_b.clone());
-                continue;
-            }
+            (Some(a), Some(b)) => Some((a + b) / 2.0),
+            (a, b) => a.or(b),
         };
-
-        let mut lumen_a = frame_a.lumen.clone();
-        lumen_a.aortic_thickness = Some(adjusted_thickness);
-
-        let mut lumen_b = frame_b.lumen.clone();
-        lumen_b.aortic_thickness = Some(adjusted_thickness);
-
-        let mut adjusted_frame_a = frame_a.clone();
-        adjusted_frame_a.lumen = lumen_a;
-
-        let mut adjusted_frame_b = frame_b.clone();
-        adjusted_frame_b.lumen = lumen_b;
-
-        adjusted_frames_a.push(adjusted_frame_a);
-        adjusted_frames_b.push(adjusted_frame_b);
+        if thickness.is_some() {
+            frames_a[ia].lumen.aortic_thickness = thickness;
+            frames_b[ib].lumen.aortic_thickness = thickness;
+        }
     }
 
     // Use create_wall_frames to generate walls for both geometries (only for anomalous so aortic = True)
-    let frames_with_walls_a = wall::create_wall_frames(&adjusted_frames_a, true, false);
-    let frames_with_walls_b = wall::create_wall_frames(&adjusted_frames_b, true, false);
+    let frames_with_walls_a = wall::create_wall_frames(&frames_a, true, false);
+    let frames_with_walls_b = wall::create_wall_frames(&frames_b, true, false);
 
-    GeometryPair {
+    Ok(GeometryPair {
         geom_a: Geometry {
             frames: frames_with_walls_a,
             label: geom_pair.geom_a.label.clone(),
+            master_reference: geom_pair.geom_a.master_reference,
         },
         geom_b: Geometry {
             frames: frames_with_walls_b,
             label: geom_pair.geom_b.label.clone(),
+            master_reference: geom_pair.geom_b.master_reference,
         },
         label: geom_pair.label.clone(),
-    }
+    })
 }
 
 #[cfg(test)]
@@ -564,6 +522,7 @@ mod tests {
         Geometry {
             frames,
             label: label.to_string(),
+            master_reference: None,
         }
     }
 
@@ -655,6 +614,7 @@ mod tests {
         let geometry = Geometry {
             frames,
             label: "test".to_string(),
+            master_reference: None,
         };
 
         let resampled = resample_by_diff(&geometry, 1.0);
@@ -750,30 +710,48 @@ mod tests {
     }
 
     #[test]
-    fn test_trim_geom_pair() {
+    fn test_postprocess_keeps_every_frame() -> anyhow::Result<()> {
         let geom_a = create_test_geometry("a", vec![0.0, 1.0, 2.0, 3.0, 4.0], vec![]);
         let geom_b = create_test_geometry("b", vec![0.0, 1.0, 2.0], vec![]);
-
         let geom_pair = GeometryPair {
             geom_a,
             geom_b,
             label: "test".to_string(),
         };
 
-        let trimmed = trim_geom_pair(&geom_pair);
+        let processed = postprocess_geom_pair(&geom_pair, 0.1, false)?;
 
-        // Should be trimmed to the overlapping region around reference frames
-        // Both have reference frames in the middle, so should be trimmed to similar lengths
-        assert_eq!(trimmed.geom_a.frames.len(), 3);
-        assert_eq!(trimmed.geom_b.frames.len(), 3);
+        assert_eq!(processed.geom_a.frames.len(), 5);
+        assert_eq!(processed.geom_b.frames.len(), 3);
+        // masters in the middle: A's frame 2 faces B's frame 1
+        assert_eq!(processed.overlap()?, (1..4, 0..3));
+        let za = processed.geom_a.frames[2].centroid.2;
+        let zb = processed.geom_b.frames[1].centroid.2;
+        assert!((za - zb).abs() < 1e-9);
+        Ok(())
+    }
 
-        // Check that IDs are properly updated
-        for (i, frame) in trimmed.geom_a.frames.iter().enumerate() {
-            assert_eq!(frame.id, i as u32);
-        }
-        for (i, frame) in trimmed.geom_b.frames.iter().enumerate() {
-            assert_eq!(frame.id, i as u32);
-        }
+    #[test]
+    fn test_resampling_moves_references_of_dropped_frames() {
+        // master on z = 2, a second reference on z = 4, which is not on the new grid
+        let frames = vec![
+            create_test_frame(0, 0.0, None, false),
+            create_test_frame(1, 2.0, None, true),
+            create_test_frame(2, 4.0, None, true),
+        ];
+        let geometry = Geometry {
+            frames,
+            label: "coarse".to_string(),
+            master_reference: Some(1),
+        };
+
+        let resampled = new_frames_by_sample_rate(&geometry, vec![0.5, 2.0, 3.5]);
+
+        assert_eq!(resampled.reference_frames(), vec![1, 2]);
+        assert_eq!(resampled.master_frame_idx().unwrap(), 1);
+        let moved = resampled.frames[2].reference_point.unwrap();
+        assert_eq!(moved.z, 3.5);
+        assert!(resampled.frames[0].reference_point.is_none());
     }
 
     #[test]
@@ -787,7 +765,7 @@ mod tests {
             label: "test".to_string(),
         };
 
-        let adjusted = adjust_walls_anomalous_geom_pair(&geom_pair);
+        let adjusted = adjust_walls_anomalous_geom_pair(&geom_pair).unwrap();
 
         // Check that thicknesses are averaged
         assert_eq!(adjusted.geom_a.frames[0].lumen.aortic_thickness, Some(2.0)); // (1.0 + 3.0) / 2
@@ -815,7 +793,7 @@ mod tests {
             label: "test".to_string(),
         };
 
-        let adjusted = adjust_walls_anomalous_geom_pair(&geom_pair);
+        let adjusted = adjust_walls_anomalous_geom_pair(&geom_pair).unwrap();
 
         // When one thickness is missing, use the available one
         assert_eq!(adjusted.geom_a.frames[0].lumen.aortic_thickness, Some(1.0));
@@ -864,6 +842,7 @@ mod tests {
         let empty_geom = Geometry {
             frames: vec![],
             label: "empty".to_string(),
+            master_reference: None,
         };
 
         let geom_pair = GeometryPair {
@@ -874,7 +853,7 @@ mod tests {
 
         let result = postprocess_geom_pair(&geom_pair, 0.1, false);
         // Empty geometry should be handled without panic
-        // Note: This might fail due to find_ref_frame_idx on empty geometry
+        // Note: This might fail due to master_frame_idx on empty geometry
         // For now, we'll accept either outcome as long as it doesn't panic
         match result {
             Ok(processed) => {
@@ -932,7 +911,7 @@ mod tests {
         assert_eq!(avg_diff_a, 1.0);
         assert_eq!(avg_diff_b, 0.5);
 
-        let ref_idx_b = geom_b.find_ref_frame_idx()?;
+        let ref_idx_b = geom_b.master_frame_idx()?;
         let ref_z_b = geom_b.frames[ref_idx_b].centroid.2;
         let z_coords = predict_z_positions(ref_z_b, 0.0, 2.5, 0.5);
 
@@ -953,7 +932,9 @@ mod tests {
             assert_eq!(frame.centroid.2, i as f64 * 0.5)
         }
 
-        let postprocessed_geom_pair = postprocess_geom_pair(&geom_pair, 0.1, true)?;
+        let postprocessed_geom_pair =
+            postprocess_geom_pair(&geom_pair, 0.1, true)?.overlapping()?;
+        assert_eq!(postprocessed_geom_pair.geom_a.frames.len(), 5);
         for (frame_a, frame_b) in postprocessed_geom_pair
             .geom_a
             .frames

@@ -68,6 +68,44 @@ fn maybe_postprocess(
     }
 }
 
+/// Sets new master references on a pair and re-runs the between-alignment around them.
+///
+/// `None` keeps a geometry's current master. With `postprocessing` the pair is resampled
+/// again, as in the processing pipelines. Run it before centerline alignment, the
+/// between-alignment works on pullback coordinates.
+pub fn realign_pair_rs(
+    pair: &GeometryPair,
+    master_a: Option<u32>,
+    master_b: Option<u32>,
+    range_deg: f64,
+    step_deg: f64,
+    sample_size: usize,
+    postprocessing: bool,
+) -> Result<GeometryPair> {
+    let mut geom_a = pair.geom_a.clone();
+    let mut geom_b = pair.geom_b.clone();
+    if let Some(master) = master_a {
+        geom_a.set_master_reference(master)?;
+    }
+    if let Some(master) = master_b {
+        geom_b.set_master_reference(master)?;
+    }
+    let anomalous = [&geom_a, &geom_b].iter().any(|g| {
+        g.master_frame_idx()
+            .is_ok_and(|i| align_within::is_anomalous_coronary(&g.frames[i]))
+    });
+
+    let mut realigned = align_between::align_between_geometries(
+        &mut geom_a,
+        &mut geom_b,
+        range_deg,
+        step_deg,
+        sample_size,
+    )?;
+    realigned.label = pair.label.clone();
+    maybe_postprocess(&realigned, TOLERANCE, anomalous, postprocessing)
+}
+
 pub fn full_processing_rs(
     labels: Vec<String>,
     image_center: (f64, f64),
@@ -93,6 +131,7 @@ pub fn full_processing_rs(
     bruteforce: bool,
     sample_size: usize,
     postprocessing: bool,
+    master_references: Vec<Option<u32>>,
 ) -> Result<FullProcessResult> {
     let mut geometries = preprocessing::prepare_n_geometries(
         &labels,
@@ -109,6 +148,7 @@ pub fn full_processing_rs(
         input_path_a.map(Path::new),
         input_path_b.map(Path::new),
         ProcessingOptions::Full,
+        &master_references,
     )
     .context("Failed to prepare geometries for full processing")?;
 
@@ -383,6 +423,7 @@ pub fn double_pair_processing_rs(
     bruteforce: bool,
     sample_size: usize,
     postprocessing: bool,
+    master_references: Vec<Option<u32>>,
 ) -> Result<DoublePairProcessResult> {
     let mut geometries = preprocessing::prepare_n_geometries(
         &labels,
@@ -399,6 +440,7 @@ pub fn double_pair_processing_rs(
         input_path_a.map(Path::new),
         input_path_b.map(Path::new),
         ProcessingOptions::Full,
+        &master_references,
     )
     .context("Failed to prepare geometries for full processing")?;
 
@@ -588,6 +630,7 @@ pub fn pair_processing_rs(
     bruteforce: bool,
     sample_size: usize,
     postprocessing: bool,
+    master_references: Vec<Option<u32>>,
 ) -> Result<(GeometryPair, Vec<AlignLog>, Vec<AlignLog>)> {
     let mut geometries = preprocessing::prepare_n_geometries(
         &labels,
@@ -604,6 +647,7 @@ pub fn pair_processing_rs(
         input_path_a.map(Path::new),
         None,
         ProcessingOptions::Pair,
+        &master_references,
     )
     .context("Failed to prepare geometries for pair processing")?;
 
@@ -705,6 +749,7 @@ pub fn single_processing_rs(
     smooth: bool,
     bruteforce: bool,
     sample_size: usize,
+    master_references: Vec<Option<u32>>,
 ) -> Result<(Geometry, Vec<AlignLog>)> {
     let mut geom = preprocessing::prepare_n_geometries(
         &labels,
@@ -716,6 +761,7 @@ pub fn single_processing_rs(
         input_path_a.map(Path::new),
         None,
         ProcessingOptions::Single,
+        &master_references,
     )
     .context("Failed to prepare geometry for single processing")?;
 
@@ -816,4 +862,59 @@ pub fn create_mtl_for_contour_type(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod entry_tests {
+    use super::*;
+    use crate::intravascular::utils::test_utils::dummy_geometry_custom;
+    use crate::types::native::ContourPoint;
+    use approx::assert_relative_eq;
+
+    /// `n` frames 1 mm apart with a reference on every frame in `refs`.
+    fn geometry(label: &str, n: usize, refs: &[u32]) -> Geometry {
+        let mut geom = dummy_geometry_custom(1.0, n);
+        geom.label = label.to_string();
+        for (i, frame) in geom.frames.iter_mut().enumerate() {
+            frame.reference_point = refs.contains(&(i as u32)).then_some(ContourPoint {
+                frame_index: i as u32,
+                point_index: 0,
+                x: 3.0,
+                y: 1.0,
+                z: frame.centroid.2,
+                aortic: false,
+            });
+        }
+        geom
+    }
+
+    #[test]
+    fn test_realign_pair_moves_b_onto_the_new_masters() -> Result<()> {
+        let mut geom_a = geometry("a", 6, &[1, 4]);
+        let mut geom_b = geometry("b", 6, &[1, 4]);
+        geom_b.translate_geometry((0.3, -0.2, 0.0));
+        let pair = align_between::align_between_geometries(&mut geom_a, &mut geom_b, 30.0, 1.0, 6)?;
+        assert_eq!(pair.overlap()?, (0..6, 0..6));
+
+        // A keeps its master on frame 1, B switches to frame 4
+        let realigned = realign_pair_rs(&pair, None, Some(4), 30.0, 1.0, 6, false)?;
+
+        assert_eq!(realigned.label, pair.label);
+        assert_eq!(realigned.geom_a.frames.len(), 6);
+        assert_eq!(realigned.geom_b.frames.len(), 6, "no frame is trimmed");
+        let ca = realigned.geom_a.frames[1].centroid;
+        let cb = realigned.geom_b.frames[4].centroid;
+        assert_relative_eq!(ca.0, cb.0, epsilon = 1e-6);
+        assert_relative_eq!(ca.1, cb.1, epsilon = 1e-6);
+        assert_relative_eq!(ca.2, cb.2, epsilon = 1e-6);
+        assert_eq!(realigned.overlap()?, (0..3, 3..6));
+
+        // with postprocessing the pair is resampled, still nothing is trimmed
+        let resampled = realign_pair_rs(&pair, None, Some(4), 30.0, 1.0, 6, true)?;
+        assert_eq!(resampled.geom_b.frames.len(), 6);
+        assert_eq!(resampled.overlap()?, (0..3, 3..6));
+
+        assert!(realign_pair_rs(&pair, Some(2), None, 30.0, 1.0, 6, false).is_err());
+        Ok(())
+    }
 }

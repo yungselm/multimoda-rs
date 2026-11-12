@@ -103,18 +103,12 @@ fn check_lumen_presence(geometry: &Geometry) -> Result<()> {
     Ok(())
 }
 
-/// Check that at most one reference point exists in the geometry
+/// Check that the geometry has at least one reference point and that its master exists
 fn check_reference_point(geometry: &Geometry) -> Result<()> {
-    let reference_frames: Vec<u32> = geometry
-        .frames
-        .iter()
-        .filter_map(|frame| frame.reference_point.as_ref().map(|_| frame.id))
-        .collect();
-
-    match reference_frames.len() {
-        1 => Ok(()),
-        n => Err(anyhow!("Expected exactly one reference point, found {n}")),
+    if geometry.reference_frames().is_empty() {
+        return Err(anyhow!("Expected at least one reference point, found none"));
     }
+    geometry.master_frame_idx().map(|_| ())
 }
 
 /// Check that all contours (lumen and extras) maintain consistent point counts across all frames
@@ -356,6 +350,7 @@ mod tests {
                 create_test_frame(2, 12, false, 2.0),
             ],
             label: "test".to_string(),
+            master_reference: None,
         };
         geometry.ensure_proximal_at_position_zero();
 
@@ -373,6 +368,7 @@ mod tests {
                 create_test_frame(2, 12, false, 2.0),
             ],
             label: "test".to_string(),
+            master_reference: None,
         };
         geometry.ensure_proximal_at_position_zero();
         let pts = |n: usize, frame: u32| create_test_contour_points(n, frame, 0.0);
@@ -408,6 +404,7 @@ mod tests {
                 create_test_frame(2, 11, false, 1.0), // Missing ID 1
             ],
             label: "test".to_string(),
+            master_reference: None,
         };
 
         let result = check_geometry_integrity(&geometry);
@@ -423,6 +420,7 @@ mod tests {
         let geometry = Geometry {
             frames: vec![frame],
             label: "test".to_string(),
+            master_reference: None,
         };
 
         let result = check_geometry_integrity(&geometry);
@@ -432,20 +430,34 @@ mod tests {
 
     #[test]
     fn test_multiple_reference_points() {
-        let geometry = Geometry {
+        let mut geometry = Geometry {
             frames: vec![
                 create_test_frame(0, 10, true, 0.0),
                 create_test_frame(1, 11, true, 1.0), // Two frames with reference points
             ],
             label: "test".to_string(),
+            master_reference: None,
         };
+        geometry.ensure_proximal_at_position_zero();
+        assert!(check_geometry_integrity(&geometry).is_ok());
 
+        // a master without a reference fails
+        geometry.master_reference = Some(12);
         let result = check_geometry_integrity(&geometry);
-        assert!(result.is_err());
         assert!(result
             .unwrap_err()
             .to_string()
-            .contains("exactly one reference point"));
+            .contains("original frame 12"));
+
+        for frame in geometry.frames.iter_mut() {
+            frame.reference_point = None;
+        }
+        geometry.master_reference = None;
+        let result = check_geometry_integrity(&geometry);
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("at least one reference point"));
     }
 
     #[test]
@@ -459,6 +471,7 @@ mod tests {
         let geometry = Geometry {
             frames: vec![frame1, frame2],
             label: "test".to_string(),
+            master_reference: None,
         };
 
         let result = check_geometry_integrity(&geometry);
@@ -507,6 +520,7 @@ mod tests {
         let mut geometry = Geometry {
             frames: vec![frame1.clone(), frame2.clone()],
             label: "test".to_string(),
+            master_reference: None,
         };
         geometry.ensure_proximal_at_position_zero();
 
@@ -531,6 +545,7 @@ mod tests {
         let geometry2 = Geometry {
             frames: vec![frame1, frame2, frame3],
             label: "test".to_string(),
+            master_reference: None,
         };
 
         let result = check_geometry_integrity(&geometry2);
@@ -562,6 +577,7 @@ mod tests {
         let geometry = Geometry {
             frames: vec![frame],
             label: "test".to_string(),
+            master_reference: None,
         };
 
         let result = check_geometry_integrity(&geometry);

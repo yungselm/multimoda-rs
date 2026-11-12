@@ -21,6 +21,7 @@ pub fn dummy_geometry_custom(z_spacing: f64, n_frames: usize) -> Geometry {
     Geometry {
         frames: new_frames,
         label: "dummy_geom".to_string(),
+        master_reference: None,
     }
 }
 
@@ -335,6 +336,7 @@ pub fn dummy_geometry() -> Geometry {
     Geometry {
         frames: vec![frame_a, frame_b, frame_c],
         label: "dummy_geometry".to_string(),
+        master_reference: None,
     }
 }
 
@@ -383,6 +385,7 @@ pub fn dummy_geometry_aligned_long() -> Geometry {
     Geometry {
         frames,
         label: "dummy_geometry_center_reference".to_string(),
+        master_reference: None,
     }
 }
 
@@ -418,6 +421,7 @@ pub fn dummy_geometry_center_reference() -> Geometry {
     Geometry {
         frames,
         label: "dummy_geometry_center_reference".to_string(),
+        master_reference: None,
     }
 }
 

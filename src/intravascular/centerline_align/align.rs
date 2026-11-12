@@ -86,12 +86,12 @@ pub fn align_three_point_rs<T: Processable>(
 
     let ref_idx = target
         .primary_geometry()
-        .find_ref_frame_idx()
+        .master_frame_idx()
         .map_err(|e| anyhow!("Couldn't find ref frame idx: {e:?}"))?;
     let ref_point = target.primary_geometry().frames[ref_idx]
         .reference_point
         .as_ref()
-        .ok_or_else(|| anyhow!("missing reference point"))?;
+        .ok_or_else(|| anyhow!("missing master reference point"))?;
 
     let total_rotation = best_rotation_three_point(
         &target.primary_geometry().frames[ref_idx].lumen,
@@ -206,13 +206,13 @@ pub fn align_combined_rs<T: Processable>(
 
     let ref_idx = original
         .primary_geometry()
-        .find_ref_frame_idx()
+        .master_frame_idx()
         .map_err(|e| anyhow!("Couldn't find ref frame idx: {e:?}"))?;
 
     let ref_point = original.primary_geometry().frames[ref_idx]
         .reference_point
         .as_ref()
-        .ok_or_else(|| anyhow!("missing reference point"))?;
+        .ok_or_else(|| anyhow!("missing master reference point"))?;
 
     let initial_rotation = best_rotation_three_point(
         &original.primary_geometry().frames[ref_idx].lumen,

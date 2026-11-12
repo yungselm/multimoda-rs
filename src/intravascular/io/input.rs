@@ -26,13 +26,25 @@ fn resolve_record_path(dir: &Path) -> PathBuf {
     }
 }
 
+/// Default file mapping for a measurement directory (AIVUS-CAA and HolOrama layout).
+pub fn default_names() -> HashMap<ContourType, &'static str> {
+    HashMap::from([
+        (ContourType::Lumen, "lumen"),
+        (ContourType::Eem, "eem"),
+        (ContourType::Catheter, "catheter"),
+    ])
+}
+
 /// Raw intravascular imaging input for one cardiac phase, loaded from a measurement directory.
 #[derive(Debug, Clone)]
 pub struct InputData {
     pub lumen: Vec<ContourPoint>,
     pub eem: Option<Vec<ContourPoint>>,
     pub record: Option<Vec<Record>>,
-    pub ref_point: ContourPoint,
+    /// At most one per frame, `frame_index` is the original frame.
+    pub reference_points: Vec<ContourPoint>,
+    /// Original frame of the master reference, `None` uses the most proximal one.
+    pub master_reference: Option<u32>,
     pub diastole: bool,
     pub label: String,
     /// `(original frame, annotation)` pairs, frame numbered like `lumen`.
@@ -44,7 +56,8 @@ impl InputData {
         lumen: Vec<ContourPoint>,
         eem: Option<Vec<ContourPoint>>,
         record: Option<Vec<Record>>,
-        ref_point: ContourPoint,
+        reference_points: Vec<ContourPoint>,
+        master_reference: Option<u32>,
         diastole: bool,
         label: String,
         annotations: Vec<(u32, Annotation)>,
@@ -53,7 +66,8 @@ impl InputData {
             lumen,
             eem,
             record,
-            ref_point,
+            reference_points,
+            master_reference,
             diastole,
             label,
             annotations,
@@ -87,8 +101,8 @@ impl InputData {
 
         let ref_fname = format!("{phase}_reference_points.csv");
         let ref_path = path.join(&ref_fname);
-        let ref_point = if ref_path.exists() {
-            read_reference_point(&ref_path)
+        let reference_points = if ref_path.exists() {
+            read_reference_points(&ref_path)
                 .with_context(|| format!("reading {}", ref_path.display()))?
         } else {
             return Err(anyhow::anyhow!(
@@ -147,7 +161,8 @@ impl InputData {
             lumen,
             eem,
             record,
-            ref_point,
+            reference_points,
+            master_reference: None,
             diastole,
             label: label_string,
             annotations,
@@ -269,26 +284,56 @@ fn read_optional_contour_file(
     Ok(Some(points))
 }
 
-pub fn read_reference_point<P: AsRef<Path>>(path: P) -> Result<ContourPoint> {
+/// Reads every `frame, x, y, z[, auto]` row (an optional header row is skipped).
+///
+/// `auto` is ignored. Two references on one frame are an error, an empty file too.
+pub fn read_reference_points<P: AsRef<Path>>(path: P) -> Result<Vec<ContourPoint>> {
     let delim = detect_delimiter(&path)?;
     let file = File::open(&path)
         .with_context(|| format!("failed to open reference-point file {:?}", path.as_ref()))?;
-
     let mut rdr = ReaderBuilder::new()
         .has_headers(false)
+        .flexible(true)
         .delimiter(delim)
         .from_reader(file);
 
-    let first = rdr.deserialize().next().ok_or_else(|| {
-        anyhow!(
-            "reference-point file {:?} was empty — this data is required",
+    let mut points: Vec<ContourPoint> = Vec::new();
+    for (row, record) in rdr.records().enumerate() {
+        let record = record.with_context(|| format!("reading reference row {}", row + 1))?;
+        let field = |i: usize| record.get(i).map(str::trim).unwrap_or("");
+        let Ok(frame) = field(0).parse::<f64>() else {
+            if row == 0 {
+                continue; // header
+            }
+            anyhow::bail!("invalid reference row {}: {record:?}", row + 1);
+        };
+        let coords: Vec<f64> = (1..4)
+            .map(|i| field(i).parse::<f64>())
+            .collect::<Result<_, _>>()
+            .with_context(|| format!("invalid reference row {}: {record:?}", row + 1))?;
+        let frame = frame as u32;
+        if points.iter().any(|p| p.frame_index == frame) {
+            anyhow::bail!(
+                "two reference points on frame {frame} in {:?}",
+                path.as_ref()
+            );
+        }
+        points.push(ContourPoint {
+            frame_index: frame,
+            point_index: 0,
+            x: coords[0],
+            y: coords[1],
+            z: coords[2],
+            aortic: false,
+        });
+    }
+    if points.is_empty() {
+        anyhow::bail!(
+            "reference-point file {:?} was empty, this data is required",
             path.as_ref()
-        )
-    })?;
-
-    let point: ContourPoint =
-        first.with_context(|| "failed to deserialize first reference-point record")?;
-    Ok(point)
+        );
+    }
+    Ok(points)
 }
 
 /// Reads `frame, kind, role, group, x, y, z` rows (a leading header row is skipped).
@@ -638,7 +683,10 @@ mod input_tests {
             "eem contour vector should not be empty"
         );
         assert!(input.record.is_none(), "record vector should be empty");
-        assert!(input.ref_point.x > 0.0, "ref_point should not be empty");
+        assert!(
+            input.reference_points[0].x > 0.0,
+            "reference_points should not be empty"
+        );
 
         // deprecated branch_/calcium_ files become one Region annotation per frame
         let lumen_frames: std::collections::HashSet<u32> =
@@ -729,6 +777,35 @@ mod input_tests {
         let first = &annotations[0].1.points;
         assert_eq!((first[1].x, first[1].y, first[1].z), (1.5, 2.5, 0.5));
         assert_eq!((first[1].frame_index, first[1].point_index), (3, 1));
+        Ok(())
+    }
+
+    #[test]
+    fn test_read_reference_points_reads_every_row() -> anyhow::Result<()> {
+        let dir = temp_dir("reference_points");
+        let p = dir.join("diastolic_reference_points.csv");
+
+        // tab separated with header and auto flag, as HolOrama writes it
+        std::fs::write(
+            &p,
+            "frame\tx\ty\tz\tauto\n385\t1.0\t2.0\t0.5\t0\n390\t3.0\t4.0\t1.0\t1\n",
+        )?;
+        let refs = read_reference_points(&p)?;
+        let frames: Vec<u32> = refs.iter().map(|r| r.frame_index).collect();
+        assert_eq!(frames, vec![385, 390]);
+        assert_eq!((refs[1].x, refs[1].y, refs[1].z), (3.0, 4.0, 1.0));
+
+        // comma separated without header or flag
+        std::fs::write(&p, "385,1.0,2.0,0.5\n")?;
+        assert_eq!(read_reference_points(&p)?.len(), 1);
+
+        std::fs::write(&p, "385,1.0,2.0,0.5\n385,3.0,4.0,0.5\n")?;
+        assert!(
+            read_reference_points(&p).is_err(),
+            "two references on one frame"
+        );
+        std::fs::write(&p, "frame,x,y,z\n")?;
+        assert!(read_reference_points(&p).is_err(), "no reference");
         Ok(())
     }
 

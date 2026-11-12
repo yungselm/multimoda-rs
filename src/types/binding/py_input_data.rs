@@ -25,8 +25,13 @@ use std::convert::TryFrom;
 ///     (one per frame) when the geometry is built. Use ``annotations``.
 /// record : list of PyRecord or None
 ///     Metadata records about the input data.
-/// ref_point : PyContourPoint
-///     Reference point used for alignment.
+/// reference_points : list of PyContourPoint
+///     All reference points, at most one per frame, ``frame_index`` numbered
+///     like the lumen ``original_frame``. Each is stored on its frame.
+/// master_reference : int or None
+///     Original frame of the reference that aligns this geometry to other
+///     geometries and to the CCTA centerline. ``None`` uses the most proximal
+///     reference.
 /// diastole : bool
 ///     ``True`` when the data corresponds to the diastolic phase.
 /// label : str
@@ -43,7 +48,7 @@ use std::convert::TryFrom;
 /// ...     calcification=None,
 /// ...     sidebranch=None,
 /// ...     record=record,
-/// ...     ref_point=ref_point,
+/// ...     reference_points=[ref_point],
 /// ...     diastole=True,
 /// ...     label="Pat00_diastole_rest",
 /// ...     annotations=[(385, PyAnnotation("sidebranch", "region", 0, points))],
@@ -62,7 +67,9 @@ pub struct PyInputData {
     #[pyo3(get, set)]
     pub record: Option<Vec<PyRecord>>,
     #[pyo3(get, set)]
-    pub ref_point: PyContourPoint,
+    pub reference_points: Vec<PyContourPoint>,
+    #[pyo3(get, set)]
+    pub master_reference: Option<u32>,
     #[pyo3(get, set)]
     pub diastole: bool,
     #[pyo3(get, set)]
@@ -74,7 +81,7 @@ pub struct PyInputData {
 #[pymethods]
 impl PyInputData {
     #[new]
-    #[pyo3(signature = (lumen, eem, calcification, sidebranch, record, ref_point, diastole, label, annotations=Vec::new()))]
+    #[pyo3(signature = (lumen, eem, calcification, sidebranch, record, reference_points, diastole, label, annotations=Vec::new(), master_reference=None))]
     fn new(
         py: Python<'_>,
         lumen: Vec<PyContour>,
@@ -82,10 +89,11 @@ impl PyInputData {
         calcification: Option<Vec<PyContour>>,
         sidebranch: Option<Vec<PyContour>>,
         record: Option<Vec<PyRecord>>,
-        ref_point: PyContourPoint,
+        reference_points: Vec<PyContourPoint>,
         diastole: bool,
         label: String,
         annotations: Vec<(u32, PyAnnotation)>,
+        master_reference: Option<u32>,
     ) -> PyResult<Self> {
         if calcification.is_some() || sidebranch.is_some() {
             PyErr::warn(
@@ -102,7 +110,8 @@ impl PyInputData {
             calcification,
             sidebranch,
             record,
-            ref_point,
+            reference_points,
+            master_reference,
             diastole,
             label,
             annotations,
@@ -111,13 +120,15 @@ impl PyInputData {
 
     fn __repr__(&self) -> String {
         format!(
-            "InputData(lumen={}, eem={}, calcification={}, sidebranch={}, record={}, ref_point={}, diastole={}, label='{}', annotations={})",
+            "InputData(lumen={}, eem={}, calcification={}, sidebranch={}, record={}, reference_points={}, master_reference={}, diastole={}, label='{}', annotations={})",
             self.lumen.len(),
             self.eem.as_ref().map_or(0, |v| v.len()),
             self.calcification.as_ref().map_or(0, |v| v.len()),
             self.sidebranch.as_ref().map_or(0, |v| v.len()),
             self.record.as_ref().map_or(0, |v| v.len()),
-            self.ref_point.__repr__(),
+            self.reference_points.len(),
+            self.master_reference
+                .map_or_else(|| "None".to_string(), |m| m.to_string()),
             self.diastole,
             self.label,
             self.annotations.len(),
@@ -195,15 +206,19 @@ impl TryFrom<&PyInputData> for InputData {
             None => None,
         };
 
-        // ref_point: PyContourPoint -> ContourPoint
-        let ref_point_rust: ContourPoint = ContourPoint::from(&py_in.ref_point);
+        let reference_points: Vec<ContourPoint> = py_in
+            .reference_points
+            .iter()
+            .map(ContourPoint::from)
+            .collect();
 
         // Build InputData via its constructor to preserve validations
         InputData::new(
             lumen_points,
             eem_points,
             records_rust,
-            ref_point_rust,
+            reference_points,
+            py_in.master_reference,
             py_in.diastole,
             py_in.label.clone(),
             annotations,
@@ -255,7 +270,7 @@ impl From<&InputData> for PyInputData {
         }
 
         // Build lumen as a single PyContour (id = 0)
-        let original_frame = input.ref_point.frame_index;
+        let original_frame = input.lumen.first().map_or(0, |p| p.frame_index);
         let lumen_py = make_pycontour_from_points(&input.lumen, 0, original_frame);
         let lumen_vec = vec![lumen_py];
 
@@ -275,15 +290,18 @@ impl From<&InputData> for PyInputData {
             .as_ref()
             .map(|records| records.iter().map(PyRecord::from).collect());
 
-        let ref_point_py = PyContourPoint::from(&input.ref_point);
-
         PyInputData {
             lumen: lumen_vec,
             eem: eem_py,
             calcification: None,
             sidebranch: None,
             record: record_py,
-            ref_point: ref_point_py,
+            reference_points: input
+                .reference_points
+                .iter()
+                .map(PyContourPoint::from)
+                .collect(),
+            master_reference: input.master_reference,
             diastole: input.diastole,
             label: input.label.clone(),
             annotations: input

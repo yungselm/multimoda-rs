@@ -268,12 +268,21 @@ class PyGeometry:
         Ordered list of imaging frames.
     label : str
         Human-readable label for this geometry.
+    master_reference : int or None
+        Original frame of the reference point that aligns this geometry to
+        other geometries and to the CCTA centerline. ``None`` uses the most
+        proximal reference. Setting a frame without a reference point raises
+        ``ValueError``.
     """
 
     frames: list[PyFrame]
     label: str
+    master_reference: int | None
 
-    def __init__(self, frames: list[PyFrame], label: str) -> None: ...
+    def __init__(
+        self, frames: list[PyFrame], label: str, master_reference: int | None = None
+    ) -> None: ...
+    def reference_frames(self) -> list[int]: ...
     def __len__(self) -> int: ...
     def __repr__(self) -> str: ...
     def get_contours_by_type(self, contour_type: str) -> list[PyContour]: ...
@@ -301,6 +310,12 @@ class PyGeometryPair:
         Second geometry (typically systolic).
     label : str
         Human-readable label.
+
+    Notes
+    -----
+    The pair keeps every frame of both geometries. Frames are matched by their
+    offset from each geometry's master reference, see :meth:`overlap`.
+    Analyses (:meth:`get_summary`, OBJ export) only use the overlapping frames.
     """
 
     geom_a: PyGeometry
@@ -314,6 +329,17 @@ class PyGeometryPair:
     ) -> tuple[
         tuple[tuple[float, float, float], tuple[float, float, float]], list[list[float]]
     ]: ...
+    def overlap(self) -> tuple[tuple[int, int], tuple[int, int]]: ...
+    def overlapping(self) -> PyGeometryPair: ...
+    def set_master_references(
+        self,
+        master_a: int | None = None,
+        master_b: int | None = None,
+        range_rotation_deg: float = 90.0,
+        step_rotation_deg: float = 0.5,
+        sample_size: int = 500,
+        postprocessing: bool = True,
+    ) -> None: ...
 
 class PyCenterlinePoint:
     """A point on a vessel centerline with its local normal vector.
@@ -645,8 +671,12 @@ class PyInputData:
         Deprecated, converted to ``sidebranch`` region annotations.
     record : list of PyRecord or None
         Metadata records.
-    ref_point : PyContourPoint
-        Reference point used for alignment.
+    reference_points : list of PyContourPoint
+        All reference points, at most one per frame, ``frame_index`` numbered
+        like the lumen ``original_frame``.
+    master_reference : int or None
+        Original frame of the master reference. ``None`` uses the most
+        proximal reference.
     diastole : bool
         ``True`` when the data corresponds to the diastolic phase.
     label : str
@@ -661,7 +691,8 @@ class PyInputData:
     calcification: list[PyContour] | None
     sidebranch: list[PyContour] | None
     record: list[PyRecord] | None
-    ref_point: PyContourPoint
+    reference_points: list[PyContourPoint]
+    master_reference: int | None
     diastole: bool
     label: str
     annotations: list[tuple[int, PyAnnotation]]
@@ -673,10 +704,11 @@ class PyInputData:
         calcification: list[PyContour] | None,
         sidebranch: list[PyContour] | None,
         record: list[PyRecord] | None,
-        ref_point: PyContourPoint,
+        reference_points: list[PyContourPoint],
         diastole: bool,
         label: str,
         annotations: list[tuple[int, PyAnnotation]] = ...,
+        master_reference: int | None = None,
     ) -> None: ...
     def __repr__(self) -> str: ...
 
@@ -709,6 +741,7 @@ def from_file_full(
     bruteforce: bool = ...,
     smooth: bool = ...,
     postprocessing: bool = ...,
+    master_references: list[int | None] | None = ...,
 ) -> tuple[
     PyGeometryPair,
     PyGeometryPair,
@@ -735,6 +768,7 @@ def from_file_doublepair(
     bruteforce: bool = ...,
     smooth: bool = ...,
     postprocessing: bool = ...,
+    master_references: list[int | None] | None = ...,
 ) -> tuple[
     PyGeometryPair,
     PyGeometryPair,
@@ -757,6 +791,7 @@ def from_file_singlepair(
     bruteforce: bool = ...,
     smooth: bool = ...,
     postprocessing: bool = ...,
+    master_references: list[int | None] | None = ...,
 ) -> tuple[PyGeometryPair, tuple[_AlignLog, _AlignLog]]: ...
 def from_file_single(
     input_path: str,
@@ -774,6 +809,7 @@ def from_file_single(
     output_path: str = ...,
     bruteforce: bool = ...,
     smooth: bool = ...,
+    master_references: list[int | None] | None = ...,
 ) -> tuple[PyGeometry, _AlignLog]: ...
 
 # ---------------------------------------------------------------------------
@@ -802,6 +838,7 @@ def from_array_full(
     bruteforce: bool = ...,
     smooth: bool = ...,
     postprocessing: bool = ...,
+    master_references: list[int | None] | None = ...,
 ) -> tuple[
     PyGeometryPair,
     PyGeometryPair,
@@ -829,6 +866,7 @@ def from_array_doublepair(
     bruteforce: bool = ...,
     smooth: bool = ...,
     postprocessing: bool = ...,
+    master_references: list[int | None] | None = ...,
 ) -> tuple[
     PyGeometryPair,
     PyGeometryPair,
@@ -851,6 +889,7 @@ def from_array_singlepair(
     bruteforce: bool = ...,
     smooth: bool = ...,
     postprocessing: bool = ...,
+    master_references: list[int | None] | None = ...,
 ) -> tuple[PyGeometryPair, tuple[_AlignLog, _AlignLog]]: ...
 def from_array_single(
     input_data: PyInputData,
@@ -866,6 +905,7 @@ def from_array_single(
     output_path: str = ...,
     bruteforce: bool = ...,
     smooth: bool = ...,
+    master_references: list[int | None] | None = ...,
 ) -> tuple[PyGeometry, _AlignLog]: ...
 
 # ---------------------------------------------------------------------------

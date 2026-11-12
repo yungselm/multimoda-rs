@@ -1,4 +1,4 @@
-use super::input::InputData;
+use super::input::{default_names, InputData};
 use crate::types::native::annotation::Annotation;
 use crate::types::native::contour::{Contour, ContourType};
 use crate::types::native::contour_point::ContourPoint;
@@ -19,13 +19,7 @@ pub fn build_geometry_from_inputdata(
     let input_data = if let Some(input_data) = input_data {
         input_data
     } else if let Some(path) = path {
-        // Default mapping for typical AIVUS-CAA structure
-        let mut names = HashMap::new();
-        names.insert(ContourType::Lumen, "lumen");
-        names.insert(ContourType::Eem, "eem");
-        names.insert(ContourType::Catheter, "catheter");
-
-        InputData::process_directory(path, names, diastole, label)?
+        InputData::process_directory(path, default_names(), diastole, label)?
     } else {
         return Err(anyhow::anyhow!(
             "Either input_data or path must be provided"
@@ -45,8 +39,6 @@ pub fn build_geometry_from_inputdata(
             all_original_frames.insert(point.frame_index);
         }
     }
-
-    all_original_frames.insert(input_data.ref_point.frame_index);
 
     let mut sorted_original_frames: Vec<u32> = all_original_frames.into_iter().collect();
     sorted_original_frames.sort();
@@ -84,14 +76,22 @@ pub fn build_geometry_from_inputdata(
             reference_point: None,
             annotations: Vec::new(),
         };
-
-        if let Some(&mapped_frame_id) = frame_mapping.get(&input_data.ref_point.frame_index) {
-            if mapped_frame_id == frame_id {
-                frame.reference_point = Some(input_data.ref_point);
-            }
-        }
+        frame.reference_point = input_data
+            .reference_points
+            .iter()
+            .find(|p| p.frame_index == frame.lumen.original_frame)
+            .copied();
 
         frame_map.insert(frame_id, frame);
+    }
+
+    let dropped = input_data
+        .reference_points
+        .iter()
+        .filter(|p| !frame_mapping.contains_key(&p.frame_index))
+        .count();
+    if dropped > 0 {
+        eprintln!("Warning: dropped {dropped} reference point(s) whose frame has no lumen contour");
     }
 
     for mut contour in eem_contours {
@@ -133,6 +133,7 @@ pub fn build_geometry_from_inputdata(
     let mut geometry = Geometry {
         frames,
         label: label.to_string(),
+        master_reference: None,
     };
 
     if let Some(records) = &input_data.record {
@@ -148,6 +149,12 @@ pub fn build_geometry_from_inputdata(
     for frame in geometry.frames.iter_mut() {
         let id = frame.id;
         frame.set_value(Some(id), None, None, None);
+    }
+
+    // frames now run proximal to distal, the first reference is the most proximal
+    match input_data.master_reference {
+        Some(master) => geometry.set_master_reference(master)?,
+        None => geometry.master_reference = geometry.reference_frames().first().copied(),
     }
 
     super::integrity_check::check_geometry_integrity(&geometry)?;
@@ -467,14 +474,15 @@ mod io_tests {
             lumen: test_points.clone(),
             eem: Some(test_points.clone()),
             record: None,
-            ref_point: ContourPoint {
+            reference_points: vec![ContourPoint {
                 frame_index: 0,
                 point_index: 0,
                 x: 1.0,
                 y: 2.0,
                 z: 3.0,
                 aortic: false,
-            },
+            }],
+            master_reference: None,
             label: "test".to_string(),
             diastole: true,
             annotations: Vec::new(),
@@ -493,6 +501,73 @@ mod io_tests {
 
         assert!(!geometry.frames.is_empty());
         assert_eq!(geometry.label, "test_label");
+    }
+
+    /// ivus_rest copied to a temp dir with references on 347 and 385, and on 999 (no lumen).
+    fn rest_dir_with_references(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("multimodars_build_{name}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        for f in ["diastolic_contours.csv", "combined_sorted_manual.csv"] {
+            std::fs::copy(Path::new("data/fixtures/ivus_rest").join(f), dir.join(f)).unwrap();
+        }
+        std::fs::write(
+            dir.join("diastolic_reference_points.csv"),
+            "347\t3.0\t3.0\t22.0\n385\t3.5\t3.6\t24.5\n999\t1.0\t1.0\t1.0\n",
+        )
+        .unwrap();
+        dir
+    }
+
+    #[test]
+    fn test_build_stores_every_reference_and_the_master() -> anyhow::Result<()> {
+        let dir = rest_dir_with_references("refs");
+        let geometry =
+            build_geometry_from_inputdata(None, Some(&dir), "refs", true, (4.5, 4.5), 0.5, 20)?;
+
+        // 999 has no lumen and is dropped, the others sit on their own frame
+        let mut refs = geometry.reference_frames();
+        refs.sort();
+        assert_eq!(refs, vec![347, 385]);
+        for frame in &geometry.frames {
+            if let Some(rp) = frame.reference_point {
+                assert_eq!(rp.frame_index, frame.lumen.original_frame);
+                assert_eq!(rp.z, frame.centroid.2);
+            }
+        }
+        // default master is the most proximal reference, the first in frame order
+        let first = geometry.reference_frames()[0];
+        assert_eq!(geometry.master_reference, Some(first));
+        assert_eq!(geometry.master_frame_idx()?, {
+            geometry
+                .frames
+                .iter()
+                .position(|f| f.reference_point.is_some())
+                .unwrap()
+        });
+
+        // an explicit master is kept, a frame without a reference is an error
+        let names = default_names();
+        let mut input = InputData::process_directory(&dir, names.clone(), true, "refs")?;
+        input.master_reference = Some(347);
+        let geometry =
+            build_geometry_from_inputdata(Some(input), None, "refs", true, (4.5, 4.5), 0.5, 20)?;
+        assert_eq!(geometry.master_reference, Some(347));
+        let idx = geometry.master_frame_idx()?;
+        assert_eq!(geometry.frames[idx].lumen.original_frame, 347);
+
+        let mut input = InputData::process_directory(&dir, names, true, "refs")?;
+        input.master_reference = Some(367);
+        assert!(build_geometry_from_inputdata(
+            Some(input),
+            None,
+            "refs",
+            true,
+            (4.5, 4.5),
+            0.5,
+            20
+        )
+        .is_err());
+        Ok(())
     }
 
     #[test]

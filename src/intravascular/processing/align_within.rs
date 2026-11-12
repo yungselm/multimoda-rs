@@ -39,9 +39,6 @@ pub fn align_frames_in_geometry(
         return Err(anyhow!("sample_size must be > 0"));
     }
 
-    let ref_idx = geometry
-        .find_ref_frame_idx()
-        .unwrap_or(geometry.find_proximal_end_idx());
     let sample_ratio = sample_size as f64 / geometry.frames[0].lumen.points.len() as f64;
     let sample_size_catheter = if geometry.frames[0]
         .extras
@@ -136,6 +133,10 @@ pub fn align_frames_in_geometry(
     let geometry_filled = fill_holes(geometry)?;
     let mut geometry = fix_spacing(&geometry_filled);
 
+    // after hole filling, inserted frames shift the positions
+    let ref_idx = geometry
+        .master_frame_idx()
+        .unwrap_or(geometry.find_proximal_end_idx());
     let anomalous_bool = is_anomalous_coronary(&geometry.frames[ref_idx]);
     let additional_rotation = angle_ref_point_to_right(&geometry.frames[ref_idx], anomalous_bool)?;
 
@@ -151,6 +152,7 @@ pub fn align_frames_in_geometry(
     final_geometry = Geometry {
         frames: wall_frames,
         label: final_geometry.label,
+        master_reference: final_geometry.master_reference,
     };
 
     if smooth {
@@ -246,7 +248,7 @@ pub fn find_best_rotation(
     }
 }
 
-fn is_anomalous_coronary(ref_frame: &Frame) -> bool {
+pub(crate) fn is_anomalous_coronary(ref_frame: &Frame) -> bool {
     // clinical definition is >1.3 but use 2.0 here to avoid false positives
     ref_frame.lumen.elliptic_ratio() > 2.0
         || ref_frame.lumen.aortic_thickness.is_some()
@@ -629,19 +631,13 @@ fn create_interpolated_frame(frame_1: &Frame, frame_2: &Frame, t: f64) -> Frame 
         }
     }
 
-    let reference_point = match (&frame_1.reference_point, &frame_2.reference_point) {
-        (Some(p1), Some(p2)) => Some(interp_point(p1, p2, t, frame_2.id, 0)),
-        (Some(p1), None) => Some(*p1),
-        (None, Some(p2)) => Some(*p2),
-        (None, None) => None,
-    };
-
+    // inserted frames carry no reference, it would duplicate a neighbour's
     Frame {
         id: frame_2.id, // placeholder; Geometry::insert_frame will reassign IDs
         centroid,
         lumen,
         extras,
-        reference_point,
+        reference_point: None,
         annotations: Vec::new(),
     }
 }
@@ -788,7 +784,7 @@ mod align_within_tests {
     use super::*;
     use crate::intravascular::utils::test_utils::{
         add_annotations_on_lumen, assert_annotations_on_lumen, dummy_geometry,
-        dummy_geometry_aligned_long, dummy_geometry_center_reference,
+        dummy_geometry_aligned_long, dummy_geometry_center_reference, dummy_geometry_custom,
     };
 
     #[test]
@@ -828,6 +824,7 @@ mod align_within_tests {
             &Geometry {
                 frames: kept,
                 label: String::new(),
+                master_reference: None,
             },
             2,
         );
@@ -835,9 +832,42 @@ mod align_within_tests {
     }
 
     #[test]
+    fn test_orientation_uses_master_after_hole_filling() -> anyhow::Result<()> {
+        // references on frames 2 and 4, master on 4. Removing frame 1 makes a hole that
+        // shifts the master frame by one position once it is filled.
+        let mut geom = dummy_geometry_custom(1.0, 6);
+        geom.frames[2].reference_point = geom.frames[3].reference_point.map(|p| ContourPoint {
+            frame_index: 2,
+            ..p
+        });
+        geom.frames[3].reference_point = None;
+        geom.frames[4].reference_point = geom.frames[2].reference_point.map(|p| ContourPoint {
+            frame_index: 4,
+            ..p
+        });
+        geom.frames.remove(1);
+        geom.set_master_reference(4)?;
+
+        let (aligned, _, _) = align_frames_in_geometry(&mut geom, 1.0, 30.0, false, true, 6)?;
+
+        assert_eq!(aligned.frames.len(), 6);
+        assert_eq!(aligned.reference_frames(), vec![2, 4]);
+        let idx = aligned.master_frame_idx()?;
+        assert_eq!(idx, 4);
+        // the master reference ends up right of its frame's centroid
+        let frame = &aligned.frames[idx];
+        let rp = frame.reference_point.unwrap();
+        assert!(rp.x > frame.centroid.0);
+        assert_relative_eq!(rp.y, frame.centroid.1, epsilon = 1e-6);
+        // the inserted frame carries no reference
+        assert!(aligned.frames[1].reference_point.is_none());
+        Ok(())
+    }
+
+    #[test]
     fn test_simple_geometry() -> anyhow::Result<()> {
         let mut dummy = dummy_geometry();
-        let ref_frame_idx = dummy.find_ref_frame_idx()?;
+        let ref_frame_idx = dummy.master_frame_idx()?;
 
         assert_eq!(ref_frame_idx, 0);
 
@@ -878,7 +908,7 @@ mod align_within_tests {
     #[test]
     fn test_simple_geometry_middle_ref() -> anyhow::Result<()> {
         let mut dummy = dummy_geometry_center_reference();
-        let ref_frame_idx = dummy.find_ref_frame_idx();
+        let ref_frame_idx = dummy.master_frame_idx();
         println!("Reference idx: {ref_frame_idx:?}");
 
         for frame in dummy.frames.iter() {
