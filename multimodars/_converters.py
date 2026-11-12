@@ -304,8 +304,10 @@ def numpy_to_inputdata(
         closed]`` with frame_index numbered as in ``lumen_arr``. Rows with the
         same ``(frame_index, contour)`` form one contour in row order,
         ``contour`` defaults to 0 and ``closed`` (1 or 0) to 1. In-wall
-        contours must be closed. Building the geometry turns each contour into
-        a point cloud on its frame, contours whose frame has no lumen are
+        contours must be closed, a side branch leaving the lumen is an open arc
+        with both ends on the lumen border. Building the geometry turns each
+        contour into a point cloud on its frame (closed contours jittered, open
+        arcs turned around their axis), contours whose frame has no lumen are
         dropped with a warning.  Default is ``None``.
     master_reference : int, optional
         Frame index of the reference that aligns this geometry to other

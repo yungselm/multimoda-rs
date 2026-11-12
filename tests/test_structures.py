@@ -210,3 +210,31 @@ def test_type_contour_files_are_read(tmp_path: Path):
     assert [(s.kind, s.closed, len(s)) for s in frame.structures] == [
         ("calcification", True, 8 * (COPIES + 1))
     ]
+
+
+def test_open_branch_arc_is_revolved():
+    lumen = _lumen_arr()
+    on_frame = lumen[lumen[:, 0] == 12]
+    center = on_frame[:, 1:3].mean(axis=0)
+    # ends on lumen points 6 and 10, the middle bulges out of the lumen
+    arc = on_frame[[6, 7, 8, 9, 10]].copy()
+    arc[1:4, 1:3] = center + 1.4 * (arc[1:4, 1:3] - center)
+    rows = np.column_stack([arc, np.zeros(5), np.zeros(5)])
+    _, inp = _make_input({"branch": rows})
+
+    geom = _align(inp)
+
+    frame = next(f for f in geom.frames if f.lumen.original_frame == 12)
+    (branch,) = frame.structures
+    assert (branch.kind, branch.closed, len(branch)) == ("sidebranch", False, 5 * 12)
+    # the drawn arc is kept, its ends stay on the lumen
+    lumen_xyz = np.array([(p.x, p.y, p.z) for p in frame.lumen.points])
+    for p in (branch.points[0], branch.points[4]):
+        assert np.linalg.norm(lumen_xyz - (p.x, p.y, p.z), axis=1).min() < 1e-6
+    # turning the arc lifts it out of the frame plane, at most by its own size
+    z = np.array([p.z for p in branch.points]) - frame.centroid[2]
+    width = np.ptp(arc[:, 1:3], axis=0).max()
+    assert 0.3 < np.abs(z).max() <= width
+    assert z.min() < -0.3 < 0.3 < z.max()
+    with pytest.raises(ValueError, match="side branches"):
+        structure_to_trimesh(geom, "branch")

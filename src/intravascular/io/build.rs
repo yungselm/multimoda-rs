@@ -3,7 +3,9 @@ use crate::types::native::contour::{Contour, ContourType};
 use crate::types::native::contour_point::ContourPoint;
 use crate::types::native::frame::Frame;
 use crate::types::native::geometry::Geometry;
-use crate::types::native::structure::{jitter_cloud, CloudParams, Structure, StructureKind};
+use crate::types::native::structure::{
+    jitter_cloud, revolve_arc, CloudParams, Structure, StructureKind,
+};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -173,7 +175,8 @@ pub fn build_geometry_from_inputdata(
 /// Puts the point cloud of each structure on the frame with the same original frame.
 ///
 /// A closed contour becomes a jittered cloud spread over half the frame spacing in z on both
-/// sides. An open in-wall contour is an error, an open side-branch arc is kept as drawn.
+/// sides. An open side-branch arc is turned around its own axis (`revolve_arc`), an open
+/// in-wall contour is an error.
 /// Structures without a lumen frame are dropped with one warning.
 fn add_structure_clouds(
     geometry: &mut Geometry,
@@ -222,7 +225,7 @@ fn add_structure_clouds(
         let points = if structure.closed {
             jitter_cloud(&contour, half_spacing, params, stream)
         } else {
-            contour
+            revolve_arc(&contour, frame.centroid, params.revolution_steps)
         };
         frame
             .structures
@@ -456,13 +459,18 @@ mod io_tests {
             let sizes: Vec<usize> = frame.structures.iter().map(|s| s.points.len()).collect();
             let expected = match frame.lumen.original_frame {
                 385 => vec![3 * copies, 2 * copies],
-                347 => vec![copies, 2],
+                347 => vec![copies, 2 * CloudParams::default().revolution_steps],
                 _ => vec![],
             };
             assert_eq!(sizes, expected, "frame {}", frame.lumen.original_frame);
-            for p in frame.structures.iter().flat_map(|s| s.points.iter()) {
-                assert!((p.z - frame.centroid.2).abs() <= spacing / 2.0 + 1e-9);
-                assert_eq!(p.frame_index, frame.lumen.points[0].frame_index);
+            for s in &frame.structures {
+                for p in &s.points {
+                    // jitter stays within half the spacing, a revolved arc spreads by its width
+                    if s.closed {
+                        assert!((p.z - frame.centroid.2).abs() <= spacing / 2.0 + 1e-9);
+                    }
+                    assert_eq!(p.frame_index, frame.lumen.points[0].frame_index);
+                }
             }
         }
 

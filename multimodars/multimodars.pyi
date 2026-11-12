@@ -174,8 +174,10 @@ class PyStructure:
     """A non-pipe structure of one frame (calcium, lipid, side branch, ...).
 
     In :class:`PyInputData` the points are the drawn contour. On a frame of a
-    :class:`PyGeometry` they are the point cloud generated from it (jittered for
-    in-wall structures), which follows every rigid transform of its frame. It is
+    :class:`PyGeometry` they are the point cloud generated from it, which follows
+    every rigid transform of its frame. A closed contour is jittered, an open
+    side-branch arc (ends on the lumen border) is turned around its own axis,
+    the in-plane line from the lumen centroid to the middle of the arc. It is
     never sorted, smoothed, interpolated or used for alignment.
 
     Attributes

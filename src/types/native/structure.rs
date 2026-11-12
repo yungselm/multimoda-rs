@@ -88,7 +88,7 @@ impl Structure {
     }
 }
 
-/// Settings of the jittered cloud of an in-wall structure.
+/// Settings of the point clouds: jitter of closed contours, revolution of open arcs.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CloudParams {
     /// Jittered copies per contour point, the point itself is kept too.
@@ -96,6 +96,8 @@ pub struct CloudParams {
     /// Standard deviation of the in-plane jitter [mm].
     pub sigma_xy: f64,
     pub seed: u64,
+    /// Copies of an open arc turned around its axis over half a turn, the arc itself included.
+    pub revolution_steps: usize,
 }
 
 impl Default for CloudParams {
@@ -104,8 +106,78 @@ impl Default for CloudParams {
             copies: 4,
             sigma_xy: 0.05,
             seed: 0,
+            revolution_steps: 12,
         }
     }
+}
+
+/// An open side-branch arc turned around its own axis, `steps` copies over half a turn.
+///
+/// The axis lies in the frame plane and runs from the lumen `center` to the arc's midpoint
+/// (by arc length). The arc ends sit on the lumen border and sweep the ostium circle, the
+/// result is a dome pointing away from the lumen. A degenerate axis keeps the arc as drawn.
+pub fn revolve_arc(
+    arc: &[ContourPoint],
+    center: (f64, f64, f64),
+    steps: usize,
+) -> Vec<ContourPoint> {
+    let Some(mid) = arc_midpoint(arc) else {
+        return arc.to_vec();
+    };
+    let (ux, uy) = (mid.0 - center.0, mid.1 - center.1);
+    let len = (ux * ux + uy * uy).sqrt();
+    if len < 1e-9 || steps == 0 {
+        return arc.to_vec();
+    }
+    let (ux, uy) = (ux / len, uy / len);
+
+    let mut out = Vec::with_capacity(arc.len() * steps);
+    for k in 0..steps {
+        let (sin, cos) = (k as f64 * std::f64::consts::PI / steps as f64).sin_cos();
+        for p in arc {
+            // split into the part along the axis and the in-plane offset to it, turn the
+            // offset around the axis into the z direction
+            let (dx, dy, dz) = (p.x - center.0, p.y - center.1, p.z - center.2);
+            let along = dx * ux + dy * uy;
+            let (ox, oy) = (dx - along * ux, dy - along * uy);
+            // signed offset in the plane, perpendicular to the axis
+            let side = ox * -uy + oy * ux;
+            let r_plane = side * cos;
+            out.push(ContourPoint {
+                x: center.0 + along * ux - r_plane * uy,
+                y: center.1 + along * uy + r_plane * ux,
+                z: center.2 + dz + side * sin,
+                ..*p
+            });
+        }
+    }
+    for (i, p) in out.iter_mut().enumerate() {
+        p.point_index = i as u32;
+    }
+    out
+}
+
+/// Point halfway along the polyline `arc` (x, y), `None` for fewer than two points.
+fn arc_midpoint(arc: &[ContourPoint]) -> Option<(f64, f64)> {
+    if arc.len() < 2 {
+        return None;
+    }
+    let seg =
+        |a: &ContourPoint, b: &ContourPoint| ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt();
+    let total: f64 = arc.windows(2).map(|w| seg(&w[0], &w[1])).sum();
+    let mut left = total / 2.0;
+    for w in arc.windows(2) {
+        let l = seg(&w[0], &w[1]);
+        if l >= left && l > 0.0 {
+            let t = left / l;
+            return Some((
+                w[0].x + t * (w[1].x - w[0].x),
+                w[0].y + t * (w[1].y - w[0].y),
+            ));
+        }
+        left -= l;
+    }
+    arc.last().map(|p| (p.x, p.y))
 }
 
 /// The contour points plus `copies` jittered copies of each: Gaussian in-plane, uniform in z
@@ -222,6 +294,41 @@ mod structure_tests {
         let custom = StructureKind::from_name("fibrous_cap");
         assert_eq!(custom, StructureKind::Custom("fibrous_cap".to_string()));
         assert_eq!(custom.name(), "fibrous_cap");
+    }
+
+    #[test]
+    fn test_revolve_arc_sweeps_a_dome_around_the_branch_axis() {
+        // arc from (1, -1) over (2, 0) to (1, 1), lumen center at the origin: axis is +x
+        let arc: Vec<ContourPoint> = (0..=8)
+            .map(|i| {
+                let t = -PI / 2.0 + i as f64 * PI / 8.0;
+                pt(1.0 + t.cos(), t.sin(), 3.0)
+            })
+            .collect();
+
+        let cloud = revolve_arc(&arc, (0.0, 0.0, 3.0), 12);
+
+        assert_eq!(cloud.len(), arc.len() * 12);
+        let xyz = |p: &ContourPoint| (p.x, p.y, p.z);
+        assert!(cloud[..arc.len()]
+            .iter()
+            .zip(&arc)
+            .all(|(a, b)| xyz(a) == xyz(b)));
+        for (k, p) in cloud.iter().enumerate() {
+            let q = arc[k % arc.len()];
+            // x along the axis is kept, the distance to the axis too
+            assert!((p.x - q.x).abs() < 1e-12);
+            let r = (p.y * p.y + (p.z - 3.0).powi(2)).sqrt();
+            assert!((r - q.y.abs()).abs() < 1e-12);
+        }
+        // the arc ends sweep the ostium circle of radius 1 in the plane x = 1
+        let top = cloud[6 * arc.len()];
+        assert!((top.x - 1.0).abs() < 1e-12 && top.y.abs() < 1e-12);
+        assert!(((top.z - 3.0).abs() - 1.0).abs() < 1e-12);
+        assert!(cloud.iter().all(|p| (p.z - 3.0).abs() <= 1.0 + 1e-12));
+
+        // a degenerate axis keeps the arc
+        assert_eq!(revolve_arc(&arc[..1], (0.0, 0.0, 3.0), 12).len(), 1);
     }
 
     #[test]
