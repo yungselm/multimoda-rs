@@ -1,4 +1,5 @@
 use super::py_geometry::PyGeometry;
+use crate::intravascular::binding;
 use crate::types::native::GeometryPair;
 use pyo3::prelude::*;
 
@@ -158,7 +159,7 @@ impl PyGeometryPair {
         postprocessing: bool,
     ) -> PyResult<()> {
         let pair = self.try_to_rust()?;
-        let realigned = crate::intravascular::binding::entry::realign_pair_rs(
+        let realigned = binding::entry::realign_pair_rs(
             &pair,
             master_a,
             master_b,
