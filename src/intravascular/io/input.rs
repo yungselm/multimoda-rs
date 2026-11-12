@@ -1,16 +1,15 @@
-use crate::types::native::annotation::{Annotation, AnnotationKind, AnnotationRole};
 use crate::types::native::centerline::Centerline;
 use crate::types::native::contour::ContourType;
 use crate::types::native::contour_point::ContourPoint;
 use crate::types::native::record::Record;
+use crate::types::native::structure::{Structure, StructureKind};
 use crate::types::native::Point3D;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use csv::ReaderBuilder;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::sync::Once;
 
 const RECORD_FILE_NAME: &str = "combined_sorted_manual.csv"; // legacy AIVUS
 const RECORD_FILE_NAME_ALT: &str = "diastolic_systolic_records.csv"; // holOrama
@@ -26,17 +25,30 @@ fn resolve_record_path(dir: &Path) -> PathBuf {
     }
 }
 
+/// Default file mapping for a measurement directory (AIVUS-CAA and HolOrama layout).
+pub fn default_names() -> HashMap<ContourType, &'static str> {
+    HashMap::from([
+        (ContourType::Lumen, "lumen"),
+        (ContourType::Eem, "eem"),
+        (ContourType::Catheter, "catheter"),
+    ])
+}
+
 /// Raw intravascular imaging input for one cardiac phase, loaded from a measurement directory.
 #[derive(Debug, Clone)]
 pub struct InputData {
     pub lumen: Vec<ContourPoint>,
     pub eem: Option<Vec<ContourPoint>>,
     pub record: Option<Vec<Record>>,
-    pub ref_point: ContourPoint,
+    /// At most one per frame, `frame_index` is the original frame.
+    pub reference_points: Vec<ContourPoint>,
+    /// Original frame of the master reference, `None` uses the most proximal one.
+    pub master_reference: Option<u32>,
     pub diastole: bool,
     pub label: String,
-    /// `(original frame, annotation)` pairs, frame numbered like `lumen`.
-    pub annotations: Vec<(u32, Annotation)>,
+    /// Drawn contours of in-wall structures and side branches, point `frame_index` is the
+    /// original frame like `lumen`.
+    pub structures: Vec<Structure>,
 }
 
 impl InputData {
@@ -44,19 +56,21 @@ impl InputData {
         lumen: Vec<ContourPoint>,
         eem: Option<Vec<ContourPoint>>,
         record: Option<Vec<Record>>,
-        ref_point: ContourPoint,
+        reference_points: Vec<ContourPoint>,
+        master_reference: Option<u32>,
         diastole: bool,
         label: String,
-        annotations: Vec<(u32, Annotation)>,
+        structures: Vec<Structure>,
     ) -> anyhow::Result<InputData> {
         Ok(InputData {
             lumen,
             eem,
             record,
-            ref_point,
+            reference_points,
+            master_reference,
             diastole,
             label,
-            annotations,
+            structures,
         })
     }
 
@@ -87,8 +101,8 @@ impl InputData {
 
         let ref_fname = format!("{phase}_reference_points.csv");
         let ref_path = path.join(&ref_fname);
-        let ref_point = if ref_path.exists() {
-            read_reference_point(&ref_path)
+        let reference_points = if ref_path.exists() {
+            read_reference_points(&ref_path)
                 .with_context(|| format!("reading {}", ref_path.display()))?
         } else {
             return Err(anyhow::anyhow!(
@@ -100,9 +114,6 @@ impl InputData {
             let name = raw_name.trim().to_lowercase();
             match name.as_str() {
                 "" | "lumen" => {}
-
-                // deprecated, read below as annotations when there is no annotations file
-                "branch" | "sidebranch" | "calcium" | "calcification" => {}
 
                 "eem" | "e_e_m" => {
                     eem = read_optional_contour_file(path, "eem", phase, "eem")?;
@@ -126,31 +137,24 @@ impl InputData {
             record = read_optional_records(&resolve_record_path(path))?;
         }
 
-        // The deprecated side-branch and calcium files are only a fallback. A directory with an
-        // annotations file already holds those regions there, reading both would double them.
+        let structures = read_structure_files(path, phase)?;
         let annotations_path = path.join(format!("{phase}_annotations.csv"));
-        let annotations = if annotations_path.exists() {
-            read_annotations(&annotations_path)
-                .with_context(|| format!("reading {}", annotations_path.display()))?
-        } else {
-            let mut legacy = Vec::new();
-            for (prefixes, kind) in [
-                (["branch", "sidebranch"], AnnotationKind::Sidebranch),
-                (["calcium", "calcification"], AnnotationKind::Calcification),
-            ] {
-                legacy.extend(read_legacy_region_file(path, &prefixes, phase, kind)?);
-            }
-            legacy
-        };
+        if annotations_path.exists() {
+            eprintln!(
+                "Warning: {annotations_path:?} is no longer read, structures come from \
+                 {{type}}_{phase}_contours.csv files"
+            );
+        }
 
         Ok(InputData {
             lumen,
             eem,
             record,
-            ref_point,
+            reference_points,
+            master_reference: None,
             diastole,
             label: label_string,
-            annotations,
+            structures,
         })
     }
 }
@@ -202,54 +206,96 @@ pub fn read_contour_data<P: AsRef<Path> + std::fmt::Debug + Clone>(
     Ok(points)
 }
 
-/// Region annotations of `kind` from the first existing deprecated
-/// `{prefix}_{phase}_contours.csv` file, empty if none exists.
-fn read_legacy_region_file(
-    dir: &Path,
-    prefixes: &[&str],
-    phase: &str,
-    kind: AnnotationKind,
-) -> anyhow::Result<Vec<(u32, Annotation)>> {
-    static DEPRECATION: Once = Once::new();
-    let Some(p) = prefixes
-        .iter()
-        .map(|prefix| dir.join(format!("{prefix}_{phase}_contours.csv")))
-        .find(|p| p.exists())
-    else {
-        return Ok(Vec::new());
-    };
-    DEPRECATION.call_once(|| {
-        eprintln!(
-            "DeprecationWarning: side-branch and calcium contour files ({p:?}) are read as \
-             region annotations, write {phase}_annotations.csv instead"
-        )
-    });
-    let points = read_contour_data(&p).with_context(|| format!("reading {}", p.display()))?;
-    Ok(region_annotations_from_points(points, kind))
+/// File prefixes of pipe-like contours, never read as structures.
+const PIPE_PREFIXES: [&str; 4] = ["eem", "lumen", "catheter", "wall"];
+
+/// Every `{type}_{phase}_contours.csv` in `dir` except the pipe-like ones, sorted by name.
+///
+/// Rows are `frame, x, y, z[, contour, closed]` without a header. Rows with the same
+/// `(frame, contour)` form one structure in file order, `contour` defaults to 0 and
+/// `closed` (non-zero or `true` is closed) to closed. The type comes from the file name prefix.
+pub fn read_structure_files(dir: &Path, phase: &str) -> anyhow::Result<Vec<Structure>> {
+    let suffix = format!("_{phase}_contours.csv");
+    let mut files: Vec<(String, PathBuf)> = std::fs::read_dir(dir)
+        .with_context(|| format!("listing {}", dir.display()))?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter_map(|p| {
+            let name = p.file_name()?.to_str()?.to_string();
+            let prefix = name.strip_suffix(&suffix)?.to_string();
+            (!prefix.is_empty() && !PIPE_PREFIXES.contains(&prefix.to_lowercase().as_str()))
+                .then_some((prefix, p))
+        })
+        .collect();
+    files.sort();
+
+    let mut structures = Vec::new();
+    for (prefix, p) in files {
+        let kind = StructureKind::from_name(&prefix);
+        structures.extend(
+            read_structure_contours(&p, kind)
+                .with_context(|| format!("reading {}", p.display()))?,
+        );
+    }
+    Ok(structures)
 }
 
-/// One `Region` annotation (group 0) per frame from flat contour points, frames in first-seen order.
-pub fn region_annotations_from_points(
-    points: Vec<ContourPoint>,
-    kind: AnnotationKind,
-) -> Vec<(u32, Annotation)> {
-    let mut out: Vec<(u32, Annotation)> = Vec::new();
-    for p in points {
-        let idx = match out.iter().position(|(f, _)| *f == p.frame_index) {
+/// Structures of `kind` from one `frame, x, y, z[, contour, closed]` file.
+pub fn read_structure_contours<P: AsRef<Path>>(
+    path: P,
+    kind: StructureKind,
+) -> anyhow::Result<Vec<Structure>> {
+    let delim = detect_delimiter(&path)?;
+    let file = File::open(&path)?;
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(false)
+        .flexible(true)
+        .delimiter(delim)
+        .from_reader(file);
+
+    let mut keys: Vec<(u32, u32)> = Vec::new();
+    let mut out: Vec<Structure> = Vec::new();
+    for (row, record) in rdr.records().enumerate() {
+        let record = record.with_context(|| format!("reading row {}", row + 1))?;
+        let field = |i: usize| record.get(i).map(str::trim).unwrap_or("");
+        let nums: Vec<f64> = (0..4)
+            .map(|i| field(i).parse::<f64>())
+            .collect::<Result<_, _>>()
+            .with_context(|| format!("invalid row {}: {record:?}", row + 1))?;
+        let contour = match field(4) {
+            "" => 0,
+            c => c
+                .parse::<f64>()
+                .with_context(|| format!("invalid contour in row {}", row + 1))?
+                as u32,
+        };
+        let closed = match field(5).to_lowercase().as_str() {
+            "" | "true" => true,
+            "false" => false,
+            other => match other.parse::<f64>() {
+                Ok(v) => v != 0.0,
+                Err(_) => anyhow::bail!("invalid closed flag '{other}' in row {}", row + 1),
+            },
+        };
+        let key = (nums[0] as u32, contour);
+        let idx = match keys.iter().position(|k| *k == key) {
             Some(i) => i,
             None => {
-                let a = Annotation::new(kind.clone(), AnnotationRole::Region, 0, Vec::new());
-                out.push((p.frame_index, a));
+                keys.push(key);
+                out.push(Structure::new(kind.clone(), closed, Vec::new()));
                 out.len() - 1
             }
         };
-        let pts = &mut out[idx].1.points;
-        pts.push(ContourPoint {
-            point_index: pts.len() as u32,
-            ..p
+        let points = &mut out[idx].points;
+        points.push(ContourPoint {
+            frame_index: key.0,
+            point_index: points.len() as u32,
+            x: nums[1],
+            y: nums[2],
+            z: nums[3],
+            aortic: false,
         });
     }
-    out
+    Ok(out)
 }
 
 /// Read an optional `{prefix}_{phase}_contours.csv` file, warning and returning
@@ -269,101 +315,56 @@ fn read_optional_contour_file(
     Ok(Some(points))
 }
 
-pub fn read_reference_point<P: AsRef<Path>>(path: P) -> Result<ContourPoint> {
+/// Reads every `frame, x, y, z[, auto]` row (an optional header row is skipped).
+///
+/// `auto` is ignored. Two references on one frame are an error, an empty file too.
+pub fn read_reference_points<P: AsRef<Path>>(path: P) -> Result<Vec<ContourPoint>> {
     let delim = detect_delimiter(&path)?;
     let file = File::open(&path)
         .with_context(|| format!("failed to open reference-point file {:?}", path.as_ref()))?;
-
     let mut rdr = ReaderBuilder::new()
         .has_headers(false)
-        .delimiter(delim)
-        .from_reader(file);
-
-    let first = rdr.deserialize().next().ok_or_else(|| {
-        anyhow!(
-            "reference-point file {:?} was empty — this data is required",
-            path.as_ref()
-        )
-    })?;
-
-    let point: ContourPoint =
-        first.with_context(|| "failed to deserialize first reference-point record")?;
-    Ok(point)
-}
-
-/// Reads `frame, kind, role, group, x, y, z` rows (a leading header row is skipped).
-///
-/// Consecutive rows with the same `(frame, kind, role, group)` form one annotation in file order.
-/// Unknown kinds become `AnnotationKind::Custom`, unknown roles are an error.
-pub fn read_annotations<P: AsRef<Path>>(path: P) -> anyhow::Result<Vec<(u32, Annotation)>> {
-    let delim = detect_delimiter(&path)?;
-    let file = File::open(&path)?;
-    let mut rdr = ReaderBuilder::new()
-        .has_headers(false)
-        .delimiter(delim)
         .flexible(true)
+        .delimiter(delim)
         .from_reader(file);
 
-    let mut out: Vec<(u32, Annotation)> = Vec::new();
-    for (row, result) in rdr.records().enumerate() {
-        let record = match result {
-            Ok(r) => r,
-            Err(e) => {
-                eprintln!("Skipping invalid annotation row: {e:?}");
-                continue;
+    let mut points: Vec<ContourPoint> = Vec::new();
+    for (row, record) in rdr.records().enumerate() {
+        let record = record.with_context(|| format!("reading reference row {}", row + 1))?;
+        let field = |i: usize| record.get(i).map(str::trim).unwrap_or("");
+        let Ok(frame) = field(0).parse::<f64>() else {
+            if row == 0 {
+                continue; // header
             }
+            anyhow::bail!("invalid reference row {}: {record:?}", row + 1);
         };
-        let parsed = parse_annotation_row(&record);
-        let (frame, kind, role, group, x, y, z) = match parsed {
-            Some(v) => v,
-            None if row == 0 => continue, // header
-            None => {
-                eprintln!("Skipping invalid annotation row {}: {record:?}", row + 1);
-                continue;
-            }
-        };
-        let role = AnnotationRole::from_name(&role).ok_or_else(|| {
-            anyhow!(
-                "unknown annotation role '{role}' in row {}, expected one of {:?}",
-                row + 1,
-                AnnotationRole::ALL.map(|r| r.name())
-            )
-        })?;
-        let kind = AnnotationKind::from_name(&kind);
-
-        let same = matches!(out.last(), Some((f, a))
-            if *f == frame && a.kind == kind && a.role == role && a.group == group);
-        if !same {
-            out.push((frame, Annotation::new(kind, role, group, Vec::new())));
+        let coords: Vec<f64> = (1..4)
+            .map(|i| field(i).parse::<f64>())
+            .collect::<Result<_, _>>()
+            .with_context(|| format!("invalid reference row {}: {record:?}", row + 1))?;
+        let frame = frame as u32;
+        if points.iter().any(|p| p.frame_index == frame) {
+            anyhow::bail!(
+                "two reference points on frame {frame} in {:?}",
+                path.as_ref()
+            );
         }
-        let annotation = &mut out.last_mut().expect("pushed above").1;
-        annotation.points.push(ContourPoint {
+        points.push(ContourPoint {
             frame_index: frame,
-            point_index: annotation.points.len() as u32,
-            x,
-            y,
-            z,
+            point_index: 0,
+            x: coords[0],
+            y: coords[1],
+            z: coords[2],
             aortic: false,
         });
     }
-    Ok(out)
-}
-
-type AnnotationRow = (u32, String, String, u32, f64, f64, f64);
-
-fn parse_annotation_row(record: &csv::StringRecord) -> Option<AnnotationRow> {
-    if record.len() < 7 {
-        return None;
+    if points.is_empty() {
+        anyhow::bail!(
+            "reference-point file {:?} was empty, this data is required",
+            path.as_ref()
+        );
     }
-    let field = |i: usize| record.get(i).map(str::trim);
-    let frame = field(0)?.parse::<u32>().ok()?;
-    let kind = field(1)?.to_string();
-    let role = field(2)?.to_string();
-    let group = field(3)?.parse::<u32>().ok()?;
-    let x = field(4)?.parse::<f64>().ok()?;
-    let y = field(5)?.parse::<f64>().ok()?;
-    let z = field(6)?.parse::<f64>().ok()?;
-    Some((frame, kind, role, group, x, y, z))
+    Ok(points)
 }
 
 pub fn read_records<P: AsRef<Path>>(path: P) -> anyhow::Result<Vec<Record>> {
@@ -638,39 +639,32 @@ mod input_tests {
             "eem contour vector should not be empty"
         );
         assert!(input.record.is_none(), "record vector should be empty");
-        assert!(input.ref_point.x > 0.0, "ref_point should not be empty");
+        assert!(
+            input.reference_points[0].x > 0.0,
+            "reference_points should not be empty"
+        );
 
-        // deprecated branch_/calcium_ files become one Region annotation per frame
+        // branch_ and calcium_ files are read as closed structures, one per frame
         let lumen_frames: std::collections::HashSet<u32> =
             input.lumen.iter().map(|p| p.frame_index).collect();
-        for kind in [AnnotationKind::Calcification, AnnotationKind::Sidebranch] {
-            let regions: Vec<_> = input
-                .annotations
-                .iter()
-                .filter(|(_, a)| a.kind == kind)
-                .collect();
-            assert!(!regions.is_empty(), "{kind} regions expected");
+        for kind in [StructureKind::Calcification, StructureKind::Sidebranch] {
+            let of_kind: Vec<&Structure> =
+                input.structures.iter().filter(|s| s.kind == kind).collect();
+            assert!(!of_kind.is_empty(), "{kind} structures expected");
             let mut frames = std::collections::HashSet::new();
-            for (f, a) in &regions {
-                assert!(frames.insert(*f), "one {kind} annotation per frame");
-                assert!(lumen_frames.contains(f));
-                assert_eq!((a.role, a.group), (AnnotationRole::Region, 0));
-                assert!(a.points.iter().all(|p| p.frame_index == *f));
-                assert!(a
+            for s in of_kind {
+                let f = s.points[0].frame_index;
+                assert!(frames.insert(f), "one {kind} contour per frame");
+                assert!(lumen_frames.contains(&f));
+                assert!(s.closed);
+                assert!(s.points.iter().all(|p| p.frame_index == f));
+                assert!(s
                     .points
                     .iter()
                     .enumerate()
                     .all(|(i, p)| p.point_index == i as u32));
             }
         }
-        assert_eq!(
-            input.annotations.len(),
-            input
-                .annotations
-                .iter()
-                .filter(|(_, a)| a.role == AnnotationRole::Region)
-                .count()
-        );
 
         Ok(())
     }
@@ -682,114 +676,88 @@ mod input_tests {
     }
 
     #[test]
-    fn test_read_annotations_groups_consecutive_rows() -> anyhow::Result<()> {
-        let dir = temp_dir("read_annotations");
-        let p = dir.join("diastolic_annotations.csv");
+    fn test_read_reference_points_reads_every_row() -> anyhow::Result<()> {
+        let dir = temp_dir("reference_points");
+        let p = dir.join("diastolic_reference_points.csv");
+
+        // tab separated with header and auto flag, as HolOrama writes it
         std::fs::write(
             &p,
-            "frame\tkind\trole\tgroup\tx\ty\tz\n\
-             3\tsidebranch\tregion\t0\t1.0\t2.0\t0.5\n\
-             3\tsidebranch\tregion\t0\t1.5\t2.5\t0.5\n\
-             3\tsidebranch\tregion\t1\t4.0\t4.0\t0.5\n\
-             3\tsidebranch\tlandmark\t1\t4.0\t4.0\t0.5\n\
-             3\tfibrous_cap\tregion\t0\t0.0\t0.0\t0.5\n\
-             4\tsidebranch\taxis_tip\t0\t1.0\t1.0\t1.0\n\
-             3\tsidebranch\tregion\t0\t9.0\t9.0\t0.5\n",
+            "frame\tx\ty\tz\tauto\n385\t1.0\t2.0\t0.5\t0\n390\t3.0\t4.0\t1.0\t1\n",
         )?;
-        let annotations = read_annotations(&p)?;
+        let refs = read_reference_points(&p)?;
+        let frames: Vec<u32> = refs.iter().map(|r| r.frame_index).collect();
+        assert_eq!(frames, vec![385, 390]);
+        assert_eq!((refs[1].x, refs[1].y, refs[1].z), (3.0, 4.0, 1.0));
 
-        let summary: Vec<(u32, &str, AnnotationRole, u32, usize)> = annotations
+        // comma separated without header or flag
+        std::fs::write(&p, "385,1.0,2.0,0.5\n")?;
+        assert_eq!(read_reference_points(&p)?.len(), 1);
+
+        std::fs::write(&p, "385,1.0,2.0,0.5\n385,3.0,4.0,0.5\n")?;
+        assert!(
+            read_reference_points(&p).is_err(),
+            "two references on one frame"
+        );
+        std::fs::write(&p, "frame,x,y,z\n")?;
+        assert!(read_reference_points(&p).is_err(), "no reference");
+        Ok(())
+    }
+
+    #[test]
+    fn test_read_structure_files_by_prefix() -> anyhow::Result<()> {
+        let dir = temp_dir("structure_files");
+        for f in std::fs::read_dir(&dir)? {
+            std::fs::remove_file(f?.path())?;
+        }
+        // two calcium contours on frame 3, the second open, then one on frame 4
+        std::fs::write(
+            dir.join("calcium_diastolic_contours.csv"),
+            "3\t1.0\t0.0\t0.5\t0\t1\n3\t0.0\t1.0\t0.5\t0\t1\n\
+             3\t5.0\t5.0\t0.5\t1\t0\n4\t1.0\t1.0\t1.0\n3\t-1.0\t0.0\t0.5\t0\t1\n",
+        )?;
+        std::fs::write(
+            dir.join("fibrous_cap_diastolic_contours.csv"),
+            "3,1,2,0.5\n",
+        )?;
+        // pipes and the other phase are not structures
+        for f in [
+            "eem_diastolic_contours.csv",
+            "diastolic_contours.csv",
+            "branch_systolic_contours.csv",
+        ] {
+            std::fs::write(dir.join(f), "3,1,2,0.5\n")?;
+        }
+
+        let structures = read_structure_files(&dir, "diastolic")?;
+
+        let summary: Vec<(&str, u32, bool, usize)> = structures
             .iter()
-            .map(|(f, a)| (*f, a.kind.name(), a.role, a.group, a.points.len()))
+            .map(|s| {
+                (
+                    s.kind.name(),
+                    s.points[0].frame_index,
+                    s.closed,
+                    s.points.len(),
+                )
+            })
             .collect();
-        use AnnotationRole::*;
         assert_eq!(
             summary,
             vec![
-                (3, "sidebranch", Region, 0, 2),
-                (3, "sidebranch", Region, 1, 1),
-                (3, "sidebranch", Landmark, 1, 1),
-                (3, "fibrous_cap", Region, 0, 1),
-                (4, "sidebranch", AxisTip, 0, 1),
-                (3, "sidebranch", Region, 0, 1),
+                ("calcification", 3, true, 3),
+                ("calcification", 3, false, 1),
+                ("calcification", 4, true, 1),
+                ("fibrous_cap", 3, true, 1),
             ]
         );
-        assert_eq!(annotations[0].1.kind, AnnotationKind::Sidebranch);
-        assert_eq!(
-            annotations[3].1.kind,
-            AnnotationKind::Custom("fibrous_cap".to_string())
-        );
+        assert_eq!(structures[0].points[2].x, -1.0, "rows keep file order");
 
-        std::fs::write(&p, "3,lipid,outline,0,1.0,2.0,0.5\n")?;
-        assert!(
-            read_annotations(&p).is_err(),
-            "unknown role must be rejected"
-        );
-        std::fs::remove_dir_all(&dir).ok();
-        let first = &annotations[0].1.points;
-        assert_eq!((first[1].x, first[1].y, first[1].z), (1.5, 2.5, 0.5));
-        assert_eq!((first[1].frame_index, first[1].point_index), (3, 1));
-        Ok(())
-    }
-
-    #[test]
-    fn test_process_directory_reads_annotations_file() -> anyhow::Result<()> {
-        let src = Path::new("./data/fixtures/ivus_rest");
-        let dir = temp_dir("process_annotations");
-        for f in ["diastolic_contours.csv", "diastolic_reference_points.csv"] {
-            std::fs::copy(src.join(f), dir.join(f))?;
-        }
         std::fs::write(
-            dir.join("diastolic_annotations.csv"),
-            "385,eem,point,0,3.0,3.0,24.5\n385,eem,point,1,4.0,4.0,24.5\n",
+            dir.join("lipid_diastolic_contours.csv"),
+            "3,1,2,0.5,0,maybe\n",
         )?;
-        let input = InputData::process_directory(&dir, HashMap::new(), true, "")?;
-        std::fs::remove_dir_all(&dir).ok();
-
-        assert_eq!(input.annotations.len(), 2);
-        assert!(input.annotations.iter().all(|(f, a)| *f == 385
-            && a.kind == AnnotationKind::Custom("eem".to_string())
-            && a.role == AnnotationRole::Point
-            && a.points.len() == 1));
-        Ok(())
-    }
-
-    #[test]
-    fn test_legacy_region_files_are_ignored_next_to_an_annotations_file() -> anyhow::Result<()> {
-        let src = Path::new("./data/fixtures/ivus_rest");
-        let dir = temp_dir("legacy_next_to_annotations");
-        for f in ["diastolic_contours.csv", "diastolic_reference_points.csv"] {
-            std::fs::copy(src.join(f), dir.join(f))?;
-        }
-        // HolOrama writes both, the annotations file already holds the branch region
-        std::fs::write(
-            dir.join("diastolic_annotations.csv"),
-            "385	sidebranch	region	1	3.0	3.0	24.5
-385	sidebranch	region	1	4.0	4.0	24.5
-",
-        )?;
-        std::fs::write(
-            dir.join("branch_diastolic_contours.csv"),
-            "385	3.0	3.0	24.5
-385	4.0	4.0	24.5
-",
-        )?;
-        std::fs::write(
-            dir.join("calcium_diastolic_contours.csv"),
-            "385	5.0	5.0	24.5
-385	6.0	6.0	24.5
-",
-        )?;
-        let input = InputData::process_directory(&dir, HashMap::new(), true, "")?;
-        std::fs::remove_dir_all(&dir).ok();
-
-        assert_eq!(input.annotations.len(), 1);
-        let (frame, annotation) = &input.annotations[0];
-        assert_eq!(*frame, 385);
-        assert_eq!(
-            (&annotation.kind, annotation.role, annotation.group),
-            (&AnnotationKind::Sidebranch, AnnotationRole::Region, 1)
-        );
+        assert!(read_structure_files(&dir, "diastolic").is_err());
         Ok(())
     }
 

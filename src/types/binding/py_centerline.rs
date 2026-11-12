@@ -1,6 +1,6 @@
 use super::py_centerline_point::PyCenterlinePoint;
 use super::py_contour_point::PyContourPoint;
-use crate::types::native::{Centerline, ContourPoint};
+use crate::types::native::{Centerline, ContourPoint, Spacing};
 use pyo3::prelude::*;
 
 /// Python representation of a vessel centerline.
@@ -69,7 +69,7 @@ impl PyCenterline {
         format!(
             "Centerline(len={}, spacing={:.2} mm, branches={:?})",
             self.points.len(),
-            self.mean_spacing(),
+            self.median_spacing(),
             self.branch_start_indices.len(),
         )
     }
@@ -489,8 +489,8 @@ impl PyCenterline {
         }
     }
 
-    pub(crate) fn mean_spacing(&self) -> f64 {
-        self.to_rust_centerline().mean_spacing()
+    pub(crate) fn median_spacing(&self) -> f64 {
+        self.to_rust_centerline().median_spacing().unwrap_or(1.0)
     }
 }
 

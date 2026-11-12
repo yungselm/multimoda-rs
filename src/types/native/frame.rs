@@ -1,6 +1,6 @@
-use super::annotation::Annotation;
 use super::contour::{Contour, ContourType};
 use super::contour_point::ContourPoint;
+use super::structure::Structure;
 use super::Transform;
 use std::collections::HashMap;
 use std::f64::consts::PI;
@@ -13,8 +13,8 @@ pub struct Frame {
     pub lumen: Contour,
     pub extras: HashMap<ContourType, Contour>,
     pub reference_point: Option<ContourPoint>,
-    // free-form points, only moved rigidly with the frame
-    pub annotations: Vec<Annotation>,
+    // in-wall structures and side branches, only moved rigidly with the frame
+    pub structures: Vec<Structure>,
 }
 
 impl Transform for Frame {
@@ -33,10 +33,10 @@ impl Transform for Frame {
             .collect();
 
         self.reference_point = self.reference_point.map(|p| p.translate(dx, dy, dz));
-        self.annotations = self
-            .annotations
+        self.structures = self
+            .structures
             .into_iter()
-            .map(|a| a.translate(dx, dy, dz))
+            .map(|s| s.translate(dx, dy, dz))
             .collect();
 
         self.centroid.0 += dx;
@@ -59,10 +59,10 @@ impl Transform for Frame {
             .collect();
 
         self.reference_point = self.reference_point.map(|p| p.rotate(angle, center));
-        self.annotations = self
-            .annotations
+        self.structures = self
+            .structures
             .into_iter()
-            .map(|a| a.rotate(angle, center))
+            .map(|s| s.rotate(angle, center))
             .collect();
 
         let (cx, cy) = center;
@@ -129,30 +129,25 @@ impl Frame {
                 point.z = z_value;
             }
 
-            self.set_annotation_z(z_value);
+            self.shift_structures_to_z(z_value);
 
             self.centroid.2 = z_value;
         }
     }
 
-    /// Sets z of every annotation point, used when the frame moves along the pullback.
-    pub fn set_annotation_z(&mut self, z: f64) {
-        for p in self
-            .annotations
-            .iter_mut()
-            .flat_map(|a| a.points.iter_mut())
-        {
-            p.z = z;
+    /// Moves every structure point along z by the move of the frame to `z`.
+    ///
+    /// Call it before `centroid.2` is updated, the offsets of a jittered cloud are kept.
+    pub fn shift_structures_to_z(&mut self, z: f64) {
+        let dz = z - self.centroid.2;
+        for p in self.structures.iter_mut().flat_map(|s| s.points.iter_mut()) {
+            p.z += dz;
         }
     }
 
-    /// Sets frame_index of every annotation point, used when frames are renumbered.
-    pub fn set_annotation_frame_index(&mut self, frame_index: u32) {
-        for p in self
-            .annotations
-            .iter_mut()
-            .flat_map(|a| a.points.iter_mut())
-        {
+    /// Sets frame_index of every structure point, used when frames are renumbered.
+    pub fn set_structure_frame_index(&mut self, frame_index: u32) {
+        for p in self.structures.iter_mut().flat_map(|s| s.points.iter_mut()) {
             p.frame_index = frame_index;
         }
     }
@@ -185,16 +180,14 @@ impl Frame {
         self.centroid.0 = center.0 + translated_cx * cos_angle - translated_cy * sin_angle;
         self.centroid.1 = center.1 + translated_cx * sin_angle + translated_cy * cos_angle;
 
-        // Rotate extras and annotations
-        let annotation_points = self
-            .annotations
-            .iter_mut()
-            .flat_map(|a| a.points.iter_mut());
+        // Rotate extras, the reference and structures
+        let structure_points = self.structures.iter_mut().flat_map(|s| s.points.iter_mut());
         for point in self
             .extras
             .values_mut()
             .flat_map(|c| c.points.iter_mut())
-            .chain(annotation_points)
+            .chain(self.reference_point.iter_mut())
+            .chain(structure_points)
         {
             let translated_x = point.x - center.0;
             let translated_y = point.y - center.1;
@@ -358,7 +351,7 @@ mod frame_tests {
                 z: 0.0,
                 aortic: false,
             }),
-            annotations: Vec::new(),
+            structures: Vec::new(),
         };
 
         // --- store originals before any rotation ---
@@ -537,12 +530,23 @@ mod frame_tests {
                 kind: ContourType::Lumen,
             },
             extras: HashMap::new(),
-            reference_point: None,
-            annotations: Vec::new(),
+            reference_point: Some(ContourPoint {
+                frame_index: 1,
+                point_index: 0,
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+                aortic: false,
+            }),
+            structures: Vec::new(),
         };
 
         // Rotate 180 degrees (PI) around point (1, 1)
         frame.rotate_frame_around_point(PI, (1.0, 1.0, 0.0));
+
+        // the reference turns with the lumen point it sat on
+        let rp = frame.reference_point.expect("reference kept");
+        assert!((rp.x - 1.0).abs() < 1e-6 && (rp.y - 2.0).abs() < 1e-6);
 
         let expected_points = [
             ContourPoint {
@@ -699,7 +703,7 @@ mod frame_tests {
                 z: 0.0,
                 aortic: false,
             }),
-            annotations: Vec::new(),
+            structures: Vec::new(),
         };
 
         frame = frame.translate(1.0, 2.0, 3.0);
@@ -742,8 +746,8 @@ mod frame_tests {
     }
 
     #[test]
-    fn test_frame_transforms_move_annotations_with_lumen() {
-        use crate::types::native::{AnnotationKind, AnnotationRole, Point3D};
+    fn test_frame_transforms_move_structures_with_lumen() {
+        use crate::types::native::{Point3D, StructureKind};
 
         let xs = [0.0, 2.0, 2.0, 0.0];
         let ys = [0.0, 0.0, 2.0, 2.0];
@@ -757,6 +761,11 @@ mod frame_tests {
                 aortic: false,
             })
             .collect();
+        // a jittered point 0.1 mm above the frame
+        let lifted = ContourPoint {
+            z: 0.6,
+            ..lumen_points[3]
+        };
         let mut frame = Frame {
             id: 1,
             centroid: (1.0, 1.0, 0.5),
@@ -771,26 +780,26 @@ mod frame_tests {
             },
             extras: HashMap::new(),
             reference_point: None,
-            annotations: vec![
-                Annotation::new(
-                    AnnotationKind::Sidebranch,
-                    AnnotationRole::Region,
-                    0,
+            structures: vec![
+                Structure::new(
+                    StructureKind::Sidebranch,
+                    false,
                     vec![lumen_points[1], lumen_points[2]],
                 ),
-                Annotation::new(
-                    AnnotationKind::Custom("fibrous_cap".into()),
-                    AnnotationRole::Landmark,
-                    3,
-                    vec![lumen_points[3]],
+                Structure::new(
+                    StructureKind::Custom("fibrous_cap".into()),
+                    true,
+                    vec![lifted],
                 ),
             ],
         };
 
         let check = |frame: &Frame| {
-            assert_eq!(frame.lumen.points[1], frame.annotations[0].points[0]);
-            assert_eq!(frame.lumen.points[2], frame.annotations[0].points[1]);
-            assert_eq!(frame.lumen.points[3], frame.annotations[1].points[0]);
+            assert_eq!(frame.lumen.points[1], frame.structures[0].points[0]);
+            assert_eq!(frame.lumen.points[2], frame.structures[0].points[1]);
+            let p = frame.structures[1].points[0];
+            let l = frame.lumen.points[3];
+            assert!((p.x - l.x).abs() < 1e-12 && (p.y - l.y).abs() < 1e-12);
         };
 
         frame = frame.rotate(0.7, (3.0, -1.0));
@@ -800,11 +809,11 @@ mod frame_tests {
         frame.rotate_frame_around_point(-1.1, (0.3, 0.2, 0.0));
         check(&frame);
         frame.set_value(None, None, None, Some(9.0));
-        assert!(frame.annotations[0].points.iter().all(|p| p.z == 9.0));
-        assert!(frame.lumen.points[1].distance_to(&frame.annotations[0].points[0]) < 1e-12);
-        assert_eq!(frame.annotations[1].kind.name(), "fibrous_cap");
-        assert_eq!(frame.annotations[1].role, AnnotationRole::Landmark);
-        assert_eq!(frame.annotations[1].group, 3);
+        assert!(frame.structures[0].points.iter().all(|p| p.z == 9.0));
+        assert!(frame.lumen.points[1].distance_to(&frame.structures[0].points[0]) < 1e-12);
+        // the jitter offset survives the move along the pullback
+        assert!((frame.structures[1].points[0].z - 9.1).abs() < 1e-12);
+        assert_eq!(frame.structures[1].kind.name(), "fibrous_cap");
     }
 
     #[test]
@@ -880,7 +889,7 @@ mod frame_tests {
                 z: 5.0,
                 aortic: false,
             }),
-            annotations: Vec::new(),
+            structures: Vec::new(),
         };
 
         // New values to set

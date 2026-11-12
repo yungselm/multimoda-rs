@@ -16,8 +16,8 @@ pub trait AlignTarget: Sized + Clone {
     fn primary_geometry(&self) -> &Geometry;
     /// Applies a closure mutably to every geometry contained in this target.
     fn for_each_geometry_mut<F: FnMut(&mut Geometry)>(&mut self, f: F);
-    /// Applies frame transformations to all contained geometries.
-    fn apply_frame_transforms(self, transformations: &[FrameTransformation]) -> Self;
+    /// Places every frame on the centerline, the master reference frame on `ref_idx_cl`.
+    fn place_on_centerline(self, centerline: &Centerline, ref_idx_cl: usize) -> Self;
     /// Rotates all contained geometries by `angle` radians around each frame's normal.
     fn rotate_all(self, angle: f64) -> Self;
 }
@@ -31,8 +31,9 @@ impl AlignTarget for Geometry {
         f(self);
     }
 
-    fn apply_frame_transforms(mut self, transformations: &[FrameTransformation]) -> Self {
-        apply_transforms_to_geometry(&mut self, transformations);
+    fn place_on_centerline(mut self, centerline: &Centerline, ref_idx_cl: usize) -> Self {
+        let transformations = get_transformations(&self, centerline, ref_idx_cl);
+        apply_transforms_to_geometry(&mut self, &transformations);
         self
     }
 
@@ -52,9 +53,19 @@ impl AlignTarget for GeometryPair {
         f(&mut self.geom_b);
     }
 
-    fn apply_frame_transforms(mut self, transformations: &[FrameTransformation]) -> Self {
-        apply_transforms_to_geometry(&mut self.geom_a, transformations);
-        apply_transforms_to_geometry(&mut self.geom_b, transformations);
+    /// B's frames facing A's (see `GeometryPair::overlap`) take A's transformation, which keeps
+    /// B's displacement against A. B's other frames are placed from their own lumen, with
+    /// B's master on the same centerline point as A's.
+    fn place_on_centerline(mut self, centerline: &Centerline, ref_idx_cl: usize) -> Self {
+        let transforms_a = get_transformations(&self.geom_a, centerline, ref_idx_cl);
+        let mut transforms_b = get_transformations(&self.geom_b, centerline, ref_idx_cl);
+        if let Ok((range_a, range_b)) = self.overlap() {
+            for (ia, ib) in range_a.zip(range_b) {
+                transforms_b[ib] = transforms_a[ia];
+            }
+        }
+        apply_transforms_to_geometry(&mut self.geom_a, &transforms_a);
+        apply_transforms_to_geometry(&mut self.geom_b, &transforms_b);
         self
     }
 
@@ -95,8 +106,8 @@ impl FrameTransformation {
     }
 }
 
-/// One transformation per frame of `geometry`, placing its reference frame (frame 0 if it
-/// has none) on centerline point `ref_idx_cl` and frame `i` on `ref_idx_cl + i - ref_frame`.
+/// One transformation per frame of `geometry`, placing its master reference frame (frame 0 if
+/// it has none) on centerline point `ref_idx_cl` and frame `i` on `ref_idx_cl + i - ref_frame`.
 ///
 /// Frames that fall outside the centerline get an identity transformation, so the result
 /// stays index-aligned with `geometry.frames`.
@@ -106,7 +117,7 @@ pub fn get_transformations(
     ref_idx_cl: usize,
 ) -> Vec<FrameTransformation> {
     let mut transformations = Vec::with_capacity(geometry.frames.len());
-    let ref_frame = geometry.find_ref_frame_idx().unwrap_or(0);
+    let ref_frame = geometry.master_frame_idx().unwrap_or(0);
     let (mut n_off_start, mut n_off_end) = (0usize, 0usize);
 
     for (i, frame) in geometry.frames.iter().enumerate() {
@@ -156,7 +167,7 @@ fn align_frame(frame: &Contour, cl_point: &CenterlinePoint) -> FrameTransformati
         cl_point.contour_point.z - centroid.2,
     );
 
-    let current_normal = calculate_normal(&frame.points, &centroid);
+    let current_normal = frame.normal();
     let desired_normal = cl_point.tangent;
     let angle = current_normal.angle(&desired_normal);
     let rotation: Rotation3<f64> = if angle.abs() < 1e-6 {
@@ -214,37 +225,6 @@ pub fn apply_transformation_to_contour(
     }
 }
 
-/// Calculates the normal vector using a stable cross product method.
-/// Calculates the normal vector using a more robust method
-fn calculate_normal(points: &[ContourPoint], centroid: &(f64, f64, f64)) -> Vector3<f64> {
-    if points.len() < 3 {
-        return Vector3::new(0.0, 0.0, 1.0); // Default to Z-axis for degenerate cases
-    }
-
-    let mut normal = Vector3::zeros();
-
-    for i in 0..points.len() {
-        let current = &points[i];
-        let next = &points[(i + 1) % points.len()];
-
-        normal.x += (current.y - centroid.1) * (next.z - centroid.2)
-            - (current.z - centroid.2) * (next.y - centroid.1);
-        normal.y += (current.z - centroid.2) * (next.x - centroid.0)
-            - (current.x - centroid.0) * (next.z - centroid.2);
-        normal.z += (current.x - centroid.0) * (next.y - centroid.1)
-            - (current.y - centroid.1) * (next.x - centroid.0);
-    }
-
-    let norm = normal.norm();
-    if norm > 1e-12 {
-        normal /= norm;
-    } else {
-        normal = Vector3::new(0.0, 0.0, 1.0);
-    }
-
-    normal
-}
-
 /// Rotates a contour around its centroid (for use in best_rotation_three_point)
 fn rotate_contour_around_centroid(contour: &mut Contour, angle: f64) {
     let centroid = contour.centroid.unwrap_or_else(|| {
@@ -254,7 +234,7 @@ fn rotate_contour_around_centroid(contour: &mut Contour, angle: f64) {
         (x_avg, y_avg, z_avg)
     });
 
-    let rotation_axis = calculate_normal(&contour.points, &centroid);
+    let rotation_axis = contour.normal();
     let rotation = Rotation3::from_axis_angle(&Unit::new_normalize(rotation_axis), angle);
     let pivot = Point3::new(centroid.0, centroid.1, centroid.2);
 
@@ -380,7 +360,7 @@ pub fn refine_alignment_nn_distance<T: AlignTarget>(
     index_search_range: usize,
 ) -> (f64, usize) {
     let len_frames = target.primary_geometry().frames.len();
-    let ref_frame = target.primary_geometry().find_ref_frame_idx().unwrap_or(0);
+    let ref_frame = target.primary_geometry().master_frame_idx().unwrap_or(0);
 
     let mut best_angle = initial_rotation;
     let mut best_cl_ref_idx = initial_cl_ref_idx;
@@ -450,14 +430,15 @@ pub fn refine_alignment_nn_distance<T: AlignTarget>(
         for step_idx in 0..=n_angle_steps {
             let angle = initial_rotation - angle_search_range + (step_idx as f64) * angle_step;
 
+            // only the primary geometry is scored
             let transformed = apply_transformations(
-                rotate_by_best_rotation(target.clone(), angle),
+                rotate_by_best_rotation(target.primary_geometry().clone(), angle),
                 &cl_grid,
                 grid_ref_idx,
             );
 
             geometry_xyz.clear();
-            for frame in transformed.primary_geometry().frames.iter() {
+            for frame in transformed.frames.iter() {
                 push_downsampled_xyz(&mut geometry_xyz, &frame.lumen.points, n_downsample);
             }
 
@@ -585,8 +566,7 @@ pub fn apply_transformations<T: AlignTarget>(
     centerline: &Centerline,
     ref_idx_cl: usize,
 ) -> T {
-    let transformations = get_transformations(target.primary_geometry(), centerline, ref_idx_cl);
-    target.apply_frame_transforms(&transformations)
+    target.place_on_centerline(centerline, ref_idx_cl)
 }
 
 fn apply_transforms_to_geometry(geometry: &mut Geometry, transformations: &[FrameTransformation]) {
@@ -601,7 +581,7 @@ fn apply_transforms_to_geometry(geometry: &mut Geometry, transformations: &[Fram
                 *reference_pt = tr.apply_to_point(reference_pt);
             }
             for point in frame
-                .annotations
+                .structures
                 .iter_mut()
                 .flat_map(|a| a.points.iter_mut())
             {
@@ -811,48 +791,6 @@ mod align_algorithms_tests {
     }
 
     #[test]
-    fn test_calculate_normal() {
-        // Create points in XY plane (normal should be +Z or -Z)
-        let points = vec![
-            ContourPoint {
-                frame_index: 0,
-                point_index: 0,
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-                aortic: false,
-            },
-            ContourPoint {
-                frame_index: 0,
-                point_index: 1,
-                x: 1.0,
-                y: 0.0,
-                z: 0.0,
-                aortic: false,
-            },
-            ContourPoint {
-                frame_index: 0,
-                point_index: 2,
-                x: 0.0,
-                y: 1.0,
-                z: 0.0,
-                aortic: false,
-            },
-        ];
-
-        let centroid = (0.0, 0.0, 0.0);
-        let normal = calculate_normal(&points, &centroid);
-
-        // Normal should be approximately in Z direction (up or down)
-        // The function takes negative of the computed normal, so we need to check magnitude
-        assert!(normal.norm() > 0.0);
-
-        // The cross product of (1,0,0) and (0,1,0) is (0,0,1) or (0,0,-1)
-        // After normalization and negation, it should be unit length
-        assert!((normal.norm() - 1.0).abs() < 1e-12);
-    }
-
-    #[test]
     fn test_rotate_contour_around_centroid() {
         // Create a contour with clear normal direction
         let points = vec![
@@ -933,12 +871,13 @@ mod align_algorithms_tests {
             lumen,
             extras: HashMap::new(),
             reference_point: None,
-            annotations: Vec::new(),
+            structures: Vec::new(),
         };
 
         let geometry = Geometry {
             frames: vec![frame],
             label: "test".to_string(),
+            master_reference: None,
         };
 
         // Create a centerline with matching frame indices
@@ -956,6 +895,46 @@ mod align_algorithms_tests {
         // Should get one transformation for the one frame
         assert_eq!(transformations.len(), 1);
         assert_eq!(transformations[0].frame_index, 0);
+    }
+
+    #[test]
+    fn test_pair_frames_outside_the_overlap_are_placed_too() {
+        use crate::intravascular::utils::test_utils::dummy_geometry_custom;
+
+        // A: 4 frames, master at 2. B: 6 frames, master at 3, shifted by 0.5 mm in x and
+        // paired in z (masters on the same z). Overlap is A 0..4 against B 1..5,
+        // B's frames 0 and 5 lie outside.
+        let geom_a = dummy_geometry_custom(1.0, 4);
+        let mut geom_b = dummy_geometry_custom(1.0, 6);
+        geom_b.translate_geometry((0.5, 0.0, -1.0));
+        let pair = GeometryPair::new(geom_a, geom_b).unwrap();
+        assert_eq!(pair.overlap().unwrap(), (0..4, 1..5));
+        let centerline = Centerline {
+            points: (0..8)
+                .map(|k| create_test_centerline_point(0.0, 0.0, k as f64, k))
+                .collect(),
+            branch_start_indices: vec![0],
+        };
+
+        let placed = pair.place_on_centerline(&centerline, 3);
+
+        let dist = |c: (f64, f64, f64), k: usize| {
+            let p = &centerline.points[k].contour_point;
+            ((c.0 - p.x).powi(2) + (c.1 - p.y).powi(2) + (c.2 - p.z).powi(2)).sqrt()
+        };
+        // A's frame i sits on point 1 + i
+        for (i, frame) in placed.geom_a.frames.iter().enumerate() {
+            assert!(dist(frame.centroid, 1 + i) < 1e-9, "A frame {i}");
+        }
+        // B's facing frames move with A and keep their 0.5 mm offset,
+        // B's own frames outside the overlap sit on their own point
+        for (j, frame) in placed.geom_b.frames.iter().enumerate() {
+            let expected = if (1..5).contains(&j) { 0.5 } else { 0.0 };
+            assert!(
+                (dist(frame.centroid, j) - expected).abs() < 1e-9,
+                "B frame {j}"
+            );
+        }
     }
 
     #[test]
@@ -985,13 +964,14 @@ mod align_algorithms_tests {
                         z: 0.0,
                         aortic: false,
                     }),
-                    annotations: Vec::new(),
+                    structures: Vec::new(),
                 }
             })
             .collect();
         let geometry = Geometry {
             frames,
             label: "test".to_string(),
+            master_reference: None,
         };
         let centerline = Centerline {
             points: (0..3)
@@ -1095,13 +1075,14 @@ mod align_algorithms_tests {
                         z: i as f64,
                         aortic: false,
                     }),
-                    annotations: Vec::new(),
+                    structures: Vec::new(),
                 }
             })
             .collect();
         Geometry {
             frames,
             label: "test".to_string(),
+            master_reference: None,
         }
     }
 
@@ -1125,13 +1106,13 @@ mod align_algorithms_tests {
     }
 
     #[test]
-    fn test_centerline_alignment_moves_annotations_with_lumen() {
+    fn test_centerline_alignment_moves_structures_with_lumen() {
         use crate::intravascular::utils::test_utils::{
-            add_annotations_on_lumen, assert_annotations_on_lumen,
+            add_structures_on_lumen, assert_structures_on_lumen,
         };
 
         let mut geometry = create_elliptical_geometry();
-        add_annotations_on_lumen(&mut geometry);
+        add_structures_on_lumen(&mut geometry);
 
         // Tilted, curved centerline so every frame gets a real 3D rotation.
         let points = (0..8)
@@ -1150,12 +1131,9 @@ mod align_algorithms_tests {
         let rotated = rotate_by_best_rotation(geometry, 0.4);
         let placed = apply_transformations(rotated, &centerline, 2);
 
-        assert_annotations_on_lumen(&placed, 2);
-        let moved = placed.frames[1].annotations[0].points[0];
-        assert!(
-            (moved.x - 2.0).abs() > 1.0,
-            "annotation was not transformed"
-        );
+        assert_structures_on_lumen(&placed, 2);
+        let moved = placed.frames[1].structures[0].points[0];
+        assert!((moved.x - 2.0).abs() > 1.0, "structure was not transformed");
     }
 
     #[test]

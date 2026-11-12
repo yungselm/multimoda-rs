@@ -1,4 +1,5 @@
 use super::py_geometry::PyGeometry;
+use crate::intravascular::binding;
 use crate::types::native::GeometryPair;
 use pyo3::prelude::*;
 
@@ -15,6 +16,12 @@ type PairSummary = ((GeomSummary, GeomSummary), Vec<[f64; 6]>);
 ///     Second geometry (typically systolic).
 /// label : str
 ///     Human-readable label for this geometry pair.
+///
+/// Notes
+/// -----
+/// The pair keeps every frame of both geometries. Frames are matched by their
+/// offset from each geometry's master reference, see :meth:`overlap`. Analyses
+/// (:meth:`get_summary`, OBJ export) only use the overlapping frames.
 ///
 /// Examples
 /// --------
@@ -68,10 +75,102 @@ impl PyGeometryPair {
     ///     Matrix of shape ``(N, 6)`` with columns
     ///     ``[id, area_dia, ellip_dia, area_sys, ellip_sys, z]``.
     pub fn get_summary(&self) -> PyResult<PairSummary> {
-        let dia = self.geom_a.get_summary()?;
-        let sys = self.geom_b.get_summary()?;
-        let map = self.create_deformation_table();
+        let facing = self.overlapping()?;
+        let dia = facing.geom_a.get_summary()?;
+        let sys = facing.geom_b.get_summary()?;
+        let map = facing.create_deformation_table();
         Ok(((dia, sys), map))
+    }
+
+    /// Frames of ``geom_a`` and ``geom_b`` that face each other.
+    ///
+    /// Frame ``i`` of ``geom_a`` faces frame ``i - master_a + master_b`` of
+    /// ``geom_b``, where ``master_a`` and ``master_b`` are the positions of the
+    /// master reference frames.
+    ///
+    /// Returns
+    /// -------
+    /// tuple of tuple of int
+    ///     ``((start_a, stop_a), (start_b, stop_b))``, half-open index ranges of
+    ///     equal length.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If a geometry has no master reference.
+    pub fn overlap(&self) -> PyResult<((usize, usize), (usize, usize))> {
+        let (range_a, range_b) = self.try_to_rust()?.overlap().map_err(value_error)?;
+        Ok(((range_a.start, range_a.end), (range_b.start, range_b.end)))
+    }
+
+    /// A copy holding only the overlapping frames, renumbered from 0.
+    ///
+    /// Returns
+    /// -------
+    /// PyGeometryPair
+    ///     Frame ``i`` of ``geom_a`` faces frame ``i`` of ``geom_b``.
+    pub fn overlapping(&self) -> PyResult<PyGeometryPair> {
+        let facing = self.try_to_rust()?.overlapping().map_err(value_error)?;
+        Ok(facing.into())
+    }
+
+    /// Sets new master references and re-runs the alignment between the geometries.
+    ///
+    /// ``geom_b`` is translated and rotated so its master frame sits on the master
+    /// frame of ``geom_a``. With ``postprocessing`` both are resampled again as in
+    /// the processing pipelines. No frame is removed. Call it before aligning the
+    /// pair to a centerline.
+    ///
+    /// Parameters
+    /// ----------
+    /// master_a : int or None, optional
+    ///     Original frame of the new master reference of ``geom_a``. ``None``
+    ///     keeps the current one. Default is ``None``.
+    /// master_b : int or None, optional
+    ///     Same for ``geom_b``. Default is ``None``.
+    /// range_rotation_deg : float, optional
+    ///     Rotation search range (±) in degrees. Default is ``90.0``.
+    /// step_rotation_deg : float, optional
+    ///     Rotation step in degrees. Default is ``0.5``.
+    /// sample_size : int, optional
+    ///     Number of points used for the rotation search. Default is ``500``.
+    /// postprocessing : bool, optional
+    ///     Whether to resample the pair afterwards. Default is ``True``.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If a given frame carries no reference point.
+    #[pyo3(signature = (
+        master_a=None,
+        master_b=None,
+        range_rotation_deg=90.0,
+        step_rotation_deg=0.5,
+        sample_size=500,
+        postprocessing=true,
+    ))]
+    pub fn set_master_references(
+        &mut self,
+        master_a: Option<u32>,
+        master_b: Option<u32>,
+        range_rotation_deg: f64,
+        step_rotation_deg: f64,
+        sample_size: usize,
+        postprocessing: bool,
+    ) -> PyResult<()> {
+        let pair = self.try_to_rust()?;
+        let realigned = binding::entry::realign_pair_rs(
+            &pair,
+            master_a,
+            master_b,
+            range_rotation_deg,
+            step_rotation_deg,
+            sample_size,
+            postprocessing,
+        )
+        .map_err(value_error)?;
+        *self = realigned.into();
+        Ok(())
     }
 
     fn create_deformation_table(&self) -> Vec<[f64; 6]> {
@@ -199,7 +298,19 @@ impl PyGeometryPair {
     }
 }
 
+fn value_error(e: anyhow::Error) -> PyErr {
+    pyo3::exceptions::PyValueError::new_err(format!("{e:#}"))
+}
+
 impl PyGeometryPair {
+    fn try_to_rust(&self) -> PyResult<GeometryPair> {
+        Ok(GeometryPair {
+            geom_a: self.geom_a.to_rust_geometry()?,
+            geom_b: self.geom_b.to_rust_geometry()?,
+            label: self.label.clone(),
+        })
+    }
+
     pub fn to_rust_geometry_pair(&self) -> GeometryPair {
         GeometryPair {
             geom_a: self

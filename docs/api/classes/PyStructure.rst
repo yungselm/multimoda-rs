@@ -1,12 +1,12 @@
-PyAnnotation
-============
+PyStructure
+===========
 
 .. currentmodule:: multimodars
 
 
-.. autoclass:: PyAnnotation
+.. autoclass:: PyStructure
    :members:
    :undoc-members:
    :show-inheritance:
    :inherited-members:
-   :exclude-members: kind, role, group, points
+   :exclude-members: kind, closed, points

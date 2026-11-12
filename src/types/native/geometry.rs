@@ -2,13 +2,16 @@ use super::contour::{Contour, ContourType};
 use super::contour_point::ContourPoint;
 use super::frame::Frame;
 use super::record::Record;
-use super::Transform;
+use super::{Spacing, Transform};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
 pub struct Geometry {
     pub frames: Vec<Frame>,
     pub label: String,
+    /// Original frame of the reference that aligns this geometry to others.
+    /// `None` uses the most proximal reference.
+    pub master_reference: Option<u32>,
 }
 
 impl Transform for Geometry {
@@ -31,6 +34,22 @@ impl Transform for Geometry {
             .map(|f| f.rotate(angle, center))
             .collect();
         self
+    }
+}
+
+/// Step between neighbouring frames along the pullback: the centroid step projected on the
+/// lumen normal of the first frame. It is |dz| before centerline alignment and the step along
+/// the vessel after it, x/y offsets between unaligned frames do not count.
+impl Spacing for Geometry {
+    fn spacings(&self) -> Vec<f64> {
+        self.frames
+            .windows(2)
+            .map(|w| {
+                let (a, b) = (w[0].centroid, w[1].centroid);
+                let step = nalgebra::Vector3::new(b.0 - a.0, b.1 - a.1, b.2 - a.2);
+                step.dot(&w[0].lumen.normal()).abs()
+            })
+            .collect()
     }
 }
 
@@ -59,13 +78,50 @@ impl Geometry {
         proximal_idx as usize
     }
 
-    /// Position in `frames` of the first frame carrying a reference point (an index into
-    /// `frames`, not the frame's `id`, which can differ).
-    pub fn find_ref_frame_idx(&self) -> anyhow::Result<usize> {
+    /// Position in `frames` of the master reference (an index into `frames`, not a frame `id`).
+    ///
+    /// A reference is identified by its original frame (`reference_point.frame_index`), which
+    /// survives reordering, renumbering and resampling. Without a master set, the most proximal
+    /// (first) reference is used.
+    pub fn master_frame_idx(&self) -> anyhow::Result<usize> {
+        match self.master_reference {
+            Some(m) => self
+                .frames
+                .iter()
+                .position(|f| f.reference_point.is_some_and(|p| p.frame_index == m))
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "No reference point on original frame {m} in '{}'",
+                        self.label
+                    )
+                }),
+            None => self
+                .frames
+                .iter()
+                .position(|f| f.reference_point.is_some())
+                .ok_or_else(|| anyhow::anyhow!("No reference point in '{}'", self.label)),
+        }
+    }
+
+    /// Original frames of all reference points, in frame order.
+    pub fn reference_frames(&self) -> Vec<u32> {
         self.frames
             .iter()
-            .position(|f| f.reference_point.is_some())
-            .ok_or_else(|| anyhow::anyhow!("No reference point found in any frame"))
+            .filter_map(|f| f.reference_point.map(|p| p.frame_index))
+            .collect()
+    }
+
+    /// Makes the reference on original frame `frame` the master, errors if there is none.
+    pub fn set_master_reference(&mut self, frame: u32) -> anyhow::Result<()> {
+        if !self.reference_frames().contains(&frame) {
+            anyhow::bail!(
+                "No reference point on original frame {frame} in '{}', references are on {:?}",
+                self.label,
+                self.reference_frames()
+            );
+        }
+        self.master_reference = Some(frame);
+        Ok(())
     }
 
     /// Reorder frames based on order of Vec<Record>
@@ -141,8 +197,8 @@ impl Geometry {
                 rp.z = z_value;
             }
 
-            frame.set_annotation_frame_index(new_id);
-            frame.set_annotation_z(z_value);
+            frame.set_structure_frame_index(new_id);
+            frame.shift_structures_to_z(z_value);
 
             frame.centroid.2 = z_value;
         }
@@ -319,10 +375,7 @@ impl Geometry {
                     point.frame_index = new_id;
                 }
             }
-            if let Some(ref mut rp) = frame.reference_point {
-                rp.frame_index = new_id;
-            }
-            frame.set_annotation_frame_index(new_id);
+            frame.set_structure_frame_index(new_id);
         }
     }
 
@@ -358,6 +411,7 @@ impl Geometry {
             frame.id = new_frame_id;
 
             let assigned_z = zs.get(idx).copied().unwrap_or(frame.centroid.2);
+            frame.shift_structures_to_z(assigned_z);
             frame.centroid.2 = assigned_z;
 
             frame.lumen.id = next_contour_id;
@@ -385,7 +439,6 @@ impl Geometry {
             if let Some(ref mut rp) = frame.reference_point {
                 rp.z = assigned_z;
             }
-            frame.set_annotation_z(assigned_z);
         }
     }
 
@@ -455,6 +508,82 @@ mod geometry_tests {
     use super::*;
     use crate::intravascular::utils::test_utils::dummy_geometry;
     use approx::assert_relative_eq;
+
+    /// A square contour around `c` in the plane spanned by `u` and `v`.
+    fn square(c: (f64, f64, f64), u: (f64, f64, f64), v: (f64, f64, f64)) -> Contour {
+        let points = [(1.0, 0.0), (0.0, 1.0), (-1.0, 0.0), (0.0, -1.0)]
+            .iter()
+            .enumerate()
+            .map(|(i, &(a, b))| ContourPoint {
+                frame_index: 0,
+                point_index: i as u32,
+                x: c.0 + a * u.0 + b * v.0,
+                y: c.1 + a * u.1 + b * v.1,
+                z: c.2 + a * u.2 + b * v.2,
+                aortic: false,
+            })
+            .collect();
+        Contour {
+            id: 0,
+            original_frame: 0,
+            points,
+            centroid: Some(c),
+            aortic_thickness: None,
+            pulmonary_thickness: None,
+            kind: ContourType::Lumen,
+        }
+    }
+
+    fn geometry_of(contours: Vec<Contour>) -> Geometry {
+        let frames = contours
+            .into_iter()
+            .map(|lumen| Frame {
+                id: 0,
+                centroid: lumen.centroid.unwrap(),
+                lumen,
+                extras: HashMap::new(),
+                reference_point: None,
+                structures: Vec::new(),
+            })
+            .collect();
+        Geometry {
+            frames,
+            label: "spacing".to_string(),
+            master_reference: None,
+        }
+    }
+
+    #[test]
+    fn test_spacing_follows_the_frame_normal() {
+        // frames 0.5 mm apart in z, shifted in x/y as before in-pullback alignment
+        let (ex, ey) = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0));
+        let unaligned = geometry_of(vec![
+            square((0.0, 0.0, 0.0), ex, ey),
+            square((1.0, 0.5, 0.5), ex, ey),
+            square((-0.5, 1.0, 1.0), ex, ey),
+            square((0.0, 0.0, 2.5), ex, ey), // a missing frame
+        ]);
+        let steps = unaligned.spacings();
+        assert!(steps
+            .iter()
+            .zip([0.5, 0.5, 1.5])
+            .all(|(a, b)| (a - b).abs() < 1e-12));
+        assert_relative_eq!(unaligned.median_spacing().unwrap(), 0.5, epsilon = 1e-12);
+
+        // frames along x after centerline alignment, the contours lie in y/z planes
+        let ez = (0.0, 0.0, 1.0);
+        let placed = geometry_of(
+            (0..3)
+                .map(|i| square((0.8 * i as f64, 0.3 * i as f64, 0.0), ey, ez))
+                .collect(),
+        );
+        assert_relative_eq!(placed.median_spacing().unwrap(), 0.8, epsilon = 1e-12);
+
+        assert_eq!(
+            geometry_of(vec![square((0.0, 0.0, 0.0), ex, ey)]).median_spacing(),
+            None
+        );
+    }
 
     #[test]
     fn rotate_contour_back_and_forth() {
@@ -528,7 +657,7 @@ mod geometry_tests {
                 },
                 extras: HashMap::new(),
                 reference_point: None,
-                annotations: Vec::new(),
+                structures: Vec::new(),
             },
             Frame {
                 id: 1,
@@ -551,7 +680,7 @@ mod geometry_tests {
                     z: 2.0,
                     aortic: false,
                 }),
-                annotations: Vec::new(),
+                structures: Vec::new(),
             },
             Frame {
                 id: 2,
@@ -567,16 +696,17 @@ mod geometry_tests {
                 },
                 extras: HashMap::new(),
                 reference_point: None,
-                annotations: Vec::new(),
+                structures: Vec::new(),
             },
         ];
 
         let mut geom = Geometry {
             frames,
             label: "test".to_string(),
+            master_reference: None,
         };
         let prox_idx = geom.find_proximal_end_idx();
-        let ref_idx = geom.find_ref_frame_idx().unwrap();
+        let ref_idx = geom.master_frame_idx().unwrap();
 
         assert_eq!(prox_idx, 2);
         assert_eq!(geom.frames[prox_idx].lumen.original_frame, 717);
@@ -587,7 +717,7 @@ mod geometry_tests {
 
         geom.ensure_proximal_at_position_zero();
         let prox_idx = geom.find_proximal_end_idx();
-        let ref_idx = geom.find_ref_frame_idx().unwrap();
+        let ref_idx = geom.master_frame_idx().unwrap();
         assert_eq!(prox_idx, 0);
         assert_eq!(geom.frames[prox_idx].lumen.original_frame, 717);
         assert_eq!(geom.frames[prox_idx].centroid.2, 0.0);
@@ -597,7 +727,7 @@ mod geometry_tests {
     }
 
     #[test]
-    fn test_find_ref_frame_idx_returns_position_not_id() {
+    fn test_master_frame_idx_returns_position_not_id() {
         let frame = |id: u32, has_ref: bool| Frame {
             id,
             centroid: (0.0, 0.0, 0.0),
@@ -619,14 +749,30 @@ mod geometry_tests {
                 z: 0.0,
                 aortic: false,
             }),
-            annotations: Vec::new(),
+            structures: Vec::new(),
         };
-        let geom = Geometry {
-            frames: vec![frame(7, false), frame(3, true), frame(5, false)],
+        let mut geom = Geometry {
+            frames: vec![
+                frame(7, false),
+                frame(3, true),
+                frame(5, false),
+                frame(9, true),
+            ],
             label: "test".to_string(),
+            master_reference: None,
         };
 
-        assert_eq!(geom.find_ref_frame_idx().unwrap(), 1);
+        // without a master the first reference is used
+        assert_eq!(geom.master_frame_idx().unwrap(), 1);
+        assert_eq!(geom.reference_frames(), vec![3, 9]);
+        geom.set_master_reference(9).unwrap();
+        assert_eq!(geom.master_frame_idx().unwrap(), 3);
+        assert!(geom.set_master_reference(5).is_err());
+        assert_eq!(
+            geom.master_reference,
+            Some(9),
+            "a failed set keeps the master"
+        );
     }
 
     #[test]
@@ -647,7 +793,7 @@ mod geometry_tests {
                 },
                 extras: HashMap::new(),
                 reference_point: None,
-                annotations: Vec::new(),
+                structures: Vec::new(),
             },
             Frame {
                 id: 1,
@@ -670,7 +816,7 @@ mod geometry_tests {
                     z: 2.0,
                     aortic: false,
                 }),
-                annotations: Vec::new(),
+                structures: Vec::new(),
             },
             Frame {
                 id: 2,
@@ -686,12 +832,13 @@ mod geometry_tests {
                 },
                 extras: HashMap::new(),
                 reference_point: None,
-                annotations: Vec::new(),
+                structures: Vec::new(),
             },
         ];
         let mut geom = Geometry {
             frames,
             label: "test".to_string(),
+            master_reference: None,
         };
 
         let records = vec![
@@ -774,12 +921,13 @@ mod geometry_tests {
                 },
                 extras: HashMap::new(),
                 reference_point: None,
-                annotations: Vec::new(),
+                structures: Vec::new(),
             }
         };
         let mut geom = Geometry {
             frames: vec![frame(0, 10, 0.0), frame(1, 20, 0.5), frame(2, 30, 1.5)],
             label: "test".to_string(),
+            master_reference: None,
         };
         let records: Vec<Record> = [30, 10, 20]
             .iter()
@@ -861,7 +1009,7 @@ mod geometry_tests {
             lumen: lumen0,
             extras: HashMap::new(),
             reference_point: None,
-            annotations: Vec::new(),
+            structures: Vec::new(),
         };
 
         // Frame 1: Square with edge length 1, centered at (0,0)
@@ -917,7 +1065,7 @@ mod geometry_tests {
             lumen: lumen1,
             extras: HashMap::new(),
             reference_point: None,
-            annotations: Vec::new(),
+            structures: Vec::new(),
         };
 
         // Frame 2: Square with edge length 2, centered at (0,0) - same as frame 0
@@ -973,7 +1121,7 @@ mod geometry_tests {
             lumen: lumen2,
             extras: HashMap::new(),
             reference_point: None,
-            annotations: Vec::new(),
+            structures: Vec::new(),
         };
 
         frames.push(frame0);
@@ -983,6 +1131,7 @@ mod geometry_tests {
         let geometry = Geometry {
             frames,
             label: "test_smoothing".to_string(),
+            master_reference: None,
         };
 
         // Apply smoothing
@@ -1190,7 +1339,7 @@ mod geometry_tests {
             lumen,
             extras,
             reference_point: None,
-            annotations: Vec::new(),
+            structures: Vec::new(),
         };
 
         frames.push(frame);
@@ -1345,7 +1494,7 @@ mod geometry_tests {
                 lumen,
                 extras,
                 reference_point: None,
-                annotations: Vec::new(),
+                structures: Vec::new(),
             };
 
             frames.push(frame);
@@ -1354,6 +1503,7 @@ mod geometry_tests {
         let geometry = Geometry {
             frames,
             label: "test_smoothing_with_extras".to_string(),
+            master_reference: None,
         };
 
         let smoothed_geometry = geometry.smooth_frames();

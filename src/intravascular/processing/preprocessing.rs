@@ -24,7 +24,51 @@ fn path_basename(path: &Path) -> String {
 /// `labels` is only used for path-based processing (InputData carries its own
 /// labels).  Pass 1 label for `Single`, 2 for `Pair`, 4 for `Full`.  If the
 /// count does not match, the last component of each path is used instead.
+///
+/// `master_references` holds one entry per geometry in the same order (`None` keeps the
+/// default, the most proximal reference). An empty slice keeps every default.
 pub fn prepare_n_geometries(
+    labels: &[String],
+    image_center: (f64, f64),
+    radius: f64,
+    n_points: u32,
+    input_data: Option<Vec<InputData>>,
+    diastole: bool,
+    path_a: Option<&Path>,
+    path_b: Option<&Path>,
+    processing: ProcessingOptions,
+    master_references: &[Option<u32>],
+) -> anyhow::Result<Vec<Geometry>> {
+    let mut geometries = build_n_geometries(
+        labels,
+        image_center,
+        radius,
+        n_points,
+        input_data,
+        diastole,
+        path_a,
+        path_b,
+        processing,
+    )?;
+    if master_references.is_empty() {
+        return Ok(geometries);
+    }
+    if master_references.len() != geometries.len() {
+        anyhow::bail!(
+            "master_references needs one entry per geometry ({}), got {}",
+            geometries.len(),
+            master_references.len()
+        );
+    }
+    for (geom, master) in geometries.iter_mut().zip(master_references) {
+        if let Some(master) = master {
+            geom.set_master_reference(*master)?;
+        }
+    }
+    Ok(geometries)
+}
+
+fn build_n_geometries(
     labels: &[String],
     image_center: (f64, f64),
     radius: f64,
@@ -224,17 +268,18 @@ mod preprocessing_tests {
             }],
             eem: None,
             record: None,
-            ref_point: ContourPoint {
+            reference_points: vec![ContourPoint {
                 frame_index: 0,
                 point_index: 0,
                 x: 5.0,
                 y: 5.0,
                 z: 0.0,
                 aortic: false,
-            },
+            }],
+            master_reference: None,
             diastole,
             label: label.to_string(),
-            annotations: Vec::new(),
+            structures: Vec::new(),
         }
     }
 
@@ -250,6 +295,7 @@ mod preprocessing_tests {
             Some(Path::new("data/fixtures/ivus_stress")),
             None,
             ProcessingOptions::Single,
+            &[],
         )?;
         let geom = &geometry[0];
 
@@ -271,6 +317,7 @@ mod preprocessing_tests {
             Some(Path::new("data/fixtures/ivus_stress")),
             None,
             ProcessingOptions::Pair,
+            &[],
         )?;
         let geom = &geometry[0];
 
@@ -294,6 +341,7 @@ mod preprocessing_tests {
             None,
             None,
             ProcessingOptions::Single,
+            &[],
         )?;
 
         assert_eq!(geometry.len(), 1);
@@ -314,6 +362,7 @@ mod preprocessing_tests {
             Some(Path::new("data/fixtures/ivus_stress")),
             None,
             ProcessingOptions::Single,
+            &[],
         )?;
 
         assert_eq!(geometry.len(), 1);
@@ -337,6 +386,7 @@ mod preprocessing_tests {
             None,
             None,
             ProcessingOptions::Pair,
+            &[],
         )?;
 
         assert_eq!(geometry.len(), 2);
@@ -357,6 +407,7 @@ mod preprocessing_tests {
             Some(Path::new("data/fixtures/ivus_stress")),
             None,
             ProcessingOptions::Pair,
+            &[],
         )?;
 
         assert_eq!(geometry.len(), 2);
@@ -385,6 +436,7 @@ mod preprocessing_tests {
             None,
             None,
             ProcessingOptions::Full,
+            &[],
         )?;
 
         assert_eq!(geometry.len(), 4);
@@ -413,6 +465,7 @@ mod preprocessing_tests {
             Some(Path::new("data/fixtures/ivus_stress")),
             Some(Path::new("data/fixtures/ivus_rest")),
             ProcessingOptions::Full,
+            &[],
         )?;
 
         assert_eq!(geometry.len(), 4);
@@ -435,6 +488,7 @@ mod preprocessing_tests {
             Some(Path::new("data/ivus_stress")),
             Some(Path::new("data/ivus_rest")),
             ProcessingOptions::Single,
+            &[],
         )?;
 
         assert_eq!(geometry.len(), 1);
@@ -457,6 +511,7 @@ mod preprocessing_tests {
             Some(Path::new("data/fixtures/ivus_stress")),
             None,
             ProcessingOptions::Pair,
+            &[],
         )?;
 
         assert_eq!(geometry.len(), 2);
@@ -477,6 +532,7 @@ mod preprocessing_tests {
             None,
             None,
             ProcessingOptions::Single,
+            &[],
         );
 
         assert!(result.is_err());
@@ -495,6 +551,7 @@ mod preprocessing_tests {
             None,
             None,
             ProcessingOptions::Pair,
+            &[],
         );
 
         assert!(result.is_err());
@@ -519,6 +576,7 @@ mod preprocessing_tests {
             Some(Path::new("data/ivus_stress")),
             None,
             ProcessingOptions::Full,
+            &[],
         );
 
         assert!(result.is_err());

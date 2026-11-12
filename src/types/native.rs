@@ -1,4 +1,3 @@
-pub mod annotation;
 pub mod centerline;
 pub mod centerline_point;
 pub mod contour;
@@ -8,8 +7,8 @@ pub mod frame;
 pub mod geometry;
 pub mod geometry_pair;
 pub mod record;
+pub mod structure;
 
-pub use annotation::{Annotation, AnnotationKind, AnnotationRole};
 pub use centerline::Centerline;
 pub use centerline_point::CenterlinePoint;
 pub use contour::{downsample_contour_points, Contour, ContourType};
@@ -19,6 +18,7 @@ pub use frame::Frame;
 pub use geometry::Geometry;
 pub use geometry_pair::GeometryPair;
 pub use record::Record;
+pub use structure::{CloudParams, Structure, StructureKind};
 
 pub trait Point3D {
     fn x(&self) -> f64;
@@ -81,15 +81,30 @@ pub fn cumulative_arc_length<P: Point3D>(points: &[P]) -> Vec<f64> {
         .collect()
 }
 
-/// Mean Euclidean distance between consecutive `points`.
-///
-/// Returns `None` when there are fewer than two points.
-pub fn mean_spacing<P: Point3D>(points: &[P]) -> Option<f64> {
-    if points.len() < 2 {
+/// Median of `values`, the mean of the two middle values for an even count. `None` if empty.
+pub fn median(values: &[f64]) -> Option<f64> {
+    if values.is_empty() {
         return None;
     }
-    let total: f64 = points.windows(2).map(|w| w[0].distance_to(&w[1])).sum();
-    Some(total / (points.len() - 1) as f64)
+    let mut sorted = values.to_vec();
+    sorted.sort_by(f64::total_cmp);
+    let n = sorted.len();
+    Some(if n % 2 == 1 {
+        sorted[n / 2]
+    } else {
+        (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0
+    })
+}
+
+/// Distances between neighbouring elements: frames along a pullback, points of a centerline.
+pub trait Spacing {
+    /// Distances between consecutive elements, empty with fewer than two.
+    fn spacings(&self) -> Vec<f64>;
+
+    /// Median of `spacings`, robust to holes and outliers. `None` with fewer than two elements.
+    fn median_spacing(&self) -> Option<f64> {
+        median(&self.spacings())
+    }
 }
 
 pub trait Transform: Sized + Clone {
@@ -117,9 +132,9 @@ mod native_tests {
     }
 
     #[test]
-    fn test_mean_spacing() {
-        let pts = [(0.0, 0.0, 0.0), (3.0, 4.0, 0.0), (3.0, 4.0, 2.0)];
-        assert_eq!(mean_spacing(&pts), Some(3.5));
-        assert_eq!(mean_spacing(&pts[..1]), None);
+    fn test_median() {
+        assert_eq!(median(&[3.0, 1.0, 2.0]), Some(2.0));
+        assert_eq!(median(&[4.0, 1.0, 2.0, 3.0]), Some(2.5));
+        assert_eq!(median(&[]), None);
     }
 }

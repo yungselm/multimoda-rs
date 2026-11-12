@@ -97,6 +97,7 @@ def from_file_full(
     bruteforce: bool = False,
     smooth: bool = True,
     postprocessing: bool = True,
+    master_references: list[int | None] | None = None,
 ) -> tuple[
     PyGeometryPair,
     PyGeometryPair,
@@ -186,6 +187,13 @@ def from_file_full(
     postprocessing : bool, optional
         Whether to adjust spacing within/between geometries to equal
         offsets.  Default is ``True``.
+    master_references : list of int or None, optional
+        Original frame of the master reference per geometry, in the order
+        ``[rest diastole, rest systole, stress diastole, stress systole]``
+        (the order of ``labels``).
+        The master aligns the geometries of a pair and the CCTA centerline.
+        ``None`` (or a ``None`` entry) uses the most proximal reference.
+        Default is ``None``.
 
     Returns
     -------
@@ -232,6 +240,7 @@ def from_file_full(
         bruteforce,
         smooth,
         postprocessing,
+        master_references,
     )
 
 
@@ -254,6 +263,7 @@ def from_file_doublepair(
     bruteforce: bool = False,
     smooth: bool = True,
     postprocessing: bool = True,
+    master_references: list[int | None] | None = None,
 ) -> tuple[
     PyGeometryPair,
     PyGeometryPair,
@@ -324,6 +334,13 @@ def from_file_doublepair(
     postprocessing : bool, optional
         Whether to equalise spacing within/between geometries.  Default is
         ``True``.
+    master_references : list of int or None, optional
+        Original frame of the master reference per geometry, in the order
+        ``[rest diastole, rest systole, stress diastole, stress systole]``
+        (the order of ``labels``).
+        The master aligns the geometries of a pair and the CCTA centerline.
+        ``None`` (or a ``None`` entry) uses the most proximal reference.
+        Default is ``None``.
 
     Returns
     -------
@@ -364,6 +381,7 @@ def from_file_doublepair(
         bruteforce,
         smooth,
         postprocessing,
+        master_references,
     )
 
 
@@ -384,6 +402,7 @@ def from_file_singlepair(
     bruteforce: bool = False,
     smooth: bool = True,
     postprocessing: bool = True,
+    master_references: list[int | None] | None = None,
 ) -> tuple[PyGeometryPair, tuple[_AlignLog, _AlignLog]]:
     """Process a single diastole/systole pair from an input CSV folder.
 
@@ -447,6 +466,12 @@ def from_file_singlepair(
     postprocessing : bool, optional
         Whether to equalise spacing within/between geometries.  Default is
         ``True``.
+    master_references : list of int or None, optional
+        Original frame of the master reference per geometry, in the order
+        ``[diastole, systole]``.
+        The master aligns the geometries of a pair and the CCTA centerline.
+        ``None`` (or a ``None`` entry) uses the most proximal reference.
+        Default is ``None``.
 
     Returns
     -------
@@ -480,6 +505,7 @@ def from_file_singlepair(
         bruteforce,
         smooth,
         postprocessing,
+        master_references,
     )
 
 
@@ -499,6 +525,7 @@ def from_file_single(
     output_path: str = "output/single",
     bruteforce: bool = False,
     smooth: bool = True,
+    master_references: list[int | None] | None = None,
 ) -> tuple[PyGeometry, _AlignLog]:
     """Process a single intravascular imaging geometry from a CSV file.
 
@@ -547,6 +574,12 @@ def from_file_single(
         Whether to use brute-force alignment.  Default is ``False``.
     smooth : bool, optional
         Whether to smooth frames after alignment.  Default is ``True``.
+    master_references : list of int or None, optional
+        Original frame of the master reference per geometry, in the order
+        one entry for the single geometry.
+        The master aligns the geometries of a pair and the CCTA centerline.
+        ``None`` (or a ``None`` entry) uses the most proximal reference.
+        Default is ``None``.
 
     Returns
     -------
@@ -579,6 +612,7 @@ def from_file_single(
         output_path,
         bruteforce,
         smooth,
+        master_references,
     )
 
 
@@ -609,6 +643,7 @@ def from_array_full(
     bruteforce: bool = False,
     smooth: bool = True,
     postprocessing: bool = True,
+    master_references: list[int | None] | None = None,
 ) -> tuple[
     PyGeometryPair,
     PyGeometryPair,
@@ -682,6 +717,12 @@ def from_array_full(
     postprocessing : bool, optional
         Whether to equalise spacing within/between geometries.  Default is
         ``True``.
+    master_references : list of int or None, optional
+        Original frame of the master reference per geometry, in the order
+        ``[input_data_a, input_data_b, input_data_c, input_data_d]``.
+        The master aligns the geometries of a pair and the CCTA centerline.
+        ``None`` (or a ``None`` entry) uses the most proximal reference.
+        Default is ``None``.
 
     Returns
     -------
@@ -729,6 +770,7 @@ def from_array_full(
         bruteforce,
         smooth,
         postprocessing,
+        master_references,
     )
 
 
@@ -752,6 +794,7 @@ def from_array_doublepair(
     bruteforce: bool = False,
     smooth: bool = True,
     postprocessing: bool = True,
+    master_references: list[int | None] | None = None,
 ) -> tuple[
     PyGeometryPair,
     PyGeometryPair,
@@ -812,6 +855,12 @@ def from_array_doublepair(
     postprocessing : bool, optional
         Whether to equalise spacing within/between geometries.  Default is
         ``True``.
+    master_references : list of int or None, optional
+        Original frame of the master reference per geometry, in the order
+        ``[input_data_a, input_data_b, input_data_c, input_data_d]``.
+        The master aligns the geometries of a pair and the CCTA centerline.
+        ``None`` (or a ``None`` entry) uses the most proximal reference.
+        Default is ``None``.
 
     Returns
     -------
@@ -853,6 +902,7 @@ def from_array_doublepair(
         bruteforce,
         smooth,
         postprocessing,
+        master_references,
     )
 
 
@@ -873,6 +923,7 @@ def from_array_singlepair(
     bruteforce: bool = False,
     smooth: bool = True,
     postprocessing: bool = True,
+    master_references: list[int | None] | None = None,
 ) -> tuple[PyGeometryPair, tuple[_AlignLog, _AlignLog]]:
     """Align and interpolate between two ``PyInputData`` objects (diastole and systole).
 
@@ -920,6 +971,12 @@ def from_array_singlepair(
     postprocessing : bool, optional
         Whether to equalise spacing within/between geometries.  Default is
         ``True``.
+    master_references : list of int or None, optional
+        Original frame of the master reference per geometry, in the order
+        ``[input_data_a, input_data_b]``.
+        The master aligns the geometries of a pair and the CCTA centerline.
+        ``None`` (or a ``None`` entry) uses the most proximal reference.
+        Default is ``None``.
 
     Returns
     -------
@@ -953,6 +1010,7 @@ def from_array_singlepair(
         bruteforce,
         smooth,
         postprocessing,
+        master_references,
     )
 
 
@@ -970,6 +1028,7 @@ def from_array_single(
     output_path: str = "output/single",
     bruteforce: bool = False,
     smooth: bool = True,
+    master_references: list[int | None] | None = None,
 ) -> tuple[PyGeometry, _AlignLog]:
     """Process a single geometry phase from a ``PyInputData`` object.
 
@@ -1006,6 +1065,12 @@ def from_array_single(
         Whether to use brute-force alignment.  Default is ``False``.
     smooth : bool, optional
         Whether to smooth frames after alignment.  Default is ``True``.
+    master_references : list of int or None, optional
+        Original frame of the master reference per geometry, in the order
+        one entry for ``input_data``.
+        The master aligns the geometries of a pair and the CCTA centerline.
+        ``None`` (or a ``None`` entry) uses the most proximal reference.
+        Default is ``None``.
 
     Returns
     -------
@@ -1036,6 +1101,7 @@ def from_array_single(
         output_path,
         bruteforce,
         smooth,
+        master_references,
     )
 
 

@@ -1,9 +1,7 @@
-use super::py_annotation::PyAnnotation;
 use super::py_contour::PyContour;
 use super::py_contour_point::PyContourPoint;
-use crate::types::native::{
-    Annotation, AnnotationKind, AnnotationRole, ContourPoint, ContourType, Frame, Transform,
-};
+use super::py_structure::PyStructure;
+use crate::types::native::{ContourPoint, ContourType, Frame, Transform};
 use pyo3::prelude::*;
 use std::collections::HashMap;
 
@@ -22,8 +20,9 @@ use std::collections::HashMap;
 ///     ``"Catheter"``, ``"Wall"``.
 /// reference_point : PyContourPoint or None
 ///     Reference position used for alignment, if available.
-/// annotations : list of PyAnnotation
-///     Free-form points that follow the frame's rigid transforms only.
+/// structures : list of PyStructure
+///     Point clouds of in-wall structures and side branches, they follow the
+///     frame's rigid transforms only.
 ///
 /// Examples
 /// --------
@@ -48,20 +47,20 @@ pub struct PyFrame {
     #[pyo3(get, set)]
     pub reference_point: Option<PyContourPoint>,
     #[pyo3(get, set)]
-    pub annotations: Vec<PyAnnotation>,
+    pub structures: Vec<PyStructure>,
 }
 
 #[pymethods]
 impl PyFrame {
     #[new]
-    #[pyo3(signature = (id, centroid, lumen, extras, reference_point, annotations=Vec::new()))]
+    #[pyo3(signature = (id, centroid, lumen, extras, reference_point, structures=Vec::new()))]
     fn new(
         id: u32,
         centroid: (f64, f64, f64),
         lumen: PyContour,
         extras: HashMap<String, PyContour>,
         reference_point: Option<PyContourPoint>,
-        annotations: Vec<PyAnnotation>,
+        structures: Vec<PyStructure>,
     ) -> Self {
         Self {
             id,
@@ -69,20 +68,20 @@ impl PyFrame {
             lumen,
             extras,
             reference_point,
-            annotations,
+            structures,
         }
     }
 
     fn __repr__(&self) -> String {
         format!(
-            "Frame(id={}, centroid=({:.2}, {:.2}, {:.2}), lumen={}, extras={}, annotations={})",
+            "Frame(id={}, centroid=({:.2}, {:.2}, {:.2}), lumen={}, extras={}, structures={})",
             self.id,
             self.centroid.0,
             self.centroid.1,
             self.centroid.2,
             self.lumen.__repr__(),
             self.extras.len(),
-            self.annotations.len()
+            self.structures.len()
         )
     }
 
@@ -151,7 +150,7 @@ impl From<Frame> for PyFrame {
                 .map(|(key, value)| (key.to_string(), PyContour::from(&value)))
                 .collect(),
             reference_point: frame.reference_point.map(|p| PyContourPoint::from(&p)),
-            annotations: frame.annotations.iter().map(PyAnnotation::from).collect(),
+            structures: frame.structures.iter().map(PyStructure::from).collect(),
         }
     }
 }
@@ -175,7 +174,7 @@ impl From<&Frame> for PyFrame {
             lumen: PyContour::from(&frame.lumen),
             extras,
             reference_point: frame.reference_point.as_ref().map(PyContourPoint::from),
-            annotations: frame.annotations.iter().map(PyAnnotation::from).collect(),
+            structures: frame.structures.iter().map(PyStructure::from).collect(),
         }
     }
 }
@@ -184,10 +183,10 @@ impl PyFrame {
     pub fn to_rust_frame(&self) -> PyResult<Frame> {
         let lumen = self.lumen.to_rust_contour()?;
 
-        let mut annotations: Vec<Annotation> = self
-            .annotations
+        let structures = self
+            .structures
             .iter()
-            .map(PyAnnotation::to_rust_annotation)
+            .map(PyStructure::to_rust_structure)
             .collect();
 
         let mut extras = HashMap::new();
@@ -196,16 +195,6 @@ impl PyFrame {
                 "Eem" => ContourType::Eem,
                 "Catheter" => ContourType::Catheter,
                 "Wall" => ContourType::Wall,
-                // deprecated extras keys, kept as region annotations
-                "Sidebranch" | "Calcification" => {
-                    annotations.push(Annotation::new(
-                        AnnotationKind::from_name(key),
-                        AnnotationRole::Region,
-                        0,
-                        py_contour.points.iter().map(ContourPoint::from).collect(),
-                    ));
-                    continue;
-                }
                 _ => continue, // Skip unknown types
             };
             let mut contour = py_contour.to_rust_contour()?;
@@ -221,7 +210,7 @@ impl PyFrame {
             lumen,
             extras,
             reference_point,
-            annotations,
+            structures,
         })
     }
 }

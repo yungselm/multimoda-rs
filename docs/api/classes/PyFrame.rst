@@ -9,4 +9,4 @@ PyFrame
    :undoc-members:
    :show-inheritance:
    :inherited-members:
-   :exclude-members: id, centroid, lumen, extras, reference_point, annotations
+   :exclude-members: id, centroid, lumen, extras, reference_point, structures

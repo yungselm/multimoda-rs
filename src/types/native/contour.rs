@@ -1,6 +1,7 @@
 use super::contour_point::ContourPoint;
 use super::record::Record;
 use super::{Point3D, Transform};
+use nalgebra::Vector3;
 use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::fmt;
@@ -219,6 +220,26 @@ impl Contour {
         self.centroid = Some((sum_x / n, sum_y / n, sum_z / n));
     }
 
+    /// Unit normal of the contour plane (Newell's method around the point mean), +z for
+    /// fewer than three points or a degenerate contour. The sign follows the point order.
+    pub fn normal(&self) -> Vector3<f64> {
+        let n = self.points.len();
+        if n < 3 {
+            return Vector3::z();
+        }
+        let v = |p: &ContourPoint| Vector3::new(p.x, p.y, p.z);
+        let c = self.points.iter().map(v).sum::<Vector3<f64>>() / n as f64;
+        let normal: Vector3<f64> = (0..n)
+            .map(|i| (v(&self.points[i]) - c).cross(&(v(&self.points[(i + 1) % n]) - c)))
+            .sum();
+        let len = normal.norm();
+        if len < 1e-12 {
+            Vector3::z()
+        } else {
+            normal / len
+        }
+    }
+
     /// Finds the pair of farthest points in the current contour.
     pub fn find_farthest_points(&self) -> ((&ContourPoint, &ContourPoint), f64) {
         let mut max_dist = 0.0;
@@ -419,6 +440,51 @@ mod contour_tests {
     use super::*;
     use crate::intravascular::utils::test_utils::dummy_geometry;
     use crate::types::native::record::Record;
+
+    fn contour_of(coords: &[(f64, f64, f64)]) -> Contour {
+        Contour {
+            id: 0,
+            original_frame: 0,
+            points: coords
+                .iter()
+                .enumerate()
+                .map(|(i, &(x, y, z))| ContourPoint {
+                    frame_index: 0,
+                    point_index: i as u32,
+                    x,
+                    y,
+                    z,
+                    aortic: false,
+                })
+                .collect(),
+            centroid: None,
+            aortic_thickness: None,
+            pulmonary_thickness: None,
+            kind: ContourType::Lumen,
+        }
+    }
+
+    #[test]
+    fn test_normal() {
+        let ccw = [(0.0, 0.0, 5.0), (1.0, 0.0, 5.0), (0.0, 1.0, 5.0)];
+        assert!((contour_of(&ccw).normal() - Vector3::z()).norm() < 1e-12);
+        let cw: Vec<_> = ccw.iter().rev().copied().collect();
+        assert!((contour_of(&cw).normal() + Vector3::z()).norm() < 1e-12);
+
+        // a square in the y/z plane, away from the origin
+        let yz = [
+            (2.0, 1.0, 0.0),
+            (2.0, 0.0, 1.0),
+            (2.0, -1.0, 0.0),
+            (2.0, 0.0, -1.0),
+        ];
+        assert!((contour_of(&yz).normal().abs() - Vector3::x()).norm() < 1e-12);
+
+        // too few or collinear points fall back to +z
+        assert_eq!(contour_of(&ccw[..2]).normal(), Vector3::z());
+        let line = [(0.0, 0.0, 0.0), (1.0, 1.0, 1.0), (2.0, 2.0, 2.0)];
+        assert_eq!(contour_of(&line).normal(), Vector3::z());
+    }
 
     #[test]
     fn test_build_contour_groups_by_frame() -> anyhow::Result<()> {

@@ -1,11 +1,10 @@
-use super::py_annotation::PyAnnotation;
 use super::py_contour::PyContour;
 use super::py_contour_point::PyContourPoint;
 use super::py_record::PyRecord;
-use crate::intravascular::io::input::{region_annotations_from_points, InputData};
-use crate::types::native::{AnnotationKind, ContourPoint, Record};
+use super::py_structure::PyStructure;
+use crate::intravascular::io::input::InputData;
+use crate::types::native::{ContourPoint, Record};
 use anyhow::{anyhow, Result};
-use pyo3::exceptions::PyDeprecationWarning;
 use pyo3::prelude::*;
 use std::convert::TryFrom;
 
@@ -17,36 +16,35 @@ use std::convert::TryFrom;
 ///     Vessel lumen contours.
 /// eem : list of PyContour or None
 ///     Vessel EEM (external elastic membrane) contours.
-/// calcification : list of PyContour or None
-///     Deprecated, converted to ``calcification`` region annotations
-///     (one per frame) when the geometry is built. Use ``annotations``.
-/// sidebranch : list of PyContour or None
-///     Deprecated, converted to ``sidebranch`` region annotations
-///     (one per frame) when the geometry is built. Use ``annotations``.
 /// record : list of PyRecord or None
 ///     Metadata records about the input data.
-/// ref_point : PyContourPoint
-///     Reference point used for alignment.
+/// reference_points : list of PyContourPoint
+///     All reference points, at most one per frame, ``frame_index`` numbered
+///     like the lumen ``original_frame``. Each is stored on its frame.
+/// master_reference : int or None
+///     Original frame of the reference that aligns this geometry to other
+///     geometries and to the CCTA centerline. ``None`` uses the most proximal
+///     reference.
 /// diastole : bool
 ///     ``True`` when the data corresponds to the diastolic phase.
 /// label : str
 ///     Human-readable label for this input dataset.
-/// annotations : list of tuple of (int, PyAnnotation)
-///     ``(frame, annotation)`` pairs, frame numbered like the lumen
-///     ``original_frame``. Attached to that frame when building the geometry.
+/// structures : list of PyStructure
+///     Drawn contours of in-wall structures and side branches, point
+///     ``frame_index`` numbered like the lumen ``original_frame``. Building the
+///     geometry turns each into a point cloud on that frame. In-wall contours
+///     must be closed.
 ///
 /// Examples
 /// --------
 /// >>> input_data = PyInputData(
 /// ...     lumen=[lumen_contour1, lumen_contour2, ...],
 /// ...     eem=[eem_contour1, eem_contour2, ...],
-/// ...     calcification=None,
-/// ...     sidebranch=None,
 /// ...     record=record,
-/// ...     ref_point=ref_point,
+/// ...     reference_points=[ref_point],
 /// ...     diastole=True,
 /// ...     label="Pat00_diastole_rest",
-/// ...     annotations=[(385, PyAnnotation("sidebranch", "region", 0, points))],
+/// ...     structures=[PyStructure("calcification", points)],
 /// ... )
 #[pyclass(from_py_object)]
 #[derive(Debug, Clone)]
@@ -56,71 +54,57 @@ pub struct PyInputData {
     #[pyo3(get, set)]
     pub eem: Option<Vec<PyContour>>,
     #[pyo3(get, set)]
-    pub calcification: Option<Vec<PyContour>>,
-    #[pyo3(get, set)]
-    pub sidebranch: Option<Vec<PyContour>>,
-    #[pyo3(get, set)]
     pub record: Option<Vec<PyRecord>>,
     #[pyo3(get, set)]
-    pub ref_point: PyContourPoint,
+    pub reference_points: Vec<PyContourPoint>,
+    #[pyo3(get, set)]
+    pub master_reference: Option<u32>,
     #[pyo3(get, set)]
     pub diastole: bool,
     #[pyo3(get, set)]
     pub label: String,
     #[pyo3(get, set)]
-    pub annotations: Vec<(u32, PyAnnotation)>,
+    pub structures: Vec<PyStructure>,
 }
 
 #[pymethods]
 impl PyInputData {
     #[new]
-    #[pyo3(signature = (lumen, eem, calcification, sidebranch, record, ref_point, diastole, label, annotations=Vec::new()))]
+    #[pyo3(signature = (lumen, eem, record, reference_points, diastole, label, structures=Vec::new(), master_reference=None))]
     fn new(
-        py: Python<'_>,
         lumen: Vec<PyContour>,
         eem: Option<Vec<PyContour>>,
-        calcification: Option<Vec<PyContour>>,
-        sidebranch: Option<Vec<PyContour>>,
         record: Option<Vec<PyRecord>>,
-        ref_point: PyContourPoint,
+        reference_points: Vec<PyContourPoint>,
         diastole: bool,
         label: String,
-        annotations: Vec<(u32, PyAnnotation)>,
+        structures: Vec<PyStructure>,
+        master_reference: Option<u32>,
     ) -> PyResult<Self> {
-        if calcification.is_some() || sidebranch.is_some() {
-            PyErr::warn(
-                py,
-                &py.get_type::<PyDeprecationWarning>(),
-                c"PyInputData calcification and sidebranch are deprecated, pass them as \
-                  region annotations instead",
-                1,
-            )?;
-        }
         Ok(Self {
             lumen,
             eem,
-            calcification,
-            sidebranch,
             record,
-            ref_point,
+            reference_points,
+            master_reference,
             diastole,
             label,
-            annotations,
+            structures,
         })
     }
 
     fn __repr__(&self) -> String {
         format!(
-            "InputData(lumen={}, eem={}, calcification={}, sidebranch={}, record={}, ref_point={}, diastole={}, label='{}', annotations={})",
+            "InputData(lumen={}, eem={}, record={}, reference_points={}, master_reference={}, diastole={}, label='{}', structures={})",
             self.lumen.len(),
             self.eem.as_ref().map_or(0, |v| v.len()),
-            self.calcification.as_ref().map_or(0, |v| v.len()),
-            self.sidebranch.as_ref().map_or(0, |v| v.len()),
             self.record.as_ref().map_or(0, |v| v.len()),
-            self.ref_point.__repr__(),
+            self.reference_points.len(),
+            self.master_reference
+                .map_or_else(|| "None".to_string(), |m| m.to_string()),
             self.diastole,
             self.label,
-            self.annotations.len(),
+            self.structures.len(),
         )
     }
 }
@@ -165,23 +149,11 @@ impl TryFrom<&PyInputData> for InputData {
 
         let eem_points = flatten(&py_in.eem)?;
 
-        // deprecated contour lists become one region annotation per frame
-        let mut annotations: Vec<_> = py_in
-            .annotations
+        let structures = py_in
+            .structures
             .iter()
-            .map(|(frame, a)| (*frame, a.to_rust_annotation()))
+            .map(PyStructure::to_rust_structure)
             .collect();
-        for (contours, kind) in [
-            (&py_in.sidebranch, AnnotationKind::Sidebranch),
-            (&py_in.calcification, AnnotationKind::Calcification),
-        ] {
-            let points: Vec<ContourPoint> = contours
-                .iter()
-                .flatten()
-                .flat_map(|c| c.points.iter().map(ContourPoint::from))
-                .collect();
-            annotations.extend(region_annotations_from_points(points, kind));
-        }
 
         // Records: Option<Vec<PyRecord>> -> Option<Vec<Record>>
         let records_rust: Option<Vec<Record>> = match &py_in.record {
@@ -195,18 +167,22 @@ impl TryFrom<&PyInputData> for InputData {
             None => None,
         };
 
-        // ref_point: PyContourPoint -> ContourPoint
-        let ref_point_rust: ContourPoint = ContourPoint::from(&py_in.ref_point);
+        let reference_points: Vec<ContourPoint> = py_in
+            .reference_points
+            .iter()
+            .map(ContourPoint::from)
+            .collect();
 
         // Build InputData via its constructor to preserve validations
         InputData::new(
             lumen_points,
             eem_points,
             records_rust,
-            ref_point_rust,
+            reference_points,
+            py_in.master_reference,
             py_in.diastole,
             py_in.label.clone(),
-            annotations,
+            structures,
         )
         .map_err(|e| anyhow!("InputData::new failed: {e:?}"))
     }
@@ -255,7 +231,7 @@ impl From<&InputData> for PyInputData {
         }
 
         // Build lumen as a single PyContour (id = 0)
-        let original_frame = input.ref_point.frame_index;
+        let original_frame = input.lumen.first().map_or(0, |p| p.frame_index);
         let lumen_py = make_pycontour_from_points(&input.lumen, 0, original_frame);
         let lumen_vec = vec![lumen_py];
 
@@ -275,22 +251,19 @@ impl From<&InputData> for PyInputData {
             .as_ref()
             .map(|records| records.iter().map(PyRecord::from).collect());
 
-        let ref_point_py = PyContourPoint::from(&input.ref_point);
-
         PyInputData {
             lumen: lumen_vec,
             eem: eem_py,
-            calcification: None,
-            sidebranch: None,
             record: record_py,
-            ref_point: ref_point_py,
+            reference_points: input
+                .reference_points
+                .iter()
+                .map(PyContourPoint::from)
+                .collect(),
+            master_reference: input.master_reference,
             diastole: input.diastole,
             label: input.label.clone(),
-            annotations: input
-                .annotations
-                .iter()
-                .map(|(frame, a)| (*frame, PyAnnotation::from(a)))
-                .collect(),
+            structures: input.structures.iter().map(PyStructure::from).collect(),
         }
     }
 }

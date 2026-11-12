@@ -1,4 +1,3 @@
-pub mod py_annotation;
 pub mod py_centerline;
 pub mod py_centerline_point;
 pub mod py_contour;
@@ -9,8 +8,8 @@ pub mod py_geometry;
 pub mod py_geometry_pair;
 pub mod py_input_data;
 pub mod py_record;
+pub mod py_structure;
 
-pub use py_annotation::PyAnnotation;
 pub use py_centerline::PyCenterline;
 pub use py_centerline_point::PyCenterlinePoint;
 pub use py_contour::{PyContour, PyContourType};
@@ -21,3 +20,4 @@ pub use py_geometry::PyGeometry;
 pub use py_geometry_pair::PyGeometryPair;
 pub use py_input_data::PyInputData;
 pub use py_record::PyRecord;
+pub use py_structure::PyStructure;

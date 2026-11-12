@@ -45,26 +45,26 @@ from multimodars.ccta.stitching import open_boundary_edges
 DEFAULT_CASE = "/mnt/c/Users/ansel/OneDrive/arcomo_test"
 
 # HolOrama GUI defaults.
-PREPARE = dict(spacing_mm=0.5, branch_spacing_tolerance=2.0, smooth_sigma=1.5)
+PREPARE = {"spacing_mm": 0.5, "branch_spacing_tolerance": 2.0, "smooth_sigma": 1.5}
 RM_START_MM = 5.0
-LABEL = dict(
-    acute_takeoff_rca=False,
-    acute_takeoff_lca=False,
-    range_mm_takeoff_rca=45,
-    range_mm_takeoff_lca=45,
-    step_size_mm=0.5,
-    bounding_sphere_radius_mm_rca=3.5,
-    bounding_sphere_radius_mm_lca=3.5,
-)
-STITCH = dict(
-    prox_start_mode="highest_z",
-    dist_start_mode="nearest_iv",
-    clamp_overshoot=0.0,
-    fillet_bulge=0.5,
-    fillet_layers=5,
-    seam_points_a=2,
-    seam_points_b=4,
-)
+LABEL = {
+    "acute_takeoff_rca": False,
+    "acute_takeoff_lca": False,
+    "range_mm_takeoff_rca": 45,
+    "range_mm_takeoff_lca": 45,
+    "step_size_mm": 0.5,
+    "bounding_sphere_radius_mm_rca": 3.5,
+    "bounding_sphere_radius_mm_lca": 3.5,
+}
+STITCH = {
+    "prox_start_mode": "highest_z",
+    "dist_start_mode": "nearest_iv",
+    "clamp_overshoot": 0.0,
+    "fillet_bulge": 0.5,
+    "fillet_layers": 5,
+    "seam_points_a": 2,
+    "seam_points_b": 4,
+}
 
 # name: (colour, opacity, shown at start)
 LAYERS = {
@@ -177,7 +177,7 @@ def replay(case: str, sync_tree: bool) -> dict:
         lumen_arr=np.genfromtxt(
             os.path.join(csv_dir, "tagged_contours.csv"), delimiter="\t"
         ),
-        ref_point=np.genfromtxt(
+        reference_points=np.genfromtxt(
             os.path.join(csv_dir, "tagged_reference_points.csv"), delimiter="\t"
         ),
         record=None,
@@ -248,7 +248,7 @@ def replay(case: str, sync_tree: bool) -> dict:
     ):
         results = scale(results, results.get(key, []), cl, remaining)
 
-    return dict(results=results, aligned=aligned, tree=tree, vessel=vessel)
+    return {"results": results, "aligned": aligned, "tree": tree, "vessel": vessel}
 
 
 # ---------------------------------------------------------------------------

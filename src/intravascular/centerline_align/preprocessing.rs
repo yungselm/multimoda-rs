@@ -1,5 +1,5 @@
 use crate::types::native::geometry::Geometry;
-use crate::types::native::{mean_spacing, Centerline, CenterlinePoint};
+use crate::types::native::{Centerline, CenterlinePoint, Spacing};
 
 /// Resample `centerline` along its arc-length so that adjacent points are spaced at the
 /// mean Euclidean distance between consecutive contour centroids in `ref_mesh`, falling
@@ -92,18 +92,14 @@ fn ensure_descending_z(centerline: &mut Centerline) {
     }
 }
 
-fn calculate_mean_spacing(ref_mesh: &Geometry) -> Option<f64> {
-    let centroids: Vec<(f64, f64, f64)> = ref_mesh.frames.iter().map(|f| f.centroid).collect();
-    mean_spacing(&centroids)
-}
-
-/// Mean contour-centroid spacing of `ref_mesh`, or the centerline's own mean point
-/// spacing if the mesh gives no usable value. `None` if neither is usable.
+/// Frame spacing of `ref_mesh`, or the centerline's own point spacing if the mesh gives
+/// no usable value. `None` if neither is usable.
 fn decide_spacing(ref_mesh: &Geometry, centerline: &Centerline) -> Option<f64> {
     let is_valid = |s: &f64| s.is_finite() && *s > 1e-12;
-    calculate_mean_spacing(ref_mesh)
+    ref_mesh
+        .median_spacing()
         .filter(is_valid)
-        .or_else(|| mean_spacing(&centerline.points).filter(is_valid))
+        .or_else(|| centerline.median_spacing().filter(is_valid))
 }
 
 #[cfg(test)]
@@ -134,12 +130,13 @@ mod cl_preprocessing_tests {
                 },
                 extras: HashMap::new(),
                 reference_point: None,
-                annotations: Vec::new(),
+                structures: Vec::new(),
             })
             .collect();
         Geometry {
             frames,
             label: "test".to_string(),
+            master_reference: None,
         }
     }
 
@@ -231,17 +228,6 @@ mod cl_preprocessing_tests {
         ensure_descending_z(&mut cl);
         assert_eq!(cl.points[0].contour_point.z, 1.0);
         assert_eq!(cl.points[1].contour_point.z, 0.0);
-    }
-
-    #[test]
-    fn test_calculate_mean_spacing() {
-        // distances 5.0 and 5.0
-        let geom = geom_from_centroids(&[(0.0, 0.0, 0.0), (3.0, 4.0, 0.0), (6.0, 8.0, 0.0)]);
-        assert_eq!(calculate_mean_spacing(&geom), Some(5.0));
-
-        // single frame → no distances
-        let geom = geom_from_centroids(&[(1.0, 2.0, 3.0)]);
-        assert_eq!(calculate_mean_spacing(&geom), None);
     }
 
     #[test]

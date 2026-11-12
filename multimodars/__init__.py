@@ -4,6 +4,7 @@ from ._converters import (
     numpy_to_centerline,
     numpy_to_geometry,
     numpy_to_inputdata,
+    structure_to_trimesh,
     to_array,
 )
 from ._processing import (
@@ -70,7 +71,6 @@ from .io import read_geometrical, write_geometries
 # import os
 # from importlib.metadata import version
 from .multimodars import (
-    PyAnnotation,
     PyCenterline,
     PyCenterlinePoint,
     PyContour,
@@ -83,10 +83,10 @@ from .multimodars import (
     PyGeometryPair,
     PyInputData,
     PyRecord,
+    PyStructure,
 )
 
 __all__ = [
-    "PyAnnotation",
     "PyCenterline",
     "PyCenterlinePoint",
     "PyContour",
@@ -99,6 +99,7 @@ __all__ = [
     "PyGeometryPair",
     "PyInputData",
     "PyRecord",
+    "PyStructure",
     "align_combined",
     "align_manual",
     "align_three_point",
@@ -148,6 +149,7 @@ __all__ = [
     "scale_region_centerline_morphing",
     "stitch",
     "stitch_ccta_to_intravascular",
+    "structure_to_trimesh",
     "sync_results_to_mesh",
     "sync_tree_to_mesh",
     "to_array",

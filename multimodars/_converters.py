@@ -8,7 +8,6 @@ import numpy as np
 import trimesh
 
 from .multimodars import (
-    PyAnnotation,
     PyCenterline,
     PyContour,
     PyContourPoint,
@@ -17,6 +16,7 @@ from .multimodars import (
     PyGeometry,
     PyInputData,
     PyRecord,
+    PyStructure,
 )
 
 
@@ -39,12 +39,10 @@ def to_array(generic) -> np.ndarray | dict | tuple[dict, dict]:
         For PyGeometry:
         A dictionary with keys for each contour type and "reference",
         each containing a 2D array of shape (M, 4), where M is the number of points in that layer.
-        Key ``"annotations"`` holds a ``dict[tuple[str, str], np.ndarray]``
-        mapping ``(kind, role)`` to rows ``(frame_index, group, x, y, z)``,
-        frame_index as in the other layers. PyFrame and PyInputData carry
-        the same key. The keys ``"sidebranch"`` and ``"calcification"`` are
-        deprecated: they hold the region annotations of that kind as
-        ``(frame_index, x, y, z)`` rows and will be removed in the next release.
+        Key ``"structures"`` holds a ``dict[str, np.ndarray]`` mapping each
+        structure kind to rows ``(frame_index, x, y, z, contour, closed)``,
+        frame_index as in the other layers and ``contour`` the index of the
+        structure within its frame. PyFrame and PyInputData carry the same key.
 
     tuple[dict[str, np.ndarray], dict[str, np.ndarray]]
         For PyGeometryPair:
@@ -128,43 +126,29 @@ def _frame_to_numpy(frame) -> dict[str, np.ndarray]:
     else:
         result["reference"] = np.zeros((0, 4), dtype=float)
 
-    annotations = _annotations_to_numpy(
-        (p.frame_index, ann, p) for ann in frame.annotations for p in ann.points
-    )
-    for kind, arr in _legacy_region_arrays(annotations).items():
-        result[kind] = arr
-    result["annotations"] = annotations  # type: ignore[assignment]
+    result["structures"] = _structures_to_numpy(frame.structures)  # type: ignore[assignment]
 
     return result
 
 
-_LEGACY_REGION_KINDS = ("sidebranch", "calcification")
-
-
-def _annotations_to_numpy(rows: Iterable) -> dict[tuple[str, str], np.ndarray]:
-    """Map ``(kind, role)`` to ``[frame, group, x, y, z]`` rows from ``(frame, annotation, point)``."""
-    out: dict[tuple[str, str], list[tuple[float, ...]]] = {}
-    for frame, ann, p in rows:
-        out.setdefault((ann.kind, ann.role), []).append(
-            (frame, ann.group, p.x, p.y, p.z)
+def _structures_to_numpy(structures: Iterable) -> dict[str, np.ndarray]:
+    """Map kind to ``[frame, x, y, z, contour, closed]`` rows, ``contour`` counted per frame."""
+    out: dict[str, list[tuple[float, ...]]] = {}
+    per_frame: dict[int, int] = {}
+    for s in structures:
+        if not s.points:
+            continue
+        frame = s.points[0].frame_index
+        contour = per_frame.get(frame, 0)
+        per_frame[frame] = contour + 1
+        out.setdefault(s.kind, []).extend(
+            (p.frame_index, p.x, p.y, p.z, contour, float(s.closed)) for p in s.points
         )
-    return {k: np.array(v, dtype=float).reshape(-1, 5) for k, v in out.items()}
+    return {k: np.array(v, dtype=float).reshape(-1, 6) for k, v in out.items()}
 
 
-def _legacy_region_arrays(
-    annotations: dict[tuple[str, str], np.ndarray],
-) -> dict[str, np.ndarray]:
-    """Deprecated ``[frame, x, y, z]`` layers from sidebranch / calcification regions."""
-    return {
-        kind: annotations[(kind, "region")][:, [0, 2, 3, 4]]
-        for kind in _LEGACY_REGION_KINDS
-        if (kind, "region") in annotations
-    }
-
-
-def _merge_annotation_arrays(
-    target: dict[tuple[str, str], np.ndarray],
-    other: dict[tuple[str, str], np.ndarray],
+def _merge_structure_arrays(
+    target: dict[str, np.ndarray], other: dict[str, np.ndarray]
 ) -> None:
     for key, arr in other.items():
         target[key] = np.vstack([target[key], arr]) if key in target else arr
@@ -175,18 +159,16 @@ def _geometry_to_numpy(geom) -> dict[str, np.ndarray]:
     result = {
         "lumen": np.zeros((0, 4), dtype=float),
         "eem": np.zeros((0, 4), dtype=float),
-        "calcification": np.zeros((0, 4), dtype=float),
-        "sidebranch": np.zeros((0, 4), dtype=float),
         "catheter": np.zeros((0, 4), dtype=float),
         "wall": np.zeros((0, 4), dtype=float),
         "reference": np.zeros((0, 4), dtype=float),
     }
-    annotations: dict[tuple[str, str], np.ndarray] = {}
+    structures: dict[str, np.ndarray] = {}
 
     # Collect all points from all frames
     for frame in geom.frames:
         frame_data = _frame_to_numpy(frame)
-        _merge_annotation_arrays(annotations, frame_data.pop("annotations"))  # type: ignore[arg-type]
+        _merge_structure_arrays(structures, frame_data.pop("structures"))  # type: ignore[arg-type]
         for key, current in result.items():
             if key in frame_data and len(frame_data[key]) > 0:
                 if len(current) == 0:
@@ -196,7 +178,7 @@ def _geometry_to_numpy(geom) -> dict[str, np.ndarray]:
                         np.ndarray, np.vstack([current, frame_data[key]])
                     )
 
-    result["annotations"] = annotations  # type: ignore[assignment]
+    result["structures"] = structures  # type: ignore[assignment]
     return result
 
 
@@ -205,8 +187,6 @@ def _input_data_to_numpy(input_data) -> dict[str, np.ndarray | list[str] | bool]
     result = {
         "lumen": np.zeros((0, 4), dtype=float),
         "eem": np.zeros((0, 4), dtype=float),
-        "calcification": np.zeros((0, 4), dtype=float),
-        "sidebranch": np.zeros((0, 4), dtype=float),
         "reference": np.zeros((0, 4), dtype=float),
         "diastole": input_data.diastole,
         "label": input_data.label,
@@ -221,7 +201,7 @@ def _input_data_to_numpy(input_data) -> dict[str, np.ndarray | list[str] | bool]
             result["lumen"] = np.array(lumen_pts, dtype=float)
 
     # Process optional contour types
-    for contour_type in ["eem", "calcification", "sidebranch"]:
+    for contour_type in ["eem"]:
         contours = getattr(input_data, contour_type)
         if contours:
             pts = []
@@ -230,11 +210,9 @@ def _input_data_to_numpy(input_data) -> dict[str, np.ndarray | list[str] | bool]
             if pts:
                 result[contour_type] = np.array(pts, dtype=float)
 
-    # Process reference point
-    ref = input_data.ref_point
-    result["reference"] = np.array(
-        [[ref.frame_index, ref.x, ref.y, ref.z]], dtype=float
-    )
+    refs = [(p.frame_index, p.x, p.y, p.z) for p in input_data.reference_points]
+    if refs:
+        result["reference"] = np.array(refs, dtype=float)
 
     # Process records if available
     if input_data.record:
@@ -250,26 +228,52 @@ def _input_data_to_numpy(input_data) -> dict[str, np.ndarray | list[str] | bool]
             record_data.append(row)
         result["records"] = np.array(record_data, dtype=object)
 
-    annotations = _annotations_to_numpy(
-        (frame, ann, p) for frame, ann in input_data.annotations for p in ann.points
-    )
-    for kind, arr in _legacy_region_arrays(annotations).items():
-        result[kind] = arr if len(result[kind]) == 0 else np.vstack([result[kind], arr])  # type: ignore[list-item]
-    result["annotations"] = annotations  # type: ignore[assignment]
+    result["structures"] = _structures_to_numpy(input_data.structures)  # type: ignore[assignment]
 
     return result
 
 
+def _reference_points_from_array(arr) -> list[PyContourPoint]:
+    """Reference points from ``(4,)``, ``(N, 4)`` or ``(N, 5)`` rows ``[frame, x, y, z(, auto)]``.
+
+    The optional fifth column (HolOrama's auto flag) is ignored. Two rows on one
+    frame raise ``ValueError``.
+    """
+    if arr is None:
+        return []
+    arr = np.asarray(arr, dtype=float)
+    if arr.size == 0:
+        return []
+    arr = np.atleast_2d(arr)
+    if arr.shape[1] < 4:
+        raise ValueError(
+            f"reference rows must be [frame_index, x, y, z], got shape {arr.shape}"
+        )
+    frames = arr[:, 0].astype(int)
+    if len(set(frames)) != len(frames):
+        raise ValueError("at most one reference point per frame")
+    return [
+        PyContourPoint(
+            frame_index=int(fr),
+            point_index=0,
+            x=float(x),
+            y=float(y),
+            z=float(z),
+            aortic=False,
+        )
+        for fr, x, y, z in arr[:, :4]
+    ]
+
+
 def numpy_to_inputdata(
     lumen_arr: np.ndarray,
-    ref_point: np.ndarray,
+    reference_points: np.ndarray,
     diastole: bool,
     record: np.ndarray | None = None,
     eem_arr: np.ndarray | None = None,
-    calcification: np.ndarray | None = None,
-    sidebranch: np.ndarray | None = None,
     label: str = "",
-    annotations: dict[tuple[str, str], np.ndarray] | None = None,
+    structures: dict[str, np.ndarray] | None = None,
+    master_reference: int | None = None,
 ) -> PyInputData:
     """
     Build a ``PyInputData`` from numpy arrays, grouping by frame index into frames.
@@ -282,32 +286,33 @@ def numpy_to_inputdata(
         ``(N, 4)`` array of lumen points ``[frame_index, x, y, z]``.
     record : np.ndarray, optional
         ``(M, 4)`` array of records ``[frame, phase, measurement_1, measurement_2]``.
-    ref_point : np.ndarray
-        ``(1, 4)`` or ``(4,)`` array ``[frame_index, x, y, z]`` for the reference point.
+    reference_points : np.ndarray
+        ``(N, 4)`` or ``(N, 5)`` array of rows ``[frame_index, x, y, z(, auto)]``,
+        at most one per frame, frame_index numbered as in ``lumen_arr``. A
+        ``(4,)`` array is one reference. The ``auto`` column is ignored.
     diastole : bool
         ``True`` if the data corresponds to the diastolic phase.
     eem_arr : np.ndarray, optional
         ``(N, 4)`` array of EEM points ``[frame_index, x, y, z]``.  Default is ``None``.
-    calcification : np.ndarray, optional
-        Deprecated. ``(N, 4)`` array of calcification points, converted to
-        one ``("calcification", "region")`` annotation per frame.
-        Default is ``None``.
-    sidebranch : np.ndarray, optional
-        Deprecated. ``(N, 4)`` array of side-branch points, converted to
-        one ``("sidebranch", "region")`` annotation per frame.
-        Default is ``None``.
     label : str, optional
         Label string for the input data.  Default is ``""``.
-    annotations : dict of (str, str) to np.ndarray, optional
-        Non-pipe per-frame points keyed by ``(kind, role)``, e.g.
-        ``("sidebranch", "region")`` or ``("fibrous_cap", "point")``, each an
-        ``(N, 5)`` array of rows ``[frame_index, group, x, y, z]`` with
-        frame_index numbered as in ``lumen_arr``. Kinds outside
-        ``PyAnnotation.known_kinds()`` are kept as custom kinds, roles must
-        be one of ``PyAnnotation.roles()``. Consecutive rows with the same
-        ``(frame_index, group)`` form one ``PyAnnotation``. Annotations only
-        follow the rigid transforms of their frame and are dropped (with a
-        warning) when their frame has no lumen.  Default is ``None``.
+    structures : dict of str to np.ndarray, optional
+        Drawn contours of in-wall structures and side branches, keyed by kind
+        (``"calcification"``, ``"lipid"``, ``"macrophage"``, ``"sidebranch"``
+        or a custom name such as ``"fibrous_cap"``). Each value is an array of
+        rows ``[frame_index, x, y, z]`` or ``[frame_index, x, y, z, contour,
+        closed]`` with frame_index numbered as in ``lumen_arr``. Rows with the
+        same ``(frame_index, contour)`` form one contour in row order,
+        ``contour`` defaults to 0 and ``closed`` (1 or 0) to 1. In-wall
+        contours must be closed, a side branch leaving the lumen is an open arc
+        with both ends on the lumen border. Building the geometry turns each
+        contour into a point cloud on its frame (closed contours jittered, open
+        arcs turned around their axis), contours whose frame has no lumen are
+        dropped with a warning.  Default is ``None``.
+    master_reference : int, optional
+        Frame index of the reference that aligns this geometry to other
+        geometries and to the CCTA centerline. Default ``None`` uses the most
+        proximal reference.
 
     Returns
     -------
@@ -432,34 +437,8 @@ def numpy_to_inputdata(
     # Convert arrays
     lumen_arr = _to_numeric_array(lumen_arr, "lumen_arr")
     eem_arr = _to_numeric_array(eem_arr, "eem_arr")
-    calcification_arr = _to_numeric_array(calcification, "calcification")
-    sidebranch_arr = _to_numeric_array(sidebranch, "sidebranch")
 
-    # Reference point: prefer provided ref_point, otherwise a default
-    global_ref = None
-    if ref_point is not None:
-        try:
-            ref_arr = np.asarray(ref_point)
-            if ref_arr.ndim == 1:
-                fr, x, y, z = ref_arr[:4]
-            else:
-                fr, x, y, z = ref_arr[0, :4]
-            global_ref = PyContourPoint(
-                frame_index=int(fr),
-                point_index=0,
-                x=float(x),
-                y=float(y),
-                z=float(z),
-                aortic=False,
-            )
-        except (TypeError, ValueError, IndexError):
-            global_ref = None
-
-    if global_ref is None:
-        # default fallback (required by PyInputData ctor)
-        global_ref = PyContourPoint(
-            frame_index=0, point_index=0, x=0.0, y=0.0, z=0.0, aortic=False
-        )
+    refs = _reference_points_from_array(reference_points)
 
     # Build lists of contours
     if lumen_arr.size == 0:
@@ -487,59 +466,44 @@ def numpy_to_inputdata(
     # Convert empty lists to None for optional fields like eem/record
     eem_final = eem_list if len(eem_list) > 0 else None
 
-    annotation_list = _annotations_from_arrays(annotations)
-    for kind, arr in (
-        ("sidebranch", sidebranch_arr),
-        ("calcification", calcification_arr),
-    ):
-        annotation_list.extend(_legacy_regions_from_array(kind, arr))
-
     return PyInputData(
         lumen=lumen_list,
         eem=eem_final,
-        calcification=None,
-        sidebranch=None,
         record=record_list,
-        ref_point=global_ref,
+        reference_points=refs,
         diastole=bool(diastole),
         label=label or "",
-        annotations=annotation_list,
+        structures=_structures_from_arrays(structures),
+        master_reference=master_reference,
     )
 
 
-def _annotations_from_arrays(
-    annotations: dict[tuple[str, str], np.ndarray] | None,
-) -> list[tuple[int, PyAnnotation]]:
-    """Group consecutive ``[frame, group, x, y, z]`` rows per ``(kind, role)``."""
-    out: list[tuple[int, PyAnnotation]] = []
-    for key, arr in (annotations or {}).items():
-        if not (isinstance(key, tuple) and len(key) == 2):
-            raise ValueError(
-                f"annotations keys must be (kind, role) tuples, got {key!r}"
-            )
-        kind, role = key
+def _structures_from_arrays(
+    structures: dict[str, np.ndarray] | None,
+) -> list[PyStructure]:
+    """``PyStructure`` per ``(kind, frame, contour)`` from ``[frame, x, y, z(, contour, closed)]`` rows."""
+    out: list[PyStructure] = []
+    for kind, arr in (structures or {}).items():
+        if not isinstance(kind, str):
+            raise TypeError(f"structures keys must be kind names, got {kind!r}")
         arr = np.asarray(arr, dtype=float)
         if arr.size == 0:
             continue
-        arr = arr.reshape(1, -1) if arr.ndim == 1 else arr
-        if arr.ndim != 2 or arr.shape[1] != 5:
+        arr = np.atleast_2d(arr)
+        if arr.shape[1] not in (4, 6):
             raise ValueError(
-                f"annotations[{key!r}] must have rows [frame, group, x, y, z], "
-                f"got shape {arr.shape}"
+                f"structures[{kind!r}] must have rows [frame, x, y, z] or "
+                f"[frame, x, y, z, contour, closed], got shape {arr.shape}"
             )
-        current = None
-        points: list[PyContourPoint] = []
-        for fr, grp, x, y, z in arr:
-            frame, group = int(fr), int(grp)
-            if (frame, group) != current:
-                if current is not None:
-                    out.append(
-                        (current[0], PyAnnotation(kind, role, current[1], points))
-                    )
-                current, points = (frame, group), []
+        if arr.shape[1] == 4:
+            arr = np.hstack([arr, np.zeros((len(arr), 1)), np.ones((len(arr), 1))])
+        groups: dict[tuple[int, int], tuple[bool, list[PyContourPoint]]] = {}
+        for fr, x, y, z, contour, closed in arr:
+            key = (int(fr), int(contour))
+            points = groups.setdefault(key, (bool(closed), []))[1]
             points.append(
                 PyContourPoint(
-                    frame_index=frame,
+                    frame_index=key[0],
                     point_index=len(points),
                     x=float(x),
                     y=float(y),
@@ -547,26 +511,8 @@ def _annotations_from_arrays(
                     aortic=False,
                 )
             )
-        if current is not None:
-            out.append((current[0], PyAnnotation(kind, role, current[1], points)))
+        out.extend(PyStructure(kind, pts, closed) for closed, pts in groups.values())
     return out
-
-
-def _legacy_regions_from_array(
-    kind: str, arr: np.ndarray
-) -> list[tuple[int, PyAnnotation]]:
-    """One region annotation per frame from a deprecated ``[frame, x, y, z]`` layer."""
-    if arr.size == 0:
-        return []
-    warnings.warn(
-        f"numpy_to_inputdata({kind}=...) is deprecated, pass "
-        f"annotations={{('{kind}', 'region'): rows}} instead",
-        DeprecationWarning,
-        stacklevel=3,
-    )
-    order = np.argsort(arr[:, 0].astype(int), kind="stable")
-    rows = np.column_stack([arr[order, 0], np.zeros(len(order)), arr[order, 1:4]])
-    return _annotations_from_arrays({(kind, "region"): rows})
 
 
 def numpy_to_geometry(
@@ -576,7 +522,8 @@ def numpy_to_geometry(
     wall_arr: np.ndarray | None = None,
     reference_arr: np.ndarray | None = None,
     label: str = "",
-    annotations: dict[tuple[str, str], np.ndarray] | None = None,
+    structures: dict[str, np.ndarray] | None = None,
+    master_reference: int | None = None,
 ) -> PyGeometry:
     """
     Build a ``PyGeometry`` from numpy arrays, grouping by frame index into frames.
@@ -594,15 +541,21 @@ def numpy_to_geometry(
     wall_arr : np.ndarray, optional
         ``(L, 4)`` array of wall points ``[frame_index, x, y, z]``.  Default is ``None``.
     reference_arr : np.ndarray, optional
-        ``(1, 4)`` or ``(4,)`` array ``[frame_index, x, y, z]`` for the reference point.
-        Default is ``None``.
+        ``(N, 4)`` or ``(N, 5)`` array of rows ``[frame_index, x, y, z(, auto)]``,
+        at most one per frame. Each goes to the frame whose lumen rows have the
+        same frame_index, others are dropped with a warning. A ``(4,)`` array is
+        one reference.  Default is ``None``.
     label : str, optional
         Label string for the geometry.  Default is ``""``.
-    annotations : dict of (str, str) to np.ndarray, optional
-        ``(kind, role)`` to ``[frame_index, group, x, y, z]`` rows, as returned
-        by ``to_array(geometry)["annotations"]``. Each annotation goes to the
-        frame whose lumen rows have the same frame_index, others are dropped
-        with a warning.  Default is ``None``.
+    structures : dict of str to np.ndarray, optional
+        Point clouds keyed by kind, rows ``[frame_index, x, y, z]`` or
+        ``[frame_index, x, y, z, contour, closed]`` as returned by
+        ``to_array(geometry)["structures"]``. Each goes to the frame whose
+        lumen rows have the same frame_index as is, no cloud is generated.
+        Others are dropped with a warning.  Default is ``None``.
+    master_reference : int, optional
+        Frame index of the master reference. Default ``None`` uses the most
+        proximal (first) reference.
 
     Returns
     -------
@@ -676,29 +629,13 @@ def numpy_to_geometry(
     eem_arr = _to_numeric_array(eem_arr, "eem_arr")
     catheter_arr = _to_numeric_array(catheter_arr, "catheter_arr")
     wall_arr = _to_numeric_array(wall_arr, "wall_arr")
-    reference_arr = _to_numeric_array(reference_arr, "reference_arr")
 
     if lumen_arr.size == 0:
         raise ValueError("lumen_arr cannot be empty")
 
-    # Handle reference array - always take the first valid reference point
-    global_reference = None
-    if reference_arr.size > 0:
-        # If 1D array, use it directly
-        if reference_arr.ndim == 1:
-            fr, x, y, z = reference_arr[:4]
-        else:
-            # If 2D array, take the first row
-            fr, x, y, z = reference_arr[0, :4]
-
-        global_reference = PyContourPoint(
-            frame_index=int(fr),
-            point_index=0,
-            x=float(x),
-            y=float(y),
-            z=float(z),
-            aortic=False,
-        )
+    frame_references = {
+        p.frame_index: p for p in _reference_points_from_array(reference_arr)
+    }
 
     # Get all unique frame indices from all arrays
     all_frames: set[int] = set()
@@ -706,9 +643,9 @@ def numpy_to_geometry(
         if arr.size > 0:
             all_frames.update(arr[:, 0].astype(int))
 
-    frame_annotations: dict[int, list[PyAnnotation]] = {}
-    for fr, ann in _annotations_from_arrays(annotations):
-        frame_annotations.setdefault(fr, []).append(ann)
+    frame_structures: dict[int, list[PyStructure]] = {}
+    for st in _structures_from_arrays(structures):
+        frame_structures.setdefault(st.points[0].frame_index, []).append(st)
 
     frames = []
     for frame_id in sorted(all_frames):
@@ -731,24 +668,26 @@ def numpy_to_geometry(
         if wall_contour:
             extras["Wall"] = wall_contour
 
-        # Use the global reference point for all frames
-        frame_reference = global_reference
-
         frame = PyFrame(
             id=frame_id,
             centroid=lumen_contour.centroid,
             lumen=lumen_contour,
             extras=extras,
-            reference_point=frame_reference,
-            annotations=frame_annotations.pop(frame_id, []),
+            reference_point=frame_references.pop(frame_id, None),
+            structures=frame_structures.pop(frame_id, []),
         )
         frames.append(frame)
 
-    if frame_annotations:
-        n = sum(len(v) for v in frame_annotations.values())
-        warnings.warn(f"dropped {n} annotation(s) whose frame has no lumen rows")
+    if frame_structures:
+        n = sum(len(v) for v in frame_structures.values())
+        warnings.warn(f"dropped {n} structure(s) whose frame has no lumen rows")
+    if frame_references:
+        warnings.warn(
+            f"dropped reference point(s) on frame(s) {sorted(frame_references)} "
+            "without lumen rows"
+        )
 
-    return PyGeometry(frames=frames, label=label)
+    return PyGeometry(frames=frames, label=label, master_reference=master_reference)
 
 
 def numpy_to_centerline(
@@ -838,12 +777,11 @@ def numpy_to_centerline(
 def array_to_pyinputdata(
     lumen=None,
     eem=None,
-    calcification=None,
-    sidebranch=None,
     records=None,
     reference=None,
     diastole: bool = True,
     label: str = "",
+    structures: dict[str, np.ndarray] | None = None,
 ) -> PyInputData:
     """
     Create a ``PyInputData`` from either ``Py*`` objects or NumPy arrays.
@@ -859,23 +797,22 @@ def array_to_pyinputdata(
         Lumen contours or ``(N, 4)`` array.  Default is ``None``.
     eem : list of PyContour or np.ndarray, optional
         EEM contours or ``(N, 4)`` array.  Default is ``None``.
-    calcification : list of PyContour or np.ndarray, optional
-        Deprecated. Calcification contours or ``(N, 4)`` array, converted to
-        region annotations.  Default is ``None``.
-    sidebranch : list of PyContour or np.ndarray, optional
-        Deprecated. Side-branch contours or ``(N, 4)`` array, converted to
-        region annotations.  Default is ``None``.
     records : list of PyRecord or np.ndarray, optional
         Records or ``(M, 4)`` array of ``(frame, phase, m1, m2)`` rows.
         Default is ``None``.
     reference : np.ndarray, optional
-        ``(1, 4)`` or ``(4,)`` array ``[frame_index, x, y, z]`` for the
-        reference point.  Default is ``None``.
+        ``(N, 4)`` or ``(N, 5)`` array of rows ``[frame_index, x, y, z(, auto)]``,
+        at most one per frame. A ``(4,)`` array is one reference.
+        Default is ``None``.
     diastole : bool, optional
         ``True`` if the data corresponds to the diastolic phase.
         Default is ``True``.
     label : str, optional
         Label string for the input data.  Default is ``""``.
+    structures : dict of str to np.ndarray, optional
+        Drawn structure contours keyed by kind, rows ``[frame_index, x, y, z]``
+        or ``[frame_index, x, y, z, contour, closed]``, see
+        :func:`numpy_to_inputdata`.  Default is ``None``.
 
     Returns
     -------
@@ -975,14 +912,6 @@ def array_to_pyinputdata(
 
     lumen_contours = ensure_contours(lumen, "Lumen")
     eem_contours = ensure_contours(eem, "Eem")
-    legacy_annotations: list[tuple[int, PyAnnotation]] = []
-    for kind, layer in (("sidebranch", sidebranch), ("calcification", calcification)):
-        contours = ensure_contours(layer, "Lumen")
-        rows = [(p.frame_index, p.x, p.y, p.z) for c in contours for p in c.points]
-        if rows:
-            legacy_annotations.extend(
-                _legacy_regions_from_array(kind, np.array(rows, dtype=float))
-            )
 
     def parse_records(recs):
         if recs is None:
@@ -1073,36 +1002,7 @@ def array_to_pyinputdata(
 
     parsed_records = parse_records(records)
 
-    def parse_reference(ref):
-        if ref is None:
-            return PyContourPoint(
-                frame_index=0, point_index=0, x=0.0, y=0.0, z=0.0, aortic=False
-            )
-        arr = np.asarray(ref)
-        if arr.ndim == 1:
-            if arr.shape[0] >= 4:
-                fr, x, y, z = arr[:4]
-            else:
-                raise ValueError("reference must be length 4 or shape (1,4)")
-        else:
-            if arr.shape[1] < 4:
-                raise ValueError("reference must be (N,4)-like")
-            nonzero = np.any(arr != 0, axis=1)
-            if np.any(nonzero):
-                row = arr[nonzero][0]
-            else:
-                row = arr[0]
-            fr, x, y, z = row[:4]
-        return PyContourPoint(
-            frame_index=int(fr),
-            point_index=0,
-            x=float(x),
-            y=float(y),
-            z=float(z),
-            aortic=False,
-        )
-
-    ref_point = parse_reference(reference)
+    refs = _reference_points_from_array(reference)
 
     def none_if_empty(lst):
         return None if not lst else lst
@@ -1110,13 +1010,11 @@ def array_to_pyinputdata(
     pyinput = PyInputData(
         lumen=lumen_contours,
         eem=none_if_empty(eem_contours),
-        calcification=None,
-        sidebranch=None,
         record=parsed_records,
-        ref_point=ref_point,
+        reference_points=refs,
         diastole=bool(diastole),
         label=str(label),
-        annotations=legacy_annotations,
+        structures=_structures_from_arrays(structures),
     )
 
     return pyinput
@@ -1244,3 +1142,80 @@ def geometry_to_trimesh(
         mesh.faces = mesh.faces[:, ::-1]
 
     return mesh
+
+
+def structure_to_trimesh(
+    geometry: PyGeometry,
+    kind: str,
+    link_distance: float = 1.0,
+) -> list[trimesh.Trimesh]:
+    """Meshes of one in-wall structure kind, one convex hull per cluster of its cloud.
+
+    The clouds of ``kind`` on all frames are pooled. Points closer than
+    ``link_distance`` are linked, every connected cluster becomes the convex hull
+    of its points. A hull fills concave shapes (e.g. a crescent of calcium), it
+    shows where and how large a structure is, not its exact outline.
+
+    Parameters
+    ----------
+    geometry : PyGeometry
+        Geometry whose frames carry the structure clouds.
+    kind : str
+        Structure kind, e.g. ``"calcification"``, ``"lipid"`` or a custom kind.
+        ``"calcium"`` is read as ``"calcification"``.
+    link_distance : float, optional
+        Largest distance in mm between two points of one cluster.
+        Default is ``1.0``.
+
+    Returns
+    -------
+    list of trimesh.Trimesh
+        One closed mesh per cluster. Clusters with fewer than four points or
+        lying in one plane are skipped.
+
+    Raises
+    ------
+    ValueError
+        If ``kind`` is ``"sidebranch"``, side branches are not meshed.
+    """
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
+    from scipy.spatial import QhullError, cKDTree
+
+    kind = PyStructure(kind).kind
+    if kind == "sidebranch":
+        raise ValueError("side branches are not meshed as closed structures")
+
+    pts = np.array(
+        [
+            (p.x, p.y, p.z)
+            for frame in geometry.frames
+            for st in frame.structures
+            if st.kind == kind
+            for p in st.points
+        ],
+        dtype=float,
+    ).reshape(-1, 3)
+    if len(pts) < 4:
+        return []
+
+    pairs = cKDTree(pts).query_pairs(link_distance, output_type="ndarray")
+    graph = coo_matrix(
+        (np.ones(len(pairs)), (pairs[:, 0], pairs[:, 1])), shape=(len(pts), len(pts))
+    )
+    n_clusters, labels = connected_components(graph, directed=False)
+
+    meshes = []
+    for c in range(n_clusters):
+        cluster = pts[labels == c]
+        if len(cluster) < 4:
+            continue
+        if np.linalg.svd(cluster - cluster.mean(axis=0), compute_uv=False)[-1] < 1e-9:
+            continue  # flat cluster, no volume
+        try:
+            hull = trimesh.convex.convex_hull(cluster)
+        except (QhullError, ValueError):
+            continue  # flat cluster
+        if hull.volume > 0:
+            meshes.append(hull)
+    return meshes

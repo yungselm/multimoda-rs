@@ -1,5 +1,5 @@
 use super::topology::{bits_key, build_adjacency_map, connected_components};
-use crate::types::native::Centerline;
+use crate::types::native::{Centerline, Spacing};
 use nalgebra::{Point3, Vector3};
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
@@ -84,7 +84,9 @@ pub fn remove_occluded_points_ray_triangle(
     // Callers must orient both centerlines before calling (`orient_by_max_z` for the
     // aorta, `orient_to_reference` for the coronary) — `.take(range_points)` below
     // assumes the proximal segment is arc-length-contiguous starting at index 0.
-    let spacing = (centerline_aorta.mean_spacing() + centerline_coronary.mean_spacing()) / 2.0;
+    let spacing = (centerline_aorta.median_spacing().unwrap_or(1.0)
+        + centerline_coronary.median_spacing().unwrap_or(1.0))
+        / 2.0;
     let step_cl_points = (step_size_mm / spacing).ceil() as usize;
     // range_mm is a physical length, not a point count, so it stays correct
     // regardless of how finely the centerline was resampled beforehand.

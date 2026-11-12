@@ -1,5 +1,4 @@
 use crate::types::native::contour::{Contour, ContourType};
-use crate::types::native::frame::Frame;
 use crate::types::native::geometry::Geometry;
 use crate::types::native::GeometryPair;
 use crate::types::native::{Centerline, ContourPoint};
@@ -86,12 +85,12 @@ pub fn align_three_point_rs<T: Processable>(
 
     let ref_idx = target
         .primary_geometry()
-        .find_ref_frame_idx()
+        .master_frame_idx()
         .map_err(|e| anyhow!("Couldn't find ref frame idx: {e:?}"))?;
     let ref_point = target.primary_geometry().frames[ref_idx]
         .reference_point
         .as_ref()
-        .ok_or_else(|| anyhow!("missing reference point"))?;
+        .ok_or_else(|| anyhow!("missing master reference point"))?;
 
     let total_rotation = best_rotation_three_point(
         &target.primary_geometry().frames[ref_idx].lumen,
@@ -206,13 +205,13 @@ pub fn align_combined_rs<T: Processable>(
 
     let ref_idx = original
         .primary_geometry()
-        .find_ref_frame_idx()
+        .master_frame_idx()
         .map_err(|e| anyhow!("Couldn't find ref frame idx: {e:?}"))?;
 
     let ref_point = original.primary_geometry().frames[ref_idx]
         .reference_point
         .as_ref()
-        .ok_or_else(|| anyhow!("missing reference point"))?;
+        .ok_or_else(|| anyhow!("missing master reference point"))?;
 
     let initial_rotation = best_rotation_three_point(
         &original.primary_geometry().frames[ref_idx].lumen,
@@ -343,30 +342,6 @@ fn wall_major_axis(wall: &Contour) -> Option<Vector3<f64>> {
     }
 }
 
-/// Lumen plane normal for `frame` via Newell's method.
-fn lumen_normal(frame: &Frame) -> Vector3<f64> {
-    let c = frame.centroid;
-    let pts = &frame.lumen.points;
-    if pts.len() < 3 {
-        return Vector3::new(0.0, 0.0, 1.0);
-    }
-    let n = pts.len();
-    let mut normal = Vector3::<f64>::zeros();
-    for i in 0..n {
-        let curr = &pts[i];
-        let next = &pts[(i + 1) % n];
-        normal.x += (curr.y - c.1) * (next.z - c.2) - (curr.z - c.2) * (next.y - c.1);
-        normal.y += (curr.z - c.2) * (next.x - c.0) - (curr.x - c.0) * (next.z - c.2);
-        normal.z += (curr.x - c.0) * (next.y - c.1) - (curr.y - c.1) * (next.x - c.0);
-    }
-    let norm = normal.norm();
-    if norm > 1e-12 {
-        normal / norm
-    } else {
-        Vector3::new(0.0, 0.0, 1.0)
-    }
-}
-
 /// Projects `v` onto the plane perpendicular to `tangent` and returns the normalised result.
 /// Returns `None` when the projection is degenerate (v nearly parallel to tangent).
 fn project_onto_plane_normalized(v: Vector3<f64>, tangent: Vector3<f64>) -> Option<Vector3<f64>> {
@@ -413,7 +388,7 @@ fn signed_angle_around_axis(from: Vector3<f64>, to: Vector3<f64>, axis: Vector3<
 /// All other contours (lumen, catheter, …) are left untouched.
 fn align_walls_on_geometry(geom: &mut Geometry) {
     let frame0 = &geom.frames[0];
-    let t0 = lumen_normal(frame0);
+    let t0 = frame0.lumen.normal();
 
     // Initialize the reference direction from frame 0's wall.
     let wall0 = match frame0.extras.get(&ContourType::Wall) {
@@ -428,8 +403,8 @@ fn align_walls_on_geometry(geom: &mut Geometry) {
     };
 
     for i in 1..geom.frames.len() {
-        let t_prev = lumen_normal(&geom.frames[i - 1]);
-        let t_curr = lumen_normal(&geom.frames[i]);
+        let t_prev = geom.frames[i - 1].lumen.normal();
+        let t_curr = geom.frames[i].lumen.normal();
 
         // Parallel-transport the reference direction into the current tangent plane.
         u = parallel_transport(u, t_prev, t_curr);

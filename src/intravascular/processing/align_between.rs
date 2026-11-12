@@ -4,7 +4,7 @@ use rayon::prelude::*;
 use crate::intravascular::processing::process_utils::{hausdorff_distance, search_range};
 use crate::types::native;
 use crate::types::native::geometry::Geometry;
-use crate::types::native::ContourPoint;
+use crate::types::native::{ContourPoint, Spacing};
 
 use crate::types::native::GeometryPair;
 
@@ -15,12 +15,12 @@ pub fn align_between_geometries(
     step_rot_deg: f64,
     sample_size: usize,
 ) -> Result<GeometryPair> {
-    // Find reference frames
+    // Master reference frames
     let ref_frame_a_idx = geom_a
-        .find_ref_frame_idx()
+        .master_frame_idx()
         .unwrap_or(geom_a.find_proximal_end_idx());
     let ref_frame_b_idx = geom_b
-        .find_ref_frame_idx()
+        .master_frame_idx()
         .unwrap_or(geom_b.find_proximal_end_idx());
 
     let ref_frame_a = &geom_a.frames[ref_frame_a_idx];
@@ -39,9 +39,13 @@ pub fn align_between_geometries(
     // Apply initial translation
     geom_b.translate_geometry(initial_translation);
 
-    // Extract points for alignment (after initial translation)
-    let test_geom_a = extract_geometry_points_with_frame_info(geom_a, sample_size.max(500));
-    let test_geom_b = extract_geometry_points_with_frame_info(geom_b, sample_size.max(500));
+    // Extract points for alignment (after initial translation), only where both geometries
+    // reach, frames beyond the other geometry's end have nothing to match against
+    let z_range = overlap_z_range(geom_a, geom_b);
+    let test_geom_a =
+        extract_geometry_points_with_frame_info(geom_a, sample_size.max(500), z_range);
+    let test_geom_b =
+        extract_geometry_points_with_frame_info(geom_b, sample_size.max(500), z_range);
 
     let best_rotation =
         find_best_rotation_between(&test_geom_a, &test_geom_b, step_rot_deg, rot_deg);
@@ -49,14 +53,7 @@ pub fn align_between_geometries(
     // Apply the rotation to the ENTIRE geometry around the reference frame A centroid
     rotate_geometry_around_point(geom_b, best_rotation, ref_frame_a_centroid);
 
-    // After rotation, recalculate and apply final translation to ensure perfect alignment
-    let ref_frame_a_idx = geom_a
-        .find_ref_frame_idx()
-        .unwrap_or(geom_a.find_proximal_end_idx());
-    let ref_frame_b_idx = geom_b
-        .find_ref_frame_idx()
-        .unwrap_or(geom_b.find_proximal_end_idx());
-
+    // After rotation, apply a final translation to ensure perfect alignment
     let final_ref_frame_b_centroid = geom_b.frames[ref_frame_b_idx].centroid;
     let final_ref_frame_a_centroid = geom_a.frames[ref_frame_a_idx].centroid;
     let final_translation = (
@@ -143,7 +140,7 @@ fn rotate_geometry_around_point(geometry: &mut Geometry, angle_rad: f64, center:
         }
 
         for point in frame
-            .annotations
+            .structures
             .iter_mut()
             .flat_map(|a| a.points.iter_mut())
         {
@@ -161,16 +158,50 @@ struct PointWithFrameInfo {
     pub _frame_centroid: (f64, f64, f64),
 }
 
+/// z range both geometries cover, widened by half a frame spacing on both sides so an end
+/// frame just outside still counts. `None` when they do not meet, then all frames are used.
+fn overlap_z_range(geom_a: &Geometry, geom_b: &Geometry) -> Option<(f64, f64)> {
+    let z_range = |g: &Geometry| {
+        g.frames
+            .iter()
+            .map(|f| f.centroid.2)
+            .fold(None, |acc: Option<(f64, f64)>, z| {
+                Some(acc.map_or((z, z), |(lo, hi)| (lo.min(z), hi.max(z))))
+            })
+    };
+    let (lo_a, hi_a) = z_range(geom_a)?;
+    let (lo_b, hi_b) = z_range(geom_b)?;
+    let half = 0.5
+        * geom_a
+            .median_spacing()
+            .unwrap_or(0.0)
+            .max(geom_b.median_spacing().unwrap_or(0.0));
+    let (lo, hi) = (lo_a.max(lo_b) - half, hi_a.min(hi_b) + half);
+    (lo <= hi).then_some((lo, hi))
+}
+
+/// Downsampled lumen points of the frames whose centroid z lies in `z_range` (all frames for
+/// `None`, or when no frame lies in it).
 fn extract_geometry_points_with_frame_info(
     geometry: &Geometry,
     sample_size: usize,
+    z_range: Option<(f64, f64)>,
 ) -> Vec<PointWithFrameInfo> {
-    let total_points: usize = geometry.frames.iter().map(|f| f.lumen.points.len()).sum();
+    let in_range = |z: f64| z_range.is_none_or(|(lo, hi)| (lo..=hi).contains(&z));
+    let mut frames: Vec<&native::Frame> = geometry
+        .frames
+        .iter()
+        .filter(|f| in_range(f.centroid.2))
+        .collect();
+    if frames.is_empty() {
+        frames = geometry.frames.iter().collect();
+    }
+    let total_points: usize = frames.iter().map(|f| f.lumen.points.len()).sum();
 
     let sample_ratio = sample_size as f64 / total_points as f64;
 
     let mut all_points = Vec::new();
-    for frame in &geometry.frames {
+    for frame in frames {
         let frame_sample_size = (frame.lumen.points.len() as f64 * sample_ratio).ceil() as usize;
         let sampled =
             native::downsample_contour_points(&frame.lumen.points, frame_sample_size.max(1));
@@ -286,20 +317,83 @@ mod align_between_tests {
 
     use super::*;
     use crate::intravascular::utils::test_utils::{
-        add_annotations_on_lumen, assert_annotations_on_lumen, dummy_geometry_aligned_long,
+        add_structures_on_lumen, assert_structures_on_lumen, dummy_geometry_aligned_long,
+        dummy_geometry_custom,
     };
 
     #[test]
-    fn test_align_between_moves_annotations_with_lumen() -> anyhow::Result<()> {
+    fn test_align_between_moves_structures_with_lumen() -> anyhow::Result<()> {
         let mut geom_a = dummy_geometry_aligned_long();
         let mut geom_b = dummy_geometry_aligned_long();
         geom_b.rotate_geometry(15f64.to_radians());
         geom_b.translate_geometry((0.4, -0.3, 0.2));
-        add_annotations_on_lumen(&mut geom_b);
+        add_structures_on_lumen(&mut geom_b);
 
         let geom_pair = align_between_geometries(&mut geom_a, &mut geom_b, 30.0, 0.01, 6)?;
 
-        assert_annotations_on_lumen(&geom_pair.geom_b, 2);
+        assert_structures_on_lumen(&geom_pair.geom_b, 2);
+        Ok(())
+    }
+
+    #[test]
+    fn test_align_between_matches_the_masters() -> anyhow::Result<()> {
+        // A's master on its frame 1, B's on its frame 3: B moves so they coincide
+        let mut geom_a = dummy_geometry_custom(1.0, 6);
+        let mut geom_b = dummy_geometry_custom(1.0, 6);
+        for geom in [&mut geom_a, &mut geom_b] {
+            for (i, frame) in geom.frames.iter_mut().enumerate() {
+                frame.reference_point = Some(ContourPoint {
+                    frame_index: i as u32,
+                    point_index: 0,
+                    x: 3.0,
+                    y: 1.0,
+                    z: frame.centroid.2,
+                    aortic: false,
+                });
+            }
+        }
+        geom_a.set_master_reference(1)?;
+        geom_b.set_master_reference(3)?;
+        geom_b.translate_geometry((0.5, -0.5, 0.0));
+
+        let pair = align_between_geometries(&mut geom_a, &mut geom_b, 30.0, 1.0, 6)?;
+
+        let ca = pair.geom_a.frames[1].centroid;
+        let cb = pair.geom_b.frames[3].centroid;
+        assert_relative_eq!(ca.0, cb.0, epsilon = 1e-6);
+        assert_relative_eq!(ca.1, cb.1, epsilon = 1e-6);
+        assert_relative_eq!(ca.2, cb.2, epsilon = 1e-6);
+        assert_eq!(pair.overlap()?, (0..4, 2..6));
+        Ok(())
+    }
+
+    #[test]
+    fn test_rotation_search_only_uses_the_overlap() -> anyhow::Result<()> {
+        use crate::types::native::Transform;
+
+        // A: 4 frames, master at 2. B: 10 frames, master at 5, so after the masters meet
+        // B's frames 0..=1 and 8..=9 lie beyond A's ends
+        let mut geom_a = dummy_geometry_custom(1.0, 4);
+        let mut geom_b = dummy_geometry_custom(1.0, 10);
+        // B is turned by 15 degrees where it faces A and by 70 degrees beyond
+        for (i, frame) in geom_b.frames.iter_mut().enumerate() {
+            let deg: f64 = if (2..=7).contains(&i) { 15.0 } else { 70.0 };
+            let c = (frame.centroid.0, frame.centroid.1);
+            frame.rotate_mut(deg.to_radians(), c);
+        }
+
+        let pair = align_between_geometries(&mut geom_a, &mut geom_b, 90.0, 0.5, 500)?;
+
+        // the facing frames are turned back onto A
+        let (a, b) = (&pair.geom_a.frames[2], &pair.geom_b.frames[5]);
+        for (pa, pb) in a.lumen.points.iter().zip(&b.lumen.points) {
+            assert!(
+                (pa.x - pb.x).abs() < 0.05 && (pa.y - pb.y).abs() < 0.05,
+                "{pa:?} vs {pb:?}"
+            );
+        }
+        // the geometries keep every frame
+        assert_eq!(pair.geom_b.frames.len(), 10);
         Ok(())
     }
 

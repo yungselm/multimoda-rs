@@ -7,6 +7,7 @@ Converters
 .. autofunction:: multimodars._converters.numpy_to_centerline
 .. autofunction:: multimodars._converters.array_to_pyinputdata
 .. autofunction:: multimodars._converters.geometry_to_frames_array
+.. autofunction:: multimodars._converters.structure_to_trimesh
 
 VTP Reader and Writer
 ---------------------

@@ -78,13 +78,14 @@ def test_to_array_and_back_contour():
         lumen_arr=arr,
         catheter_arr=np.zeros((0, 4)),
         wall_arr=np.zeros((0, 4)),
-        reference_arr=np.array([[0.0, 0.0, 0.0, 0.0]]),
+        reference_arr=np.array([[7.0, 0.0, 0.0, 0.0]]),
     )
 
     # Check we have frames with contours
     assert len(rebuilt.frames) > 0
     frame = rebuilt.frames[0]
     assert len(frame.lumen.points) == 3
+    assert frame.reference_point is not None
 
     pts = frame.lumen.points
     for orig, new in zip(c.points, pts):
@@ -163,12 +164,9 @@ def test_numpy_to_inputdata_roundtrip():
     # Convert to arrays and combine for lumen
     lumen_arr = np.vstack([to_array(c0), to_array(c1)])
 
-    # Provide an EEM only for frame 0 and a sidebranch only for frame 1
+    # Provide an EEM only for frame 0 and a side branch only for frame 1
     eem_arr = to_array(c0)  # only frame 0 present
     sidebranch_arr = to_array(c1)  # only frame 1 present
-
-    # Empty calcification array
-    calc_arr = np.zeros((0, 4))
 
     # Create a structured record array: (frame, phase, m1, m2)
     rec_dtype = np.dtype([("frame", "i4"), ("phase", "U1"), ("m1", "f8"), ("m2", "f8")])
@@ -177,29 +175,24 @@ def test_numpy_to_inputdata_roundtrip():
     # Reference point (global)
     reference_arr = np.array([[0, 100.0, 101.0, 102.0]])
 
-    # Call converter, sidebranch= is deprecated and becomes a region annotation
-    with pytest.warns(DeprecationWarning):
-        inp = numpy_to_inputdata(
-            lumen_arr=lumen_arr,
-            eem_arr=eem_arr,
-            calcification=calc_arr,
-            sidebranch=sidebranch_arr,
-            record=records,
-            ref_point=reference_arr,
-            diastole=True,
-            label="test_label",
-        )
+    inp = numpy_to_inputdata(
+        lumen_arr=lumen_arr,
+        eem_arr=eem_arr,
+        structures={"sidebranch": sidebranch_arr, "calcification": np.zeros((0, 4))},
+        record=records,
+        reference_points=reference_arr,
+        diastole=True,
+        label="test_label",
+    )
 
     # Basic structure checks
     assert hasattr(inp, "lumen")
     assert len(inp.lumen) == 2  # two frames from lumen
 
-    # eem present (1), calcification empty -> nothing, sidebranch -> one region annotation
+    # eem present (1), calcification empty -> nothing, side branch -> one structure
     assert inp.eem is not None and len(inp.eem) == 1
-    assert inp.calcification is None
-    assert inp.sidebranch is None
-    assert [(f, a.kind, a.role, len(a)) for f, a in inp.annotations] == [
-        (1, "sidebranch", "region", 3)
+    assert [(s.kind, s.points[0].frame_index, len(s)) for s in inp.structures] == [
+        ("sidebranch", 1, 3)
     ]
 
     # Records parsed
@@ -211,9 +204,9 @@ def test_numpy_to_inputdata_roundtrip():
     assert r0.phase in ("D", "d", "0", "D")  # accept 'D' (string) mapping variants
 
     # Reference point, diastole and label
-    assert pytest.approx(inp.ref_point.x) == 100.0
-    assert pytest.approx(inp.ref_point.y) == 101.0
-    assert pytest.approx(inp.ref_point.z) == 102.0
+    assert len(inp.reference_points) == 1
+    ref = inp.reference_points[0]
+    assert (ref.x, ref.y, ref.z) == pytest.approx((100.0, 101.0, 102.0))
     assert inp.diastole is True
     assert inp.label == "test_label"
 

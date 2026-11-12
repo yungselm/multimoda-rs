@@ -20,13 +20,17 @@ pub fn process_case(
 ) -> anyhow::Result<GeometryPair> {
     std::fs::create_dir_all(output_dir)?;
 
-    let geom_a = geometries.geom_a;
-    let geom_b = geometries.geom_b;
+    // Interpolation and displacements match frames by index, so only the overlap is written
+    let facing = geometries.overlapping()?;
 
     // Interpolate between two geometries by creating new geometries with coordinates
     // in between the two geometries.
-    let interpolated_geometries =
-        interpolate_contours(&geom_a, &geom_b, interpolation_steps, contour_types)?;
+    let interpolated_geometries = interpolate_contours(
+        &facing.geom_a,
+        &facing.geom_b,
+        interpolation_steps,
+        contour_types,
+    )?;
 
     // Use the new write_mtl_geometry that returns a HashMap
     let uv_coords_map = write_mtl_geometry(
@@ -53,12 +57,7 @@ pub fn process_case(
         }
     }
 
-    let label = geometries.label.clone();
-    Ok(GeometryPair {
-        geom_a,
-        geom_b,
-        label,
-    })
+    Ok(geometries)
 }
 
 /// Writes a single [`Geometry`] to OBJ files (one per contour type) without interpolation or UV textures.
