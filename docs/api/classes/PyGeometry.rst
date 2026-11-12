@@ -9,4 +9,4 @@ PyGeometry
    :undoc-members:
    :show-inheritance:
    :inherited-members:
-   :exclude-members: frames, label
+   :exclude-members: frames, label, master_reference

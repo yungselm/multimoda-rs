@@ -3,6 +3,51 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.12.0] - 2026-11-12
+
+### Added
+- Several reference points per geometry: every row of `{phase}_reference_points.csv`
+  (`frame, x, y, z[, auto]`, `auto` ignored) is stored on its frame and moves with it.
+- Master reference: `PyGeometry.master_reference` (original frame, default the most proximal
+  reference) aligns the geometry to others and to the CCTA centerline. Set it per geometry with
+  `master_references=[...]` on all `from_file_*` / `from_array_*` functions, or on
+  `PyInputData` and the numpy converters. `PyGeometry.reference_frames()` lists all references.
+- `PyGeometryPair.overlap()` / `overlapping()` (frames facing each other, matched on the masters)
+  and `set_master_references(master_a, master_b, ...)`, which re-runs the alignment between the
+  geometries around new masters.
+- Structures as point clouds on their frame (`PyFrame.structures`, `PyStructure(kind, points,
+  closed)`), read from `{type}_{phase}_contours.csv` (`frame, x, y, z[, contour, closed]`) or
+  `numpy_to_inputdata(structures={kind: rows})`. Closed in-wall contours (calcium, lipid,
+  macrophage, custom) get a deterministic jittered cloud (4 copies per point, sigma 0.05 mm,
+  ±half the frame spacing in z). Open side-branch arcs are turned around their own axis, the
+  in-plane line from the lumen centroid to the middle of the arc. Frames dropped by resampling
+  hand their structures and references to the frame nearest in z. `to_array(...)["structures"]`
+  returns the same rows.
+- `structure_to_trimesh(geometry, kind)`: on request, one convex hull per cluster of an in-wall
+  cloud.
+
+### Changed (breaking)
+- Pairs are no longer trimmed. Summary, OBJ export and wall adjustment use the overlap, code that
+  pairs `geom_a.frames[i]` with `geom_b.frames[i]` should use `overlapping()`.
+- `PyInputData(lumen, eem, record, reference_points, diastole, label, structures=[],
+  master_reference=None)` and `numpy_to_inputdata(..., reference_points, ...)`: `ref_point` is
+  now a list of references.
+- `numpy_to_geometry(reference_arr=...)` puts each reference on its own frame instead of copying
+  one to all frames.
+
+### Removed
+- Annotations (`PyAnnotation`, `annotations` everywhere, `{phase}_annotations.csv`), replaced by
+  structures.
+- The deprecated `calcification` / `sidebranch` arguments, `to_array` keys and `PyFrame.extras`
+  keys.
+
+### Fixed
+- `rotate_frame_around_point` now rotates the reference point.
+- In-pullback alignment used a stale reference index after hole filling, inserted frames copied
+  a neighbour's reference.
+- Pair resampling corrected the masters' z with wrong indices and the wrong sign, and the
+  sample-rate check ignored the sign of the difference.
+
 ## [0.11.0] - 2026-11-11
 
 ### Added

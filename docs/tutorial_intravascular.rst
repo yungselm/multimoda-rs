@@ -106,36 +106,51 @@ Column descriptions:
   plus the pullback depth z). Providing pixel values instead of physical coordinates will
   produce incorrect area and distance measurements downstream.
 
-Optionally, structures that are not pipes (side branches, calcifications, lipid, macrophages,
-landmarks, ...) can be provided as *annotations* in ``diastolic_annotations.csv`` /
-``systolic_annotations.csv`` next to the contour files. They use the same delimiter, units and
-frame numbering as the contours, a header is optional:
+The reference points file may hold several references, one row per frame, with an optional
+header. Every reference is stored on its frame (:attr:`PyFrame.reference_point`) and moves with it. One of
+them is the *master reference* of the geometry (:attr:`PyGeometry.master_reference`, its
+original frame number). The master aligns diastole and systole (or rest and stress) to each
+other and places the pullback on the CCTA centerline. By default it is the most proximal
+reference, ``master_references=[...]`` on the ``from_file_*`` and ``from_array_*`` functions
+picks another one per geometry (one entry per geometry in the order of ``labels``, ``None``
+keeps the default).
 
-+-------+--------------+----------+-------+--------+--------+---------+
-| frame | kind         | role     | group | x (mm) | y (mm) | z (mm)  |
-+=======+==============+==========+=======+========+========+=========+
-| 771   | sidebranch   | region   | 0     | 2.4862 | 6.7096 | 24.5370 |
-+-------+--------------+----------+-------+--------+--------+---------+
-| 771   | sidebranch   | region   | 0     | 2.5118 | 6.7017 | 24.5370 |
-+-------+--------------+----------+-------+--------+--------+---------+
-| 771   | calcification| landmark | 0     | 3.1020 | 5.9001 | 24.5370 |
-+-------+--------------+----------+-------+--------+--------+---------+
+Optionally, structures that are not pipes are read from one file per type,
+``{type}_diastolic_contours.csv`` / ``{type}_systolic_contours.csv``, next to the contour
+files. The type comes from the file name: ``calcium`` (or ``calcification``), ``lipid``,
+``macrophage``, ``branch`` (or ``sidebranch``) or any other name, which is kept as a custom
+type (e.g. ``fibrous_cap_diastolic_contours.csv``). The files have no header and use the same
+delimiter, units and frame numbering as the contours, with two optional columns:
 
-- **kind** — ``sidebranch``, ``calcification``, ``lipid``, ``macrophage``, ``reference`` or any
-  other name (kept as a custom kind).
-- **role** — ``region``, ``landmark``, ``axis_tip``, ``diameter_end`` or ``point``.
-- **group** — distinguishes several annotations of the same kind and role in one frame.
++-------+--------+--------+---------+---------+--------+
+| frame | x (mm) | y (mm) | z (mm)  | contour | closed |
++=======+========+========+=========+=========+========+
+| 771   | 2.4862 | 6.7096 | 24.5370 | 0       | 1      |
++-------+--------+--------+---------+---------+--------+
+| 771   | 2.5118 | 6.7017 | 24.5370 | 0       | 1      |
++-------+--------+--------+---------+---------+--------+
+| 771   | 3.1020 | 5.9001 | 24.5370 | 1       | 1      |
++-------+--------+--------+---------+---------+--------+
 
-Consecutive rows with the same ``(frame, kind, role, group)`` form one annotation. Annotations
-follow every rigid transform of their frame (alignment within and between pullbacks, centerline
-alignment), but are never sorted, smoothed, interpolated, meshed or used for alignment scoring.
-Annotations whose frame has no lumen contour are dropped with a warning.
+- **contour** — index of the contour within its frame, so one frame can hold several contours
+  of one type. Default 0.
+- **closed** — 1 for a closed contour, 0 for an open arc. Default 1.
 
-.. note::
+Rows with the same ``(frame, contour)`` form one contour in file order. When the geometry is
+built, every contour becomes a point cloud on its frame (:class:`PyStructure` in
+:attr:`PyFrame.structures`):
 
-    The old ``branch_*`` / ``sidebranch_*`` and ``calcium_*`` / ``calcification_*`` contour files
-    are still read as ``region`` annotations of the matching kind, but are deprecated and will be
-    removed in the next release.
+- **In-wall structures** (calcium, lipid, macrophages, custom types) must be closed contours.
+  They are kept with a few jittered copies of every point, spread over half the frame spacing
+  in z on both sides. :func:`multimodars.structure_to_trimesh` turns the cloud of one type into
+  meshes on request (one convex hull per connected cluster).
+- **Side branches** leaving the vessel are open arcs with both ends on the lumen border. The
+  arc is turned around its own axis, the in-plane line from the lumen centroid to the middle
+  of the arc, which gives a dome marking where the branch leaves. Side branches are not meshed.
+
+The clouds follow every rigid transform of their frame (alignment within and between
+pullbacks, centerline alignment), but are never sorted, smoothed, interpolated or used for
+alignment scoring. Contours whose frame has no lumen contour are dropped with a warning.
 
 Optionally a record file can be provided `combined_sorted_manual.csv`, which should have the following structure, here the first column should contain the desired frame order and "measurement_1"
 represent the thickness of the wall between aorta and coronary and "measurement_2" for the thickness between pulmonary artery and coronary (position just for demonstration) (see :numref:`fig-dataprep`). This is based on the
@@ -188,6 +203,18 @@ The workflow can also be simplified by leaving the default values and only provi
         output_path="output/rest",
     )
 
+A geometry pair keeps every frame of both geometries. Frames face each other by their offset
+from the two master references, :meth:`PyGeometryPair.overlap` returns the facing index
+ranges and :meth:`PyGeometryPair.overlapping` a copy cut to them. The pair summary and the
+OBJ export only use the overlap. A different master on a finished pair re-runs the alignment
+between the two geometries, before aligning the pair to a CCTA centerline:
+
+.. code-block:: python
+
+    print(rest.geom_a.reference_frames(), rest.geom_a.master_reference)
+    rest.set_master_references(master_a=347, master_b=279)
+    (start_a, stop_a), (start_b, stop_b) = rest.overlap()
+
 3. Workflow numpy arrays
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -205,16 +232,19 @@ The workflow can also be simplified by leaving the default values and only provi
 
 To call :func:`multimodars.from_array_full`, :func:`multimodars.from_array_doublepair`,
 :func:`multimodars.from_array_singlepair` or :func:`multimodars.from_array_single` the
-contours and reference point must be packed into a :class:`multimodars.PyInputData` object
+contours and reference points must be packed into a :class:`multimodars.PyInputData` object
 first using :func:`multimodars.numpy_to_inputdata`. We assume that ``before_arr``,
 ``after_arr``, ``before_ref`` and ``after_ref`` are all numpy arrays of shape ``(N, 4)``
-(same column order as the CSV files: frame index, x in mm, y in mm, z in mm):
+(same column order as the CSV files: frame index, x in mm, y in mm, z in mm). The reference
+arrays may hold several rows, at most one per frame. Structures are passed as
+``structures={"calcification": rows, "sidebranch": rows}`` with the same columns as the
+structure files:
 
 .. code-block:: python
 
     before_input_data = mm.numpy_to_inputdata(
         lumen_arr=before_arr,
-        ref_point=before_ref,
+        reference_points=before_ref,
         record=None,
         diastole=True,
         label="prestent",
@@ -222,7 +252,7 @@ first using :func:`multimodars.numpy_to_inputdata`. We assume that ``before_arr`
 
     after_input_data = mm.numpy_to_inputdata(
         lumen_arr=after_arr,
-        ref_point=after_ref,
+        reference_points=after_ref,
         record=None,
         diastole=True,
         label="poststent",
@@ -433,12 +463,11 @@ input type:
 
 - :class:`multimodars.PyFrame` or :class:`multimodars.PyGeometry` → ``dict[str, np.ndarray]``
   with keys ``"lumen"``, ``"eem"``, ``"catheter"``, ``"wall"``, ``"reference"`` and
-  ``"annotations"``.  Each contour value is a ``(M, 4)`` array of
-  ``(frame_index, x, y, z)`` rows.  The ``"reference"`` entry is ``(1, 4)`` when a
-  reference point exists, or ``(0, 4)`` when absent.  ``"annotations"`` is a
-  ``dict[(kind, role), np.ndarray]`` with ``(frame_index, group, x, y, z)`` rows.
-  The deprecated keys ``"calcification"`` and ``"sidebranch"`` are still filled from the
-  ``region`` annotations of those kinds.
+  ``"structures"``.  Each contour value is a ``(M, 4)`` array of
+  ``(frame_index, x, y, z)`` rows.  The ``"reference"`` entry holds one row per reference
+  point with its original frame number, ``(0, 4)`` when there is none.  ``"structures"`` is a
+  ``dict[kind, np.ndarray]`` with ``(frame_index, x, y, z, contour, closed)`` rows of the
+  point clouds.
 
 - :class:`multimodars.PyGeometryPair` → ``tuple[dict, dict]``, one dictionary per
   geometry (``geom_a`` first, ``geom_b`` second), each in the same format as described
@@ -462,10 +491,9 @@ When you already have aligned contour data as numpy arrays and want to construct
         eem_arr=eem_np,              # (N, 4) optional
         catheter_arr=catheter_np,    # (N, 4) optional
         wall_arr=wall_np,            # (N, 4) optional
-        reference_arr=ref_np,        # (1, 4) or (4,) optional
-        annotations={                # optional, rows: frame_index, group, x, y, z
-            ("sidebranch", "region"): sidebranch_np,
-            ("calcification", "landmark"): calc_tips_np,
+        reference_arr=ref_np,        # (N, 4) optional, one row per reference
+        structures={                 # optional, rows: frame_index, x, y, z[, contour, closed]
+            "calcification": calc_cloud_np,
         },
         label="my_geometry",
     )
@@ -473,7 +501,8 @@ When you already have aligned contour data as numpy arrays and want to construct
 Rows with the same ``frame_index`` are grouped into a single :class:`PyFrame`.
 The only required argument is ``lumen_arr``; all other layers are optional and
 default to ``None`` (i.e. omitted from the resulting frames).
-:func:`multimodars.numpy_to_inputdata` takes the same ``annotations`` argument.
+:func:`multimodars.numpy_to_geometry` attaches the structure points as they are, while
+:func:`multimodars.numpy_to_inputdata` takes drawn contours and builds the clouds.
 
 7. Class methods
 ^^^^^^^^^^^^^^^^^
@@ -535,15 +564,15 @@ To write a modified contour back into a geometry, construct a new :class:`PyFram
         lumen=new_lumen,
         extras=old_frame.extras,
         reference_point=old_frame.reference_point,
-        annotations=old_frame.annotations,
+        structures=old_frame.structures,
     )
     geometry = geometry.replace_frame(2, new_frame)
 
 PyFrame
 """""""
 :class:`PyFrame` aggregates the lumen contour, optional extra layers, the reference
-point and the annotations (:class:`PyAnnotation`) for a single imaging position.
-Rotations and translations also move the annotations; sorting leaves them untouched.  Its transformation methods mirror those of
+point and the structures (:class:`PyStructure`) for a single imaging position.
+Rotations and translations also move the structures; sorting leaves them untouched.  Its transformation methods mirror those of
 :class:`PyContour` and all return a **new** frame:
 
 .. code-block:: python
