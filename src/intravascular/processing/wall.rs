@@ -26,7 +26,7 @@ pub fn create_wall_frames(frames: &[Frame], anomalous: bool, with_pulmonary: boo
             lumen: frame.lumen.clone(),
             extras: new_extras,
             reference_point: frame.reference_point,
-            annotations: frame.annotations.clone(),
+            structures: frame.structures.clone(),
         };
         new_frames.push(new_frame)
     }

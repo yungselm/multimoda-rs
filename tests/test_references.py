@@ -53,8 +53,12 @@ def test_every_reference_is_stored_and_the_master_is_proximal(rest_dir: Path):
     # the most proximal reference is the default master
     assert pair.geom_a.master_reference == 385
     assert pair.geom_b.master_reference == 319
-    for geom in (pair.geom_a, pair.geom_b):
+    # before resampling every reference sits on its own original frame, resampling can
+    # move one onto the nearest blended frame
+    raw = _pair(rest_dir, postprocessing=False)
+    for geom in (raw.geom_a, raw.geom_b):
         refs = [f for f in geom.frames if f.reference_point is not None]
+        assert len(refs) == 2
         assert all(
             f.reference_point.frame_index == f.lumen.original_frame for f in refs
         )

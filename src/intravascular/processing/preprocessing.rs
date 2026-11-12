@@ -279,7 +279,7 @@ mod preprocessing_tests {
             master_reference: None,
             diastole,
             label: label.to_string(),
-            annotations: Vec::new(),
+            structures: Vec::new(),
         }
     }
 

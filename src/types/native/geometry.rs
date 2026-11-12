@@ -181,8 +181,8 @@ impl Geometry {
                 rp.z = z_value;
             }
 
-            frame.set_annotation_frame_index(new_id);
-            frame.set_annotation_z(z_value);
+            frame.set_structure_frame_index(new_id);
+            frame.shift_structures_to_z(z_value);
 
             frame.centroid.2 = z_value;
         }
@@ -359,7 +359,7 @@ impl Geometry {
                     point.frame_index = new_id;
                 }
             }
-            frame.set_annotation_frame_index(new_id);
+            frame.set_structure_frame_index(new_id);
         }
     }
 
@@ -395,6 +395,7 @@ impl Geometry {
             frame.id = new_frame_id;
 
             let assigned_z = zs.get(idx).copied().unwrap_or(frame.centroid.2);
+            frame.shift_structures_to_z(assigned_z);
             frame.centroid.2 = assigned_z;
 
             frame.lumen.id = next_contour_id;
@@ -422,7 +423,6 @@ impl Geometry {
             if let Some(ref mut rp) = frame.reference_point {
                 rp.z = assigned_z;
             }
-            frame.set_annotation_z(assigned_z);
         }
     }
 
@@ -565,7 +565,7 @@ mod geometry_tests {
                 },
                 extras: HashMap::new(),
                 reference_point: None,
-                annotations: Vec::new(),
+                structures: Vec::new(),
             },
             Frame {
                 id: 1,
@@ -588,7 +588,7 @@ mod geometry_tests {
                     z: 2.0,
                     aortic: false,
                 }),
-                annotations: Vec::new(),
+                structures: Vec::new(),
             },
             Frame {
                 id: 2,
@@ -604,7 +604,7 @@ mod geometry_tests {
                 },
                 extras: HashMap::new(),
                 reference_point: None,
-                annotations: Vec::new(),
+                structures: Vec::new(),
             },
         ];
 
@@ -657,7 +657,7 @@ mod geometry_tests {
                 z: 0.0,
                 aortic: false,
             }),
-            annotations: Vec::new(),
+            structures: Vec::new(),
         };
         let mut geom = Geometry {
             frames: vec![
@@ -701,7 +701,7 @@ mod geometry_tests {
                 },
                 extras: HashMap::new(),
                 reference_point: None,
-                annotations: Vec::new(),
+                structures: Vec::new(),
             },
             Frame {
                 id: 1,
@@ -724,7 +724,7 @@ mod geometry_tests {
                     z: 2.0,
                     aortic: false,
                 }),
-                annotations: Vec::new(),
+                structures: Vec::new(),
             },
             Frame {
                 id: 2,
@@ -740,7 +740,7 @@ mod geometry_tests {
                 },
                 extras: HashMap::new(),
                 reference_point: None,
-                annotations: Vec::new(),
+                structures: Vec::new(),
             },
         ];
         let mut geom = Geometry {
@@ -829,7 +829,7 @@ mod geometry_tests {
                 },
                 extras: HashMap::new(),
                 reference_point: None,
-                annotations: Vec::new(),
+                structures: Vec::new(),
             }
         };
         let mut geom = Geometry {
@@ -917,7 +917,7 @@ mod geometry_tests {
             lumen: lumen0,
             extras: HashMap::new(),
             reference_point: None,
-            annotations: Vec::new(),
+            structures: Vec::new(),
         };
 
         // Frame 1: Square with edge length 1, centered at (0,0)
@@ -973,7 +973,7 @@ mod geometry_tests {
             lumen: lumen1,
             extras: HashMap::new(),
             reference_point: None,
-            annotations: Vec::new(),
+            structures: Vec::new(),
         };
 
         // Frame 2: Square with edge length 2, centered at (0,0) - same as frame 0
@@ -1029,7 +1029,7 @@ mod geometry_tests {
             lumen: lumen2,
             extras: HashMap::new(),
             reference_point: None,
-            annotations: Vec::new(),
+            structures: Vec::new(),
         };
 
         frames.push(frame0);
@@ -1247,7 +1247,7 @@ mod geometry_tests {
             lumen,
             extras,
             reference_point: None,
-            annotations: Vec::new(),
+            structures: Vec::new(),
         };
 
         frames.push(frame);
@@ -1402,7 +1402,7 @@ mod geometry_tests {
                 lumen,
                 extras,
                 reference_point: None,
-                annotations: Vec::new(),
+                structures: Vec::new(),
             };
 
             frames.push(frame);

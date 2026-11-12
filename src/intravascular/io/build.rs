@@ -1,9 +1,9 @@
 use super::input::{default_names, InputData};
-use crate::types::native::annotation::Annotation;
 use crate::types::native::contour::{Contour, ContourType};
 use crate::types::native::contour_point::ContourPoint;
 use crate::types::native::frame::Frame;
 use crate::types::native::geometry::Geometry;
+use crate::types::native::structure::{jitter_cloud, CloudParams, Structure, StructureKind};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -74,7 +74,7 @@ pub fn build_geometry_from_inputdata(
             lumen: contour,
             extras: HashMap::new(),
             reference_point: None,
-            annotations: Vec::new(),
+            structures: Vec::new(),
         };
         frame.reference_point = input_data
             .reference_points
@@ -100,8 +100,6 @@ pub fn build_geometry_from_inputdata(
             frame.extras.insert(ContourType::Eem, contour);
         }
     }
-
-    attach_annotations(&mut frame_map, input_data.annotations, &frame_mapping);
 
     if n_points > 0 {
         let all_points: Vec<ContourPoint> = frame_map
@@ -157,6 +155,13 @@ pub fn build_geometry_from_inputdata(
         None => geometry.master_reference = geometry.reference_frames().first().copied(),
     }
 
+    // frame order and z are final, the clouds are generated around them
+    add_structure_clouds(
+        &mut geometry,
+        input_data.structures,
+        &CloudParams::default(),
+    )?;
+
     super::integrity_check::check_geometry_integrity(&geometry)?;
 
     let from_path = path.is_some();
@@ -165,27 +170,82 @@ pub fn build_geometry_from_inputdata(
     Ok(geometry)
 }
 
-/// Attaches each annotation to the frame whose lumen has the same original frame.
-/// Annotations without such a frame are dropped with one warning.
-fn attach_annotations(
-    frame_map: &mut HashMap<u32, Frame>,
-    annotations: Vec<(u32, Annotation)>,
-    frame_mapping: &HashMap<u32, u32>,
-) {
+/// Puts the point cloud of each structure on the frame with the same original frame.
+///
+/// A closed contour becomes a jittered cloud spread over half the frame spacing in z on both
+/// sides. An open in-wall contour is an error, an open side-branch arc is kept as drawn.
+/// Structures without a lumen frame are dropped with one warning.
+fn add_structure_clouds(
+    geometry: &mut Geometry,
+    structures: Vec<Structure>,
+    params: &CloudParams,
+) -> anyhow::Result<()> {
+    let half_spacing = median_spacing(geometry) / 2.0;
+    let mut per_frame: HashMap<u32, u64> = HashMap::new();
     let mut dropped = 0usize;
-    for (original_frame, annotation) in annotations {
-        let frame = frame_mapping
-            .get(&original_frame)
-            .and_then(|id| frame_map.get_mut(id))
-            .filter(|f| f.lumen.original_frame == original_frame);
-        match frame {
-            Some(frame) => frame.annotations.push(annotation),
-            None => dropped += 1,
+    for structure in structures {
+        let Some(original) = structure.points.first().map(|p| p.frame_index) else {
+            continue;
+        };
+        let Some(frame) = geometry
+            .frames
+            .iter_mut()
+            .find(|f| f.lumen.original_frame == original)
+        else {
+            dropped += 1;
+            continue;
+        };
+        if !structure.closed && structure.kind != StructureKind::Sidebranch {
+            anyhow::bail!(
+                "open {} contour on frame {original}, in-wall contours must be closed",
+                structure.kind
+            );
         }
+        // on its frame, numbered like the lumen
+        let frame_index = frame
+            .lumen
+            .points
+            .first()
+            .map_or(frame.id, |p| p.frame_index);
+        let contour: Vec<ContourPoint> = structure
+            .points
+            .iter()
+            .map(|p| ContourPoint {
+                frame_index,
+                z: frame.centroid.2,
+                ..*p
+            })
+            .collect();
+        let ordinal = per_frame.entry(original).or_default();
+        let stream = ((original as u64) << 16) | *ordinal;
+        *ordinal += 1;
+        let points = if structure.closed {
+            jitter_cloud(&contour, half_spacing, params, stream)
+        } else {
+            contour
+        };
+        frame
+            .structures
+            .push(Structure::new(structure.kind, structure.closed, points));
     }
     if dropped > 0 {
-        eprintln!("Warning: dropped {dropped} annotation(s) whose frame has no lumen contour");
+        eprintln!("Warning: dropped {dropped} structure(s) whose frame has no lumen contour");
     }
+    Ok(())
+}
+
+/// Median distance in z between neighbouring frames, 0 with fewer than two frames.
+fn median_spacing(geometry: &Geometry) -> f64 {
+    let mut diffs: Vec<f64> = geometry
+        .frames
+        .windows(2)
+        .map(|w| (w[1].centroid.2 - w[0].centroid.2).abs())
+        .collect();
+    if diffs.is_empty() {
+        return 0.0;
+    }
+    diffs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    diffs[diffs.len() / 2]
 }
 
 fn print_success_message(input_data: InputData, from_path: bool) {
@@ -203,9 +263,9 @@ fn print_success_message(input_data: InputData, from_path: bool) {
     println!("{} {}", check(input_data.eem.is_some()), Eem);
     println!("{} {}", check(true), Catheter);
     println!(
-        "{} Annotations ({})",
-        check(!input_data.annotations.is_empty()),
-        input_data.annotations.len()
+        "{} Structures ({})",
+        check(!input_data.structures.is_empty()),
+        input_data.structures.len()
     );
     println!("-----------------------------------------");
     println!("Label: {}", input_data.label);
@@ -353,79 +413,72 @@ mod io_tests {
     }
 
     #[test]
-    fn test_build_attaches_annotations_by_original_frame() -> anyhow::Result<()> {
-        use crate::types::native::{AnnotationKind, AnnotationRole};
-
+    fn test_build_attaches_structure_clouds_by_original_frame() -> anyhow::Result<()> {
         let mut input = InputData::process_directory(
             "data/fixtures/ivus_rest",
             HashMap::from([(ContourType::Lumen, "lumen")]),
             true,
             "rest",
         )?;
-        let point = |frame: u32| ContourPoint {
+        let point = |frame: u32, x: f64| ContourPoint {
             frame_index: frame,
             point_index: 0,
-            x: 1.0,
+            x,
             y: 2.0,
             z: -5.0,
             aortic: false,
         };
-        input.annotations = vec![
-            (
-                385,
-                Annotation::new(
-                    AnnotationKind::Sidebranch,
-                    AnnotationRole::Region,
-                    0,
-                    vec![point(385), point(385)],
-                ),
-            ),
-            (
-                385,
-                Annotation::new(
-                    AnnotationKind::Sidebranch,
-                    AnnotationRole::Region,
-                    1,
-                    vec![point(385)],
-                ),
-            ),
-            (
-                347,
-                Annotation::new(
-                    AnnotationKind::Calcification,
-                    AnnotationRole::Region,
-                    0,
-                    vec![point(347)],
-                ),
-            ),
-            (
-                99_999,
-                Annotation::new(
-                    AnnotationKind::Lipid,
-                    AnnotationRole::Point,
-                    0,
-                    vec![point(99_999)],
-                ),
+        let closed = |kind: StructureKind, frame: u32, n: usize| {
+            Structure::new(kind, true, (0..n).map(|i| point(frame, i as f64)).collect())
+        };
+        input.structures = vec![
+            closed(StructureKind::Calcification, 385, 3),
+            closed(StructureKind::Calcification, 385, 2),
+            closed(StructureKind::Lipid, 347, 1),
+            closed(StructureKind::Lipid, 99_999, 1),
+            Structure::new(
+                StructureKind::Sidebranch,
+                false,
+                vec![point(347, 0.0), point(347, 1.0)],
             ),
         ];
+        let build = |input: InputData| {
+            build_geometry_from_inputdata(Some(input), None, "rest", true, (4.5, 4.5), 0.5, 20)
+        };
 
-        let geometry =
-            build_geometry_from_inputdata(Some(input), None, "rest", true, (4.5, 4.5), 0.5, 20)?;
+        let geometry = build(input.clone())?;
 
-        let total: usize = geometry.frames.iter().map(|f| f.annotations.len()).sum();
-        assert_eq!(total, 3, "annotation without lumen frame must be dropped");
+        let copies = CloudParams::default().copies + 1;
+        let spacing = median_spacing(&geometry);
+        let total: usize = geometry.frames.iter().map(|f| f.structures.len()).sum();
+        assert_eq!(total, 4, "a structure without lumen frame must be dropped");
         for frame in &geometry.frames {
+            let sizes: Vec<usize> = frame.structures.iter().map(|s| s.points.len()).collect();
             let expected = match frame.lumen.original_frame {
-                385 => 2,
-                347 => 1,
-                _ => 0,
+                385 => vec![3 * copies, 2 * copies],
+                347 => vec![copies, 2],
+                _ => vec![],
             };
-            assert_eq!(frame.annotations.len(), expected);
-            for p in frame.annotations.iter().flat_map(|a| a.points.iter()) {
-                assert_eq!(p.z, frame.lumen.points[0].z);
+            assert_eq!(sizes, expected, "frame {}", frame.lumen.original_frame);
+            for p in frame.structures.iter().flat_map(|s| s.points.iter()) {
+                assert!((p.z - frame.centroid.2).abs() <= spacing / 2.0 + 1e-9);
                 assert_eq!(p.frame_index, frame.lumen.points[0].frame_index);
             }
         }
+
+        // the same input gives the same clouds
+        let again = build(input.clone())?;
+        for (a, b) in geometry.frames.iter().zip(&again.frames) {
+            assert_eq!(a.structures, b.structures);
+        }
+
+        // an open in-wall contour is an error
+        input.structures = vec![Structure::new(
+            StructureKind::Lipid,
+            false,
+            vec![point(347, 0.0), point(347, 1.0)],
+        )];
+        assert!(build(input).is_err());
         Ok(())
     }
 
@@ -485,7 +538,7 @@ mod io_tests {
             master_reference: None,
             label: "test".to_string(),
             diastole: true,
-            annotations: Vec::new(),
+            structures: Vec::new(),
         };
 
         let geometry = build_geometry_from_inputdata(

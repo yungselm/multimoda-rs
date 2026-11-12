@@ -170,52 +170,48 @@ class PyRecord:
     ) -> None: ...
     def __repr__(self) -> str: ...
 
-class PyAnnotation:
-    """Non-pipe per-frame points (side-branch outline, plaque region, landmark).
+class PyStructure:
+    """A non-pipe structure of one frame (calcium, lipid, side branch, ...).
 
-    Annotations follow every rigid transform of their frame. They are never
-    sorted, smoothed, interpolated, meshed or used for alignment.
+    In :class:`PyInputData` the points are the drawn contour. On a frame of a
+    :class:`PyGeometry` they are the point cloud generated from it (jittered for
+    in-wall structures), which follows every rigid transform of its frame. It is
+    never sorted, smoothed, interpolated or used for alignment.
 
     Attributes
     ----------
     kind : str
-        ``"sidebranch"``, ``"calcification"``, ``"lipid"``, ``"macrophage"``,
-        ``"reference"``, or any other name for a custom kind (e.g. ``"fibrous_cap"``).
-    role : str
-        ``"region"``, ``"landmark"``, ``"axis_tip"``, ``"diameter_end"`` or
-        ``"point"``. Other names raise ``ValueError``.
-    group : int
-        Distinguishes several annotations of the same kind and role in one frame.
+        ``"sidebranch"``, ``"calcification"``, ``"lipid"``, ``"macrophage"``, or
+        any other name for a custom kind (e.g. ``"fibrous_cap"``). ``"branch"``
+        and ``"calcium"`` are read as ``"sidebranch"`` and ``"calcification"``.
+    closed : bool
+        ``True`` for a closed contour, ``False`` for an open arc.
     points : list of PyContourPoint
-        Points in input order.
+        Contour points in drawing order, or the generated cloud.
     is_custom : bool
         ``True`` when ``kind`` is not a built-in kind.
     """
 
     kind: str
-    role: str
-    group: int
+    closed: bool
     points: list[PyContourPoint]
 
     def __init__(
         self,
         kind: str,
-        role: str,
-        group: int = 0,
         points: list[PyContourPoint] = ...,
+        closed: bool = True,
     ) -> None: ...
     @property
     def is_custom(self) -> bool: ...
     @staticmethod
     def known_kinds() -> list[str]: ...
-    @staticmethod
-    def roles() -> list[str]: ...
     def __repr__(self) -> str: ...
     def __len__(self) -> int: ...
     def rotate(
         self, angle_deg: float, center: tuple[float, float] | None = None
-    ) -> PyAnnotation: ...
-    def translate(self, dx: float, dy: float, dz: float) -> PyAnnotation: ...
+    ) -> PyStructure: ...
+    def translate(self, dx: float, dy: float, dz: float) -> PyStructure: ...
 
 class PyFrame:
     """A single intravascular imaging frame.
@@ -232,10 +228,9 @@ class PyFrame:
         Additional contour types keyed by name (e.g. ``"Eem"``, ``"Wall"``).
     reference_point : PyContourPoint or None
         Reference position used for alignment, if available.
-    annotations : list of PyAnnotation
-        Non-pipe points that follow the frame's rigid transforms only.
-        Deprecated ``"Sidebranch"`` / ``"Calcification"`` extras keys are
-        turned into region annotations when the frame goes to Rust.
+    structures : list of PyStructure
+        Point clouds of in-wall structures and side branches, they follow the
+        frame's rigid transforms only.
     """
 
     id: int
@@ -243,7 +238,7 @@ class PyFrame:
     lumen: PyContour
     extras: dict[str, PyContour]
     reference_point: PyContourPoint | None
-    annotations: list[PyAnnotation]
+    structures: list[PyStructure]
 
     def __init__(
         self,
@@ -252,7 +247,7 @@ class PyFrame:
         lumen: PyContour,
         extras: dict[str, PyContour],
         reference_point: PyContourPoint | None,
-        annotations: list[PyAnnotation] = ...,
+        structures: list[PyStructure] = ...,
     ) -> None: ...
     def __repr__(self) -> str: ...
     def rotate(self, angle_deg: float) -> PyFrame: ...
@@ -665,10 +660,6 @@ class PyInputData:
         Vessel lumen contours.
     eem : list of PyContour or None
         EEM (external elastic membrane) contours.
-    calcification : list of PyContour or None
-        Deprecated, converted to ``calcification`` region annotations.
-    sidebranch : list of PyContour or None
-        Deprecated, converted to ``sidebranch`` region annotations.
     record : list of PyRecord or None
         Metadata records.
     reference_points : list of PyContourPoint
@@ -681,33 +672,31 @@ class PyInputData:
         ``True`` when the data corresponds to the diastolic phase.
     label : str
         Human-readable label for this dataset.
-    annotations : list of tuple of (int, PyAnnotation)
-        ``(frame, annotation)`` pairs, frame numbered like the lumen
-        ``original_frame``. Attached to that frame when building the geometry.
+    structures : list of PyStructure
+        Drawn contours of in-wall structures and side branches, point
+        ``frame_index`` numbered like the lumen ``original_frame``. Building
+        the geometry turns each into a point cloud on that frame. In-wall
+        contours must be closed.
     """
 
     lumen: list[PyContour]
     eem: list[PyContour] | None
-    calcification: list[PyContour] | None
-    sidebranch: list[PyContour] | None
     record: list[PyRecord] | None
     reference_points: list[PyContourPoint]
     master_reference: int | None
     diastole: bool
     label: str
-    annotations: list[tuple[int, PyAnnotation]]
+    structures: list[PyStructure]
 
     def __init__(
         self,
         lumen: list[PyContour],
         eem: list[PyContour] | None,
-        calcification: list[PyContour] | None,
-        sidebranch: list[PyContour] | None,
         record: list[PyRecord] | None,
         reference_points: list[PyContourPoint],
         diastole: bool,
         label: str,
-        annotations: list[tuple[int, PyAnnotation]] = ...,
+        structures: list[PyStructure] = ...,
         master_reference: int | None = None,
     ) -> None: ...
     def __repr__(self) -> str: ...

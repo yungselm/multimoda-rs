@@ -6,6 +6,7 @@ use crate::types::native::frame::Frame;
 use crate::types::native::geometry::Geometry;
 use crate::types::native::ContourPoint;
 use crate::types::native::GeometryPair;
+use crate::types::native::Transform;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
@@ -93,7 +94,7 @@ fn check_same_sample_rate_geompair(geom_pair: &GeometryPair, tol: f64) -> (bool,
     let avg_diff_a = get_avg_z_diff(&geom_pair.geom_a);
     let avg_diff_b = get_avg_z_diff(&geom_pair.geom_b);
 
-    if (avg_diff_a - avg_diff_b) < tol {
+    if (avg_diff_a - avg_diff_b).abs() < tol {
         (true, avg_diff_a, avg_diff_b)
     } else {
         (false, avg_diff_a, avg_diff_b)
@@ -202,6 +203,7 @@ fn new_frames_by_sample_rate(geometry: &Geometry, mut z_coords: Vec<f64>) -> Geo
     z_coords.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
     let n_frames = geometry.frames.len();
     let max_z_coord = geometry.frames[n_frames - 1].centroid.2;
+    let mut kept = vec![false; n_frames];
 
     for z_coord in z_coords {
         if z_coord > max_z_coord {
@@ -209,12 +211,13 @@ fn new_frames_by_sample_rate(geometry: &Geometry, mut z_coords: Vec<f64>) -> Geo
         }
 
         // Try to find exact match
-        if let Some(frame) = geometry
+        if let Some(i) = geometry
             .frames
             .iter()
-            .find(|f| (f.centroid.2 - z_coord).abs() < 1e-9)
+            .position(|f| (f.centroid.2 - z_coord).abs() < 1e-9)
         {
-            new_frames.push(frame.clone());
+            kept[i] = true;
+            new_frames.push(geometry.frames[i].clone());
             continue;
         }
 
@@ -253,7 +256,7 @@ fn new_frames_by_sample_rate(geometry: &Geometry, mut z_coords: Vec<f64>) -> Geo
             lumen: new_lumen,
             extras: new_extras,
             reference_point: None,
-            annotations: Vec::new(),
+            structures: Vec::new(),
         });
     }
 
@@ -263,7 +266,7 @@ fn new_frames_by_sample_rate(geometry: &Geometry, mut z_coords: Vec<f64>) -> Geo
             .partial_cmp(&b.centroid.2)
             .unwrap_or(Ordering::Equal)
     });
-    carry_over_references(geometry, &mut new_frames);
+    carry_over_dropped_frames(geometry, &kept, &mut new_frames);
 
     for (new_id, frame) in new_frames.iter_mut().enumerate() {
         let id_u32 = new_id as u32;
@@ -288,8 +291,7 @@ fn new_frames_by_sample_rate(geometry: &Geometry, mut z_coords: Vec<f64>) -> Geo
         if let Some(ref mut rp) = frame.reference_point {
             rp.z = frame.centroid.2;
         }
-        let z = frame.centroid.2;
-        frame.set_annotation_z(z);
+        frame.set_structure_frame_index(id_u32);
     }
 
     Geometry {
@@ -339,22 +341,13 @@ fn blend_contour(c1: &Contour, c2: &Contour, t: f64) -> Contour {
     }
 }
 
-/// Puts the references of frames dropped by resampling on the frame nearest in z.
+/// Puts the reference and structures of every source frame dropped by resampling on the
+/// frame nearest in z, moved only along z, so structures keep no holes.
 ///
 /// A frame holds at most one reference, a reference whose nearest frame already has one is
 /// dropped with a warning.
-fn carry_over_references(source: &Geometry, frames: &mut [Frame]) {
-    for frame in &source.frames {
-        let Some(rp) = frame.reference_point else {
-            continue;
-        };
-        let kept = frames.iter().any(|f| {
-            f.reference_point
-                .is_some_and(|p| p.frame_index == rp.frame_index)
-        });
-        if kept {
-            continue;
-        }
+fn carry_over_dropped_frames(source: &Geometry, kept: &[bool], frames: &mut [Frame]) {
+    for (frame, _) in source.frames.iter().zip(kept).filter(|(_, k)| !**k) {
         let z = frame.centroid.2;
         let Some(target) = frames.iter_mut().min_by(|a, b| {
             (a.centroid.2 - z)
@@ -362,6 +355,17 @@ fn carry_over_references(source: &Geometry, frames: &mut [Frame]) {
                 .partial_cmp(&(b.centroid.2 - z).abs())
                 .unwrap_or(Ordering::Equal)
         }) else {
+            return;
+        };
+        let dz = target.centroid.2 - z;
+        target.structures.extend(
+            frame
+                .structures
+                .iter()
+                .cloned()
+                .map(|s| s.translate(0.0, 0.0, dz)),
+        );
+        let Some(rp) = frame.reference_point else {
             continue;
         };
         if target.reference_point.is_some() {
@@ -487,7 +491,7 @@ mod tests {
             lumen,
             extras,
             reference_point,
-            annotations: Vec::new(),
+            structures: Vec::new(),
         }
     }
 
@@ -567,17 +571,18 @@ mod tests {
 
     #[test]
     fn test_check_same_sample_rate_geompair_different() {
-        // Fix: Use absolute difference in the check function
-        // For now, let's just test that the function runs without panic
+        // A at 1 mm, B at 2 mm spacing, different in either order
         let geom_pair = create_test_geometry_pair();
         let (same, diff_a, diff_b) = check_same_sample_rate_geompair(&geom_pair, 0.1);
+        assert!(!same);
+        assert_eq!((diff_a, diff_b), (1.0, 2.0));
 
-        // The current implementation uses absolute difference, so these should be different
-        // If the test fails, we need to check the actual implementation
-        println!("same: {same}, diff_a: {diff_a}, diff_b: {diff_b}");
-        // Just test that we get some values back
-        assert!(diff_a > 0.0);
-        assert!(diff_b > 0.0);
+        let swapped = GeometryPair {
+            geom_a: geom_pair.geom_b,
+            geom_b: geom_pair.geom_a,
+            label: "swapped".to_string(),
+        };
+        assert!(!check_same_sample_rate_geompair(&swapped, 0.1).0);
     }
 
     #[test]
@@ -732,13 +737,19 @@ mod tests {
     }
 
     #[test]
-    fn test_resampling_moves_references_of_dropped_frames() {
+    fn test_resampling_moves_references_and_structures_of_dropped_frames() {
+        use crate::types::native::{Structure, StructureKind};
+
         // master on z = 2, a second reference on z = 4, which is not on the new grid
-        let frames = vec![
+        let mut frames = vec![
             create_test_frame(0, 0.0, None, false),
             create_test_frame(1, 2.0, None, true),
             create_test_frame(2, 4.0, None, true),
         ];
+        // a cloud point 0.2 mm below the dropped frame at z = 4
+        let mut p = frames[2].lumen.points[0];
+        p.z = 3.8;
+        frames[2].structures = vec![Structure::new(StructureKind::Calcification, true, vec![p])];
         let geometry = Geometry {
             frames,
             label: "coarse".to_string(),
@@ -752,6 +763,12 @@ mod tests {
         let moved = resampled.frames[2].reference_point.unwrap();
         assert_eq!(moved.z, 3.5);
         assert!(resampled.frames[0].reference_point.is_none());
+
+        // the structure keeps its offset to its new frame
+        let cloud = &resampled.frames[2].structures[0].points;
+        assert!((cloud[0].z - 3.3).abs() < 1e-12);
+        assert_eq!(cloud[0].x, p.x);
+        assert!(resampled.frames[0].structures.is_empty());
     }
 
     #[test]

@@ -75,7 +75,7 @@ pub fn interpolate_contours(
                 lumen,
                 extras,
                 reference_point,
-                annotations: Vec::new(),
+                structures: Vec::new(),
             });
         }
 
@@ -241,7 +241,7 @@ mod test_interpolation {
                 z: 0.0 + z_offset,
                 aortic: false,
             }),
-            annotations: Vec::new(),
+            structures: Vec::new(),
         }
     }
 

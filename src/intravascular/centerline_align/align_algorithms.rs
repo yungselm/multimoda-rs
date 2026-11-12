@@ -612,7 +612,7 @@ fn apply_transforms_to_geometry(geometry: &mut Geometry, transformations: &[Fram
                 *reference_pt = tr.apply_to_point(reference_pt);
             }
             for point in frame
-                .annotations
+                .structures
                 .iter_mut()
                 .flat_map(|a| a.points.iter_mut())
             {
@@ -944,7 +944,7 @@ mod align_algorithms_tests {
             lumen,
             extras: HashMap::new(),
             reference_point: None,
-            annotations: Vec::new(),
+            structures: Vec::new(),
         };
 
         let geometry = Geometry {
@@ -1037,7 +1037,7 @@ mod align_algorithms_tests {
                         z: 0.0,
                         aortic: false,
                     }),
-                    annotations: Vec::new(),
+                    structures: Vec::new(),
                 }
             })
             .collect();
@@ -1148,7 +1148,7 @@ mod align_algorithms_tests {
                         z: i as f64,
                         aortic: false,
                     }),
-                    annotations: Vec::new(),
+                    structures: Vec::new(),
                 }
             })
             .collect();
@@ -1179,13 +1179,13 @@ mod align_algorithms_tests {
     }
 
     #[test]
-    fn test_centerline_alignment_moves_annotations_with_lumen() {
+    fn test_centerline_alignment_moves_structures_with_lumen() {
         use crate::intravascular::utils::test_utils::{
-            add_annotations_on_lumen, assert_annotations_on_lumen,
+            add_structures_on_lumen, assert_structures_on_lumen,
         };
 
         let mut geometry = create_elliptical_geometry();
-        add_annotations_on_lumen(&mut geometry);
+        add_structures_on_lumen(&mut geometry);
 
         // Tilted, curved centerline so every frame gets a real 3D rotation.
         let points = (0..8)
@@ -1204,12 +1204,9 @@ mod align_algorithms_tests {
         let rotated = rotate_by_best_rotation(geometry, 0.4);
         let placed = apply_transformations(rotated, &centerline, 2);
 
-        assert_annotations_on_lumen(&placed, 2);
-        let moved = placed.frames[1].annotations[0].points[0];
-        assert!(
-            (moved.x - 2.0).abs() > 1.0,
-            "annotation was not transformed"
-        );
+        assert_structures_on_lumen(&placed, 2);
+        let moved = placed.frames[1].structures[0].points[0];
+        assert!((moved.x - 2.0).abs() > 1.0, "structure was not transformed");
     }
 
     #[test]
