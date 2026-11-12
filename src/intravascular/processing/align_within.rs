@@ -9,7 +9,7 @@ use crate::types::native::contour::{Contour, ContourType};
 use crate::types::native::frame::Frame;
 use crate::types::native::geometry::Geometry;
 use crate::types::native::ContourPoint;
-use crate::types::native::Transform;
+use crate::types::native::{median, Spacing, Transform};
 
 #[derive(Debug)]
 pub struct AlignLog {
@@ -332,41 +332,20 @@ fn assign_aortic(mut geometry: Geometry) -> Geometry {
     geometry
 }
 
-fn median(values: &mut [f64]) -> f64 {
-    if values.is_empty() {
-        return 0.0;
-    }
-    values.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let n = values.len();
-    if n % 2 == 1 {
-        values[n / 2]
-    } else {
-        (values[n / 2 - 1] + values[n / 2]) / 2.0
-    }
-}
-
 /// Detect whether there's any gap that's substantially larger than typical spacing.
 /// Returns (has_hole, baseline_spacing)
 fn detect_holes(geometry: &Geometry) -> (bool, f64) {
-    let mut z_diffs: Vec<f64> = Vec::new();
-    for i in 1..geometry.frames.len() {
-        let z_prev = geometry.frames[i - 1].centroid.2;
-        let z_curr = geometry.frames[i].centroid.2;
-        z_diffs.push((z_curr - z_prev).abs());
-    }
-    if z_diffs.is_empty() {
+    let steps = geometry.spacings();
+    let Some(baseline) = median(&steps) else {
         return (false, 0.0);
-    }
-
-    let mut sorted = z_diffs.clone();
-    let baseline = median(&mut sorted);
+    };
 
     // avoid divide-by-zero later; if baseline is zero treat as "no hole"
     if baseline <= f64::EPSILON {
         return (false, baseline);
     }
 
-    let has_hole = z_diffs.iter().any(|&d| d >= 1.5 * baseline);
+    let has_hole = steps.iter().any(|&d| d >= 1.5 * baseline);
 
     (has_hole, baseline)
 }

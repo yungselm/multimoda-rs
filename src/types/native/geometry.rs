@@ -2,7 +2,7 @@ use super::contour::{Contour, ContourType};
 use super::contour_point::ContourPoint;
 use super::frame::Frame;
 use super::record::Record;
-use super::Transform;
+use super::{Spacing, Transform};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
@@ -34,6 +34,22 @@ impl Transform for Geometry {
             .map(|f| f.rotate(angle, center))
             .collect();
         self
+    }
+}
+
+/// Step between neighbouring frames along the pullback: the centroid step projected on the
+/// lumen normal of the first frame. It is |dz| before centerline alignment and the step along
+/// the vessel after it, x/y offsets between unaligned frames do not count.
+impl Spacing for Geometry {
+    fn spacings(&self) -> Vec<f64> {
+        self.frames
+            .windows(2)
+            .map(|w| {
+                let (a, b) = (w[0].centroid, w[1].centroid);
+                let n = w[0].lumen.normal();
+                ((b.0 - a.0) * n.0 + (b.1 - a.1) * n.1 + (b.2 - a.2) * n.2).abs()
+            })
+            .collect()
     }
 }
 
@@ -492,6 +508,82 @@ mod geometry_tests {
     use super::*;
     use crate::intravascular::utils::test_utils::dummy_geometry;
     use approx::assert_relative_eq;
+
+    /// A square contour around `c` in the plane spanned by `u` and `v`.
+    fn square(c: (f64, f64, f64), u: (f64, f64, f64), v: (f64, f64, f64)) -> Contour {
+        let points = [(1.0, 0.0), (0.0, 1.0), (-1.0, 0.0), (0.0, -1.0)]
+            .iter()
+            .enumerate()
+            .map(|(i, &(a, b))| ContourPoint {
+                frame_index: 0,
+                point_index: i as u32,
+                x: c.0 + a * u.0 + b * v.0,
+                y: c.1 + a * u.1 + b * v.1,
+                z: c.2 + a * u.2 + b * v.2,
+                aortic: false,
+            })
+            .collect();
+        Contour {
+            id: 0,
+            original_frame: 0,
+            points,
+            centroid: Some(c),
+            aortic_thickness: None,
+            pulmonary_thickness: None,
+            kind: ContourType::Lumen,
+        }
+    }
+
+    fn geometry_of(contours: Vec<Contour>) -> Geometry {
+        let frames = contours
+            .into_iter()
+            .map(|lumen| Frame {
+                id: 0,
+                centroid: lumen.centroid.unwrap(),
+                lumen,
+                extras: HashMap::new(),
+                reference_point: None,
+                structures: Vec::new(),
+            })
+            .collect();
+        Geometry {
+            frames,
+            label: "spacing".to_string(),
+            master_reference: None,
+        }
+    }
+
+    #[test]
+    fn test_spacing_follows_the_frame_normal() {
+        // frames 0.5 mm apart in z, shifted in x/y as before in-pullback alignment
+        let (ex, ey) = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0));
+        let unaligned = geometry_of(vec![
+            square((0.0, 0.0, 0.0), ex, ey),
+            square((1.0, 0.5, 0.5), ex, ey),
+            square((-0.5, 1.0, 1.0), ex, ey),
+            square((0.0, 0.0, 2.5), ex, ey), // a missing frame
+        ]);
+        let steps = unaligned.spacings();
+        assert!(steps
+            .iter()
+            .zip([0.5, 0.5, 1.5])
+            .all(|(a, b)| (a - b).abs() < 1e-12));
+        assert_relative_eq!(unaligned.median_spacing().unwrap(), 0.5, epsilon = 1e-12);
+
+        // frames along x after centerline alignment, the contours lie in y/z planes
+        let ez = (0.0, 0.0, 1.0);
+        let placed = geometry_of(
+            (0..3)
+                .map(|i| square((0.8 * i as f64, 0.3 * i as f64, 0.0), ey, ez))
+                .collect(),
+        );
+        assert_relative_eq!(placed.median_spacing().unwrap(), 0.8, epsilon = 1e-12);
+
+        assert_eq!(
+            geometry_of(vec![square((0.0, 0.0, 0.0), ex, ey)]).median_spacing(),
+            None
+        );
+    }
 
     #[test]
     fn rotate_contour_back_and_forth() {

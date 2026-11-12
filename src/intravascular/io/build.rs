@@ -6,6 +6,7 @@ use crate::types::native::geometry::Geometry;
 use crate::types::native::structure::{
     jitter_cloud, revolve_arc, CloudParams, Structure, StructureKind,
 };
+use crate::types::native::Spacing;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -183,7 +184,7 @@ fn add_structure_clouds(
     structures: Vec<Structure>,
     params: &CloudParams,
 ) -> anyhow::Result<()> {
-    let half_spacing = median_spacing(geometry) / 2.0;
+    let half_spacing = geometry.median_spacing().unwrap_or(0.0) / 2.0;
     let mut per_frame: HashMap<u32, u64> = HashMap::new();
     let mut dropped = 0usize;
     for structure in structures {
@@ -235,20 +236,6 @@ fn add_structure_clouds(
         eprintln!("Warning: dropped {dropped} structure(s) whose frame has no lumen contour");
     }
     Ok(())
-}
-
-/// Median distance in z between neighbouring frames, 0 with fewer than two frames.
-fn median_spacing(geometry: &Geometry) -> f64 {
-    let mut diffs: Vec<f64> = geometry
-        .frames
-        .windows(2)
-        .map(|w| (w[1].centroid.2 - w[0].centroid.2).abs())
-        .collect();
-    if diffs.is_empty() {
-        return 0.0;
-    }
-    diffs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    diffs[diffs.len() / 2]
 }
 
 fn print_success_message(input_data: InputData, from_path: bool) {
@@ -452,7 +439,7 @@ mod io_tests {
         let geometry = build(input.clone())?;
 
         let copies = CloudParams::default().copies + 1;
-        let spacing = median_spacing(&geometry);
+        let spacing = geometry.median_spacing().unwrap();
         let total: usize = geometry.frames.iter().map(|f| f.structures.len()).sum();
         assert_eq!(total, 4, "a structure without lumen frame must be dropped");
         for frame in &geometry.frames {

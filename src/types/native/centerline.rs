@@ -1,6 +1,6 @@
 use super::centerline_point::CenterlinePoint;
 use super::contour_point::ContourPoint;
-use super::{cumulative_arc_length, Point3D};
+use super::{cumulative_arc_length, Point3D, Spacing};
 use nalgebra::Vector3;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -10,6 +10,21 @@ pub struct Centerline {
     /// belongs to `branch_id` `k`: a removed branch (see [`Centerline::remove_branches`])
     /// keeps its entry as an empty range, so the ids of the other branches never shift.
     pub branch_start_indices: Vec<usize>,
+}
+
+/// Distances between consecutive points of branch 0, pairs across branches are left out.
+impl Spacing for Centerline {
+    fn spacings(&self) -> Vec<f64> {
+        let end = self
+            .branch_start_indices
+            .get(1)
+            .copied()
+            .unwrap_or(self.points.len());
+        self.points[..end]
+            .windows(2)
+            .map(|w| w[0].distance_to(&w[1]))
+            .collect()
+    }
 }
 
 impl Centerline {
@@ -498,19 +513,6 @@ impl Centerline {
         path
     }
 
-    /// Mean arc-length spacing between consecutive points of branch 0.
-    ///
-    /// Only intra-branch pairs are considered.  Returns `1.0` if branch 0
-    /// has fewer than two points.
-    pub fn mean_spacing(&self) -> f64 {
-        let end = self
-            .branch_start_indices
-            .get(1)
-            .copied()
-            .unwrap_or(self.points.len());
-        super::mean_spacing(&self.points[..end]).unwrap_or(1.0)
-    }
-
     /// 95th-percentile of consecutive-point spacings — O(n).
     ///
     /// Operates only on adjacent pairs in the original ordering so large
@@ -853,7 +855,7 @@ impl Centerline {
     /// Some centerline export formats (e.g. VTP) write every branch starting from
     /// the vessel origin, so side branches share a common prefix with branch 0.
     /// For each side branch this trims the contiguous leading prefix whose points
-    /// all lie within one mean inter-point spacing of branch 0 of at least one
+    /// all lie within one median inter-point spacing of branch 0 of at least one
     /// main-branch point. The last point of the trimmed prefix is kept as the
     /// bifurcation junction. Branches whose entire extent lies within that buffer
     /// are emptied. Their slot stays, so the other branches keep their id.
@@ -862,7 +864,7 @@ impl Centerline {
             return;
         }
 
-        let buffer = self.mean_spacing();
+        let buffer = self.median_spacing().unwrap_or(1.0);
         let mut branches = self.branches_as_vecs();
 
         Self::remove_overlapping(&mut branches, buffer * buffer);
@@ -1292,6 +1294,26 @@ mod centerline_tests {
             })
             .collect();
         Centerline::from_contour_points(points)
+    }
+
+    #[test]
+    fn test_spacing_uses_branch_0_only() {
+        // branch 0 steps 1, 1, 4, branch 1 far away with steps of 10
+        let cl = make_multi_branch(&[
+            &[
+                (0.0, 0.0, 0.0),
+                (0.0, 0.0, 1.0),
+                (0.0, 0.0, 2.0),
+                (0.0, 0.0, 6.0),
+            ],
+            &[(50.0, 0.0, 0.0), (60.0, 0.0, 0.0)],
+        ]);
+        assert_eq!(cl.spacings(), vec![1.0, 1.0, 4.0]);
+        assert_eq!(cl.median_spacing(), Some(1.0));
+        assert_eq!(
+            make_multi_branch(&[&[(0.0, 0.0, 0.0)]]).median_spacing(),
+            None
+        );
     }
 
     #[test]

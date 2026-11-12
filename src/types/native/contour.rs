@@ -219,6 +219,37 @@ impl Contour {
         self.centroid = Some((sum_x / n, sum_y / n, sum_z / n));
     }
 
+    /// Unit normal of the contour plane (Newell's method around the point mean), `(0, 0, 1)`
+    /// for fewer than three points or a degenerate contour.
+    pub fn normal(&self) -> (f64, f64, f64) {
+        let n = self.points.len();
+        if n < 3 {
+            return (0.0, 0.0, 1.0);
+        }
+        let c = self.points.iter().fold((0.0, 0.0, 0.0), |(sx, sy, sz), p| {
+            (
+                sx + p.x / n as f64,
+                sy + p.y / n as f64,
+                sz + p.z / n as f64,
+            )
+        });
+        let (mut nx, mut ny, mut nz) = (0.0, 0.0, 0.0);
+        for (i, a) in self.points.iter().enumerate() {
+            let b = &self.points[(i + 1) % n];
+            let (ax, ay, az) = (a.x - c.0, a.y - c.1, a.z - c.2);
+            let (bx, by, bz) = (b.x - c.0, b.y - c.1, b.z - c.2);
+            nx += ay * bz - az * by;
+            ny += az * bx - ax * bz;
+            nz += ax * by - ay * bx;
+        }
+        let len = (nx * nx + ny * ny + nz * nz).sqrt();
+        if len < 1e-12 {
+            (0.0, 0.0, 1.0)
+        } else {
+            (nx / len, ny / len, nz / len)
+        }
+    }
+
     /// Finds the pair of farthest points in the current contour.
     pub fn find_farthest_points(&self) -> ((&ContourPoint, &ContourPoint), f64) {
         let mut max_dist = 0.0;

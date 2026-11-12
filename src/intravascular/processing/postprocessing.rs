@@ -6,7 +6,7 @@ use crate::types::native::frame::Frame;
 use crate::types::native::geometry::Geometry;
 use crate::types::native::ContourPoint;
 use crate::types::native::GeometryPair;
-use crate::types::native::Transform;
+use crate::types::native::{Spacing, Transform};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
@@ -91,29 +91,14 @@ pub fn postprocess_geom_pair(
 }
 
 fn check_same_sample_rate_geompair(geom_pair: &GeometryPair, tol: f64) -> (bool, f64, f64) {
-    let avg_diff_a = get_avg_z_diff(&geom_pair.geom_a);
-    let avg_diff_b = get_avg_z_diff(&geom_pair.geom_b);
+    let avg_diff_a = geom_pair.geom_a.median_spacing().unwrap_or(0.0);
+    let avg_diff_b = geom_pair.geom_b.median_spacing().unwrap_or(0.0);
 
     if (avg_diff_a - avg_diff_b).abs() < tol {
         (true, avg_diff_a, avg_diff_b)
     } else {
         (false, avg_diff_a, avg_diff_b)
     }
-}
-
-fn get_avg_z_diff(geometry: &Geometry) -> f64 {
-    if geometry.frames.len() < 2 {
-        return 0.0;
-    }
-    let mut diffs_geom = Vec::new();
-    for i in 1..geometry.frames.len() {
-        let curr = &geometry.frames[i];
-        let prev = &geometry.frames[i - 1];
-        let diff = curr.centroid.2 - prev.centroid.2;
-        diffs_geom.push(diff)
-    }
-    let avg_diff = diffs_geom.iter().sum::<f64>() / diffs_geom.len() as f64;
-    avg_diff
 }
 
 // TODO: equalize spacing between frames to be same in both geoms
@@ -586,12 +571,10 @@ mod tests {
     }
 
     #[test]
-    fn test_get_avg_z_diff() {
-        let geometry = create_test_geometry("test", vec![0.0, 1.0, 3.0, 6.0], vec![]);
-        let avg_diff = get_avg_z_diff(&geometry);
-
-        // Differences: 1.0, 2.0, 3.0 → Average: 2.0
-        assert_eq!(avg_diff, 2.0);
+    fn test_frame_spacing_is_the_median_step() {
+        let geometry = create_test_geometry("test", vec![0.0, 1.0, 3.0, 9.0], vec![]);
+        // steps 1, 2, 6, the hole of 6 does not pull the median up
+        assert_eq!(geometry.median_spacing(), Some(2.0));
     }
 
     #[test]
