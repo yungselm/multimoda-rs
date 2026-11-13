@@ -287,6 +287,8 @@ def stitch(
     prox_start_mode: str = "highest_z",
     dist_start_mode: str = "nearest_iv",
     tree: PyDiscretizedVesselTree | None = None,
+    centerlines: dict[str, PyCenterline] | None = None,
+    branch_cut_slices: dict[tuple[str, int], int] | None = None,
 ) -> dict:
     """Stitch a CCTA mesh to the intravascular geometry.
 
@@ -334,6 +336,14 @@ def stitch(
         :func:`~multimodars.discretize_vessel_tree`), used to reconnect side
         branches leaving the removed segment (see
         :func:`~multimodars.ccta.stitching.reconnect_side_branches`).
+    centerlines : dict of str to PyCenterline, optional
+        Whole centerline of each vessel (``"rca"`` / ``"lca"``), the one
+        *tree* was discretized with; needed with *tree*.
+    branch_cut_slices : dict of (str, int) to int, optional
+        Contour each reconnected side branch is cut at, by
+        ``(vessel, branch_id)``; contour 0 for a branch not listed (see
+        *cut_slices* of
+        :func:`~multimodars.ccta.stitching.reconnect_side_branches`).
 
     Returns
     -------
@@ -356,6 +366,8 @@ def stitch(
         prox_start_mode=prox_start_mode,
         dist_start_mode=dist_start_mode,
         tree=tree,
+        centerlines=centerlines,
+        branch_cut_slices=branch_cut_slices,
     )
 
     stitched["mesh"] = _postprocessing.manual_hole_fill(stitched["mesh"])

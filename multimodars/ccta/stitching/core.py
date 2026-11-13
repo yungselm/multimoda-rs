@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import cast
 
 import numpy as np
 import trimesh
 
 from ..._converters import geometry_to_trimesh
-from ...multimodars import PyDiscretizedVesselTree, PyGeometry
+from ...multimodars import PyCenterline, PyDiscretizedVesselTree, PyGeometry
 from .._results import map_point_lists
 from .boundary import (
     _adjust_start_point_by_z,
@@ -35,6 +36,8 @@ def stitch_ccta_to_intravascular(
     seam_points_a: int = 2,
     seam_points_b: int = 4,
     tree: PyDiscretizedVesselTree | None = None,
+    centerlines: Mapping[str, PyCenterline] | None = None,
+    branch_cut_slices: dict[tuple[str, int], int] | None = None,
 ) -> dict:
     """Stitch an aligned intravascular geometry into a CCTA mesh.
 
@@ -109,10 +112,18 @@ def stitch_ccta_to_intravascular(
         Discretized tree of the mesh before the removal, moved along with any
         scaling since (:func:`~multimodars.ccta.scaling.sync_tree_to_mesh`).
         With it, side branches that leave the removed segment (loose pieces of
-        *mesh*, labelled ``"off_path_points"``) are joined to a hole in the
-        intravascular wall cut from their most proximal contour (see
+        *mesh*, labelled ``"off_path_points"``) are cut at a contour and
+        joined to a hole in the intravascular wall made by moving that cut
+        rim back along the branch (see
         :func:`~multimodars.ccta.stitching.reconnect_side_branches`).  Without
         it they stay loose.
+    centerlines : mapping of str to PyCenterline, optional
+        Whole centerline of each vessel (``"rca"`` / ``"lca"``), the one
+        *tree* was discretized with; needed with *tree*.  The cut side
+        branches are moved back along them to the intravascular wall.
+    branch_cut_slices : dict of (str, int) to int, optional
+        Contour each side branch is cut at, by ``(vessel, branch_id)``;
+        contour 0 for a branch not listed (default).  Only used with *tree*.
     seam_points_a, seam_points_b : int, optional
         How many Half A / Half B points either side of each of the two seams
         where the halves meet are replaced by a smooth arc (default 2 / 4).
@@ -132,8 +143,14 @@ def stitch_ccta_to_intravascular(
     Raises
     ------
     ValueError
-        If *results* holds fewer than two boundary rings.
+        If *results* holds fewer than two boundary rings, or *tree* is given
+        without *centerlines*.
     """
+    if tree is not None and centerlines is None:
+        raise ValueError(
+            "reconnecting side branches with a tree needs the vessel centerlines "
+            '(centerlines={"rca": rca_cl, "lca": lca_cl})'
+        )
     iv_mesh = iv_mesh.downsample(n_points_iv_cont)
     iv_mesh_points = [
         (p.x, p.y, p.z) for frame in iv_mesh.frames for p in frame.lumen.points
@@ -238,7 +255,13 @@ def stitch_ccta_to_intravascular(
     if tree is not None:
         ccta_before, iv_before = mesh, test_mesh
         mesh, test_mesh, branch_patches = reconnect_side_branches(
-            mesh, test_mesh, list(iv_mesh.frames), results, tree
+            mesh,
+            test_mesh,
+            list(iv_mesh.frames),
+            results,
+            tree,
+            cast(Mapping, centerlines),
+            cut_slices=branch_cut_slices,
         )
         kept = {tuple(v) for v in mesh.vertices} | {
             tuple(v) for v in test_mesh.vertices
