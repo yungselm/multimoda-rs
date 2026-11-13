@@ -2785,11 +2785,11 @@ def _tube(radius, start, axis, length, n_around=24, step=0.5, closed_end=False):
     return np.array(verts), np.array(faces)
 
 
-def _branch_contour(x, radius, z=5.0, n=40):
+def _branch_contour(x, radius, z=5.0, n=40, y=0.0):
     """Round contour of a branch along +x, in the plane x = *x*, wound
     anticlockwise about +x like the discretized tree's."""
     t = np.linspace(0.0, 2 * np.pi, n, endpoint=False)
-    pts = [(x, radius * np.cos(a), z + radius * np.sin(a)) for a in t]
+    pts = [(x, y + radius * np.cos(a), z + radius * np.sin(a)) for a in t]
     return PyContour(
         id=0,
         original_frame=0,
@@ -2797,7 +2797,7 @@ def _branch_contour(x, radius, z=5.0, n=40):
             PyContourPoint(frame_index=0, point_index=i, x=px, y=py, z=pz, aortic=False)
             for i, (px, py, pz) in enumerate(pts)
         ],
-        centroid=(x, 0.0, z),
+        centroid=(x, y, z),
         aortic_thickness=None,
         pulmonary_thickness=None,
         kind="Lumen",
@@ -2990,6 +2990,149 @@ class TestReconnectSideBranches:
         new_ccta, _, patches = self._reconnect(ccta, iv_mesh, frames, results, tree)
         assert patches == []
         assert len(new_ccta.vertices) == len(ccta.vertices)
+
+
+class TestReconnectCloseSideBranches:
+    """Two side branches of radius 0.8 along +x leaving the intravascular tube
+    (radius 2 along z), each with its own centerline from the tube's axis."""
+
+    R_IV, R_BRANCH = 2.0, 0.8
+
+    def _scene(self, branches, joined=False):
+        """*branches*: ``(id, y, z, centerline)`` each.  With *joined*, the
+        branches' stubs share a triangle, so they form one loose piece."""
+        iv_v, iv_f = _tube(
+            self.R_IV, (0, 0, 0), (0, 0, 1), 10.0, n_around=100, step=1.0
+        )
+        frames = []
+        for k in range(11):
+            ring = [tuple(p) for p in iv_v[k * 100 : (k + 1) * 100]]
+            lumen = SimpleNamespace(points=ring, points_as_tuples=lambda r=ring: r)
+            frames.append(SimpleNamespace(centroid=(0.0, 0.0, float(k)), lumen=lumen))
+        iv_mesh = trimesh.Trimesh(iv_v, iv_f, process=False)
+
+        # Fine enough to stay the largest piece next to two joined branches.
+        body = trimesh.creation.icosphere(subdivisions=4, radius=3.0)
+        body.apply_translation((0.0, 30.0, 0.0))
+        tubes, nodes, cls, labels = (
+            [],
+            {0: SimpleNamespace(parent=None, contours=[])},
+            {},
+            {},
+        )
+        for branch_id, y, z, centerline in branches:
+            v, f = _tube(self.R_BRANCH, (1.0, y, z), (1, 0, 0), 7.0, closed_end=True)
+            tubes.append(trimesh.Trimesh(v, f, process=False))
+            labels[branch_id] = [tuple(p) for p in v]
+            nodes[branch_id] = SimpleNamespace(
+                parent=(0, 5),
+                contours=[
+                    _branch_contour(x, self.R_BRANCH, z=z, y=y)
+                    for x in np.arange(2.5, 8.0, 1.0)
+                ],
+            )
+            cls[branch_id] = [tuple(map(float, p)) for p in centerline]
+        branch_mesh = trimesh.util.concatenate(tubes)
+        if joined:
+            n0 = len(tubes[0].vertices)
+            branch_mesh = trimesh.Trimesh(
+                branch_mesh.vertices,
+                np.vstack([branch_mesh.faces, [[0, n0 + 1, n0]]]),
+                process=False,
+            )
+        ccta = trimesh.util.concatenate([body, branch_mesh])
+        results = {
+            "off_path_points": [p for pts in labels.values() for p in pts],
+            "rca_branches": {0: [tuple(p) for p in body.vertices], **labels},
+        }
+        tree = SimpleNamespace(rca=nodes, lca={})
+        centerlines = {
+            "rca": SimpleNamespace(
+                get_branch=lambda b: SimpleNamespace(points_as_tuples=lambda: cls[b])
+            )
+        }
+        return ccta, iv_mesh, frames, results, tree, centerlines
+
+    @staticmethod
+    def _straight(y, z):
+        return [(x, y, z) for x in np.arange(0.0, 8.0, 0.5)]
+
+    def test_siblings_sharing_a_stub_both_reconnected(self):
+        scene = self._scene(
+            [
+                (3, 0.0, 3.0, self._straight(0.0, 3.0)),
+                (4, 0.0, 7.0, self._straight(0.0, 7.0)),
+            ],
+            joined=True,
+        )
+        assert len(_loose(scene[0])) == 1  # one piece holding both branches
+        new_ccta, new_iv, patches = reconnect_side_branches(*scene)
+        assert len(patches) == 2
+        merged = trimesh.util.concatenate([new_ccta, new_iv, *patches])
+        merged.merge_vertices()
+        # Only the tube's two ends stay open; the shared stub is gone.
+        assert len(merged.outline().entities) == 2
+        assert merged.is_winding_consistent
+        for z in (3.0, 7.0):
+            v = new_ccta.vertices
+            kept = v[(np.abs(v[:, 1]) < 5.0) & (np.abs(v[:, 2] - z) < 1.0)]
+            assert kept[:, 0].min() == pytest.approx(2.5)
+
+    def test_siblings_reconnected_together_or_not_at_all(self):
+        scene = self._scene(
+            [
+                (3, 0.0, 3.0, self._straight(0.0, 3.0)),
+                (4, 0.0, 7.0, self._straight(0.0, 7.0)),
+            ],
+            joined=True,
+        )
+        with pytest.warns(UserWarning, match=r"nor RCA branch 3, which leave"):
+            new_ccta, _, patches = reconnect_side_branches(
+                *scene, cut_slices={("rca", 4): 99}
+            )
+        assert patches == []
+        assert len(new_ccta.vertices) == len(scene[0].vertices)
+
+    def test_hole_touching_another_is_refused(self):
+        # Holes 0.8 mm around z = 4 and z = 5.7: their rims come within one
+        # ring (0.25 mm) of each other.
+        scene = self._scene(
+            [
+                (3, 0.0, 4.0, self._straight(0.0, 4.0)),
+                (4, 0.0, 5.7, self._straight(0.0, 5.7)),
+            ]
+        )
+        with pytest.warns(UserWarning, match="touch the hole of RCA branch"):
+            _, _, patches = reconnect_side_branches(*scene)
+        assert len(patches) == 1
+
+    def test_crossing_bridges_are_refused(self):
+        # Each centerline climbs (or drops) 4 mm outside the wall before
+        # turning in, so each branch's hole lies at the other's height and
+        # the two bridges cross. The holes themselves are apart (y = +-0.6).
+        def climbing(y, z_from, z_to):
+            up = np.linspace(z_to, z_from, 9)
+            return (
+                [(x, y, z_to) for x in np.arange(0.0, 2.5, 0.5)]
+                + [(2.5, y, z) for z in up]
+                + [(x, y, z_from) for x in np.arange(3.0, 8.0, 0.5)]
+            )
+
+        scene = self._scene(
+            [
+                (3, 0.6, 3.0, climbing(0.6, 3.0, 7.0)),
+                (4, -0.6, 7.0, climbing(-0.6, 7.0, 3.0)),
+            ]
+        )
+        with pytest.warns(UserWarning, match="would cross RCA branch"):
+            _, _, patches = reconnect_side_branches(*scene)
+        assert len(patches) == 1
+
+
+def _loose(mesh):
+    from multimodars.ccta.stitching.side_branches import _loose_pieces
+
+    return _loose_pieces(mesh)
 
 
 class TestSyncTreeToMesh:
