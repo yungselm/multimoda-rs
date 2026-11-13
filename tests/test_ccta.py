@@ -953,6 +953,53 @@ class TestScaleRegionCenterlineMorphing:
             result.vertices, adjust_radius_centerline_morphing(lca, [vertex], 1.0)
         )
 
+    @staticmethod
+    def _cylinder(radius=1.5):
+        """Rings of radius *radius* around the z axis, and that axis as centerline."""
+        from multimodars._converters import numpy_to_centerline
+
+        # Centerline points level with the rings, so each vertex moves within
+        # its ring's plane.
+        z_axis = np.column_stack([np.zeros(49), np.zeros(49), np.linspace(-2, 22, 49)])
+        theta = np.linspace(0, 2 * np.pi, 24, endpoint=False)
+        verts = np.array(
+            [
+                (radius * np.cos(t), radius * np.sin(t), z)
+                for z in np.arange(0, 20.5, 0.5)
+                for t in theta
+            ]
+        )
+        mesh = trimesh.Trimesh(verts, np.zeros((0, 3), dtype=int), process=False)
+        return mesh, numpy_to_centerline(z_axis)
+
+    def _there_and_back(self, mesh, cl, d):
+        there = scale_region_centerline_morphing(
+            mesh, [tuple(v) for v in mesh.vertices], cl, d
+        )
+        back = scale_region_centerline_morphing(
+            there, [tuple(v) for v in there.vertices], cl, -d
+        )
+        return there, back
+
+    def test_scaling_back_restores_the_vessel(self):
+        mesh, cl = self._cylinder(radius=1.5)
+        _, back = self._there_and_back(mesh, cl, -1.2)
+        np.testing.assert_allclose(back.vertices, mesh.vertices, atol=1e-9)
+
+    def test_shrinking_past_the_centerline_is_clamped(self, capsys):
+        mesh, cl = self._cylinder(radius=1.5)
+        there, back = self._there_and_back(mesh, cl, -2.0)
+        # Every vertex stays on its own side, at 10 % of its radius, and
+        # the clamp is reported.
+        xy = there.vertices[:, :2]
+        np.testing.assert_allclose(np.linalg.norm(xy, axis=1), 0.15, atol=1e-9)
+        assert ((xy * mesh.vertices[:, :2]).sum(axis=1) > 0).all()
+        assert "984 of 984 vertices would have come closer" in capsys.readouterr().out
+        # Scaling back grows them by 2 mm from there, not back to 1.5 mm.
+        np.testing.assert_allclose(
+            np.linalg.norm(back.vertices[:, :2], axis=1), 2.15, atol=1e-9
+        )
+
 
 def _vertex_beside_branch(centerline, branch_id: int) -> tuple[float, float, float]:
     """A point 0.5 mm off the middle of one branch, so that branch is its nearest."""

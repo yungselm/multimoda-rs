@@ -549,6 +549,18 @@ keep the coordinate lists in ``results`` consistent with the updated vertex posi
 
 .. note::
 
+    ``radius_adjustment_mm`` is an offset in millimetres, the same for every vertex, so a
+    negative value larger than the vessel's local radius would carry vertices through the
+    centerline to the opposite side, turning the vessel inside out in a way no adjustment back
+    can undo.  Instead, a vertex is never moved closer to its nearest centerline point than 10 %
+    of its distance to it, and the number of vertices stopped there is printed.  Scaling back
+    by the opposite adjustment returns every other vertex exactly, but not the stopped ones.
+    If many are reported, the adjustment is too large for the region (or the region holds
+    vertices close to the centerline of another branch, e.g. at a junction; pass
+    ``branch_points`` to morph each vertex around its own branch).
+
+.. note::
+
     The order of morphing steps matters because each call to
     :func:`~multimodars.sync_results_to_mesh` updates all point lists to reflect the current
     mesh state.  Always sync before passing ``results['mesh']`` to the next morphing call.

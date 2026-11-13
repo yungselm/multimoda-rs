@@ -64,6 +64,16 @@ def scale_region_centerline_morphing(
     -----
     If no vertices matching *region_points* are found in the mesh, a warning
     is printed and the unmodified copy is returned.
+
+    Notes
+    -----
+    A negative *radius_adjustment_mm* never brings a vertex closer to its
+    nearest centerline point than 10 % of its distance to it: going further
+    would carry it through the centerline to the opposite side, which scaling
+    back cannot undo.  The number of vertices stopped there is printed.  They
+    move less than ``abs(radius_adjustment_mm)``, so scaling back by
+    ``-radius_adjustment_mm`` does not return them exactly; every other vertex
+    returns exactly (as long as its nearest centerline point stays the same).
     """
     scaled_mesh = mesh.copy()
 
@@ -84,6 +94,7 @@ def scale_region_centerline_morphing(
     print(f"Radius adjustment: {np.round(radius_adjustment_mm, 2)} mm")
 
     vertices = np.array(scaled_mesh.vertices, dtype=np.float64)
+    before = vertices[region_vertex_indices].copy()
     for indices, axis in _morph_axes(
         vertices, region_vertex_indices, centerline, branch_points
     ):
@@ -93,6 +104,20 @@ def scale_region_centerline_morphing(
             radius_adjustment_mm=radius_adjustment_mm,
         )
         vertices[indices] = np.array(adjusted_points, dtype=np.float64)
+
+    if radius_adjustment_mm < 0.0:
+        moved = np.linalg.norm(vertices[region_vertex_indices] - before, axis=1)
+        # Vertices on the centerline do not move at all.
+        clamped = np.count_nonzero(
+            (moved > 0.0) & (moved < -radius_adjustment_mm - 1e-9)
+        )
+        if clamped:
+            print(
+                f"Warning: {clamped} of {len(moved)} vertices would have come "
+                "closer to their centerline than 10% of their distance to it (or "
+                "through it); they were stopped there, and scaling back by "
+                f"{-radius_adjustment_mm} mm will not return them exactly"
+            )
 
     # Assigning the array clears the mesh cache
     scaled_mesh.vertices = vertices

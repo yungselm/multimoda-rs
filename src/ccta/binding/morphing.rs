@@ -33,6 +33,14 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
 /// -------
 /// adjusted_points : list of tuple of float
 ///     Morphed ``(x, y, z)`` point coordinates.
+///
+/// Notes
+/// -----
+/// Each point moves along the direction from its nearest centerline point.  A negative
+/// adjustment never brings a point closer to that centerline point than 10 % of its distance
+/// to it: going further would carry it through the centerline to the opposite side, and no
+/// adjustment back could undo that.  Points stopped there move less than
+/// ``abs(radius_adjustment_mm)`` and do not return exactly when scaled back; all others do.
 #[pyfunction]
 pub fn adjust_radius_centerline_morphing(
     centerline: PyCenterline,

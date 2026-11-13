@@ -3,43 +3,29 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.13.0] - 2025-11-13
 
 ### Added
-- Clean stitch rims: with `tree`, `stitch_ccta_to_intravascular` (and `stitch`) no longer joins
-  the distal end, nor a proximal end that is not the ostium, to the jagged rim the removal left.
-  It cuts that end flat at a contour of the vessel it lies on (the same cut as `cut_at_slice`,
-  left open), so both rims of the seam are planar. `distal_cut_slice` / `proximal_cut_slice`
-  choose the contour. The default is the contour nearest the opening that has the whole old rim
-  on the opening's side, and the contour used is printed. The ostium is stitched as before.
-- `branch_cut_slices` on `stitch_ccta_to_intravascular` / `stitch` and `cut_slices` on
-  `reconnect_side_branches`: the contour each side branch is cut at, by `(vessel, branch_id)`
-  (default contour 0).
-- Side branches that share a stub, and so one loose piece, are now each reconnected. A piece is
-  joined only if all of its branches can be.
+- Clean stitch rims: with `tree`, the distal rim (and a proximal one that is not the ostium) is cut
+  flat at a tree contour instead of keeping the jagged removal rim. `distal_cut_slice` /
+  `proximal_cut_slice` choose the contour (default: nearest the opening, printed).
+- `branch_cut_slices` (stitch) / `cut_slices` (`reconnect_side_branches`): contour each side branch
+  is cut at, by `(vessel, branch_id)` (default 0).
 
 ### Changed (breaking)
-- Side branches are reconnected by imprint. The branch is cut at its chosen contour (the side
-  towards the parent is dropped), and that cut ring is stepped back along the branch centerline,
-  point by point to the branch's first point on the parent. Where each ring point first meets the
-  intravascular wall becomes a vertex of the hole's rim, and the bridge joins every ring point to
-  its own imprint. The hole and the bridge therefore follow the branch's actual shape and
-  direction, without twist. Branches wider than the vessel are still narrowed to
-  `max_hole_fraction`.
-- `reconnect_side_branches(..., tree, centerlines, cut_slices=None, ...)` needs the vessel
-  centerlines (`{"rca": rca_cl, "lca": lca_cl}`), and `stitch_ccta_to_intravascular` / `stitch`
-  take `centerlines=`, required together with `tree` (`ValueError` otherwise).
-  `clearance_mm` is removed: the cut contour is no longer searched for. A cut that fails, or a cut
-  ring that reaches into the intravascular lumen, leaves the branch loose with a warning naming the
-  `cut_slices` key to set.
+- Side branches are reconnected by imprint: the cut ring is stepped back along the branch
+  centerline until it meets the intravascular wall, and each ring point is bridged to its own
+  imprint (no twist).
+- The stitch and `reconnect_side_branches` need `centerlines` together with `tree`.
+  `clearance_mm` is removed; a failed cut leaves the branch loose with a warning naming the key.
 
 ### Fixed
-- Two side branches sharing a stub: the cut of one dropped the other without a warning.
-- A side branch whose hole touched another's could move that hole's rim and tear its bridge. Two
-  rims now keep at least one wall vertex between them, otherwise the second branch is refused with
-  a warning.
-- A side-branch bridge could cut through another branch or its bridge. Such a branch is now
-  refused with a warning naming the other branch.
+- Side branches sharing a stub: one was dropped silently; now all are reconnected, or none.
+- Side-branch holes touching another hole, or bridges crossing another branch, are refused with a
+  warning instead of corrupting the mesh.
+- Radial scaling: a negative adjustment larger than the radius moved vertices through the
+  centerline, which scaling back could not undo. Vertices now stop at 10 % of their distance to
+  the centerline, and the number stopped is printed.
 
 ## [0.12.0] - 2026-11-12
 
