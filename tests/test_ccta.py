@@ -3326,6 +3326,46 @@ class TestStitchAcrossABifurcation:
         with pytest.raises(ValueError, match="distal_cut_slice"):
             self._stitch(bifurcation_cut, example_tree, distal_cut_slice=70)
 
+    def test_cut_targets_name_what_the_stitch_cuts(self, bifurcation_cut, example_tree):
+        side, geometry, trimmed = bifurcation_cut
+        targets = mm.stitch_cut_targets(
+            geometry, trimmed, example_tree, proximal_is_ostium=False
+        )
+        assert targets["side_branches"] == [("rca", side)]
+        _, _, stitched = self._stitch(bifurcation_cut, example_tree)
+        # The defaults are the contours the stitch takes without a choice.
+        for end in ("proximal", "distal"):
+            vessel, branch, default = targets[end]
+            assert (vessel, branch) == ("rca", 0)
+            assert stitched["cut_slices"][end] == default
+        assert stitched["cut_slices"][("rca", side)] == 2
+        assert stitched["not_reconnected"] == {}
+
+    def test_ostium_is_no_cut_target(self, bifurcation_cut, example_tree):
+        _, geometry, trimmed = bifurcation_cut
+        targets = mm.stitch_cut_targets(
+            geometry, trimmed, example_tree, proximal_is_ostium=True
+        )
+        assert targets["proximal"] is None
+
+    def test_failed_branch_reported(self, bifurcation_cut, example_tree):
+        side, geometry, trimmed = bifurcation_cut
+        with pytest.warns(UserWarning, match="not reconnected"):
+            stitched = mm.stitch_ccta_to_intravascular(
+                geometry,
+                trimmed["mesh"],
+                {
+                    k: (list(v) if isinstance(v, list) else v)
+                    for k, v in trimmed.items()
+                },
+                prox_start_mode="nearest_iv",
+                proximal_is_ostium=False,
+                tree=example_tree,
+                centerlines=self.centerlines,
+            )
+        assert ("rca", side) in stitched["not_reconnected"]
+        assert ("rca", side) not in stitched["cut_slices"]
+
 
 # ===========================================================================
 # mesh_regions.cut_at_slice

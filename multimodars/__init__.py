@@ -65,6 +65,7 @@ from .ccta.scaling import (
 )
 from .ccta.stitching import (
     stitch_ccta_to_intravascular,
+    stitch_cut_targets,
 )
 from .io import read_geometrical, write_geometries
 
@@ -149,6 +150,7 @@ __all__ = [
     "scale_region_centerline_morphing",
     "stitch",
     "stitch_ccta_to_intravascular",
+    "stitch_cut_targets",
     "structure_to_trimesh",
     "sync_results_to_mesh",
     "sync_tree_to_mesh",

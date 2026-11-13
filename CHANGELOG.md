@@ -3,7 +3,22 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [0.13.0] - 2025-11-13
+## [0.13.1] - 2026-11-13
+
+### Added
+- `stitch_cut_targets(iv_mesh, results, tree)`: what the stitch would cut, to choose its contours
+  first: the branch of the distal and proximal rim with its default contour (`None` for an
+  ostium), and the side branches it would reconnect.
+- The stitch with `tree` returns `"cut_slices"` (the contour each end and side branch was cut
+  at) and `"not_reconnected"` (why each other side branch was left loose).
+- `reconnect_side_branches_report` and `side_branch_targets`, the same for
+  `reconnect_side_branches`.
+
+### Changed
+- `cut_clean_ends` returns the contour each end was cut at (`{"distal": k, ...}`) instead of the
+  set of ends.
+
+## [0.13.0] - 2026-11-13
 
 ### Added
 - Clean stitch rims: with `tree`, the distal rim (and a proximal one that is not the ostium) is cut

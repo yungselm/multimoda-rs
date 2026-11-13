@@ -125,6 +125,62 @@ def reconnect_side_branches(
     keep at least one wall vertex between them), or if its bridge would cut
     through another branch or its bridge.
     """
+    out = reconnect_side_branches_report(
+        ccta_mesh,
+        iv_mesh,
+        iv_frames,
+        results,
+        tree,
+        centerlines,
+        cut_slices=cut_slices,
+        max_hole_fraction=max_hole_fraction,
+        max_ring_spacing_mm=max_ring_spacing_mm,
+    )
+    return out.ccta_mesh, out.iv_mesh, out.bridges
+
+
+@dataclass
+class Reconnection:
+    """What :func:`reconnect_side_branches_report` did."""
+
+    #: The CCTA mesh with the joined pieces cut at their contours.
+    ccta_mesh: trimesh.Trimesh
+    #: The intravascular mesh with the holes.
+    iv_mesh: trimesh.Trimesh
+    #: The strips bridging each branch to its hole.
+    bridges: list[trimesh.Trimesh]
+    #: Contour each joined branch was cut at, by ``(vessel, branch_id)``.
+    cut_slices: dict[tuple[str, int], int] = field(default_factory=dict)
+    #: Why each branch was left loose, by ``(vessel, branch_id)``.
+    not_reconnected: dict[tuple[str, int], str] = field(default_factory=dict)
+
+
+def side_branch_targets(
+    ccta_mesh: trimesh.Trimesh, results: dict, tree: PyDiscretizedVesselTree
+) -> list[tuple[str, int]]:
+    """``(vessel, branch_id)`` of every side branch the stitch would try to
+    reconnect (the branches the loose ``"off_path_points"`` pieces of
+    *ccta_mesh* start with), the keys of *cut_slices*."""
+    return [
+        key
+        for piece in _off_path_pieces(ccta_mesh, results)
+        for key in _root_branches(ccta_mesh.vertices[piece], results, tree)
+    ]
+
+
+def reconnect_side_branches_report(
+    ccta_mesh: trimesh.Trimesh,
+    iv_mesh: trimesh.Trimesh,
+    iv_frames: list[PyFrame],
+    results: dict,
+    tree: PyDiscretizedVesselTree,
+    centerlines: Mapping[str, PyCenterline],
+    cut_slices: dict[tuple[str, int], int] | None = None,
+    max_hole_fraction: float = 0.5,
+    max_ring_spacing_mm: float = 0.25,
+) -> Reconnection:
+    """:func:`reconnect_side_branches`, also saying which contour each branch
+    was cut at and why the others were left loose."""
     rings = _densify_rings(
         np.array([f.lumen.points_as_tuples() for f in iv_frames], dtype=np.float64),
         max_ring_spacing_mm,
@@ -134,7 +190,6 @@ def reconnect_side_branches(
     ccta_faces = np.asarray(ccta_mesh.faces).copy()
     iv_vertices = rings.reshape(-1, 3).copy()
     iv_faces = _tube_faces(rings)
-    off_path = set(map(tuple, results.get("off_path_points", [])))
     ctx = _Context(
         lumen=lumen,
         # The wall before any hole, for the imprints.
@@ -147,11 +202,9 @@ def reconnect_side_branches(
     )
     state = _WallState(iv_vertices, iv_faces, np.full(len(iv_vertices), -1))
     joined: list[_Joined] = []
+    not_reconnected: dict[tuple[str, int], str] = {}
 
-    for piece in _loose_pieces(ccta_mesh):
-        coords = [tuple(v) for v in ccta_mesh.vertices[piece]]
-        if 2 * sum(c in off_path for c in coords) <= len(coords):
-            continue
+    for piece in _off_path_pieces(ccta_mesh, results):
         roots = _root_branches(ccta_mesh.vertices[piece], results, tree)
         if not roots:
             warnings.warn(
@@ -191,6 +244,12 @@ def reconnect_side_branches(
                     UserWarning,
                     stacklevel=2,
                 )
+                not_reconnected[(vessel, branch_id)] = out
+                for key in roots:
+                    not_reconnected.setdefault(
+                        key,
+                        f"leaves the same loose piece as {name}, which was not reconnected",
+                    )
                 break
             done.append(out)
         else:
@@ -204,17 +263,19 @@ def reconnect_side_branches(
                 )
 
     if not joined:
-        return ccta_mesh, iv_mesh, []
+        return Reconnection(ccta_mesh, iv_mesh, [], {}, not_reconnected)
     ccta_out = cast(
         trimesh.Trimesh,
         trimesh.util.concatenate(
             [_with_faces(ccta_mesh.vertices, ccta_faces), *(j.piece for j in joined)]
         ),
     )
-    return (
+    return Reconnection(
         ccta_out,
         _with_faces(state.vertices, state.faces),
         [j.bridge for j in joined],
+        {j.key: j.slice_idx for j in joined},
+        not_reconnected,
     )
 
 
@@ -253,6 +314,7 @@ class _Joined:
     """A side branch joined to the wall."""
 
     name: str
+    key: tuple[str, int]
     slice_idx: int
     #: The branch, cut at its contour and left open there.
     piece: trimesh.Trimesh
@@ -351,7 +413,15 @@ def _join_branch(
     band = np.unique(new_faces[np.isin(new_faces, rim).any(axis=1)])
     state.owner[hole] = index
     state.owner[band] = index
-    return _Joined(name, slice_idx, piece_mesh, bridge, len(branch_pts), len(rim_pts))
+    return _Joined(
+        name,
+        (vessel, branch_id),
+        slice_idx,
+        piece_mesh,
+        bridge,
+        len(branch_pts),
+        len(rim_pts),
+    )
 
 
 def _densify_rings(rings: np.ndarray, max_spacing: float) -> np.ndarray:
@@ -453,6 +523,17 @@ def _loose_pieces(mesh: trimesh.Trimesh) -> list[np.ndarray]:
         for c in np.flatnonzero(sizes >= _MIN_PIECE_VERTICES)
         if c != main
     ]
+
+
+def _off_path_pieces(mesh: trimesh.Trimesh, results: dict) -> list[np.ndarray]:
+    """The loose pieces most of whose vertices are ``"off_path_points"``."""
+    off_path = set(map(tuple, results.get("off_path_points", [])))
+    pieces = []
+    for piece in _loose_pieces(mesh):
+        coords = [tuple(v) for v in mesh.vertices[piece]]
+        if 2 * sum(c in off_path for c in coords) > len(coords):
+            pieces.append(piece)
+    return pieces
 
 
 def _root_branches(

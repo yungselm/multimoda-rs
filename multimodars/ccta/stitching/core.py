@@ -11,15 +11,18 @@ from ...multimodars import PyCenterline, PyDiscretizedVesselTree, PyGeometry
 from .._results import map_point_lists
 from .boundary import (
     _adjust_start_point_by_z,
+    _assign_rings_to_ends,
+    _boundary_rings,
     _carry_ring_weights,
     _fix_ring_direction_by_distance,
     _fix_ring_direction_by_winding,
     _prepare_prox_dist_boundary_pts,
+    _ring_is_ostium,
     _rotate_to_nearest_iv,
 )
-from .end_cuts import cut_clean_ends
+from .end_cuts import cut_clean_ends, end_target
 from .helpers import _fast_fix_normals, _plane_normal_svd
-from .side_branches import reconnect_side_branches
+from .side_branches import reconnect_side_branches_report, side_branch_targets
 
 
 def stitch_ccta_to_intravascular(
@@ -149,7 +152,11 @@ def stitch_ccta_to_intravascular(
         surface, ``"prox_boundary_points"`` / ``"dist_boundary_points"``
         holding the ordered rings that were stitched, ``"anomalous_points"``
         set to the intravascular lumen points, and ``"rca_points"`` rebuilt
-        from those plus the proximal and distal points.
+        from those plus the proximal and distal points.  With *tree*, also
+        ``"cut_slices"``, the contour each end (``"proximal"`` / ``"distal"``)
+        and each reconnected side branch (``(vessel, branch_id)``) was cut at,
+        and ``"not_reconnected"``, why each other side branch was left loose
+        (by ``(vessel, branch_id)``).
 
     Raises
     ------
@@ -181,7 +188,7 @@ def stitch_ccta_to_intravascular(
 
     target_n = max(3, round(boundary_point_ratio * len(proximal_points)))
 
-    clean_ends: set[str] = set()
+    clean_ends: dict[str, int] = {}
     if tree is not None:
         mesh, results, clean_ends, proximal_is_ostium = cut_clean_ends(
             mesh,
@@ -279,7 +286,7 @@ def stitch_ccta_to_intravascular(
     branch_patches: list[trimesh.Trimesh] = []
     if tree is not None:
         ccta_before, iv_before = mesh, test_mesh
-        mesh, test_mesh, branch_patches = reconnect_side_branches(
+        reconnection = reconnect_side_branches_report(
             mesh,
             test_mesh,
             list(iv_mesh.frames),
@@ -288,6 +295,8 @@ def stitch_ccta_to_intravascular(
             cast(Mapping, centerlines),
             cut_slices=branch_cut_slices,
         )
+        mesh, test_mesh = reconnection.ccta_mesh, reconnection.iv_mesh
+        branch_patches = reconnection.bridges
         kept = {tuple(v) for v in mesh.vertices} | {
             tuple(v) for v in test_mesh.vertices
         }
@@ -327,6 +336,9 @@ def stitch_ccta_to_intravascular(
         iv_mesh_points + results["distal_points"] + results["proximal_points"]
     )
     results["mesh"] = mesh
+    if tree is not None:
+        results["cut_slices"] = {**clean_ends, **reconnection.cut_slices}
+        results["not_reconnected"] = reconnection.not_reconnected
 
     return results
 
@@ -542,3 +554,55 @@ def _stitch_rings_rounded(
     )
     _orient_patch(patch, outward_direction)
     return patch
+
+
+def stitch_cut_targets(
+    iv_mesh: PyGeometry,
+    results: dict,
+    tree: PyDiscretizedVesselTree,
+    proximal_is_ostium: bool | None = None,
+) -> dict:
+    """What :func:`stitch_ccta_to_intravascular` with *tree* would cut, to
+    choose its contours before stitching.
+
+    Parameters are as for the stitch, *results* after
+    :func:`~multimodars.remove_labeled_points_from_mesh`.
+
+    Returns
+    -------
+    dict
+        ``"distal"`` and ``"proximal"``: ``(vessel, branch_id, default)``, the
+        branch whose contours *distal_cut_slice* / *proximal_cut_slice* index
+        and the contour taken without them (``None`` if none has the whole rim
+        on the opening's side).  ``"proximal"`` is ``None`` when the proximal
+        rim is the ostium, which is not cut.  ``"side_branches"``: the
+        ``(vessel, branch_id)`` keys of *branch_cut_slices* (default contour
+        0).
+
+    Raises
+    ------
+    ValueError
+        If *results* holds fewer than two boundary rings, or a rim's vertices
+        carry no branch label.
+    """
+    mesh = results["mesh"]
+    rings = _boundary_rings(results, mesh)
+    if len(rings) < 2:
+        raise ValueError(
+            f"results holds {len(rings)} boundary ring(s), the stitch needs two "
+            "(remove_labeled_points_from_mesh with target_boundaries=2)"
+        )
+    prox_ring, dist_ring, _ = _assign_rings_to_ends(
+        rings, iv_mesh.frames[0].centroid, iv_mesh.frames[-1].centroid
+    )
+    if proximal_is_ostium is None:
+        proximal_is_ostium = _ring_is_ostium(prox_ring, results)
+    return {
+        "distal": end_target(results, tree, "distal", dist_ring),
+        "proximal": (
+            None
+            if proximal_is_ostium
+            else end_target(results, tree, "proximal", prox_ring)
+        ),
+        "side_branches": side_branch_targets(mesh, results, tree),
+    }

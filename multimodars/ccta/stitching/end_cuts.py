@@ -38,7 +38,7 @@ def cut_clean_ends(
     proximal_is_ostium: bool | None,
     proximal_cut_slice: int | None = None,
     distal_cut_slice: int | None = None,
-) -> tuple[trimesh.Trimesh, dict, set[str], bool]:
+) -> tuple[trimesh.Trimesh, dict, dict[str, int], bool]:
     """Replace the distal rim, and the proximal one unless it is the ostium, by
     a planar cut at a contour of the vessel each rim lies on.
 
@@ -50,7 +50,8 @@ def cut_clean_ends(
     proximal rim.  The contour used is printed.
 
     Returns the cut mesh, *results* updated to it (the cut rims stored in
-    place of the old ones), the ends cut (``"proximal"`` / ``"distal"``) and
+    place of the old ones), the contour each end was cut at (by
+    ``"proximal"`` / ``"distal"``) and
     whether the proximal rim is the ostium (*proximal_is_ostium*, decided from
     the rim when ``None``).
 
@@ -65,7 +66,7 @@ def cut_clean_ends(
     rings = _boundary_rings(results, mesh)
     if len(rings) < 2:
         # The stitch reports this itself.
-        return mesh, results, set(), bool(proximal_is_ostium)
+        return mesh, results, {}, bool(proximal_is_ostium)
     prox_ring, dist_ring, _ = _assign_rings_to_ends(rings, prox_centroid, dist_centroid)
     if proximal_is_ostium is None:
         proximal_is_ostium = _ring_is_ostium(prox_ring, results)
@@ -81,9 +82,21 @@ def cut_clean_ends(
     ends = [("distal", dist_ring, distal_cut_slice)]
     if not proximal_is_ostium:
         ends.append(("proximal", prox_ring, proximal_cut_slice))
+    used: dict[str, int] = {}
     for end, ring, slice_idx in ends:
-        results = _cut_end(results, tree, end, ring, slice_idx)
-    return results["mesh"], results, {end for end, _, _ in ends}, proximal_is_ostium
+        results, used[end] = _cut_end(results, tree, end, ring, slice_idx)
+    return results["mesh"], results, used, proximal_is_ostium
+
+
+def end_target(
+    results: dict, tree: PyDiscretizedVesselTree, end: str, ring: list[tuple]
+) -> tuple[str, int, int | None]:
+    """``(vessel, branch id, default contour)`` the *end* rim *ring* is cut on.
+    The default is ``None`` when no contour has the whole rim on the opening's
+    side."""
+    vessel, branch_id = _branch_of_ring(ring, results)
+    contours = list(getattr(tree, vessel)[branch_id].contours)
+    return vessel, branch_id, _nearest_clear_contour(contours, ring, end)
 
 
 def _cut_end(
@@ -92,15 +105,15 @@ def _cut_end(
     end: str,
     ring: list[tuple],
     slice_idx: int | None,
-) -> dict:
+) -> tuple[dict, int]:
     """*results* with the rim *ring* at the *end* of the opening cut away at a
-    contour, the open cut rim stored in its place."""
+    contour, the open cut rim stored in its place, and that contour."""
     arg = f"{end}_cut_slice"
-    vessel, branch_id = _branch_of_ring(ring, results)
+    vessel, branch_id, default = end_target(results, tree, end, ring)
     name = f"{vessel.upper()} branch {branch_id}"
     contours = list(getattr(tree, vessel)[branch_id].contours)
     if slice_idx is None:
-        slice_idx = _nearest_clear_contour(contours, ring, end)
+        slice_idx = default
         if slice_idx is None:
             raise ValueError(
                 f"no contour of {name} has the whole {end} rim on the opening's "
@@ -163,7 +176,7 @@ def _cut_end(
         f"Cut the {end} end at {name} contour {slice_idx} ({how}): open rim of "
         f"{len(cut.ring)} points"
     )
-    return updated
+    return updated, slice_idx
 
 
 def _branch_of_ring(ring: list[tuple], results: dict) -> tuple[str, int]:

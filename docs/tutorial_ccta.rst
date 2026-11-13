@@ -747,6 +747,23 @@ its place: a contour whose plane crosses the old rim or a junction raises ``Valu
 argument to change.  If the removed stretch also held vertices of another branch, a warning says
 so.  The ostium keeps the conditioning described below.
 
+Choosing the contours
+"""""""""""""""""""""
+
+To choose the contours before stitching (e.g. by clicking them in a viewer),
+:func:`multimodars.stitch_cut_targets` says what the stitch would cut, from the same arguments:
+
+.. code-block:: python
+
+    targets = mm.stitch_cut_targets(aligned.geom_a, updated_results, tree)
+    targets["distal"]         # ('rca', 0, 92): branch distal_cut_slice indexes, default contour
+    targets["proximal"]       # the same, or None when the proximal rim is the ostium
+    targets["side_branches"]  # [('rca', 3)]: the keys of branch_cut_slices (default contour 0)
+
+After the stitch, ``stitched["cut_slices"]`` holds the contour each end (``"proximal"`` /
+``"distal"``) and each reconnected side branch (``(vessel, branch_id)``) was cut at, and
+``stitched["not_reconnected"]`` why each other side branch was left loose.
+
 Side branches leaving the removed segment
 """""""""""""""""""""""""""""""""""""""""
 
