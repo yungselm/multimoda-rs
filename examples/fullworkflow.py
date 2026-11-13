@@ -295,6 +295,12 @@ mm.plot_boundary_edges(updated_results, key="boundary_points")
 # (e.g. contour 0's plane crosses the rim left by the removal), the branch
 # stays loose with a warning naming the key to set here.
 BRANCH_CUT_SLICES = {("rca", side): 2} if SYNTHETIC_PULLBACK else {}
+# The distal rim, and the proximal one unless it is the ostium, are cut flat at
+# a contour of the vessel they lie on instead of keeping the jagged rim the
+# removal left. None takes the contour nearest the opening that has the whole
+# old rim on the opening's side (printed); set an index to choose another.
+PROXIMAL_CUT_SLICE = None
+DISTAL_CUT_SLICE = None
 
 if SHOW_BRANCH_RECONNECTION and BRANCH_CUT_SLICES:
     show_branch_reconnection(
@@ -315,6 +321,8 @@ stitched = mm.stitch_ccta_to_intravascular(
     tree=tree,  # reconnects side branches leaving the anomalous segment
     centerlines={"rca": rca_cl, "lca": lca_cl},
     branch_cut_slices=BRANCH_CUT_SLICES,
+    proximal_cut_slice=PROXIMAL_CUT_SLICE,
+    distal_cut_slice=DISTAL_CUT_SLICE,
 )
 stitched["mesh"].export("prefixed.stl")
 print("Raw stitched mesh exported → prefixed_mesh.stl")

@@ -50,6 +50,12 @@ def vessel_branches(results: dict, vessel: str) -> dict[int, PointList]:
     return results[key]
 
 
+def is_boundary_key(key: str) -> bool:
+    """Whether *key* holds boundary rings (``"boundary_points"``,
+    ``"boundary_points_1"``, ...), which are not vertex labels."""
+    return key.startswith("boundary_points")
+
+
 def _is_point_list(value) -> bool:
     return isinstance(value, list) and all(
         isinstance(p, (tuple, list, np.ndarray)) and len(p) == 3 for p in value[:1]

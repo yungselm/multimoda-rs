@@ -16,7 +16,7 @@ Two topology entry points, differing in whether they may modify the mesh:
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 
 import numpy as np
 import trimesh
@@ -1478,6 +1478,7 @@ def _prepare_prox_dist_boundary_pts(
     proximal_aortic_thickness: float | None = None,
     seam_points_a: int = 2,
     seam_points_b: int = 4,
+    clean_ends: Collection[str] = (),
 ) -> tuple[list, list, trimesh.Trimesh, np.ndarray | None]:
     """Pick and condition the two boundary rings that will be stitched.
 
@@ -1497,6 +1498,10 @@ def _prepare_prox_dist_boundary_pts(
 
     *proximal_is_ostium* ``None`` decides by the proximal ring itself (see
     :func:`_ring_is_ostium`).
+
+    A ring whose end is in *clean_ends* (``"proximal"`` / ``"distal"``) was
+    cut flat at a tree contour (:func:`~.end_cuts.cut_clean_ends`) and is only
+    densified.
 
     Returns
     -------
@@ -1547,6 +1552,8 @@ def _prepare_prox_dist_boundary_pts(
             seam_points_a=seam_points_a,
             seam_points_b=seam_points_b,
         )
+    elif "proximal" in clean_ends:
+        prox_pts = list(prox_ring)
     else:
         mesh, prox_pts = _flatten_smooth_respace(mesh, prox_ring)
         if proximal_is_ostium:
@@ -1561,7 +1568,10 @@ def _prepare_prox_dist_boundary_pts(
                 aorta_pts=results.get("aorta_points"),
             )
 
-    mesh, dist_pts = _flatten_smooth_respace(mesh, dist_ring)
+    if "distal" in clean_ends:
+        dist_pts = list(dist_ring)
+    else:
+        mesh, dist_pts = _flatten_smooth_respace(mesh, dist_ring)
 
     # Densify last, so inserted points interpolate between final positions.
     if target_n:

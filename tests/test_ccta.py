@@ -3077,7 +3077,7 @@ class TestStitchAcrossABifurcation:
         _, rca, lca = example_centerlines
         self.centerlines = {"rca": rca, "lca": lca}
 
-    def _stitch(self, cut, tree):
+    def _stitch(self, cut, tree, **kwargs):
         side, geometry, trimmed = cut
         stitched = mm.stitch_ccta_to_intravascular(
             geometry,
@@ -3089,6 +3089,7 @@ class TestStitchAcrossABifurcation:
             centerlines=self.centerlines,
             # Contour 0's plane crosses the rim the removal left on the branch.
             branch_cut_slices={("rca", side): 2},
+            **kwargs,
         )
         return side, trimmed, stitched
 
@@ -3110,6 +3111,30 @@ class TestStitchAcrossABifurcation:
     def test_without_the_tree_the_branch_stays_loose(self, bifurcation_cut):
         _, _, stitched = self._stitch(bifurcation_cut, None)
         assert len(stitched["mesh"].split(only_watertight=False)) > 1
+
+    def test_both_rims_cut_flat_at_tree_contours(self, bifurcation_cut, example_tree):
+        _, _, stitched = self._stitch(bifurcation_cut, example_tree)
+        # Mid-vessel neither rim is the ostium, so both are planar cuts.
+        for key in ("prox_boundary_points", "dist_boundary_points"):
+            ring = np.asarray(stitched[key], dtype=np.float64)
+            assert _ring_plane_residual(ring) < 1e-6
+
+    def test_distal_cut_slice_chooses_the_plane(self, bifurcation_cut, example_tree):
+        k = 95
+        _, _, stitched = self._stitch(bifurcation_cut, example_tree, distal_cut_slice=k)
+        contour = example_tree.rca[0].contours[k]
+        pts = np.asarray(contour.points_as_tuples())
+        centre = np.asarray(contour.centroid)
+        normal = np.linalg.svd(pts - centre)[2][2]
+        ring = np.asarray(stitched["dist_boundary_points"], dtype=np.float64)
+        np.testing.assert_allclose((ring - centre) @ normal, 0.0, atol=1e-6)
+
+    def test_distal_cut_inside_the_opening_is_refused(
+        self, bifurcation_cut, example_tree
+    ):
+        # A contour proximal of the old distal rim: its plane crosses the opening.
+        with pytest.raises(ValueError, match="distal_cut_slice"):
+            self._stitch(bifurcation_cut, example_tree, distal_cut_slice=70)
 
 
 # ===========================================================================

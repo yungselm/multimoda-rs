@@ -17,6 +17,7 @@ from .boundary import (
     _prepare_prox_dist_boundary_pts,
     _rotate_to_nearest_iv,
 )
+from .end_cuts import cut_clean_ends
 from .helpers import _fast_fix_normals, _plane_normal_svd
 from .side_branches import reconnect_side_branches
 
@@ -38,6 +39,8 @@ def stitch_ccta_to_intravascular(
     tree: PyDiscretizedVesselTree | None = None,
     centerlines: Mapping[str, PyCenterline] | None = None,
     branch_cut_slices: dict[tuple[str, int], int] | None = None,
+    proximal_cut_slice: int | None = None,
+    distal_cut_slice: int | None = None,
 ) -> dict:
     """Stitch an aligned intravascular geometry into a CCTA mesh.
 
@@ -124,6 +127,14 @@ def stitch_ccta_to_intravascular(
     branch_cut_slices : dict of (str, int) to int, optional
         Contour each side branch is cut at, by ``(vessel, branch_id)``;
         contour 0 for a branch not listed (default).  Only used with *tree*.
+    proximal_cut_slice, distal_cut_slice : int, optional
+        With *tree*, the distal rim, and the proximal one unless it is the
+        ostium, are not conditioned but replaced by a planar cut at a contour
+        of the branch they lie on (see
+        :func:`~multimodars.ccta.stitching.end_cuts.cut_clean_ends`).  These
+        choose the contour (an index into the branch's contours); ``None``
+        (default) takes the one nearest the opening with the whole old rim on
+        the opening's side.
     seam_points_a, seam_points_b : int, optional
         How many Half A / Half B points either side of each of the two seams
         where the halves meet are replaced by a smooth arc (default 2 / 4).
@@ -143,8 +154,8 @@ def stitch_ccta_to_intravascular(
     Raises
     ------
     ValueError
-        If *results* holds fewer than two boundary rings, or *tree* is given
-        without *centerlines*.
+        If *results* holds fewer than two boundary rings, *tree* is given
+        without *centerlines*, or a clean rim cannot be cut.
     """
     if tree is not None and centerlines is None:
         raise ValueError(
@@ -170,6 +181,19 @@ def stitch_ccta_to_intravascular(
 
     target_n = max(3, round(boundary_point_ratio * len(proximal_points)))
 
+    clean_ends: set[str] = set()
+    if tree is not None:
+        mesh, results, clean_ends, proximal_is_ostium = cut_clean_ends(
+            mesh,
+            results,
+            tree,
+            proximal_centroid,
+            distal_centroid,
+            proximal_is_ostium,
+            proximal_cut_slice=proximal_cut_slice,
+            distal_cut_slice=distal_cut_slice,
+        )
+
     prox_boundary_pts, dist_boundary_pts, mesh, prox_half_a_weight = (
         _prepare_prox_dist_boundary_pts(
             mesh,
@@ -185,6 +209,7 @@ def stitch_ccta_to_intravascular(
             proximal_aortic_thickness=iv_mesh.frames[0].lumen.aortic_thickness,
             seam_points_a=seam_points_a,
             seam_points_b=seam_points_b,
+            clean_ends=clean_ends,
         )
     )
     conditioned_prox = prox_boundary_pts
