@@ -6,20 +6,19 @@ it loses its junction: it stays in the mesh as a loose piece (see
 ``"off_path_points"``).  :func:`reconnect_side_branches` joins every such piece
 to the intravascular wall that replaces the segment:
 
-1. The branch's most proximal contour in the discretized tree (contour 0,
-   where it leaves the vessel the intravascular data was aligned to) gives the
-   hole: it is projected towards the intravascular axis and wrapped onto the
-   wall facing the branch, and the wall inside that footprint is removed.  A
-   branch wider than the intravascular vessel is narrowed to at most
-   *max_hole_fraction* of its circumference.  The hole's rim is snapped onto
-   the footprint's outline, since the intravascular grid is coarse along the
-   vessel (one ring per frame).
-2. The CCTA piece is cut at the plane of the branch's first contour that has
-   the whole rim left by the removal behind it (and lies outside the
-   intravascular lumen), and everything between that plane and the parent
-   vessel is removed.  The cut leaves a clean, round rim.
-3. The rim of the cut branch and the rim of the hole are bridged by a straight
-   triangle strip.
+1. The CCTA piece is cut at the plane of one of the branch's contours in the
+   discretized tree (contour 0 unless chosen otherwise), and everything
+   between that plane and the parent vessel is removed.  The cut leaves a
+   clean, planar rim.
+2. That rim is moved back along the branch centerline (contour by contour to
+   contour 0, then on to the intravascular axis) until it crosses the
+   intravascular wall.  Where each rim point crosses gives the hole, and the
+   wall inside it is removed.  A branch wider than the intravascular vessel is
+   narrowed to at most *max_hole_fraction* of its circumference.  The hole's
+   rim is snapped onto that outline, since the intravascular grid is coarse
+   along the vessel (one ring per frame).
+3. The two rims, which come from the same contour and so have about the same
+   shape, are bridged by a straight triangle strip.
 
 The tree must match the mesh: after scaling the mesh, move it along with
 :func:`~multimodars.ccta.scaling.sync_tree_to_mesh`.
@@ -27,9 +26,11 @@ The tree must match the mesh: after scaling the mesh, move it along with
 
 from __future__ import annotations
 
+import itertools
 import warnings
-from types import SimpleNamespace
-from typing import TYPE_CHECKING
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import trimesh
@@ -37,10 +38,16 @@ from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
 from scipy.spatial import cKDTree
 
-from .boundary import clean_open_boundary, open_boundary_edges, order_boundary_rings
+from ...multimodars import cut_mesh_at_contour as _cut_mesh_at_contour
+from .boundary import clean_open_boundary
 
 if TYPE_CHECKING:
-    from ...multimodars import PyDiscretizedVesselTree, PyFrame
+    from ...multimodars import (
+        PyCenterline,
+        PyContour,
+        PyDiscretizedVesselTree,
+        PyFrame,
+    )
 
 _VESSELS = ("rca", "lca")
 _MIN_PIECE_VERTICES = 20
@@ -52,7 +59,8 @@ def reconnect_side_branches(
     iv_frames: list[PyFrame],
     results: dict,
     tree: PyDiscretizedVesselTree,
-    clearance_mm: float = 0.3,
+    centerlines: Mapping[str, PyCenterline],
+    cut_slices: dict[tuple[str, int], int] | None = None,
     max_hole_fraction: float = 0.5,
     max_ring_spacing_mm: float = 0.25,
 ) -> tuple[trimesh.Trimesh, trimesh.Trimesh, list[trimesh.Trimesh]]:
@@ -75,11 +83,19 @@ def reconnect_side_branches(
         ``"lca_branches"``), naming the branch of each piece.
     tree : PyDiscretizedVesselTree
         Discretized tree of the mesh before the removal, synced to any scaling
-        since.  Contour 0 of each branch gives the hole, a later contour the
-        cut.
-    clearance_mm : float, optional
-        How far outside the intravascular lumen the cut contour must lie
-        (default 0.3).
+        since.  A contour of each branch gives the cut plane.
+    centerlines : mapping of str to PyCenterline
+        Whole centerline of each vessel (``"rca"`` / ``"lca"``), the one
+        *tree* was discretized with.  The cut rim is moved back along its
+        branch's centerline, point by point to the branch's first point (on
+        the parent vessel).
+    cut_slices : dict of (str, int) to int, optional
+        Contour index each branch is cut at, by ``(vessel, branch_id)``
+        (e.g. ``{("rca", 3): 2}``); a branch not listed is cut at contour 0.
+        If the cut fails (the plane crosses the rim left by the removal, or a
+        junction) or the cut rim reaches into the intravascular lumen, the
+        branch is left loose with a warning naming the key to set; no other
+        contour is tried.
     max_hole_fraction : float, optional
         Largest share of the intravascular circumference a hole may span
         (default 0.5); a wider footprint is narrowed towards the branch side.
@@ -93,12 +109,21 @@ def reconnect_side_branches(
     Returns
     -------
     (trimesh.Trimesh, trimesh.Trimesh, list of trimesh.Trimesh)
-        The CCTA mesh with the pieces cut at their starting frames, the
+        The CCTA mesh with the pieces cut at their chosen contours, the
         intravascular mesh with the holes (densified, their rim vertices moved
-        onto the footprints; *iv_mesh* itself when nothing is reconnected), and
+        onto the imprints; *iv_mesh* itself when nothing is reconnected), and
         the bridging strips.  Vertices
         are shared by coordinate, so the parts join on ``merge_vertices``.
         A piece that cannot be reconnected is left as it is, with a warning.
+
+    Notes
+    -----
+    Two branches leaving side by side can share a stub and so one loose
+    piece; each is cut and joined on its own, and the piece is reconnected
+    only if all of them can be.  A branch is refused (with a warning naming
+    the other branch) if its hole would overlap or touch another's (two rims
+    keep at least one wall vertex between them), or if its bridge would cut
+    through another branch or its bridge.
     """
     rings = _densify_rings(
         np.array([f.lumen.points_as_tuples() for f in iv_frames], dtype=np.float64),
@@ -109,17 +134,26 @@ def reconnect_side_branches(
     ccta_faces = np.asarray(ccta_mesh.faces).copy()
     iv_vertices = rings.reshape(-1, 3).copy()
     iv_faces = _tube_faces(rings)
-    patches: list[trimesh.Trimesh] = []
     off_path = set(map(tuple, results.get("off_path_points", [])))
-
-    hole_taken = np.zeros(len(iv_vertices), dtype=bool)
+    ctx = _Context(
+        lumen=lumen,
+        # The wall before any hole, for the imprints.
+        wall=trimesh.Trimesh(iv_vertices.copy(), iv_faces, process=False),
+        n_per_frame=n_per_frame,
+        tree=tree,
+        centerlines=centerlines,
+        cut_slices=dict(cut_slices or {}),
+        max_hole_fraction=max_hole_fraction,
+    )
+    state = _WallState(iv_vertices, iv_faces, np.full(len(iv_vertices), -1))
+    joined: list[_Joined] = []
 
     for piece in _loose_pieces(ccta_mesh):
         coords = [tuple(v) for v in ccta_mesh.vertices[piece]]
         if 2 * sum(c in off_path for c in coords) <= len(coords):
             continue
-        found = _branch_of_piece(ccta_mesh.vertices[piece], results, tree)
-        if found is None:
+        roots = _root_branches(ccta_mesh.vertices[piece], results, tree)
+        if not roots:
             warnings.warn(
                 f"a loose CCTA piece of {len(piece)} vertices belongs to no labelled "
                 "side branch, left as it is",
@@ -127,100 +161,197 @@ def reconnect_side_branches(
                 stacklevel=2,
             )
             continue
-        vessel, branch_id = found
-        name = f"{vessel.upper()} branch {branch_id}"
-        contours = [
-            np.asarray(c.points_as_tuples(), dtype=np.float64)
-            for c in getattr(tree, vessel)[branch_id].contours
-        ]
-        if len(contours) < 2:
-            warnings.warn(
-                f"{name}: fewer than two contours, not reconnected",
-                UserWarning,
-                stacklevel=2,
+        # Every branch the piece starts with is reconnected, or none: cutting
+        # one drops the stub the others hang off.
+        trial = state.copy()
+        done: list[_Joined] = []
+        for vessel, branch_id in roots:
+            name = f"{vessel.upper()} branch {branch_id}"
+            out = _join_branch(
+                ctx,
+                trial,
+                ccta_mesh.vertices,
+                ccta_faces,
+                piece,
+                vessel,
+                branch_id,
+                [*joined, *done],
             )
-            continue
-        origin = float(lumen.position(contours[0].mean(axis=0)[None])[0])
-        if not 0.0 <= origin <= lumen.arclength[-1]:
-            gap, where = (
-                (-origin, "before")
-                if origin < 0.0
-                else (origin - lumen.arclength[-1], "after")
-            )
-            warnings.warn(
-                f"{name}: it leaves its parent {gap:.1f} mm {where} the intravascular "
-                "segment, where there is no intravascular "
-                "wall to join it to, not reconnected",
-                UserWarning,
-                stacklevel=2,
-            )
-            continue
-        removal_rim = _removal_rim(ccta_mesh.vertices, ccta_faces, piece, contours[0])
-        if removal_rim is None:
-            warnings.warn(
-                f"{name}: the piece has no open rim, not reconnected",
-                UserWarning,
-                stacklevel=2,
-            )
-            continue
-        start = _cut_contour(contours, removal_rim, lumen, clearance_mm)
-        if start is None:
-            warnings.warn(
-                f"{name}: no contour has the removal rim behind it and lies outside "
-                "the intravascular lumen, not reconnected",
-                UserWarning,
-                stacklevel=2,
-            )
-            continue
-        ring = contours[start]
-        center = ring.mean(axis=0)
-        axis = _contour_axis(contours, start)
+            if isinstance(out, str):
+                siblings = [
+                    f"{v.upper()} branch {b}" for v, b in roots if b != branch_id
+                ]
+                also = (
+                    f" (nor {', '.join(siblings)}, which leave the same loose piece)"
+                    if siblings
+                    else ""
+                )
+                warnings.warn(
+                    f"{name}: {out}, not reconnected{also}",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                break
+            done.append(out)
+        else:
+            state = trial
+            ccta_faces = ccta_faces[~np.isin(ccta_faces[:, 0], piece)]
+            joined += done
+            for j in done:
+                print(
+                    f"Reconnected {j.name}: cut at contour {j.slice_idx}, rims of "
+                    f"{j.n_ring} and {j.n_rim} points"
+                )
 
-        footprint = _Footprint(lumen, contours[0], center, max_hole_fraction)
-        if footprint.narrowed < 1.0:
-            print(
-                f"{name}: narrowed the hole to {footprint.narrowed:.0%} of its width "
-                f"({max_hole_fraction:.0%} of the intravascular circumference)"
-            )
-        cut = _cut_footprint(iv_vertices, iv_faces, n_per_frame, footprint, hole_taken)
-        if isinstance(cut, str):
-            warnings.warn(f"{name}: {cut}, not reconnected", UserWarning, stacklevel=2)
-            continue
-        new_iv_faces, hole, hole_rim = cut
-
-        new_ccta_faces, branch_rim = _cut_piece(
-            ccta_mesh.vertices, ccta_faces, piece, center, axis, ring
-        )
-        if branch_rim is None:
-            warnings.warn(
-                f"{name}: the cut branch has no clean rim, not reconnected",
-                UserWarning,
-                stacklevel=2,
-            )
-            continue
-        ccta_faces, iv_faces = new_ccta_faces, new_iv_faces
-        hole_taken[hole] = True
-
-        branch_pts = ccta_mesh.vertices[branch_rim]
-        iv_vertices[hole_rim] = footprint.snap(
-            iv_vertices[hole_rim], np.asarray(hole_rim) // n_per_frame
-        )
-        bridge_axis = branch_pts.mean(axis=0) - iv_vertices[hole_rim].mean(axis=0)
-        bridge_axis /= np.linalg.norm(bridge_axis)
-        hole_pts = _match_ring(iv_vertices[hole_rim], branch_pts, bridge_axis)
-        patches.append(_bridge(branch_pts, hole_pts))
-        print(
-            f"Reconnected {name}: hole from contour 0, cut at contour {start}, rims of "
-            f"{len(branch_pts)} and {len(hole_pts)} points"
-        )
-
-    if not patches:
-        return ccta_mesh, iv_mesh, patches
-    return (
-        _with_faces(ccta_mesh.vertices, ccta_faces),
-        _with_faces(iv_vertices, iv_faces),
-        patches,
+    if not joined:
+        return ccta_mesh, iv_mesh, []
+    ccta_out = cast(
+        trimesh.Trimesh,
+        trimesh.util.concatenate(
+            [_with_faces(ccta_mesh.vertices, ccta_faces), *(j.piece for j in joined)]
+        ),
     )
+    return (
+        ccta_out,
+        _with_faces(state.vertices, state.faces),
+        [j.bridge for j in joined],
+    )
+
+
+@dataclass
+class _Context:
+    """What every branch of :func:`reconnect_side_branches` is joined with."""
+
+    lumen: _Lumen
+    wall: trimesh.Trimesh
+    n_per_frame: int
+    tree: PyDiscretizedVesselTree
+    centerlines: Mapping[str, PyCenterline]
+    cut_slices: dict[tuple[str, int], int]
+    max_hole_fraction: float
+
+
+@dataclass
+class _WallState:
+    """The intravascular wall as holes are cut into it.  ``owner`` gives, per
+    vertex, the index in ``names`` of the branch whose hole (or the band of
+    vertices around its rim) it belongs to, -1 for none."""
+
+    vertices: np.ndarray
+    faces: np.ndarray
+    owner: np.ndarray
+    names: list[str] = field(default_factory=list)
+
+    def copy(self) -> _WallState:
+        return _WallState(
+            self.vertices.copy(), self.faces, self.owner.copy(), list(self.names)
+        )
+
+
+@dataclass
+class _Joined:
+    """A side branch joined to the wall."""
+
+    name: str
+    slice_idx: int
+    #: The branch, cut at its contour and left open there.
+    piece: trimesh.Trimesh
+    bridge: trimesh.Trimesh
+    n_ring: int
+    n_rim: int
+
+
+def _join_branch(
+    ctx: _Context,
+    state: _WallState,
+    vertices: np.ndarray,
+    faces: np.ndarray,
+    piece: np.ndarray,
+    vessel: str,
+    branch_id: int,
+    others: list[_Joined],
+) -> _Joined | str:
+    """Cut one branch of *piece*, cut its hole into *state* and bridge the two,
+    or say why not (*state* is then left as it was, or partly changed)."""
+    lumen = ctx.lumen
+    name = f"{vessel.upper()} branch {branch_id}"
+    hint = f"choose another plane with cut_slices[({vessel!r}, {branch_id})]"
+    contours = list(getattr(ctx.tree, vessel)[branch_id].contours)
+    slice_idx = ctx.cut_slices.get((vessel, branch_id), 0)
+    if not 0 <= slice_idx < len(contours):
+        return f"cut slice {slice_idx} out of range ({len(contours)} contours)"
+    origin = float(lumen.position(np.array([contours[0].centroid]))[0])
+    if not 0.0 <= origin <= lumen.arclength[-1]:
+        gap, where = (
+            (-origin, "before")
+            if origin < 0.0
+            else (origin - lumen.arclength[-1], "after")
+        )
+        return (
+            f"it leaves its parent {gap:.1f} mm {where} the intravascular segment, "
+            "where there is no intravascular wall to join it to"
+        )
+
+    cut_piece = _cut_branch(vertices, faces, piece, contours[slice_idx])
+    if isinstance(cut_piece, str):
+        return f"cutting at contour {slice_idx} failed ({cut_piece}), {hint}"
+    piece_mesh, branch_pts = cut_piece
+    if (lumen.outside_by(branch_pts) < 0.0).any():
+        return f"contour {slice_idx} reaches into the intravascular lumen, {hint}"
+
+    # The cut rim, stepped back along the branch centerline to its first
+    # point, leaves its imprint on the wall where each point first meets it.
+    path = _branch_path(
+        ctx.centerlines[vessel], branch_id, np.asarray(contours[slice_idx].centroid)
+    )
+    imprint, hit = _imprint(branch_pts, path, ctx.wall)
+    footprint = _Footprint(
+        lumen, imprint, branch_pts.mean(axis=0), ctx.max_hole_fraction
+    )
+    if not hit.all():
+        print(
+            f"{name}: {np.count_nonzero(~hit)} of {len(hit)} ring points "
+            "miss the intravascular wall (branch wider than the vessel)"
+        )
+    if footprint.narrowed < 1.0:
+        print(
+            f"{name}: narrowed the hole to {footprint.narrowed:.0%} of its width "
+            f"({ctx.max_hole_fraction:.0%} of the intravascular circumference)"
+        )
+    cut = _cut_footprint(state, ctx.n_per_frame, footprint)
+    if isinstance(cut, str):
+        return cut
+    new_faces, hole, rim = cut
+    # Each ring point's imprint becomes a rim vertex (where narrowing moved
+    # the outline, the outline's point does).
+    anchors = footprint.to_wall(footprint.outline)
+    if footprint.narrowed == 1.0:
+        anchors[hit] = imprint[hit]
+    laid = footprint.anchor(state.vertices[rim], rim // ctx.n_per_frame, anchors)
+    if isinstance(laid, str):
+        return laid
+    order, rim_pts, at = laid
+    bridge = _anchored_bridge(branch_pts, rim_pts, at)
+    for other in others:
+        if (
+            _meshes_cross(bridge, other.bridge)
+            or _meshes_cross(bridge, other.piece)
+            or _meshes_cross(piece_mesh, other.bridge)
+        ):
+            return (
+                f"its bridge to the wall would cross {other.name} or its bridge; "
+                f"{hint} nearer the parent vessel, or of {other.name}"
+            )
+
+    index = len(state.names)
+    state.names.append(name)
+    state.faces = new_faces
+    state.vertices[rim[order]] = rim_pts
+    # The hole, its rim and the vertices next to the rim are this branch's.
+    band = np.unique(new_faces[np.isin(new_faces, rim).any(axis=1)])
+    state.owner[hole] = index
+    state.owner[band] = index
+    return _Joined(name, slice_idx, piece_mesh, bridge, len(branch_pts), len(rim_pts))
 
 
 def _densify_rings(rings: np.ndarray, max_spacing: float) -> np.ndarray:
@@ -306,16 +437,6 @@ class _Lumen:
         _, _, radial, wall = self._local(points)
         return np.linalg.norm(radial, axis=1) - wall
 
-    def inside(self, points: np.ndarray, margin: float) -> np.ndarray:
-        """Whether each point lies inside the lumen, or within *margin* of its wall."""
-        frame, along, radial, wall = self._local(points)
-        r = np.linalg.norm(radial, axis=1)
-        last = len(self.centroids) - 1
-        beyond = ((frame == 0) & (along < -self.spacing / 2)) | (
-            (frame == last) & (along > self.spacing / 2)
-        )
-        return (r < wall + margin) & ~beyond
-
 
 def _loose_pieces(mesh: trimesh.Trimesh) -> list[np.ndarray]:
     """Vertex indices of every connected piece but the largest."""
@@ -334,71 +455,189 @@ def _loose_pieces(mesh: trimesh.Trimesh) -> list[np.ndarray]:
     ]
 
 
-def _branch_of_piece(
+def _root_branches(
     coords: np.ndarray, results: dict, tree: PyDiscretizedVesselTree
-) -> tuple[str, int] | None:
-    """``(vessel, branch id)`` of the side branch a loose piece starts with.
+) -> list[tuple[str, int]]:
+    """``(vessel, branch id)`` of each side branch a loose piece starts with,
+    most vertices first.
 
-    The piece holds the cut-off branch and the branches growing out of it.  Its
-    branch is the one whose parent is not in the piece, with the most vertices.
+    The piece holds the cut-off branches and the branches growing out of them.
+    A branch it starts with is one whose parent is not in the piece (the main
+    vessel aside: a strip of it may stay on a piece) and that has at least
+    ``_MIN_PIECE_VERTICES`` vertices in it.  Usually that is one branch; two
+    that leave the removed segment side by side can share a stub and so one
+    piece.
     """
     piece = set(map(tuple, coords))
-    best: tuple[int, str, int] | None = None
+    found: list[tuple[int, str, int]] = []
     for vessel in _VESSELS:
         nodes = getattr(tree, vessel)
         votes = {
             k: len(piece.intersection(map(tuple, pts)))
             for k, pts in results.get(f"{vessel}_branches", {}).items()
         }
-        present = {k for k, v in votes.items() if v}
+        present = {k for k, v in votes.items() if v and k != 0}
         for k in present:
             node = nodes.get(k)
-            if k == 0 or node is None:
+            if node is None or votes[k] < _MIN_PIECE_VERTICES:
                 continue
             if node.parent is not None and node.parent[0] in present:
                 continue
-            if best is None or votes[k] > best[0]:
-                best = (votes[k], vessel, k)
-    return None if best is None else (best[1], best[2])
+            found.append((votes[k], vessel, k))
+    return [(vessel, k) for _, vessel, k in sorted(found, reverse=True)]
 
 
-def _plane_basis(axis: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    seed = (
-        np.array([1.0, 0.0, 0.0]) if abs(axis[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
-    )
-    e1 = np.cross(axis, seed)
-    e1 /= np.linalg.norm(e1)
-    return e1, np.cross(axis, e1)
-
-
-def _cut_piece(
+def _cut_branch(
     vertices: np.ndarray,
     faces: np.ndarray,
     piece: np.ndarray,
-    center: np.ndarray,
-    axis: np.ndarray,
-    ring: np.ndarray,
-) -> tuple[np.ndarray, list[int] | None]:
-    """Cut *piece* at the plane through *center* normal to *axis*.
+    contour: PyContour,
+) -> tuple[trimesh.Trimesh, np.ndarray] | str:
+    """Cut *piece* at the plane of *contour*, keeping the distal side.
 
-    Returns the remaining faces and the piece's rim, ordered.
+    Returns the cut piece, left open at the cut, and its rim (ordered, on the
+    plane), or why the cut failed.
     """
-    q = vertices[piece] - center
-    along = q @ axis
-    lateral = np.linalg.norm(q - along[:, None] * axis, axis=1)
-    radius = np.linalg.norm(ring - center, axis=1).max()
-    # Only the branch's own tube: a nested branch curving back stays.
-    drop = piece[(along < 0.0) & (lateral < 3.0 * radius)]
-    cut = np.isin(faces, drop).any(axis=1)
-    # Seeded from the cut faces only, so an open vessel end is not merged in.
-    rim = set(np.setdiff1d(faces[cut].ravel(), drop).tolist())
-    faces = faces[~cut]
-    if not rim:
-        return faces, None
-    extra, rings = clean_open_boundary(faces, vertices, rim, target_n=1)
-    if extra:
-        faces = faces[~np.isin(faces, list(extra)).any(axis=1)]
-    return faces, (rings[0] if rings else None)
+    local = np.full(len(vertices), -1)
+    local[piece] = np.arange(len(piece))
+    piece_faces = local[faces[np.isin(faces[:, 0], piece)]]
+    try:
+        cut = _cut_mesh_at_contour(
+            [tuple(v) for v in vertices[piece].tolist()],
+            piece_faces.tolist(),
+            contour,
+            keep="distal",
+        )
+    except ValueError as err:
+        return str(err)
+    cut_vertices = np.asarray(cut[0], dtype=np.float64)
+    cut_faces = np.asarray(cut[1], dtype=np.int64)
+    ring, centroid = cut[2], cut[3]
+    # Drop the cap: the cut stays open for the bridge.
+    open_faces = cut_faces[~(cut_faces == centroid).any(axis=1)]
+    # Only what hangs off this ring: a sibling sharing the piece's stub may
+    # not be separated from the branch by the cut, and is cut on its own.
+    n = len(cut_vertices)
+    edges = open_faces[:, [0, 1, 1, 2, 2, 0]].reshape(-1, 2)
+    graph = coo_matrix((np.ones(len(edges)), (edges[:, 0], edges[:, 1])), shape=(n, n))
+    labels = connected_components(graph, directed=False)[1]
+    open_faces = open_faces[np.isin(labels[open_faces[:, 0]], labels[ring])]
+    return _with_faces(cut_vertices, open_faces), cut_vertices[ring]
+
+
+def _branch_path(
+    centerline: PyCenterline, branch_id: int, start: np.ndarray
+) -> np.ndarray:
+    """*start*, then the points of the branch's centerline proximal of it, back
+    to the branch's first point."""
+    cl = np.asarray(centerline.get_branch(branch_id).points_as_tuples(), dtype=float)
+    i = int(np.argmin(np.linalg.norm(cl - start, axis=1)))
+    # Leave out the nearest point if it lies distal of *start*.
+    ahead = cl[i + 1] - cl[i] if i + 1 < len(cl) else cl[i] - cl[i - 1]
+    if np.dot(cl[i] - start, ahead) > 0.0:
+        i -= 1
+    return np.vstack([start[None], cl[i::-1]]) if i >= 0 else start[None]
+
+
+def _imprint(
+    ring: np.ndarray, path: np.ndarray, wall: trimesh.Trimesh
+) -> tuple[np.ndarray, np.ndarray]:
+    """Step *ring* rigidly along the polyline *path* (which starts at the ring)
+    and find where each of its points first meets the *wall* surface.
+
+    Returns each point's imprint and whether it met the wall at all.  A point
+    that never does stays where the path ends.
+    """
+    offsets = path - path[0]
+    out = ring + offsets[-1]
+    hit = np.zeros(len(ring), dtype=bool)
+    triangles = wall.vertices[wall.faces]
+    for a, b in itertools.pairwise(offsets):
+        todo = np.flatnonzero(~hit)
+        length = float(np.linalg.norm(b - a))
+        if len(todo) == 0:
+            break
+        if length < 1e-12:
+            continue
+        direction = (b - a) / length
+        origins = ring[todo] + a
+        # Only the triangles around this step.
+        lo = np.minimum(origins, origins + b - a).min(axis=0)
+        hi = np.maximum(origins, origins + b - a).max(axis=0)
+        near = (triangles.max(axis=1) >= lo).all(axis=1) & (
+            triangles.min(axis=1) <= hi
+        ).all(axis=1)
+        if not near.any():
+            continue
+        dist = _ray_triangle_t(
+            origins, np.broadcast_to(direction, origins.shape), triangles[near]
+        ).min(axis=1)
+        met = dist <= length
+        out[todo[met]] = origins[met] + dist[met, None] * direction
+        hit[todo[met]] = True
+    return out, hit
+
+
+def _ray_triangle_t(
+    origins: np.ndarray, directions: np.ndarray, triangles: np.ndarray
+) -> np.ndarray:
+    """Distance along each unit direction from each origin to each of
+    *triangles* (F, 3, 3), ``inf`` where the ray misses it (Moller-Trumbore).
+    Returns an array (rays, triangles)."""
+    v0 = triangles[:, 0]
+    e1 = triangles[:, 1] - v0
+    e2 = triangles[:, 2] - v0
+    d = directions[:, None, :]
+    p = np.cross(d, e2[None])
+    det = (e1[None] * p).sum(axis=2)
+    ok = np.abs(det) > 1e-12
+    inv = np.where(ok, 1.0 / np.where(ok, det, 1.0), 0.0)
+    rel = origins[:, None, :] - v0[None]
+    u = (rel * p).sum(axis=2) * inv
+    q = np.cross(rel, e1[None])
+    v = (q * d).sum(axis=2) * inv
+    t = (q * e2[None]).sum(axis=2) * inv
+    eps = 1e-9
+    valid = ok & (u >= -eps) & (v >= -eps) & (u + v <= 1.0 + eps) & (t >= -eps)
+    return np.where(valid, t, np.inf)
+
+
+def _meshes_cross(a: trimesh.Trimesh, b: trimesh.Trimesh) -> bool:
+    """Whether the surfaces *a* and *b* cut through each other: an edge of one
+    passes through a triangle of the other (touching at an edge's end does not
+    count)."""
+    lo = np.maximum(a.bounds[0], b.bounds[0])
+    hi = np.minimum(a.bounds[1], b.bounds[1])
+    if (lo > hi).any():
+        return False
+    return _edges_pierce(a, b, lo, hi) or _edges_pierce(b, a, lo, hi)
+
+
+def _edges_pierce(
+    a: trimesh.Trimesh, b: trimesh.Trimesh, lo: np.ndarray, hi: np.ndarray
+) -> bool:
+    """Whether an edge of *a* passes through a triangle of *b*, looking only
+    within the box *lo*-*hi* both lie in."""
+
+    def in_box(pts: np.ndarray) -> np.ndarray:
+        return (pts.max(axis=1) >= lo).all(axis=1) & (pts.min(axis=1) <= hi).all(axis=1)
+
+    triangles = b.triangles[in_box(b.triangles)]
+    edges = a.vertices[a.edges_unique]
+    edges = edges[in_box(edges)]
+    if len(triangles) == 0 or len(edges) == 0:
+        return False
+    step = edges[:, 1] - edges[:, 0]
+    length = np.linalg.norm(step, axis=1)
+    keep = length > 1e-12
+    edges, step, length = edges[keep], step[keep], length[keep]
+    for chunk in range(0, len(edges), 256):
+        sl = slice(chunk, chunk + 256)
+        t = _ray_triangle_t(edges[sl, 0], step[sl] / length[sl, None], triangles)
+        span = length[sl, None]
+        if ((t > 1e-6 * span) & (t < (1.0 - 1e-6) * span)).any():
+            return True
+    return False
 
 
 def _in_polygon(xy: np.ndarray, poly: np.ndarray) -> np.ndarray:
@@ -412,81 +651,34 @@ def _in_polygon(xy: np.ndarray, poly: np.ndarray) -> np.ndarray:
     return (crosses & (x < x_at)).sum(axis=1) % 2 == 1
 
 
-def _removal_rim(
-    vertices: np.ndarray,
-    faces: np.ndarray,
-    piece: np.ndarray,
-    first_contour: np.ndarray,
-) -> np.ndarray | None:
-    """The piece's open rim left by the removal: of its open rims (the removal's,
-    and any open vessel ends), the one nearest the branch's first contour."""
-    piece_set = set(piece.tolist())
-    seeds = {int(v) for v in open_boundary_edges(faces).ravel() if int(v) in piece_set}
-    rings = order_boundary_rings(faces, vertices, seeds)
-    if not rings:
-        return None
-    origin = first_contour.mean(axis=0)
-    ring = min(rings, key=lambda r: np.linalg.norm(vertices[r].mean(axis=0) - origin))
-    return vertices[ring]
-
-
-def _contour_axis(contours: list[np.ndarray], i: int) -> np.ndarray:
-    """Branch direction at contour *i*, away from the parent."""
-    if i + 1 < len(contours):
-        axis = contours[i + 1].mean(axis=0) - contours[i].mean(axis=0)
-    else:
-        axis = contours[i].mean(axis=0) - contours[i - 1].mean(axis=0)
-    return axis / np.linalg.norm(axis)
-
-
-def _cut_contour(
-    contours: list[np.ndarray],
-    removal_rim: np.ndarray,
-    lumen: _Lumen,
-    clearance_mm: float,
-) -> int | None:
-    """Index of the first contour whose plane has the whole removal rim on the
-    parent's side, so a cut there leaves a clean ring, and which lies outside
-    the intravascular lumen."""
-    for i in range(1, len(contours)):
-        center = contours[i].mean(axis=0)
-        behind = (removal_rim - center) @ _contour_axis(contours, i) < 0.0
-        if behind.all() and not lumen.inside(contours[i], clearance_mm).any():
-            return i
-    return None
-
-
 class _Footprint:
-    """A branch contour wrapped onto the intravascular wall facing the branch.
+    """A hole outline on the intravascular wall, around the side facing a branch.
 
     A point on the wall is given as ``(s, a)``: arc length along the lumen
     axis, and arc length around it from the side facing the branch, measured
-    on a circle of the lumen's radius at the contour.  The contour is
-    projected towards the lumen axis and its offset across the lumen is laid
-    around the wall as arc length, so a branch wider than the lumen still
-    gives a hole on the facing side.  Its arc is narrowed towards the branch
-    side to at most *max_fraction* of the circumference.
+    on a circle of the lumen's radius at the branch.  The outline is built
+    from *points* on (or, where a wide branch misses the wall, outside) the
+    wall, each placed on the wall in the direction it lies from the axis.  Its
+    arc is narrowed towards the branch side to at most *max_fraction* of the
+    circumference.
     """
 
     def __init__(
         self,
         lumen: _Lumen,
-        contour: np.ndarray,
+        points: np.ndarray,
         towards: np.ndarray,
         max_fraction: float,
     ) -> None:
         self.lumen = lumen
-        frame = int(lumen.nearest_frame(contour.mean(axis=0)[None])[0])
+        frame = int(lumen.nearest_frame(points.mean(axis=0)[None])[0])
         self.d, self.e = lumen.basis(towards - lumen.centroids[frame])
         self.radius = float(lumen.radii[frame])
-        frames = lumen.nearest_frame(contour)
-        q = contour - lumen.centroids[frames]
-        s = lumen.position(contour)
-        a = (q * self.e[frames]).sum(axis=1) * self.radius / lumen.radii[frames]
+        sa = self.wall_coords(points, lumen.nearest_frame(points))
         limit = np.pi * max_fraction * self.radius
-        widest = np.abs(a).max()
+        widest = np.abs(sa[:, 1]).max()
         self.narrowed = min(1.0, limit / widest) if widest > 0 else 1.0
-        self.outline = np.column_stack([s, a * self.narrowed])
+        self.outline = np.column_stack([sa[:, 0], sa[:, 1] * self.narrowed])
         self.center = self.outline.mean(axis=0)
         rel = self.outline - self.center
         angles = np.arctan2(rel[:, 1], rel[:, 0])
@@ -542,50 +734,83 @@ class _Footprint:
             out[m] = (1.0 - f[m]) * p0 + f[m] * p1
         return out
 
-    def snap(self, ring: np.ndarray, frames: np.ndarray) -> np.ndarray:
-        """The hole's rim, *ring* (ordered wall points), laid onto the outline.
+    def anchor(
+        self, rim: np.ndarray, frames: np.ndarray, anchors: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray] | str:
+        """Lay the hole's rim, *rim* (ordered wall points), onto the outline.
 
-        The points keep their order and their share of the rim's length: they
-        are spread along the outline, the same way round, from where the first
-        one projects (radially from the footprint's center).  Projecting every
-        point radially instead can drop two of them onto one spot where the
-        grid's rim zig-zags, leaving a sliver in the bridge.
+        Outline point ``j`` gets one rim vertex of its own, placed exactly at
+        ``anchors[j]``; the rim vertices between two of those are spread
+        evenly along the outline between them.  The rim keeps its order: it
+        is turned to run the same way as the outline and started at the
+        vertex nearest outline point 0.
+
+        Returns the order of *rim* that does that, the new rim positions in
+        that order and the rim index of each outline point, or why the rim
+        cannot hold the outline.
         """
-        sa = self.wall_coords(ring, frames)
-        outline = self.outline
-        if np.sign(_area_2d(sa)) != np.sign(_area_2d(outline)):
-            outline = outline[::-1]
-        closed = np.vstack([outline, outline[:1]])
-        along = np.concatenate(
-            [[0.0], np.cumsum(np.linalg.norm(np.diff(closed, axis=0), axis=1))]
-        )
-        steps = np.linalg.norm(np.diff(np.vstack([sa, sa[:1]]), axis=0), axis=1)
-        share = np.concatenate([[0.0], np.cumsum(steps)[:-1]]) / steps.sum()
-        rel = sa[0] - self.center
-        angle = np.arctan2(rel[1], rel[0])
-        reach = np.interp(angle, self._angles, self._radii, period=2 * np.pi)
-        first = self.center + reach * np.array([np.cos(angle), np.sin(angle)])
-        start = along[np.argmin(np.linalg.norm(outline - first, axis=1))]
-        at = (start + share * along[-1]) % along[-1]
-        target = np.column_stack(
-            [np.interp(at, along, closed[:, 0]), np.interp(at, along, closed[:, 1])]
-        )
-        return self.to_wall(target)
+        n, m = len(self.outline), len(rim)
+        if m < n:
+            return (
+                f"the hole's rim has {m} points, fewer than the {n} of the branch "
+                "ring; lower max_ring_spacing_mm"
+            )
+        sa = self.wall_coords(rim, frames)
+        order = np.arange(m)
+        if np.sign(_area_2d(sa)) != np.sign(_area_2d(self.outline)):
+            order = order[::-1]
+        closed = np.vstack([self.outline, self.outline[:1]])
+        seg = np.linalg.norm(np.diff(closed, axis=0), axis=1)
+        along = np.concatenate([[0.0], np.cumsum(seg)])
+        total = along[-1]
+        param = _polyline_param(sa[order], closed, along)
+        # Start at the vertex nearest outline point 0.
+        gap = np.minimum(param, total - param)
+        order = np.roll(order, -int(np.argmin(gap)))
+        param = np.roll(param, -int(np.argmin(gap))) % total
+        param[0] = 0.0
+        at = np.zeros(n, dtype=int)
+        for j in range(1, n):
+            nearest = int(np.argmin(np.abs(param - along[j])))
+            at[j] = min(max(nearest, at[j - 1] + 1), m - (n - j))
+        ends = np.append(at[1:], m)
+        target = np.empty((m, 2))
+        for j in range(n):
+            count = ends[j] - at[j]
+            f = (np.arange(count) / count)[:, None]
+            target[at[j] : ends[j]] = (1.0 - f) * closed[j] + f * closed[j + 1]
+        laid = self.to_wall(target)
+        laid[at] = anchors
+        return order, laid, at
+
+
+def _polyline_param(
+    points: np.ndarray, closed: np.ndarray, along: np.ndarray
+) -> np.ndarray:
+    """Arc length along the polyline *closed* (cumulative lengths *along*) of
+    the nearest point to each of *points* (2D)."""
+    a, b = closed[:-1], closed[1:]
+    d = b - a
+    dd = np.maximum((d * d).sum(axis=1), 1e-24)
+    rel = points[:, None, :] - a[None]
+    t = np.clip((rel * d[None]).sum(axis=2) / dd[None], 0.0, 1.0)
+    dist = np.linalg.norm(rel - t[..., None] * d[None], axis=2)
+    k = np.argmin(dist, axis=1)
+    rows = np.arange(len(points))
+    return along[k] + t[rows, k] * np.sqrt(dd[k])
 
 
 def _cut_footprint(
-    vertices: np.ndarray,
-    faces: np.ndarray,
-    n_per_frame: int,
-    footprint: _Footprint,
-    taken: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray, list[int]] | str:
+    state: _WallState, n_per_frame: int, footprint: _Footprint
+) -> tuple[np.ndarray, np.ndarray, np.ndarray] | str:
     """Remove the intravascular wall inside *footprint*.
 
     Returns the remaining faces, the removed vertices and the hole's rim, or why
-    there is no hole.  *taken* marks the vertices of earlier holes, which a new
-    one must not reach.
+    there is no hole.  Neither the hole nor its rim may reach a vertex an
+    earlier hole owns (its hole, rim or the band around the rim), so two holes
+    keep at least one vertex between their rims.
     """
+    vertices, faces = state.vertices, state.faces
     frames = np.arange(len(vertices)) // n_per_frame
     hole = np.flatnonzero(footprint.contains(footprint.wall_coords(vertices, frames)))
     if len(hole) == 0:
@@ -594,8 +819,6 @@ def _cut_footprint(
     last = len(footprint.lumen.centroids) - 1
     if rows.min() <= 1 or rows.max() >= last - 1:
         return "its footprint reaches the end of the intravascular segment"
-    if taken[hole].any():
-        return "its footprint overlaps the hole of another branch"
 
     kept = faces[~np.isin(faces, hole).any(axis=1)]
     removed_faces = faces[np.isin(faces, hole).any(axis=1)]
@@ -610,7 +833,12 @@ def _cut_footprint(
         hole = np.union1d(hole, list(extra))
     if not rings:
         return "the hole has no clean rim"
-    return kept, hole, rings[0]
+    rim = np.asarray(rings[0])
+    owners = state.owner[np.concatenate([hole, rim])]
+    if (owners >= 0).any():
+        other = state.names[int(owners[owners >= 0][0])]
+        return f"its hole would overlap or touch the hole of {other}"
+    return kept, hole, rim
 
 
 def _area_2d(xy: np.ndarray) -> float:
@@ -619,29 +847,30 @@ def _area_2d(xy: np.ndarray) -> float:
     return float(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1)))
 
 
-def _signed_area(pts: np.ndarray, axis: np.ndarray) -> float:
-    e1, e2 = _plane_basis(axis)
-    return _area_2d(np.column_stack([pts @ e1, pts @ e2]))
+def _anchored_bridge(
+    ring: np.ndarray, rim: np.ndarray, at: np.ndarray
+) -> trimesh.Trimesh:
+    """Triangle strip between the branch's cut *ring* and the hole's *rim*,
+    with ``ring[j]`` joined to ``rim[at[j]]``.
 
-
-def _match_ring(
-    ring: np.ndarray, reference: np.ndarray, axis: np.ndarray
-) -> np.ndarray:
-    """*ring* turned to run the same way round *axis* as *reference*, starting at
-    the point nearest ``reference[0]``."""
-    if np.sign(_signed_area(ring, axis)) != np.sign(_signed_area(reference, axis)):
-        ring = ring[::-1]
-    start = int(np.argmin(np.linalg.norm(ring - reference[0], axis=1)))
-    return np.roll(ring, -start, axis=0)
-
-
-def _bridge(ring_a: np.ndarray, ring_b: np.ndarray) -> trimesh.Trimesh:
-    """Straight triangle strip between two matched rings."""
-    from .core import _stitch_rings
-
-    return _stitch_rings(
-        [tuple(p) for p in ring_a],
-        [SimpleNamespace(x=p[0], y=p[1], z=p[2]) for p in ring_b],
+    Between two such pairs, the first half of the rim vertices fan to
+    ``ring[j]``, the second half to ``ring[j + 1]``, so nothing twists.  The
+    winding matches :func:`~multimodars.ccta.stitching.core._stitch_rings`.
+    """
+    n, m = len(ring), len(rim)
+    faces: list[tuple[int, int, int]] = []
+    for j in range(n):
+        b0, b1 = j, (j + 1) % n
+        end = at[j + 1] if j + 1 < n else m
+        run = [n + (k % m) for k in range(at[j], end + 1)]
+        mid = (len(run) - 1) // 2
+        faces += [(b0, run[t + 1], run[t]) for t in range(mid)]
+        faces.append((b0, b1, run[mid]))
+        faces += [(b1, run[t + 1], run[t]) for t in range(mid, len(run) - 1)]
+    return trimesh.Trimesh(
+        vertices=np.vstack([ring, rim]),
+        faces=np.asarray(faces, dtype=np.int64),
+        process=False,
     )
 
 

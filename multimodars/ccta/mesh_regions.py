@@ -11,7 +11,7 @@ own module rather than living inside :mod:`multimodars.ccta.stitching`.
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import trimesh
@@ -19,9 +19,10 @@ from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
 
 from ..multimodars import build_adjacency_map
-from ..multimodars import cut_mesh_at_contour as _cut_mesh_at_contour
+from ._cutting import cut_labelled_mesh
 from ._results import (
     branches_key,
+    is_boundary_key,
     map_point_lists,
     point_lists,
     set_point_list,
@@ -55,10 +56,6 @@ def _store_boundary_rings(
     for n, pts in enumerate(per_ring, start=1):
         updated[f"{BOUNDARY_RING_PREFIX}{n}"] = pts
     updated["boundary_points"] = [pt for pts in per_ring for pt in pts]
-
-
-def _is_boundary_key(key: str) -> bool:
-    return key.startswith("boundary_points")
 
 
 def _warn_off_path_attached(
@@ -228,7 +225,7 @@ def remove_labeled_points_from_mesh(
     return map_point_lists(
         updated,
         lambda pts: [p for p in pts if tuple(p) in new_coord_set],
-        skip=lambda key: key in region_keys or _is_boundary_key(key),
+        skip=lambda key: key in region_keys or is_boundary_key(key),
     )
 
 
@@ -329,7 +326,7 @@ def keep_labeled_points_from_mesh(
     return map_point_lists(
         updated,
         lambda pts: [p for p in pts if tuple(p) in new_coord_set],
-        skip=_is_boundary_key,
+        skip=is_boundary_key,
     )
 
 
@@ -483,7 +480,7 @@ def remove_branch(
         ring_set = {tuple(c) for c in ring_coords}
         added_pts = [tuple(float(x) for x in p) for p in added]
         for where, pts in point_lists(updated):
-            if _is_boundary_key(where[0]):
+            if is_boundary_key(where[0]):
                 continue
             if 2 * len(ring_set.intersection(map(tuple, pts))) > len(ring_set):
                 set_point_list(updated, where, pts + added_pts)
@@ -586,16 +583,13 @@ def cut_at_slice(
         raise IndexError(f"slice_idx {slice_idx} out of range ({len(contours)} slices)")
 
     contour = contours[slice_idx]
-    mesh: trimesh.Trimesh = results["mesh"]
-    vertices, faces, ring, centroid, cap_faces, old_to_new, kept_side = (
-        _cut_mesh_at_contour(
-            [tuple(v) for v in mesh.vertices.tolist()],
-            mesh.faces.tolist(),
-            contour,
-            keep=keep,
-            search_radius_factor=search_radius_factor,
-            snap_fraction=snap_fraction,
-        )
+    n_vertices = len(results["mesh"].vertices)
+    cut = cut_labelled_mesh(
+        results,
+        contour,
+        keep=keep,
+        search_radius_factor=search_radius_factor,
+        snap_fraction=snap_fraction,
     )
     # The centerline is cut on the side the mesh kept, ending on the slice centre.
     cx, cy, cz = contour.centroid
@@ -604,61 +598,19 @@ def cut_at_slice(
         max(np.linalg.norm(np.array([p.x, p.y, p.z]) - centre) for p in contour.points)
     )
     new_centerline = centerline.cut_branch(
-        branch_id, (cx, cy, cz), keep=kept_side, tolerance=radius
+        branch_id, (cx, cy, cz), keep=cut.kept_side, tolerance=radius
     )
     removed = set(centerline.branch_ids()) - set(new_centerline.branch_ids())
 
-    new_mesh = trimesh.Trimesh(
-        vertices=np.asarray(vertices, dtype=np.float64),
-        faces=np.asarray(faces, dtype=np.int64),
-        process=False,
-    )
-    new_coords = [tuple(v) for v in new_mesh.vertices.tolist()]
-    moved = {
-        tuple(old): new_coords[new]
-        for old, new in zip(mesh.vertices.tolist(), old_to_new, strict=True)
-        if new is not None
-    }
-
-    def remap(pts: list) -> list:
-        return [moved[tuple(p)] for p in pts if tuple(p) in moved]
-
-    updated = map_point_lists(results, remap)
-    updated["mesh"] = new_mesh
+    updated = cut.results
     key = branches_key(vessel)
     if removed and key in updated:
         updated[key] = {k: pts for k, pts in updated[key].items() if k not in removed}
-
-    # Label the new vertices like most of the kept vertices along the ring.
-    kept = {new for new in old_to_new if new is not None}
-    added = [i for i in range(len(new_coords)) if i not in kept]
-    ring_set = set(ring)
-    neighbours = {
-        new_coords[v]
-        for face in faces
-        if ring_set.intersection(face)
-        for v in face
-        if v in kept and v not in ring_set
-    }
-    added_pts = [new_coords[i] for i in added]
-    for where, pts in point_lists(updated):
-        if _is_boundary_key(where[0]):
-            continue
-        if 2 * len(neighbours.intersection(pts)) > len(neighbours):
-            set_point_list(updated, where, pts + added_pts)
-
-    # The cap on its own: ring in order, then the centre.
-    order = [*ring, centroid]
-    local = {v: i for i, v in enumerate(order)}
-    cap = trimesh.Trimesh(
-        vertices=new_mesh.vertices[order],
-        faces=[[local[v] for v in f] for f in cap_faces],
-        process=False,
-    )
+    cap = cast(trimesh.Trimesh, cut.cap)
     print(
         f"Cut {vessel.upper() if vessel != 'aorta' else 'aorta'} at slice {slice_idx}: "
-        f"kept the {kept_side} side, {len(kept)} of {len(mesh.vertices)} vertices, "
-        f"cap with {len(ring)} ring points"
+        f"kept the {cut.kept_side} side, {cut.n_kept} of {n_vertices} vertices, "
+        f"cap with {len(cut.ring)} ring points"
         + (f", removed branch(es) {sorted(removed)}" if removed else "")
     )
     return updated, new_centerline, cap

@@ -15,6 +15,101 @@ import multimodars as mm
 #   then leaves the anomalous segment, for debugging that case.
 SYNTHETIC_PULLBACK = True
 
+# Open a 3D view of each reconnected side branch before stitching: the cut
+# branch, the intravascular wall with its hole, the bridge, the cut ring and
+# the path it was moved along to the wall.
+SHOW_BRANCH_RECONNECTION = True
+
+
+def show_branch_reconnection(geometry, removed, tree, centerlines, cut_slices):
+    """Run the side-branch reconnection on its own and show its parts.
+
+    *centerlines* maps a vessel (``"rca"`` / ``"lca"``) to its whole
+    centerline, for drawing each side branch and the branch it leaves.
+    """
+    import numpy as np
+
+    from multimodars._converters import geometry_to_trimesh
+    from multimodars.ccta.stitching import reconnect_side_branches
+    from multimodars.ccta.stitching.side_branches import _branch_path
+
+    # The same inputs the stitch builds internally.
+    geometry = geometry.downsample(100)
+    iv_mesh = geometry_to_trimesh(geometry)
+    ccta, iv_wall, bridges = reconnect_side_branches(
+        removed["mesh"],
+        iv_mesh,
+        list(geometry.frames),
+        removed,
+        tree,
+        centerlines,
+        cut_slices=cut_slices,
+    )
+
+    def coloured(mesh, rgba):
+        mesh = mesh.copy()
+        mesh.visual.face_colors = rgba
+        return mesh
+
+    def polyline(points, rgba, closed=True):
+        pts = np.asarray(points, dtype=np.float64)
+        if closed:
+            pts = np.vstack([pts, pts[:1]])
+        path = trimesh.load_path(pts)
+        path.colors = np.tile(rgba, (len(path.entities), 1))
+        return path
+
+    parts = [
+        coloured(ccta, [200, 200, 200, 90]),
+        coloured(iv_wall, [90, 160, 230, 160]),
+        *(coloured(b, [230, 60, 60, 255]) for b in bridges),
+    ]
+    for (vessel, branch_id), k in cut_slices.items():
+        node = getattr(tree, vessel)[branch_id]
+        contours = node.contours
+        # Purple: the side branch's centerline. Dark blue: the branch it
+        # leaves (its parent, the main vessel for a first-order branch).
+        cl = centerlines[vessel]
+        parts.append(
+            polyline(
+                cl.get_branch(branch_id).points_as_tuples(),
+                [150, 50, 200, 255],
+                closed=False,
+            )
+        )
+        if node.parent is not None:
+            parts.append(
+                polyline(
+                    cl.get_branch(node.parent[0]).points_as_tuples(),
+                    [20, 40, 140, 255],
+                    closed=False,
+                )
+            )
+        # Green: the cut contour. Orange: contour 0. Black: the path the cut
+        # ring is stepped along (the branch centerline from the cut back to
+        # its first point), and the ring at the end of it.
+        parts.append(polyline(contours[k].points_as_tuples(), [40, 180, 40, 255]))
+        parts.append(polyline(contours[0].points_as_tuples(), [240, 150, 30, 255]))
+        path = _branch_path(cl, branch_id, np.asarray(contours[k].centroid))
+        parts.append(polyline(path, [0, 0, 0, 255], closed=False))
+        ring = np.asarray(contours[k].points_as_tuples()) + (path[-1] - path[0])
+        parts.append(polyline(ring, [0, 0, 0, 255]))
+    # Cyan: the intravascular axis (frame centroids), where the walk ends.
+    parts.append(
+        polyline(
+            [f.centroid for f in geometry.frames], [0, 200, 200, 255], closed=False
+        )
+    )
+    print(
+        f"Branch reconnection: {len(bridges)} bridge(s). Grey = CCTA, "
+        "blue = IV wall, red = bridge, green = cut contour, orange = contour 0, "
+        "black = walk path and the ring at its end, purple = side-branch "
+        "centerline, dark blue = parent "
+        "centerline, cyan = IV axis"
+    )
+    trimesh.Scene(parts).show()
+
+
 cwd = Path.cwd()
 for candidate in [cwd, cwd.parent, cwd.parent.parent]:
     if (candidate / "examples" / "data").exists():
@@ -193,6 +288,29 @@ updated_results = mm.remove_labeled_points_from_mesh(
 
 mm.plot_boundary_edges(updated_results, key="boundary_points")
 
+# Contour each side branch leaving the anomalous segment is cut at, by
+# (vessel, branch id); contour 0 for a branch not listed. The cut ring is
+# then moved back along the branch centerline until it meets the
+# intravascular wall, which gives the hole it is bridged to. If a cut fails
+# (e.g. contour 0's plane crosses the rim left by the removal), the branch
+# stays loose with a warning naming the key to set here.
+BRANCH_CUT_SLICES = {("rca", side): 2} if SYNTHETIC_PULLBACK else {}
+# The distal rim, and the proximal one unless it is the ostium, are cut flat at
+# a contour of the vessel they lie on instead of keeping the jagged rim the
+# removal left. None takes the contour nearest the opening that has the whole
+# old rim on the opening's side (printed); set an index to choose another.
+PROXIMAL_CUT_SLICE = None
+DISTAL_CUT_SLICE = None
+
+if SHOW_BRANCH_RECONNECTION and BRANCH_CUT_SLICES:
+    show_branch_reconnection(
+        aligned.geom_a,
+        updated_results,
+        tree,
+        {"rca": rca_cl, "lca": lca_cl},
+        BRANCH_CUT_SLICES,
+    )
+
 stitched = mm.stitch_ccta_to_intravascular(
     aligned.geom_a,
     updated_results["mesh"],
@@ -201,6 +319,10 @@ stitched = mm.stitch_ccta_to_intravascular(
     proximal_is_ostium=not SYNTHETIC_PULLBACK,
     clamp_overshoot=0.5,
     tree=tree,  # reconnects side branches leaving the anomalous segment
+    centerlines={"rca": rca_cl, "lca": lca_cl},
+    branch_cut_slices=BRANCH_CUT_SLICES,
+    proximal_cut_slice=PROXIMAL_CUT_SLICE,
+    distal_cut_slice=DISTAL_CUT_SLICE,
 )
 stitched["mesh"].export("prefixed.stl")
 print("Raw stitched mesh exported → prefixed_mesh.stl")

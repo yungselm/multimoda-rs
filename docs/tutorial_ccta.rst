@@ -549,6 +549,18 @@ keep the coordinate lists in ``results`` consistent with the updated vertex posi
 
 .. note::
 
+    ``radius_adjustment_mm`` is an offset in millimetres, the same for every vertex, so a
+    negative value larger than the vessel's local radius would carry vertices through the
+    centerline to the opposite side, turning the vessel inside out in a way no adjustment back
+    can undo.  Instead, a vertex is never moved closer to its nearest centerline point than 10 %
+    of its distance to it, and the number of vertices stopped there is printed.  Scaling back
+    by the opposite adjustment returns every other vertex exactly, but not the stopped ones.
+    If many are reported, the adjustment is too large for the region (or the region holds
+    vertices close to the centerline of another branch, e.g. at a junction; pass
+    ``branch_points`` to morph each vertex around its own branch).
+
+.. note::
+
     The order of morphing steps matters because each call to
     :func:`~multimodars.sync_results_to_mesh` updates all point lists to reflect the current
     mesh state.  Always sync before passing ``results['mesh']`` to the next morphing call.
@@ -639,16 +651,18 @@ triangulated patch:
         updated_results['mesh'],
         updated_results,
         prox_start_mode="highest_z",
-        tree=tree,          # reconnects side branches leaving the removed segment
+        tree=tree,          # clean rims, reconnects side branches leaving the removed segment
+        centerlines={"rca": rca_cl, "lca": lca_cl},
     )
 
 Each ring is assigned to an intravascular end **as a whole**, by whichever pairing of rings to
 the proximal and distal frame centroids is closest overall - so a single ring is never torn
-across both seams.  Each ring is then projected onto its own best-fit plane, smoothed, and
-respaced evenly along its perimeter - except an ostial proximal ring stitched with
-``prox_start_mode="highest_z"``, which is conditioned as two halves instead (see
-`Two-half ostium`_ below).  Finally both rings are densified to the stitching resolution by
-inserting points along their edges.  Each subdivided edge's adjacent face is retriangulated
+across both seams.  With ``tree``, a ring that is not the ostium is then replaced by a clean cut
+(see `Clean rims`_ below).  Without it, each ring is projected onto its own best-fit plane,
+smoothed, and respaced evenly along its perimeter.  An ostial proximal ring stitched with
+``prox_start_mode="highest_z"`` is conditioned as two halves instead (see `Two-half ostium`_
+below).  Finally both rings are densified to the stitching resolution by inserting points along
+their edges.  Each subdivided edge's adjacent face is retriangulated
 onto its opposite vertex, so the inserted points are real mesh vertices rather than
 T-junctions.
 
@@ -695,11 +709,43 @@ T-junctions.
   arc whose height is ``fillet_bulge`` times each strut's length (default ``0.0``, a sharp
   direct strip), built from ``fillet_layers`` intermediate rings (default 2).  Without the
   two-half ostium a warning is printed and the direct strip is used.
+- ``tree`` / ``centerlines``: the discretized tree and the vessel centerlines it was built from
+  (``{"rca": rca_cl, "lca": lca_cl}``).  With them the stitch cuts `Clean rims`_ and reconnects
+  `side branches <Side branches leaving the removed segment_>`_.  ``centerlines`` is required
+  together with ``tree``.
+- ``distal_cut_slice`` / ``proximal_cut_slice``: the contour a clean rim is cut at, as an index
+  into the contours of the branch the rim lies on (default: the one nearest the opening, see
+  `Clean rims`_).
+- ``branch_cut_slices``: the contour each side branch is cut at, by ``(vessel, branch_id)``
+  (default contour 0).
 
 The return value is a new ``results``-like dictionary that additionally contains:
 
 - ``"prox_boundary_points"`` - the ordered proximal boundary ring used for stitching.
 - ``"dist_boundary_points"`` - the ordered distal boundary ring.
+
+Clean rims
+""""""""""
+
+Removing a segment leaves a jagged rim at each end of the opening, along the triangles the
+labels happened to cover.  With ``tree``, the distal rim, and the proximal rim unless it is the
+ostium, are not joined as they are: each is cut away at the plane of a contour of the branch it
+lies on (the same cut as an outlet in :func:`multimodars.cut_at_slice`, left open), and
+everything between the old rim and the plane is removed.  The rim then has about the shape of the
+intravascular end frame it is joined to: flat and round.
+
+The default contour is the one nearest the opening that has the whole old rim on the opening's
+side, found by walking away from the opening from the contour nearest the rim.  The stitch prints
+which contour it used:
+
+.. code-block:: text
+
+    Cut the distal end at RCA branch 0 contour 92 (nearest the opening with the whole rim on its side): open rim of 23 points
+
+Choose another with ``distal_cut_slice`` / ``proximal_cut_slice``.  Nothing is chosen silently in
+its place: a contour whose plane crosses the old rim or a junction raises ``ValueError`` naming the
+argument to change.  If the removed stretch also held vertices of another branch, a warning says
+so.  The ostium keeps the conditioning described below.
 
 Side branches leaving the removed segment
 """""""""""""""""""""""""""""""""""""""""
@@ -707,28 +753,56 @@ Side branches leaving the removed segment
 A side branch that leaves the anomalous segment is not part of the pullback path
 (``"off_path_points"``, step 4), so it is not removed with the segment: it stays in the mesh as a
 loose piece, and :func:`multimodars.remove_labeled_points_from_mesh` warns about it.  Its rim is
-kept out of the two rings of the opening.  Passing the discretized ``tree`` to the stitch joins
-each such branch to the intravascular wall
+kept out of the two rings of the opening.  Passing the discretized ``tree`` and the
+``centerlines`` to the stitch joins each such branch to the intravascular wall
 (:func:`multimodars.ccta.stitching.reconnect_side_branches`):
 
-1. The **hole** comes from the branch's most proximal contour in the tree (contour 0, where it
-   leaves the vessel the pullback was aligned to).  The contour is projected towards the
-   intravascular axis and wrapped onto the wall facing the branch, and the wall inside that
-   footprint is removed.  A branch wider than the intravascular vessel is narrowed to at most
-   half its circumference (``max_hole_fraction``).  Before cutting, rings are interpolated
-   between the intravascular frames (at most 0.25 mm apart, ``max_ring_spacing_mm``), so the
-   hole is not limited to the spacing of the frames; the end rings stay where they are.
-2. The **branch** is cut at the plane of its first contour that has the whole rim left by the
-   removal behind it and lies outside the intravascular lumen.  Everything between that plane
-   and the parent vessel is removed, so the branch ends in a clean, round rim.  The rest of the
+1. The **branch** is cut at the plane of one of its contours: contour 0 unless
+   ``branch_cut_slices`` names another, e.g. ``{("rca", 3): 2}``.  Everything between that plane
+   and the parent vessel is removed, so the branch ends in a clean, flat rim.  The rest of the
    branch, including branches growing out of it, is kept.
-3. The hole's rim is laid onto the projected outline in order, and the branch rim and the hole
-   rim are joined by a straight triangle strip.  Several branches each get their own hole.
+2. The cut **ring is stepped back** along the branch's centerline, point by point to the
+   branch's first point on the parent vessel.  It is only moved, never turned, so it keeps its
+   shape.  Where each ring point first meets the intravascular wall, it leaves its **imprint**.
+   The imprints outline the **hole**, and the wall inside it is removed.  A branch wider than the
+   intravascular vessel is narrowed to at most half its circumference (``max_hole_fraction``).
+   Before cutting, rings are interpolated between the intravascular frames (at most 0.25 mm
+   apart, ``max_ring_spacing_mm``), so the hole is not limited to the spacing of the frames; the
+   end rings stay where they are.
+3. Each imprint becomes a vertex of the hole's rim, with the rim's other vertices spread evenly
+   between them, and a triangle strip joins every ring point to its own imprint.  The two rims
+   come from the same ring, so they have about the same shape, and the strip does not twist.
 
-A branch is left loose, with a warning, when it cannot be joined - e.g. when it leaves its parent
-before or after the intravascular segment (in a proximal region that was removed), or when its
-hole would reach an end of the intravascular segment or overlap another branch's hole.  Without
-``tree`` every such branch stays loose.
+Contour 0 often lies where the branch still merges into its parent: its plane then crosses the
+rim the removal left on the branch, and the cut fails.  The branch is then left loose with a
+warning naming the key to set, e.g. ``branch_cut_slices[('rca', 3)]``; no other contour is tried.
+The same happens when the cut ring reaches into the intravascular lumen.
+
+.. code-block:: python
+
+    stitched = mm.stitch_ccta_to_intravascular(
+        aligned.geom_a,
+        updated_results['mesh'],
+        updated_results,
+        proximal_is_ostium=False,
+        tree=tree,
+        centerlines={"rca": rca_cl, "lca": lca_cl},
+        branch_cut_slices={("rca", 3): 2},
+    )
+
+Branches close together are handled as follows:
+
+- Two branches that leave side by side can share a stub, and so a single loose piece.  Each is
+  cut and joined on its own, and the piece is joined only if all of its branches can be.
+  Otherwise all of them stay loose, with a warning naming them.
+- Two holes keep at least one wall vertex between their rims.  A branch whose hole would overlap
+  or touch another's is refused with a warning naming the other branch.
+- A branch whose bridge would cut through another branch, or through that branch's bridge, is
+  refused the same way.  Cutting either branch nearer its parent shortens the bridges.
+
+A branch is also left loose, with a warning, when it leaves its parent before or after the
+intravascular segment (in a proximal region that was removed), or when its hole would reach an
+end of the intravascular segment.  Without ``tree`` every such branch stays loose.
 
 The tree must describe the mesh being stitched: compute it before scaling, and move it with
 :func:`~multimodars.ccta.scaling.sync_tree_to_mesh` after any scaling that reaches side branches (step 6).

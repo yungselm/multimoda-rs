@@ -3,6 +3,30 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.13.0] - 2025-11-13
+
+### Added
+- Clean stitch rims: with `tree`, the distal rim (and a proximal one that is not the ostium) is cut
+  flat at a tree contour instead of keeping the jagged removal rim. `distal_cut_slice` /
+  `proximal_cut_slice` choose the contour (default: nearest the opening, printed).
+- `branch_cut_slices` (stitch) / `cut_slices` (`reconnect_side_branches`): contour each side branch
+  is cut at, by `(vessel, branch_id)` (default 0).
+
+### Changed (breaking)
+- Side branches are reconnected by imprint: the cut ring is stepped back along the branch
+  centerline until it meets the intravascular wall, and each ring point is bridged to its own
+  imprint (no twist).
+- The stitch and `reconnect_side_branches` need `centerlines` together with `tree`.
+  `clearance_mm` is removed; a failed cut leaves the branch loose with a warning naming the key.
+
+### Fixed
+- Side branches sharing a stub: one was dropped silently; now all are reconnected, or none.
+- Side-branch holes touching another hole, or bridges crossing another branch, are refused with a
+  warning instead of corrupting the mesh.
+- Radial scaling: a negative adjustment larger than the radius moved vertices through the
+  centerline, which scaling back could not undo. Vertices now stop at 10 % of their distance to
+  the centerline, and the number stopped is printed.
+
 ## [0.12.0] - 2026-11-12
 
 ### Added

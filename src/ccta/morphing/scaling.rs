@@ -3,6 +3,10 @@ use nalgebra::Point3;
 use rayon::prelude::*;
 use std::collections::HashSet;
 
+/// Smallest share of its distance to the centerline a point keeps when a negative
+/// `radius_adjustment_mm` would bring it closer (see [`centerline_based_diameter_morphing`]).
+pub const MIN_RADIUS_FRACTION: f64 = 0.1;
+
 type Coords3 = (f64, f64, f64);
 
 pub fn centerline_based_wall_diameter_optimization(
@@ -215,6 +219,15 @@ fn symmetric_nn_distance(a: &[Coords3], b: &[Coords3]) -> f64 {
     ((avg_a_to_b + avg_b_to_a) / 2.0).sqrt()
 }
 
+/// Moves every point radially by `radius_adjustment_mm`, away from (positive) or towards
+/// (negative) its nearest centerline point.
+///
+/// A point is never moved closer to its centerline point than [`MIN_RADIUS_FRACTION`] of its
+/// distance to it: a larger negative adjustment would carry it through the centerline to the
+/// opposite side, which no adjustment back can undo. Points stopped there end up less than
+/// `|radius_adjustment_mm|` from where they were, and scaling back by the opposite adjustment
+/// does not return them exactly. Points that are not stopped (and keep their nearest centerline
+/// point) do return exactly. A point on the centerline itself is not moved.
 pub fn centerline_based_diameter_morphing(
     centerline: &Centerline,
     points: &[Coords3],
@@ -231,9 +244,13 @@ pub fn centerline_based_diameter_morphing(
                 closest_cl_point.contour_point.z,
             );
 
-            match (p - cl_point).try_normalize(0.0) {
+            let offset = p - cl_point;
+            let radius = offset.norm();
+            match offset.try_normalize(0.0) {
                 Some(unit) => {
-                    let moved = p + unit * radius_adjustment_mm;
+                    let new_radius =
+                        (radius + radius_adjustment_mm).max(MIN_RADIUS_FRACTION * radius);
+                    let moved = cl_point + unit * new_radius;
                     (moved.x, moved.y, moved.z)
                 }
                 None => *point,
@@ -343,5 +360,55 @@ mod tests {
         assert!((new_point.0 - 1.5).abs() < 1e-6);
         assert!((new_point.1 - 0.0).abs() < 1e-6);
         assert!((new_point.2 - 0.0).abs() < 1e-6);
+    }
+
+    /// Single centerline point at the origin.
+    fn origin_centerline() -> Centerline {
+        Centerline {
+            points: vec![CenterlinePoint {
+                contour_point: ContourPoint {
+                    frame_index: 0,
+                    point_index: 0,
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                    aortic: false,
+                },
+                tangent: Vector3::new(1.0, 0.0, 0.0),
+                branch_id: 0,
+                radius: 0.0,
+            }],
+            branch_start_indices: vec![0],
+        }
+    }
+
+    #[test]
+    fn test_adjustment_beyond_the_radius_is_clamped() {
+        let centerline = origin_centerline();
+        // 2 mm from the centerline: -3 mm would carry it 1 mm past it.
+        let result = centerline_based_diameter_morphing(&centerline, &[(2.0, 0.0, 0.0)], -3.0);
+        let p = result[0];
+        assert!((p.0 - MIN_RADIUS_FRACTION * 2.0).abs() < 1e-12);
+        assert!(p.1.abs() < 1e-12 && p.2.abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_adjustment_within_the_radius_is_undone_by_its_opposite() {
+        let centerline = origin_centerline();
+        let points = vec![(0.0, 1.5, 0.0), (0.0, 0.0, -2.5)];
+        let there = centerline_based_diameter_morphing(&centerline, &points, -1.2);
+        let back = centerline_based_diameter_morphing(&centerline, &there, 1.2);
+        for (a, b) in points.iter().zip(&back) {
+            assert!((a.0 - b.0).abs() < 1e-12);
+            assert!((a.1 - b.1).abs() < 1e-12);
+            assert!((a.2 - b.2).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn test_point_on_the_centerline_is_not_moved() {
+        let centerline = origin_centerline();
+        let result = centerline_based_diameter_morphing(&centerline, &[(0.0, 0.0, 0.0)], -1.0);
+        assert_eq!(result[0], (0.0, 0.0, 0.0));
     }
 }
