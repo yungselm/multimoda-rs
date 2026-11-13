@@ -12,8 +12,10 @@
 
 `cut_mesh_at_contour` ([src/ccta/binding/discretizing.rs](src/ccta/binding/discretizing.rs)) returns a
 7-tuple of internal bookkeeping (`old_to_new`, `ring`, `centroid`, `cap_faces`, ...) that
-`cut_at_slice` ([multimodars/ccta/mesh_regions.py](multimodars/ccta/mesh_regions.py)) finishes in
-Python: label remapping, majority-neighbour labels for new vertices, centerline cut, cap extraction.
+Python finishes: label remapping, majority-neighbour labels for new vertices and cap extraction in
+`cut_labelled_mesh` ([multimodars/ccta/_cutting.py](multimodars/ccta/_cutting.py)), shared by
+`cut_at_slice` (which adds the centerline cut) and the stitch's clean rims; the side-branch cut in
+[stitching/side_branches.py](multimodars/ccta/stitching/side_branches.py) unpacks the tuple itself.
 
 - [ ] Move the whole cut into Rust (`cut_vessel(mesh, labels, centerline, branch_id, plane, keep, ...)
       -> VesselCut { mesh, labels, centerline, cap, kept, removed_branches }`), labels as named

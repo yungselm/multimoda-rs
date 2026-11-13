@@ -9,7 +9,7 @@ window with one toggle per layer:
 * intravascular wall (with the side-branch holes)
 * proximal / distal patches, side-branch bridges
 * the final stitched mesh, and its open edges in red
-* contour 0 (hole) of every side branch in the tree, the IV centerline
+* contour 0 of every side branch in the tree, the IV centerline
 
 Every layer is also written to ``<case>/stitch_debug/`` (``.ply``, colours
 kept), together with ``stitched.stl`` and ``summary.txt``.
@@ -23,6 +23,7 @@ Usage (WSL, from the repo root)::
     .venv/bin/python examples/visualize_stitching.py
     .venv/bin/python examples/visualize_stitching.py --remove anomalous_points proximal_points
     .venv/bin/python examples/visualize_stitching.py --no-tree --no-show
+    .venv/bin/python examples/visualize_stitching.py --branch-cut rca:3:2 --distal-cut-slice 40
 """
 
 from __future__ import annotations
@@ -248,7 +249,13 @@ def replay(case: str, sync_tree: bool) -> dict:
     ):
         results = scale(results, results.get(key, []), cl, remaining)
 
-    return {"results": results, "aligned": aligned, "tree": tree, "vessel": vessel}
+    return {
+        "results": results,
+        "aligned": aligned,
+        "tree": tree,
+        "centerlines": cls,
+        "vessel": vessel,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -256,7 +263,9 @@ def replay(case: str, sync_tree: bool) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def stitch_with_parts(case_data: dict, remove: list[str], use_tree: bool) -> dict:
+def stitch_with_parts(
+    case_data: dict, remove: list[str], use_tree: bool, cuts: dict
+) -> dict:
     """Run the removal and the stitch, capturing the parts the stitch merges.
 
     Wraps three of the stitch module's internals for the duration of the call:
@@ -296,6 +305,8 @@ def stitch_with_parts(case_data: dict, remove: list[str], use_tree: bool) -> dic
             removed["mesh"],
             copy.deepcopy(removed),
             tree=case_data["tree"] if use_tree else None,
+            centerlines=case_data["centerlines"],
+            **cuts,
             **STITCH,
         )
     finally:
@@ -477,13 +488,41 @@ def main() -> None:
         action="store_true",
         help="do not move the tree with the scaling (the old behaviour)",
     )
+    parser.add_argument(
+        "--branch-cut",
+        action="append",
+        default=[],
+        metavar="VESSEL:BRANCH:SLICE",
+        help="contour a side branch is cut at, e.g. rca:3:2 (repeatable; default 0)",
+    )
+    parser.add_argument(
+        "--distal-cut-slice",
+        type=int,
+        help="contour the distal rim is cut flat at (default: nearest the opening)",
+    )
+    parser.add_argument(
+        "--proximal-cut-slice",
+        type=int,
+        help="same for a proximal rim that is not the ostium",
+    )
     parser.add_argument("--out", help="output folder (default <case>/stitch_debug)")
     parser.add_argument("--no-show", action="store_true", help="only write the files")
     args = parser.parse_args()
 
     case_data = replay(args.case, sync_tree=not args.no_sync_tree)
     log(f"removing {args.remove} and stitching")
-    parts = stitch_with_parts(case_data, args.remove, use_tree=not args.no_tree)
+    branch_cut_slices = {}
+    for spec in args.branch_cut:
+        vessel, branch, slice_idx = spec.split(":")
+        branch_cut_slices[(vessel.lower(), int(branch))] = int(slice_idx)
+    cuts = {
+        "branch_cut_slices": branch_cut_slices,
+        "distal_cut_slice": args.distal_cut_slice,
+        "proximal_cut_slice": args.proximal_cut_slice,
+    }
+    parts = stitch_with_parts(
+        case_data, args.remove, use_tree=not args.no_tree, cuts=cuts
+    )
     layers = build_layers(parts, case_data)
     text = summary(parts)
     print(text)

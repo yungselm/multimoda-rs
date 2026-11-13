@@ -35,6 +35,7 @@ Trimming and stitching
 .. autofunction:: multimodars.ccta.postprocessing.manual_hole_fill
 .. autofunction:: multimodars.ccta.stitching.stitch_ccta_to_intravascular
 .. autofunction:: multimodars.ccta.stitching.reconnect_side_branches
+.. autofunction:: multimodars.ccta.stitching.end_cuts.cut_clean_ends
 .. autofunction:: multimodars.ccta.stitching.order_points_list
 
 Inlets and outlets
