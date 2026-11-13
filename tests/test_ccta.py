@@ -2867,7 +2867,7 @@ class TestReconnectSideBranches:
 
     R_IV, R_BRANCH = 2.0, 0.8
 
-    def _setup(self, r_branch=R_BRANCH, start=1.0, first_x=2.5):
+    def _setup(self, r_branch=R_BRANCH, start=1.0, first_x=2.5, n_branch=24):
         iv_v, iv_f = _tube(
             self.R_IV, (0, 0, 0), (0, 0, 1), 10.0, n_around=100, step=1.0
         )
@@ -2878,7 +2878,14 @@ class TestReconnectSideBranches:
             frames.append(SimpleNamespace(centroid=(0.0, 0.0, float(k)), lumen=lumen))
         iv_mesh = trimesh.Trimesh(iv_v, iv_f, process=False)
 
-        br_v, br_f = _tube(r_branch, (start, 0, 5.0), (1, 0, 0), 7.0, closed_end=True)
+        br_v, br_f = _tube(
+            r_branch,
+            (start, 0, 5.0),
+            (1, 0, 0),
+            7.0,
+            n_around=n_branch,
+            closed_end=True,
+        )
         body = trimesh.creation.icosphere(subdivisions=3, radius=3.0)
         body.apply_translation((0.0, 30.0, 0.0))
         ccta = trimesh.util.concatenate(
@@ -2944,6 +2951,19 @@ class TestReconnectSideBranches:
         assert len(patches) == 1
         branch = new_ccta.vertices[np.abs(new_ccta.vertices[:, 1]) < 5.0]
         assert branch[:, 0].min() == pytest.approx(4.5)
+
+    def test_rim_densified_for_a_finer_branch_ring(self):
+        # A branch ring of 40 points on a wall of 1 mm frames: the hole's rim
+        # has fewer vertices than the ring until points are added along it.
+        ccta, iv_mesh, frames, results, tree = self._setup(n_branch=40)
+        new_ccta, new_iv, patches = self._reconnect(
+            ccta, iv_mesh, frames, results, tree, max_ring_spacing_mm=1.0
+        )
+        assert len(patches) == 1
+        merged = trimesh.util.concatenate([new_ccta, new_iv, *patches])
+        merged.merge_vertices()
+        assert len(merged.outline().entities) == 2
+        assert merged.is_winding_consistent
 
     def test_cut_inside_the_lumen_is_refused(self):
         ccta, iv_mesh, frames, results, tree = self._setup(first_x=1.5)

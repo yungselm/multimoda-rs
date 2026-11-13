@@ -3,6 +3,14 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.13.2] - 2026-11-13
+
+### Fixed
+- A side branch whose cut ring has more points than the rim of its hole in the intravascular
+  wall (a small or finely meshed branch) was left loose ("lower max_ring_spacing_mm", which the
+  stitch does not pass on). Points are now added along the hole's rim until each ring point has
+  its own rim vertex.
+
 ## [0.13.1] - 2026-11-13
 
 ### Added

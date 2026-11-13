@@ -39,7 +39,7 @@ from scipy.sparse.csgraph import connected_components
 from scipy.spatial import cKDTree
 
 from ...multimodars import cut_mesh_at_contour as _cut_mesh_at_contour
-from .boundary import clean_open_boundary
+from .boundary import _densify_boundary, clean_open_boundary
 
 if TYPE_CHECKING:
     from ...multimodars import (
@@ -194,13 +194,17 @@ def reconnect_side_branches_report(
         lumen=lumen,
         # The wall before any hole, for the imprints.
         wall=trimesh.Trimesh(iv_vertices.copy(), iv_faces, process=False),
-        n_per_frame=n_per_frame,
         tree=tree,
         centerlines=centerlines,
         cut_slices=dict(cut_slices or {}),
         max_hole_fraction=max_hole_fraction,
     )
-    state = _WallState(iv_vertices, iv_faces, np.full(len(iv_vertices), -1))
+    state = _WallState(
+        iv_vertices,
+        iv_faces,
+        np.full(len(iv_vertices), -1),
+        np.arange(len(iv_vertices)) // n_per_frame,
+    )
     joined: list[_Joined] = []
     not_reconnected: dict[tuple[str, int], str] = {}
 
@@ -285,7 +289,6 @@ class _Context:
 
     lumen: _Lumen
     wall: trimesh.Trimesh
-    n_per_frame: int
     tree: PyDiscretizedVesselTree
     centerlines: Mapping[str, PyCenterline]
     cut_slices: dict[tuple[str, int], int]
@@ -296,16 +299,22 @@ class _Context:
 class _WallState:
     """The intravascular wall as holes are cut into it.  ``owner`` gives, per
     vertex, the index in ``names`` of the branch whose hole (or the band of
-    vertices around its rim) it belongs to, -1 for none."""
+    vertices around its rim) it belongs to, -1 for none.  ``frame`` gives the
+    (densified) frame each vertex lies on, also for vertices added to a rim."""
 
     vertices: np.ndarray
     faces: np.ndarray
     owner: np.ndarray
+    frame: np.ndarray
     names: list[str] = field(default_factory=list)
 
     def copy(self) -> _WallState:
         return _WallState(
-            self.vertices.copy(), self.faces, self.owner.copy(), list(self.names)
+            self.vertices.copy(),
+            self.faces,
+            self.owner.copy(),
+            self.frame.copy(),
+            list(self.names),
         )
 
 
@@ -380,16 +389,19 @@ def _join_branch(
             f"{name}: narrowed the hole to {footprint.narrowed:.0%} of its width "
             f"({ctx.max_hole_fraction:.0%} of the intravascular circumference)"
         )
-    cut = _cut_footprint(state, ctx.n_per_frame, footprint)
+    cut = _cut_footprint(state, footprint)
     if isinstance(cut, str):
         return cut
     new_faces, hole, rim = cut
+    if len(rim) < len(footprint.outline):
+        # A small branch on a coarse wall: one rim vertex per ring point.
+        new_faces, rim = _densify_rim(state, new_faces, rim, len(footprint.outline))
     # Each ring point's imprint becomes a rim vertex (where narrowing moved
     # the outline, the outline's point does).
     anchors = footprint.to_wall(footprint.outline)
     if footprint.narrowed == 1.0:
         anchors[hit] = imprint[hit]
-    laid = footprint.anchor(state.vertices[rim], rim // ctx.n_per_frame, anchors)
+    laid = footprint.anchor(state.vertices[rim], state.frame[rim], anchors)
     if isinstance(laid, str):
         return laid
     order, rim_pts, at = laid
@@ -881,8 +893,29 @@ def _polyline_param(
     return along[k] + t[rows, k] * np.sqrt(dd[k])
 
 
+def _densify_rim(
+    state: _WallState, faces: np.ndarray, rim: np.ndarray, n: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Insert vertices along the hole's *rim* until it has *n* (see
+    :func:`~.boundary._densify_boundary`), added to *state*.
+
+    Returns the faces and the rim, in order.  An added vertex lies on the
+    frame of the nearest rim vertex.
+    """
+    mesh = trimesh.Trimesh(state.vertices, faces, process=False)
+    dense, ring = _densify_boundary(mesh, [tuple(v) for v in state.vertices[rim]], n)
+    old = len(state.vertices)
+    added = np.asarray(dense.vertices[old:])
+    nearest = cKDTree(state.vertices[rim]).query(added)[1]
+    state.vertices = np.asarray(dense.vertices)
+    state.owner = np.concatenate([state.owner, np.full(len(added), -1)])
+    state.frame = np.concatenate([state.frame, state.frame[rim][nearest]])
+    index = {tuple(v): i for i, v in enumerate(state.vertices)}
+    return np.asarray(dense.faces), np.array([index[p] for p in ring])
+
+
 def _cut_footprint(
-    state: _WallState, n_per_frame: int, footprint: _Footprint
+    state: _WallState, footprint: _Footprint
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray] | str:
     """Remove the intravascular wall inside *footprint*.
 
@@ -892,7 +925,7 @@ def _cut_footprint(
     keep at least one vertex between their rims.
     """
     vertices, faces = state.vertices, state.faces
-    frames = np.arange(len(vertices)) // n_per_frame
+    frames = state.frame
     hole = np.flatnonzero(footprint.contains(footprint.wall_coords(vertices, frames)))
     if len(hole) == 0:
         return "its footprint covers no intravascular vertex"
@@ -906,7 +939,7 @@ def _cut_footprint(
     seeds = set(np.setdiff1d(removed_faces.ravel(), hole).tolist())
     extra, rings = clean_open_boundary(kept, vertices, seeds, target_n=1)
     if extra:
-        if np.isin(np.asarray(list(extra)) // n_per_frame, [0, last]).any():
+        if np.isin(frames[np.asarray(list(extra))], [0, last]).any():
             return (
                 "cleaning its rim would cut into the end of the intravascular segment"
             )
