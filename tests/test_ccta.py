@@ -3011,6 +3011,61 @@ class TestReconnectSideBranches:
         rim = patches[0].vertices[self._on_wall(patches[0], self.R_IV)]
         assert 4.6 < rim[:, 2].mean() < 4.9
 
+    def test_far_cut_bridged_through_a_ring_per_centerline_point(self):
+        ccta, iv_mesh, frames, results, tree = self._setup()
+        # Cut at x = 5.5; the centerline has a point every 0.5 mm.
+        new_ccta, new_iv, patches = self._reconnect(
+            ccta, iv_mesh, frames, results, tree, cut_slices={("rca", 3): 3}
+        )
+        x = patches[0].vertices[:, 0]
+        # A ring at each centerline point short of the wall (x = 2.0 touches
+        # it, so the last strip runs from x = 2.5 to the hole).
+        for at in np.arange(2.5, 5.75, 0.5):
+            assert np.isclose(x, at).sum() == 24, at
+        off_wall = ~self._on_wall(patches[0], self.R_IV)
+        assert not (np.isclose(x, 2.0) & off_wall).any()
+        merged = trimesh.util.concatenate([new_ccta, new_iv, *patches])
+        merged.merge_vertices()
+        assert len(merged.outline().entities) == 2
+        assert merged.is_winding_consistent
+
+    def test_bridge_follows_a_bending_centerline(self):
+        ccta, iv_mesh, frames, results, tree = self._setup()
+        # Straight beyond the cut (x = 5.5), bending down by ~2 mm before the
+        # wall: a single strip from the cut ring to the hole would cut the
+        # corner by ~0.4 mm.
+        cl = np.array(
+            [
+                (x, 0.0, 5.0 - 0.12 * max(0.0, 5.5 - x) ** 2)
+                for x in np.arange(0, 8, 1.0)
+            ]
+        )
+        self.centerlines = {"rca": _fake_centerline(cl)}
+        new_ccta, new_iv, patches = self._reconnect(
+            ccta, iv_mesh, frames, results, tree, cut_slices={("rca", 3): 3}
+        )
+        # Points on the bridge, away from the wall, keep the branch's radius
+        # from its centerline.
+        w = np.array(
+            [
+                (a, b, 1.0 - a - b)
+                for a in np.linspace(0, 1, 6)
+                for b in np.linspace(0, 1, 6)
+                if a + b <= 1.0
+            ]
+        )
+        pts = np.einsum("wk,fkd->fwd", w, patches[0].triangles).reshape(-1, 3)
+        pts = pts[np.linalg.norm(pts[:, :2], axis=1) > self.R_IV + 0.3]
+        a, d = cl[:-1], np.diff(cl, axis=0)
+        rel = pts[:, None] - a[None]
+        t = np.clip((rel * d).sum(axis=2) / (d * d).sum(axis=1), 0.0, 1.0)
+        dist = np.linalg.norm(rel - t[..., None] * d, axis=2).min(axis=1)
+        assert np.abs(dist - self.R_BRANCH).max() < 0.1
+        merged = trimesh.util.concatenate([new_ccta, new_iv, *patches])
+        merged.merge_vertices()
+        assert len(merged.outline().entities) == 2
+        assert merged.is_winding_consistent
+
     def test_tube_densified_with_its_end_rings_kept(self):
         ccta, iv_mesh, frames, results, tree = self._setup()
         _, new_iv, _ = self._reconnect(ccta, iv_mesh, frames, results, tree)

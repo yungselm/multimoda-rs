@@ -10,15 +10,18 @@ to the intravascular wall that replaces the segment:
    discretized tree (contour 0 unless chosen otherwise), and everything
    between that plane and the parent vessel is removed.  The cut leaves a
    clean, planar rim.
-2. That rim is moved back along the branch centerline (contour by contour to
-   contour 0, then on to the intravascular axis) until it crosses the
-   intravascular wall.  Where each rim point crosses gives the hole, and the
-   wall inside it is removed.  A branch wider than the intravascular vessel is
+2. That rim is carried back along the branch centerline to the branch's
+   first point, one layer per centerline point, each turned to lie across
+   the centerline there.  Where each rim point, followed from layer to
+   layer, first crosses the intravascular wall gives the hole, and the wall
+   inside it is removed.  A branch wider than the intravascular vessel is
    narrowed to at most *max_hole_fraction* of its circumference.  The hole's
    rim is snapped onto that outline, since the intravascular grid is coarse
    along the vessel (one ring per frame).
-3. The two rims, which come from the same contour and so have about the same
-   shape, are bridged by a straight triangle strip.
+3. The cut rim is bridged to the hole through the layers short of the wall:
+   a strip between each two consecutive layers, then one from the last layer
+   to the hole's rim.  All come from the same contour and so have about the
+   same shape, and the bridge follows the branch even where it bends.
 
 The tree must match the mesh: after scaling the mesh, move it along with
 :func:`~multimodars.ccta.scaling.sync_tree_to_mesh`.
@@ -86,9 +89,9 @@ def reconnect_side_branches(
         since.  A contour of each branch gives the cut plane.
     centerlines : mapping of str to PyCenterline
         Whole centerline of each vessel (``"rca"`` / ``"lca"``), the one
-        *tree* was discretized with.  The cut rim is moved back along its
-        branch's centerline, point by point to the branch's first point (on
-        the parent vessel).
+        *tree* was discretized with.  The cut rim is carried back along its
+        branch's centerline, a layer at each point to the branch's first
+        point (on the parent vessel), and the bridge runs through the layers.
     cut_slices : dict of (str, int) to int, optional
         Contour index each branch is cut at, by ``(vessel, branch_id)``
         (e.g. ``{("rca", 3): 2}``); a branch not listed is cut at contour 0.
@@ -370,12 +373,16 @@ def _join_branch(
     if (lumen.outside_by(branch_pts) < 0.0).any():
         return f"contour {slice_idx} reaches into the intravascular lumen, {hint}"
 
-    # The cut rim, stepped back along the branch centerline to its first
-    # point, leaves its imprint on the wall where each point first meets it.
+    # The cut rim, carried back along the branch centerline to its first
+    # point (one layer per centerline point, each turned to face along the
+    # centerline), leaves its imprint on the wall where each point first
+    # meets it.  The layers short of the wall become the bridge's rings.
     path = _branch_path(
         ctx.centerlines[vessel], branch_id, np.asarray(contours[slice_idx].centroid)
     )
-    imprint, hit = _imprint(branch_pts, path, ctx.wall)
+    layers = _sweep_ring(branch_pts, path)
+    imprint, hit, reach = _imprint(layers, ctx.wall)
+    layers = _layers_short_of_wall(layers, reach)
     footprint = _Footprint(
         lumen, imprint, branch_pts.mean(axis=0), ctx.max_hole_fraction
     )
@@ -405,7 +412,7 @@ def _join_branch(
     if isinstance(laid, str):
         return laid
     order, rim_pts, at = laid
-    bridge = _anchored_bridge(branch_pts, rim_pts, at)
+    bridge = _layered_bridge(layers, rim_pts, at)
     for other in others:
         if (
             _meshes_cross(bridge, other.bridge)
@@ -632,43 +639,129 @@ def _branch_path(
     return np.vstack([start[None], cl[i::-1]]) if i >= 0 else start[None]
 
 
-def _imprint(
-    ring: np.ndarray, path: np.ndarray, wall: trimesh.Trimesh
-) -> tuple[np.ndarray, np.ndarray]:
-    """Step *ring* rigidly along the polyline *path* (which starts at the ring)
-    and find where each of its points first meets the *wall* surface.
+def _sweep_ring(ring: np.ndarray, path: np.ndarray) -> np.ndarray:
+    """*ring* carried along the polyline *path* (which starts at the ring's
+    centre), one layer per path point: shape (layers, points, 3), the first
+    layer *ring* itself.
 
-    Returns each point's imprint and whether it met the wall at all.  A point
-    that never does stays where the path ends.
+    Each layer lies across the path, turned from the one before by the
+    smallest rotation taking the path's direction there to the direction
+    here (so the ring does not spin about the path).  The direction is taken
+    over a window of the ring's radius, so a noisy centerline does not make
+    the layers wobble.  A layer that would not lie wholly ahead of the last
+    one kept (the path bends tighter than the ring is wide, or repeats a
+    point) is left out.
     """
-    offsets = path - path[0]
-    out = ring + offsets[-1]
-    hit = np.zeros(len(ring), dtype=bool)
+    if len(path) < 2:
+        return ring[None]
+    rel = ring - path[0]
+    spread = rel - rel.mean(axis=0)
+    radius = float(np.linalg.norm(spread, axis=1).mean())
+    tangents = _path_tangents(path, max(radius, 1e-6))
+    # The cut plane's normal, pointing along the path.
+    normal = np.linalg.svd(spread, full_matrices=False)[2][-1]
+    if np.dot(normal, tangents[0]) < 0.0:
+        normal = -normal
+
+    layers = [ring]
+    rotation = np.eye(3)
+    facing = normal
+    for point, tangent in zip(path[1:], tangents[1:]):
+        turn = _min_rotation(facing, tangent)
+        if turn is None:
+            continue
+        candidate = point + rel @ (turn @ rotation).T
+        step = candidate - layers[-1]
+        if (step @ facing).min() <= 1e-6 or (step @ tangent).min() <= 1e-6:
+            continue
+        layers.append(candidate)
+        rotation = turn @ rotation
+        facing = tangent
+    return np.stack(layers)
+
+
+def _path_tangents(path: np.ndarray, window: float) -> np.ndarray:
+    """Unit direction of the polyline *path* at each of its points, from the
+    points *window* behind and ahead of it along the path (clamped to its ends)."""
+    steps = np.linalg.norm(np.diff(path, axis=0), axis=1)
+    s = np.concatenate([[0.0], np.cumsum(steps)])
+    if s[-1] < 1e-12:
+        return np.tile([1.0, 0.0, 0.0], (len(path), 1))
+
+    def at(q: np.ndarray) -> np.ndarray:
+        q = np.clip(q, 0.0, s[-1])
+        return np.column_stack([np.interp(q, s, path[:, i]) for i in range(3)])
+
+    t = at(s + window) - at(s - window)
+    return t / np.maximum(np.linalg.norm(t, axis=1, keepdims=True), 1e-12)
+
+
+def _min_rotation(a: np.ndarray, b: np.ndarray) -> np.ndarray | None:
+    """Smallest rotation taking unit vector *a* to unit vector *b* (Rodrigues),
+    or ``None`` when *b* points (almost) opposite *a*."""
+    v = np.cross(a, b)
+    c = float(np.dot(a, b))
+    if c < -1.0 + 1e-6:
+        return None
+    vx = np.array([[0.0, -v[2], v[1]], [v[2], 0.0, -v[0]], [-v[1], v[0], 0.0]])
+    return np.eye(3) + vx + vx @ vx / (1.0 + c)
+
+
+def _imprint(
+    layers: np.ndarray, wall: trimesh.Trimesh
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Follow each ring point through *layers* (from :func:`_sweep_ring`) and
+    find where it first meets the *wall* surface.
+
+    Returns each point's imprint, whether it met the wall at all, and how far
+    along its way through the layers it got there.  A point that never meets
+    the wall stays in the last layer.
+    """
+    n = layers.shape[1]
+    out = layers[-1].copy()
+    hit = np.zeros(n, dtype=bool)
+    travelled = np.zeros(n)
+    reach = np.linalg.norm(np.diff(layers, axis=0), axis=2).sum(axis=0)
     triangles = wall.vertices[wall.faces]
-    for a, b in itertools.pairwise(offsets):
+    for a, b in itertools.pairwise(layers):
         todo = np.flatnonzero(~hit)
-        length = float(np.linalg.norm(b - a))
         if len(todo) == 0:
             break
-        if length < 1e-12:
-            continue
-        direction = (b - a) / length
-        origins = ring[todo] + a
+        origins, ends = a[todo], b[todo]
+        step = ends - origins
+        length = np.linalg.norm(step, axis=1)
         # Only the triangles around this step.
-        lo = np.minimum(origins, origins + b - a).min(axis=0)
-        hi = np.maximum(origins, origins + b - a).max(axis=0)
+        lo = np.minimum(origins, ends).min(axis=0)
+        hi = np.maximum(origins, ends).max(axis=0)
         near = (triangles.max(axis=1) >= lo).all(axis=1) & (
             triangles.min(axis=1) <= hi
         ).all(axis=1)
-        if not near.any():
-            continue
-        dist = _ray_triangle_t(
-            origins, np.broadcast_to(direction, origins.shape), triangles[near]
-        ).min(axis=1)
-        met = dist <= length
-        out[todo[met]] = origins[met] + dist[met, None] * direction
-        hit[todo[met]] = True
-    return out, hit
+        moving = length > 1e-12
+        if near.any() and moving.any():
+            direction = step / np.maximum(length, 1e-12)[:, None]
+            dist = _ray_triangle_t(origins, direction, triangles[near]).min(axis=1)
+            met = moving & (dist <= length)
+            out[todo[met]] = origins[met] + dist[met, None] * direction[met]
+            hit[todo[met]] = True
+            reach[todo[met]] = travelled[todo[met]] + dist[met]
+        travelled[todo] += length
+    return out, hit, reach
+
+
+def _layers_short_of_wall(layers: np.ndarray, reach: np.ndarray) -> np.ndarray:
+    """The leading *layers* every point of which is still on its way to its
+    imprint (*reach*, from :func:`_imprint`), by more than a quarter of the
+    typical step between layers: the bridge's rings.  The first layer (the cut
+    ring) is always kept."""
+    if len(layers) < 2:
+        return layers
+    steps = np.linalg.norm(np.diff(layers, axis=0), axis=2)
+    gap = 0.25 * float(np.median(steps.mean(axis=1)))
+    travelled = np.vstack([np.zeros(layers.shape[1]), np.cumsum(steps, axis=0)])
+    short = (travelled < reach - gap).all(axis=1)
+    short[0] = True
+    end = int(np.argmin(short)) if not short.all() else len(layers)
+    return layers[:end]
 
 
 def _ray_triangle_t(
@@ -984,6 +1077,23 @@ def _anchored_bridge(
     return trimesh.Trimesh(
         vertices=np.vstack([ring, rim]),
         faces=np.asarray(faces, dtype=np.int64),
+        process=False,
+    )
+
+
+def _layered_bridge(
+    layers: np.ndarray, rim: np.ndarray, at: np.ndarray
+) -> trimesh.Trimesh:
+    """The bridge from the cut ring (``layers[0]``) to the hole's *rim*: a
+    strip between each two consecutive *layers*, point ``j`` joined to point
+    ``j``, then :func:`_anchored_bridge` from the last layer to the rim."""
+    k, n = layers.shape[:2]
+    one_to_one = np.asarray(_anchored_bridge(layers[0], layers[0], np.arange(n)).faces)
+    faces = [one_to_one + i * n for i in range(k - 1)]
+    faces.append(np.asarray(_anchored_bridge(layers[-1], rim, at).faces) + (k - 1) * n)
+    return trimesh.Trimesh(
+        vertices=np.vstack([layers.reshape(-1, 3), rim]),
+        faces=np.vstack(faces),
         process=False,
     )
 

@@ -778,17 +778,22 @@ kept out of the two rings of the opening.  Passing the discretized ``tree`` and 
    ``branch_cut_slices`` names another, e.g. ``{("rca", 3): 2}``.  Everything between that plane
    and the parent vessel is removed, so the branch ends in a clean, flat rim.  The rest of the
    branch, including branches growing out of it, is kept.
-2. The cut **ring is stepped back** along the branch's centerline, point by point to the
-   branch's first point on the parent vessel.  It is only moved, never turned, so it keeps its
-   shape.  Where each ring point first meets the intravascular wall, it leaves its **imprint**.
+2. The cut **ring is carried back** along the branch's centerline to the branch's first point on
+   the parent vessel, as one **layer** per centerline point.  Each layer keeps the ring's shape
+   and is turned (by the smallest rotation from the one before) to lie across the centerline
+   there, so the layers follow the branch where it bends.  A layer that would fold back onto the
+   one before (a bend tighter than the branch is wide) is left out.  Where each ring point,
+   followed from layer to layer, first meets the intravascular wall, it leaves its **imprint**.
    The imprints outline the **hole**, and the wall inside it is removed.  A branch wider than the
    intravascular vessel is narrowed to at most half its circumference (``max_hole_fraction``).
    Before cutting, rings are interpolated between the intravascular frames (at most 0.25 mm
    apart, ``max_ring_spacing_mm``), so the hole is not limited to the spacing of the frames; the
    end rings stay where they are.
-3. Each imprint becomes a vertex of the hole's rim, with the rim's other vertices spread evenly
-   between them, and a triangle strip joins every ring point to its own imprint.  The two rims
-   come from the same ring, so they have about the same shape, and the strip does not twist.
+3. The cut ring is joined to the wall through the layers short of it: a triangle strip between
+   each two consecutive layers, point to point.  Each imprint becomes a vertex of the hole's rim,
+   with the rim's other vertices spread evenly between them, and a last strip joins every point
+   of the last layer to its own imprint.  All rings come from the same ring, so they have about
+   the same shape, and the strips do not twist.
 
 Contour 0 often lies where the branch still merges into its parent: its plane then crosses the
 rim the removal left on the branch, and the cut fails.  The branch is then left loose with a

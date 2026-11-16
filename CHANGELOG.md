@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.13.3] - 2026-11-16
+
+### Changed
+- Side-branch bridges follow the branch centerline: the cut ring is carried back as one layer per
+  centerline point (turned to lie across it), and the bridge runs layer to layer to the hole
+  instead of a single straight strip that cut the corner on bending branches.
+
 ## [0.13.2] - 2026-11-13
 
 ### Fixed

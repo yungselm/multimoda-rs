@@ -31,7 +31,7 @@ def show_branch_reconnection(geometry, removed, tree, centerlines, cut_slices):
 
     from multimodars._converters import geometry_to_trimesh
     from multimodars.ccta.stitching import reconnect_side_branches
-    from multimodars.ccta.stitching.side_branches import _branch_path
+    from multimodars.ccta.stitching.side_branches import _branch_path, _sweep_ring
 
     # The same inputs the stitch builds internally.
     geometry = geometry.downsample(100)
@@ -86,14 +86,15 @@ def show_branch_reconnection(geometry, removed, tree, centerlines, cut_slices):
                 )
             )
         # Green: the cut contour. Orange: contour 0. Black: the path the cut
-        # ring is stepped along (the branch centerline from the cut back to
-        # its first point), and the ring at the end of it.
+        # ring is carried along (the branch centerline from the cut back to
+        # its first point), and the ring's layer at each point of it.
         parts.append(polyline(contours[k].points_as_tuples(), [40, 180, 40, 255]))
         parts.append(polyline(contours[0].points_as_tuples(), [240, 150, 30, 255]))
         path = _branch_path(cl, branch_id, np.asarray(contours[k].centroid))
         parts.append(polyline(path, [0, 0, 0, 255], closed=False))
-        ring = np.asarray(contours[k].points_as_tuples()) + (path[-1] - path[0])
-        parts.append(polyline(ring, [0, 0, 0, 255]))
+        ring = np.asarray(contours[k].points_as_tuples())
+        for layer in _sweep_ring(ring, path)[1:]:
+            parts.append(polyline(layer, [0, 0, 0, 255]))
     # Cyan: the intravascular axis (frame centroids), where the walk ends.
     parts.append(
         polyline(
@@ -103,7 +104,7 @@ def show_branch_reconnection(geometry, removed, tree, centerlines, cut_slices):
     print(
         f"Branch reconnection: {len(bridges)} bridge(s). Grey = CCTA, "
         "blue = IV wall, red = bridge, green = cut contour, orange = contour 0, "
-        "black = walk path and the ring at its end, purple = side-branch "
+        "black = walk path and the ring's layers along it, purple = side-branch "
         "centerline, dark blue = parent "
         "centerline, cyan = IV axis"
     )
